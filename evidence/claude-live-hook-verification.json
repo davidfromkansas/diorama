@@ -1,0 +1,22 @@
+{
+  "client": "Claude Code",
+  "version": "2.1.276",
+  "exit_code": 0,
+  "outcome": "completed",
+  "model": "claude-haiku-4-5-20251001",
+  "reported_cost_usd": 0.02200825,
+  "session_id": "9827b3bc-2dd9-484c-bfa0-778234770b85",
+  "is_error": false,
+  "elapsed_seconds": 6.4,
+  "hook_kinds": [
+    "sessionEnded",
+    "sessionStarted",
+    "started",
+    "stopping",
+    "toolFailed",
+    "toolFinished",
+    "toolStarted"
+  ],
+  "hook_count": 8,
+  "provider_hook_settings_modified": false
+}

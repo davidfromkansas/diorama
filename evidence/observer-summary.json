@@ -1,0 +1,88 @@
+[
+  {
+    "label": "Codex CLI isolated probe",
+    "provider": "codex",
+    "client": "Codex CLI 0.153.4",
+    "session_id": "01a0afb5-ef81-7302-a1ba-7a64bf8757d2",
+    "state": "completed",
+    "malformed": 0,
+    "counts": {
+      "session_meta": 1,
+      "event_msg": 14,
+      "response_item": 12,
+      "world_state": 2,
+      "turn_context": 2,
+      "token_usage_record": 3
+    },
+    "bytes_read": 95279,
+    "error": null,
+    "entry_types": [
+      "assistant",
+      "event",
+      "tool call",
+      "tool result",
+      "user"
+    ]
+  },
+  {
+    "label": "Current diagnostic task",
+    "provider": "codex",
+    "client": "Codex Desktop 26.901.51231",
+    "session_id": "01a0af95-959f-77e3-ab51-b0072fe66b37",
+    "state": "working",
+    "malformed": 0,
+    "counts": {
+      "session_meta": 1,
+      "event_msg": 132,
+      "response_item": 115,
+      "world_state": 3,
+      "turn_context": 5,
+      "token_usage_record": 35
+    },
+    "bytes_read": 947224,
+    "error": null,
+    "entry_types": [
+      "assistant",
+      "event",
+      "tool call",
+      "tool result",
+      "user"
+    ]
+  },
+  {
+    "label": "Claude CLI authentication probe",
+    "provider": "claude",
+    "client": "Claude CLI 1.0.108",
+    "session_id": "ee2f9fa7-bb4a-4da9-9892-b717aaac4259",
+    "state": "unavailable",
+    "malformed": 0,
+    "counts": {
+      "user": 1,
+      "assistant": 1
+    },
+    "bytes_read": 1319,
+    "error": null,
+    "entry_types": [
+      "assistant",
+      "user"
+    ]
+  },
+  {
+    "label": "Claude CLI existing-login probe (credit error)",
+    "provider": "claude",
+    "client": "Claude CLI 1.0.108",
+    "session_id": "ed884362-d299-49fa-ac35-b3a155b3151a",
+    "state": "unavailable",
+    "malformed": 0,
+    "counts": {
+      "user": 1,
+      "assistant": 1
+    },
+    "bytes_read": 1365,
+    "error": null,
+    "entry_types": [
+      "assistant",
+      "user"
+    ]
+  }
+]

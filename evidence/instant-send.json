@@ -1,0 +1,29 @@
+{
+  "updatedAt": "2026-09-21T19:16:41.516163+08:00",
+  "build": 39,
+  "version": "0.5.0",
+  "tests": 178,
+  "suites": 45,
+  "artifact": "/tmp/diorama-instant-send/Diorama.app",
+  "behavior": [
+    "Local user bubble inserted synchronously before async connection work",
+    "Composer clears immediately for ordinary sends and steering",
+    "New draft remains editable during submission",
+    "No Sending indicator",
+    "New provider echo replaces local bubble",
+    "Confirmed failure offers inline Retry during current app session",
+    "Uncertain delivery is retained without Retry",
+    "Local outgoing text and attachment paths persist; pending becomes uncertain after restart"
+  ],
+  "verification": [
+    "Core echo matching excludes older identical messages",
+    "Attachment-only echo requires confirmed turn identity",
+    "Local bubble appears with no connection and no loaded history",
+    "Assistant appears after local bubble; provider echo deduplicates"
+  ],
+  "limits": [
+    "Queue and cross-provider linked-draft flows retain their existing behavior",
+    "Full-app interactive latency not benchmarked",
+    "Retry closure is session-local; persisted failed messages remain readable after restart"
+  ]
+}

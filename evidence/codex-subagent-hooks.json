@@ -1,0 +1,24 @@
+[
+  {
+    "observedAt": 811400815.372942,
+    "provider": "Codex",
+    "role": "default",
+    "turnID": "01a0b2e9-10e1-7272-9791-ead71074da06",
+    "agentID": "01a0b2e9-10ad-7fd3-bae3-19f7123b952e",
+    "id": "86AF800F-476B-49A4-B632-40CCFD53E001",
+    "source": "Hook \u00b7 reported event; current activity unverified",
+    "kind": "agentStarted",
+    "sessionID": "01a0b2e6-9bd0-7450-b358-ac1f9592f337"
+  },
+  {
+    "sessionID": "01a0b2e6-9bd0-7450-b358-ac1f9592f337",
+    "role": "default",
+    "provider": "Codex",
+    "agentID": "01a0b2e9-10ad-7fd3-bae3-19f7123b952e",
+    "id": "B0749C58-C342-416B-AA0E-0023D0AA1F52",
+    "turnID": "01a0b2e9-10e1-7272-9791-ead71074da06",
+    "observedAt": 811400817.686292,
+    "kind": "agentStopped",
+    "source": "Hook \u00b7 reported event; current activity unverified"
+  }
+]

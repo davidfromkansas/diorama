@@ -1,0 +1,213 @@
+{
+  "thread_id": "01a0b54c-d0a1-7f01-8866-0c2ae746a94e",
+  "cli_version": "0.153.4",
+  "events": [
+    {
+      "method": "remoteControl/status/changed"
+    },
+    {
+      "method": "deprecationNotice"
+    },
+    {
+      "method": "thread/unarchived"
+    },
+    {
+      "method": "deprecationNotice"
+    },
+    {
+      "method": "mcpServer/startupStatus/updated"
+    },
+    {
+      "method": "mcpServer/startupStatus/updated"
+    },
+    {
+      "method": "mcpServer/startupStatus/updated"
+    },
+    {
+      "method": "thread/status/changed"
+    },
+    {
+      "method": "thread/goal/cleared"
+    },
+    {
+      "method": "thread/status/changed"
+    },
+    {
+      "method": "turn/started"
+    },
+    {
+      "method": "mcpServer/startupStatus/updated"
+    },
+    {
+      "method": "mcpServer/startupStatus/updated"
+    },
+    {
+      "method": "mcpServer/startupStatus/updated"
+    },
+    {
+      "method": "mcpServer/startupStatus/updated"
+    },
+    {
+      "method": "mcpServer/startupStatus/updated"
+    },
+    {
+      "method": "item/started",
+      "type": "userMessage",
+      "id": "01a0b54f-5c60-7492-875d-3934045a3561",
+      "status": null
+    },
+    {
+      "method": "item/completed",
+      "type": "userMessage",
+      "id": "01a0b54f-5c60-7492-875d-3934045a3561",
+      "status": null
+    },
+    {
+      "method": "item/started",
+      "type": "agentMessage",
+      "id": "msg_0e29f641662c81dc016aad6434bee487d083a016adfa9f2605",
+      "status": null,
+      "text": ""
+    },
+    {
+      "method": "item/completed",
+      "type": "agentMessage",
+      "id": "msg_0e29f641662c81dc016aad6434bee487d083a016adfa9f2605",
+      "status": null,
+      "text": "The original token is DIORAMA-CEDAR-7291. I\u2019ll run the requested terminal command."
+    },
+    {
+      "method": "item/started",
+      "type": "commandExecution",
+      "id": "exec-9a00ea7d-3191-4537-ad46-5b1fa46bbd1b",
+      "status": "inProgress",
+      "command": "/bin/zsh -c '/usr/bin/printf APP_SERVER_TOOL_OK'",
+      "output": null,
+      "exitCode": null
+    },
+    {
+      "method": "item/completed",
+      "type": "commandExecution",
+      "id": "exec-9a00ea7d-3191-4537-ad46-5b1fa46bbd1b",
+      "status": "completed",
+      "command": "/bin/zsh -c '/usr/bin/printf APP_SERVER_TOOL_OK'",
+      "output": "APP_SERVER_TOOL_OK",
+      "exitCode": 0
+    },
+    {
+      "method": "thread/tokenUsage/updated"
+    },
+    {
+      "method": "account/rateLimits/updated"
+    },
+    {
+      "method": "item/started",
+      "type": "agentMessage",
+      "id": "msg_0e29f641662c81dc016aad643946b887d0afb813843d59b232",
+      "status": null,
+      "text": ""
+    },
+    {
+      "method": "item/completed",
+      "type": "agentMessage",
+      "id": "msg_0e29f641662c81dc016aad643946b887d0afb813843d59b232",
+      "status": null,
+      "text": "DIORAMA-CEDAR-7291\nAPP_SERVER_TOOL_OK\nAPP_SERVER_RETURN_TOKEN=MAPLE-4836"
+    },
+    {
+      "method": "thread/tokenUsage/updated"
+    },
+    {
+      "method": "account/rateLimits/updated"
+    },
+    {
+      "method": "thread/status/changed"
+    },
+    {
+      "method": "turn/completed",
+      "turn": {
+        "id": "01a0b54f-5390-7fa0-a1b1-3bf5d721c054",
+        "items": [
+          {
+            "type": "agentMessage",
+            "id": "msg_0e29f641662c81dc016aad643946b887d0afb813843d59b232",
+            "text": "DIORAMA-CEDAR-7291\nAPP_SERVER_TOOL_OK\nAPP_SERVER_RETURN_TOKEN=MAPLE-4836",
+            "phase": "final_answer",
+            "memoryCitation": null,
+            "delivery": null,
+            "questions": null
+          }
+        ],
+        "itemsView": "summary",
+        "status": "completed",
+        "error": null,
+        "startedAt": 1789748269,
+        "completedAt": 1789748280,
+        "durationMs": 10167
+      }
+    },
+    {
+      "method": "deprecationNotice"
+    }
+  ],
+  "initialize": {
+    "userAgent": "Codex Desktop/0.153.4 (Mac OS 26.4.0; arm64) dumb (diorama_roundtrip_probe; 0.1)",
+    "codexHome": "/Users/david_lietjauw/.codex",
+    "platformFamily": "unix",
+    "platformOs": "macos"
+  },
+  "before": {
+    "id": "01a0b54c-d0a1-7f01-8866-0c2ae746a94e",
+    "cwd": "/Users/david_lietjauw/Documents/Codex/2026-09-19/diorama-roundtrip-probe",
+    "status": {
+      "type": "notLoaded"
+    },
+    "model": "gpt-6-astra",
+    "source": "vscode",
+    "projectId": null,
+    "section": null,
+    "turn_count": 1
+  },
+  "unarchive_ok": true,
+  "resume": {
+    "model": "gpt-6-astra",
+    "modelProvider": "openai",
+    "cwd": "/Users/david_lietjauw/Documents/Codex/2026-09-19/diorama-roundtrip-probe",
+    "approvalPolicy": "on-request",
+    "approvalsReviewer": "auto_review",
+    "sandbox": {
+      "type": "workspaceWrite",
+      "writableRoots": [],
+      "networkAccess": false,
+      "excludeTmpdirEnvVar": false,
+      "excludeSlashTmp": false
+    },
+    "activePermissionProfile": {
+      "id": ":workspace",
+      "extends": null
+    },
+    "instructionSources": [],
+    "runtimeWorkspaceRoots": [
+      "/Users/david_lietjauw/Documents/Codex/2026-09-19/diorama-roundtrip-probe"
+    ]
+  },
+  "appserver_turn_id": "01a0b54f-5390-7fa0-a1b1-3bf5d721c054",
+  "after_turn_count": 2,
+  "completed": true,
+  "desktop_return": {
+    "timestamp": "2026-09-18T16:18:22.919Z",
+    "ordinal": 46,
+    "type": "event_msg",
+    "payload": {
+      "type": "task_complete",
+      "turn_id": "01a0b54f-bf88-7da2-b657-e82770991fa6",
+      "last_agent_message": "Original token: DIORAMA-CEDAR-7291\nAPP_SERVER_RETURN_TOKEN=MAPLE-4836\nTerminal output: APP_SERVER_TOOL_OK\nDESKTOP_ROUNDTRIP_DONE",
+      "started_at": 1789748297,
+      "completed_at": 1789748302,
+      "duration_ms": 5293,
+      "time_to_first_token_ms": 3974
+    }
+  },
+  "roundtrip_passed": true,
+  "scope": "Sequential continuation via Desktop app tools and standalone App Server; not a Diorama UI feature or simultaneous-client test"
+}

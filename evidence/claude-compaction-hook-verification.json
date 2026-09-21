@@ -1,0 +1,15 @@
+{
+  "client": "Claude Code",
+  "version": "2.1.276",
+  "exit_code": 0,
+  "is_error": false,
+  "reported_cost_usd": 0.0233793,
+  "hook_kinds": [
+    "agentStopped",
+    "compact",
+    "compacted",
+    "sessionEnded",
+    "sessionStarted"
+  ],
+  "trigger": "manual /compact in print mode"
+}

@@ -1,0 +1,29 @@
+{
+  "client": "Codex CLI",
+  "version": "0.153.4",
+  "normal_trust_review": true,
+  "trust_bypassed": false,
+  "hook_counts": {
+    "agentStarted": 1,
+    "agentStopped": 1,
+    "approval": 2,
+    "compact": 1,
+    "compacted": 1,
+    "interrupted": 1,
+    "sessionEnded": 2,
+    "sessionStarted": 2,
+    "started": 4,
+    "stopping": 3,
+    "toolFinished": 5,
+    "toolStarted": 6
+  },
+  "scenarios": {
+    "approval_accepted": "verified: harmless echo ran after one-time approval",
+    "approval_canceled": "verified: Interrupt received",
+    "subagent": "verified: one tool-free worker",
+    "compaction": "verified: manual /compact",
+    "resume": "verified: same session in restarted source process"
+  },
+  "normal_provider_hook_settings_modified": false,
+  "desktop_coverage": "unverified"
+}

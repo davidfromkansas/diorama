@@ -1,0 +1,13 @@
+{
+  "event_count" : 32,
+  "event_kinds" : [
+    "started",
+    "toolFinished",
+    "toolStarted"
+  ],
+  "last_recorded_state" : "Working",
+  "method" : "read-only designated existing Codex transcript; no agent execution",
+  "observer_reconnect_stable" : true,
+  "source_modified" : false,
+  "tested_at" : "2026-09-18T04:17:38Z"
+}

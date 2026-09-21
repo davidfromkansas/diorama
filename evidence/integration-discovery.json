@@ -1,0 +1,13 @@
+{
+  "coldSeconds" : 2.7236349582672119,
+  "date" : "2026-09-20T11:04:51Z",
+  "directoryFetched" : false,
+  "errors" : {
+
+  },
+  "installedApps" : 11,
+  "mcpServers" : 5,
+  "scope" : "Read-only controller discovery, not on-screen latency",
+  "skills" : 42,
+  "warmSeconds" : 2.0265579223632812e-06
+}

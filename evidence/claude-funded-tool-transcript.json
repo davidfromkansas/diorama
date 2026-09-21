@@ -1,0 +1,70 @@
+[
+  {
+    "timestamp": "2026-09-18T05:14:29.092Z",
+    "type": "assistant",
+    "message": {
+      "content": [
+        {
+          "type": "tool_use",
+          "id": "toolu_015ojNRPsntqmy7BeFFDFgjh",
+          "name": "Bash",
+          "input": {
+            "command": "/bin/echo DIORAMA_HOOK_SUCCESS",
+            "description": "Run echo command for hook verification"
+          },
+          "caller": {
+            "type": "direct"
+          }
+        }
+      ]
+    }
+  },
+  {
+    "timestamp": "2026-09-18T05:14:29.150Z",
+    "type": "user",
+    "message": {
+      "content": [
+        {
+          "tool_use_id": "toolu_015ojNRPsntqmy7BeFFDFgjh",
+          "type": "tool_result",
+          "content": "DIORAMA_HOOK_SUCCESS",
+          "is_error": false
+        }
+      ]
+    }
+  },
+  {
+    "timestamp": "2026-09-18T05:14:30.322Z",
+    "type": "assistant",
+    "message": {
+      "content": [
+        {
+          "type": "tool_use",
+          "id": "toolu_01DZZrZjao1auJGaE2fJYvqE",
+          "name": "Bash",
+          "input": {
+            "command": "/usr/bin/false",
+            "description": "Run false command for expected failure"
+          },
+          "caller": {
+            "type": "direct"
+          }
+        }
+      ]
+    }
+  },
+  {
+    "timestamp": "2026-09-18T05:14:30.450Z",
+    "type": "user",
+    "message": {
+      "content": [
+        {
+          "type": "tool_result",
+          "content": "Error",
+          "is_error": true,
+          "tool_use_id": "toolu_01DZZrZjao1auJGaE2fJYvqE"
+        }
+      ]
+    }
+  }
+]

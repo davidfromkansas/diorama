@@ -1,0 +1,563 @@
+[
+  {
+    "number": 1,
+    "title": "Mid-turn steering",
+    "why": "Correct the agent while it works, without interrupting the task.",
+    "contract": "Use turn/steer with the expected active turn ID. If the turn ends first, preserve the draft and offer a new turn; never silently resend.",
+    "recommended": "A",
+    "options": [
+      {
+        "letter": "A",
+        "title": "The composer stays open",
+        "idea": "Keep the familiar message box available during work; its primary action becomes “Send correction”.",
+        "flow": [
+          "Type in composer",
+          "Send correction",
+          "See acceptance inline"
+        ],
+        "upside": "Lowest learning cost; stays inside the conversation.",
+        "cost": "The action label must make steering versus a new turn unmistakable.",
+        "behavior": "Show “Sending…” until acknowledged, then “Added to current turn”. Stop remains separate. If delivery is uncertain, keep the draft and show an unresolved state.",
+        "mock": "<div class=\"mock\" role=\"img\" aria-label=\"Conversation · working — static interface concept\"><div class=\"chrome\"><span aria-hidden=\"true\">● ● ●</span><b>Conversation · working</b></div><div class=\"stage\"><span class=\"pill blue\">Working</span><div class=\"message\"><small>Codex</small><p>I’m updating the search index.</p></div><div class=\"message\"><small>You · correction</small><p>Keep the current database format.</p></div><div class=\"line success\">✓ Added to current turn</div><div class=\"composer\"><p>Also preserve archived results.</p><div class=\"row\"><span class=\"pill \">Current turn</span><span class=\"drawn-action primary\">Send correction</span><span class=\"drawn-action \">Stop</span></div></div></div></div>"
+      },
+      {
+        "letter": "B",
+        "title": "Attach a correction to a step",
+        "idea": "Target a visible plan step or tool action and leave a short contextual instruction.",
+        "flow": [
+          "Select a step",
+          "Add correction",
+          "Show linked reply"
+        ],
+        "upside": "Precise when several things are happening.",
+        "cost": "Can imply finer execution control than the server provides.",
+        "behavior": "Send the selected step’s visible label as context with the correction. The link is a UI reference; it does not cancel or surgically edit that one operation.",
+        "mock": "<div class=\"mock\" role=\"img\" aria-label=\"Plan · contextual correction — static interface concept\"><div class=\"chrome\"><span aria-hidden=\"true\">● ● ●</span><b>Plan · contextual correction</b></div><div class=\"stage\"><div class=\"line \">✓ Inspect existing index</div><div class=\"panel emphasis\"><div class=\"line blue-text\">● Rebuild search storage</div><div class=\"line \">↳ Your correction</div><div class=\"composer\"><p>Keep SQLite; do not migrate formats.</p><div class=\"row\"><span class=\"drawn-action primary\">Send correction</span></div></div></div><div class=\"line \">○ Verify archived results</div><div class=\"line subtle\">Correction linked to “Rebuild search storage”</div></div></div>"
+      },
+      {
+        "letter": "C",
+        "title": "A dedicated direction drawer",
+        "idea": "A persistent “Adjust direction” control opens a small instruction drawer beside current work.",
+        "flow": [
+          "Open direction drawer",
+          "Write one adjustment",
+          "Review receipt"
+        ],
+        "upside": "Separates task controls from conversational follow-ups.",
+        "cost": "Adds a second writing surface and takes more room.",
+        "behavior": "Keep one correction per submission and show pending/accepted receipts. An inactive turn switches the drawer to “Send as next message”, with user action required.",
+        "mock": "<div class=\"mock\" role=\"img\" aria-label=\"Task controls — static interface concept\"><div class=\"chrome\"><span aria-hidden=\"true\">● ● ●</span><b>Task controls</b></div><div class=\"stage\"><div class=\"split\"><div><div class=\"message\"><small>Codex</small><p>Updating the index…</p></div><div class=\"panel \">Latest activity<br><b>Reading search.swift</b></div></div><aside><div class=\"line \"><b>Direction</b></div><div class=\"composer\"><p>Keep database format.</p><div class=\"row\"><span class=\"drawn-action primary\">Send</span></div></div><div class=\"line \">Recent correction</div><span class=\"pill green\">Accepted</span></aside></div></div></div><div class=\"line \"><span class=\"drawn-action \">Adjust direction</span> <span class=\"drawn-action \">Stop turn</span></div>"
+      }
+    ]
+  },
+  {
+    "number": 2,
+    "title": "Native plan + changes inspector",
+    "why": "Understand what is planned and what actually changed while the conversation continues.",
+    "contract": "Plan steps and turn diffs come from structured events. Preserve per-turn state and do not infer completion from a finished reply.",
+    "recommended": "A",
+    "options": [
+      {
+        "letter": "A",
+        "title": "A collapsible right inspector",
+        "idea": "Keep the chat centered; reveal Plan and Changes in a native inspector.",
+        "flow": [
+          "Open inspector",
+          "Follow steps",
+          "Select file diff"
+        ],
+        "upside": "Continuous context without filling the transcript.",
+        "cost": "Needs width; becomes a sheet in a narrow window.",
+        "behavior": "The latest turn is selected by default. Selecting a file opens its diff; switching turns pins the inspector to that turn and labels it “Earlier turn”.",
+        "mock": "<div class=\"mock\" role=\"img\" aria-label=\"Conversation + inspector — static interface concept\"><div class=\"chrome\"><span aria-hidden=\"true\">● ● ●</span><b>Conversation + inspector</b></div><div class=\"stage\"><div class=\"split\"><div><div class=\"message\"><small>Codex</small><p>I’ll preserve the format and add coverage.</p></div><div class=\"composer\"><p>Message Codex…</p><div class=\"row\"><span class=\"drawn-action \">Send</span></div></div></div><aside><div class=\"line \"><b>Plan · current turn</b></div><div class=\"line \">✓ Inspect storage</div><div class=\"line blue-text\">● Add archive filter</div><div class=\"line \">○ Run checks</div><div class=\"line \"><b>Changes · 2 files</b></div><div class=\"panel \">Search.swift <b>+8 −2</b><br>SearchTests.swift <b>+12</b></div><div class=\"line \">Selected: Search.swift</div><div class=\"panel code\"><del>includeArchived = false</del><br><ins>includeArchived = filter</ins></div></aside></div></div></div>"
+      },
+      {
+        "letter": "B",
+        "title": "Checkpoints in the conversation",
+        "idea": "Insert compact live plan cards and changed-file summaries at the relevant point in the transcript.",
+        "flow": [
+          "Read a checkpoint",
+          "Expand its changes",
+          "Continue below"
+        ],
+        "upside": "Excellent in narrow windows; history tells a complete story.",
+        "cost": "Long tasks can become repetitive and push replies away.",
+        "behavior": "Update one card per turn in place. Collapse completed checkpoints; retain the ability to reopen the exact turn’s plan and diff.",
+        "mock": "<div class=\"mock\" role=\"img\" aria-label=\"Conversation · checkpoints — static interface concept\"><div class=\"chrome\"><span aria-hidden=\"true\">● ● ●</span><b>Conversation · checkpoints</b></div><div class=\"stage\"><div class=\"message\"><small>Codex</small><p>I’m adding archived search.</p></div><div class=\"panel emphasis\"><b>Current plan</b><div class=\"line \">✓ Inspect storage</div><div class=\"line blue-text\">● Add archive filter</div><div class=\"line \">○ Run checks</div></div><div class=\"panel \"><b>Changed files · current turn</b><div class=\"line \">▾ Search.swift · +8 −2</div><div class=\"panel code\"><ins>includeArchived = filter</ins></div><div class=\"line \">▸ SearchTests.swift · +12</div></div></div></div>"
+      },
+      {
+        "letter": "C",
+        "title": "A dedicated work view",
+        "idea": "Add a Work view alongside Conversation, Activity and HTML, with the plan and diff occupying the main pane.",
+        "flow": [
+          "Switch to Work",
+          "Inspect plan and diff",
+          "Return to conversation"
+        ],
+        "upside": "Best for reviewing code and long plans in detail.",
+        "cost": "Requires switching away from discussion.",
+        "behavior": "A small live status strip stays visible across views. Selecting a plan step filters associated evidence only where explicit associations exist; otherwise show turn-level changes.",
+        "mock": "<div class=\"mock\" role=\"img\" aria-label=\"Conversation   •   Work   •   HTML — static interface concept\"><div class=\"chrome\"><span aria-hidden=\"true\">● ● ●</span><b>Conversation   •   Work   •   HTML</b></div><div class=\"stage\"><span class=\"pill blue\">Work selected</span><div class=\"line \"><b>Current turn · adding archive search</b></div><div class=\"panel emphasis\">✓ Inspect storage → ● Add filter → ○ Verify</div><div class=\"line \">Search.swift  ·  +8 −2</div><div class=\"panel code\"><small>42</small>  func results() {<br><del>43    query.activeOnly()</del><br><ins>43    query.match(filter)</ins><br><small>44</small>  }</div><div class=\"line \">Other changed file: SearchTests.swift</div><span class=\"pill blue\">Codex is still working</span></div></div>"
+      }
+    ]
+  },
+  {
+    "number": 3,
+    "title": "Questions, approvals + connector forms",
+    "why": "Ask for attention without misrepresenting whether work is blocked.",
+    "contract": "Respect isBlocking and the exact offered decisions. MCP elicitation may have no turn ID. A mockup choice never sends an approval.",
+    "recommended": "B",
+    "options": [
+      {
+        "letter": "A",
+        "title": "Requests stay beside the work",
+        "idea": "Use inline request cards with distinct “Waiting for you” and “Optional answer · work continues” labels.",
+        "flow": [
+          "Notice inline card",
+          "Inspect scope",
+          "Answer or decline"
+        ],
+        "upside": "Keeps the reason and action in the same conversation.",
+        "cost": "Requests from other conversations are easy to miss.",
+        "behavior": "Sticky attention badges link to the card. Show command, folder and exact approval scope; keep any persistent rule choice separate. Connector cards render the supplied fields.",
+        "mock": "<div class=\"mock\" role=\"img\" aria-label=\"Conversation · requests — static interface concept\"><div class=\"chrome\"><span aria-hidden=\"true\">● ● ●</span><b>Conversation · requests</b></div><div class=\"stage\"><span class=\"pill blue\">Optional answer · work continues</span><div class=\"panel \"><b>Which output format?</b><div class=\"line \"><span class=\"pill \">Markdown</span> <span class=\"pill \">PDF</span></div><div class=\"line \">Free-text answer…</div><span class=\"drawn-action \">Submit answer</span></div><span class=\"pill amber\">Waiting for approval</span><div class=\"panel \"><b>Run tests in /Diorama?</b><div class=\"line \"><code>swift test</code></div><div class=\"line \"><span class=\"drawn-action primary\">Allow once</span> <span class=\"drawn-action \">Deny</span></div><div class=\"line \">▸ Other offered scopes</div></div></div></div>"
+      },
+      {
+        "letter": "B",
+        "title": "An attention inbox",
+        "idea": "Collect requests across conversations in a focused inbox with source, urgency and resolution state.",
+        "flow": [
+          "Open attention inbox",
+          "Choose request",
+          "Respond in detail pane"
+        ],
+        "upside": "Best for managing several active tasks.",
+        "cost": "More navigation for a single conversation.",
+        "behavior": "Separate blocking approvals from optional questions. Clicking the source opens its conversation. Resolved requests leave the actionable list only after provider confirmation.",
+        "mock": "<div class=\"mock\" role=\"img\" aria-label=\"Attention · 2 pending — static interface concept\"><div class=\"chrome\"><span aria-hidden=\"true\">● ● ●</span><b>Attention · 2 pending</b></div><div class=\"stage\"><div class=\"split\"><div><div class=\"line \"><b>Needs you</b></div><div class=\"panel emphasis\">● Search task<br><small>Command approval</small></div><div class=\"panel \">○ Report task<br><small>Optional question</small></div></div><aside><div class=\"line \"><b>Search task</b></div><span class=\"pill amber\">Waiting</span><div class=\"line \">Run swift test?</div><div class=\"panel code\"><code>/Diorama<br>swift test</code></div><div class=\"line \"><span class=\"drawn-action primary\">Allow once</span></div><div class=\"line \"><span class=\"drawn-action \">Deny</span></div></aside></div><div class=\"line \">Resolved requests → History</div></div></div>"
+      },
+      {
+        "letter": "C",
+        "title": "An attention tray above the composer",
+        "idea": "Stack pending requests in a compact tray; expand one into an anchored sheet.",
+        "flow": [
+          "Open request tray",
+          "Review one sheet",
+          "Return to typing"
+        ],
+        "upside": "Always reachable without inserting large transcript cards.",
+        "cost": "The sheet can obscure relevant conversation context.",
+        "behavior": "Show the conversation name and request source in the sheet. Optional questions can be dismissed from the foreground while remaining pending. Never pre-submit a selected default.",
+        "mock": "<div class=\"mock\" role=\"img\" aria-label=\"Composer · request tray — static interface concept\"><div class=\"chrome\"><span aria-hidden=\"true\">● ● ●</span><b>Composer · request tray</b></div><div class=\"stage\"><div class=\"message\"><small>Codex</small><p>I found two matching project folders.</p></div><div class=\"panel floating\"><b>Connector needs a folder</b><div class=\"line \">Source: Drive · Report task</div><div class=\"panel \">Folder  ▾  Product research</div><div class=\"line \"><span class=\"drawn-action primary\">Continue</span> <span class=\"drawn-action \">Cancel</span></div></div><div class=\"line \"><span class=\"pill amber\">1 approval</span> <span class=\"pill \">1 optional question</span></div><div class=\"composer\"><p>Message Codex…</p><div class=\"row\"><span class=\"drawn-action \">Send</span></div></div></div></div>"
+      }
+    ]
+  },
+  {
+    "number": 4,
+    "title": "Goals, usage + context",
+    "why": "Know whether the turn ended, the goal finished, or a limit stopped progress.",
+    "contract": "Show supplied goal/token/rate-limit data, never inferred billing. Creating or resuming a goal is an explicit action. Sample numbers below are illustrative.",
+    "recommended": "B",
+    "options": [
+      {
+        "letter": "A",
+        "title": "A compact status strip",
+        "idea": "Keep goal status in the header; a disclosure reveals budgets, context and account limits.",
+        "flow": [
+          "Read status strip",
+          "Open details",
+          "Take a relevant action"
+        ],
+        "upside": "Quiet and visible in every conversation.",
+        "cost": "Detailed long-running work needs one extra click.",
+        "behavior": "Display “Turn finished · Goal active” as two facts. Missing budget/window limits say “Not provided”. Goal Pause and Stop turn remain separate controls.",
+        "mock": "<div class=\"mock\" role=\"img\" aria-label=\"Search task — static interface concept\"><div class=\"chrome\"><span aria-hidden=\"true\">● ● ●</span><b>Search task</b></div><div class=\"stage\"><div class=\"line \"><span class=\"pill \">Turn finished</span> <span class=\"pill blue\">Goal active</span></div><div class=\"panel emphasis\"><b>Add archived search</b><div class=\"line \">Goal budget: 24k / 100k tokens</div><div class=\"line \">Context: 18k / 128k tokens</div><div class=\"line \">Account limit: resets 14:30</div><div class=\"line \"><span class=\"drawn-action \">Pause goal</span> <span class=\"drawn-action \">Details</span></div></div><div class=\"message\"><small>Codex</small><p>The index is updated. Verification remains.</p></div></div></div>"
+      },
+      {
+        "letter": "B",
+        "title": "A mission inspector",
+        "idea": "A dedicated Goal inspector combines objective, goal lifecycle, usage and the latest blocker.",
+        "flow": [
+          "Open Goal inspector",
+          "Read objective and limits",
+          "Pause or resume explicitly"
+        ],
+        "upside": "Clear home for persistent goals and budgets.",
+        "cost": "Competes with the Plan/Changes inspector for attention.",
+        "behavior": "Use tabs within the same inspector rather than another permanent pane. Budget edits are intentional settings changes, not prompt text. Separate measured usage from unknown completion progress.",
+        "mock": "<div class=\"mock\" role=\"img\" aria-label=\"Inspector · Goal — static interface concept\"><div class=\"chrome\"><span aria-hidden=\"true\">● ● ●</span><b>Inspector · Goal</b></div><div class=\"stage\"><div class=\"line \"><b>Add archived search safely</b></div><span class=\"pill blue\">Goal active</span><div class=\"panel \">Latest turn<br><b>Finished</b><br>Next: verification remains</div><div class=\"panel \">Token budget <b>24k / 100k</b><br>Context window <b>18k / 128k</b><br>Time used <b>12 min</b></div><div class=\"line \"><span class=\"drawn-action \">Pause goal</span> <span class=\"drawn-action \">Edit budget</span></div><div class=\"line subtle\">No completion percentage estimated</div></div></div>"
+      },
+      {
+        "letter": "C",
+        "title": "A portfolio status list",
+        "idea": "Make goals a first-class list across conversations, with drill-down for usage and controls.",
+        "flow": [
+          "Open Goals view",
+          "Compare active work",
+          "Open one goal"
+        ],
+        "upside": "Best for supervising many concurrent tasks.",
+        "cost": "Too much structure for casual conversations.",
+        "behavior": "Only explicitly created goals appear. A conversation without a goal remains ordinary chat. Paused/blocked/limited rows say why rather than using a generic error badge.",
+        "mock": "<div class=\"mock\" role=\"img\" aria-label=\"Goals · across conversations — static interface concept\"><div class=\"chrome\"><span aria-hidden=\"true\">● ● ●</span><b>Goals · across conversations</b></div><div class=\"stage\"><div class=\"panel \"><b>Search support</b><div class=\"line \"><span class=\"pill blue\">Active</span> 24k / 100k tokens</div></div><div class=\"panel \"><b>Release notes</b><div class=\"line \"><span class=\"pill amber\">Blocked</span> Waiting for version scope</div></div><div class=\"panel \"><b>Documentation pass</b><div class=\"line \"><span class=\"pill \">Paused</span> 8k tokens · no budget</div></div><div class=\"line \">Select a goal → objective, history and controls</div></div></div>"
+      }
+    ]
+  },
+  {
+    "number": 5,
+    "title": "Conversation management",
+    "why": "Organize growing history without needing to return to the original client.",
+    "contract": "Rename/pin/archive/restore use server methods; archive scope can include descendants. Pinned order is not a promise of Desktop sidebar synchronization.",
+    "recommended": "A",
+    "options": [
+      {
+        "letter": "A",
+        "title": "Sidebar actions",
+        "idea": "Add a visible row menu and right-click actions to each conversation.",
+        "flow": [
+          "Open row menu",
+          "Choose action",
+          "Show updated row"
+        ],
+        "upside": "Feels native; smallest change to the existing app.",
+        "cost": "Batch organization is slower.",
+        "behavior": "Rename edits the row in place. Pin moves it to a Pinned group. Archive previews descendant scope when relevant; Archived has an explicit Restore action.",
+        "mock": "<div class=\"mock\" role=\"img\" aria-label=\"Conversations — static interface concept\"><div class=\"chrome\"><span aria-hidden=\"true\">● ● ●</span><b>Conversations</b></div><div class=\"stage\"><div class=\"line \"><small>PINNED</small></div><div class=\"line \">◆ Release checklist</div><div class=\"line \"><small>RECENT</small></div><div class=\"panel emphasis\"><b>Search support</b>  ···</div><div class=\"panel menu\">Rename…<br>Pin conversation<br>Archive…</div><div class=\"line \">Report draft</div><div class=\"line \">▸ Archived · Restore available</div></div></div>"
+      },
+      {
+        "letter": "B",
+        "title": "A library table",
+        "idea": "Provide a Library view for sorting, multi-selection and bulk organization.",
+        "flow": [
+          "Open Library",
+          "Select conversations",
+          "Apply one scoped action"
+        ],
+        "upside": "Efficient for large archives.",
+        "cost": "Feels heavier than the current conversation-first sidebar.",
+        "behavior": "Show provider, folder and updated time. A bulk action previews its actual scope and excludes unsupported items explicitly; never silently partially succeed.",
+        "mock": "<div class=\"mock\" role=\"img\" aria-label=\"Library · conversations — static interface concept\"><div class=\"chrome\"><span aria-hidden=\"true\">● ● ●</span><b>Library · conversations</b></div><div class=\"stage\"><div class=\"line \"><span class=\"drawn-action \">Archive selected</span> <span class=\"pill blue\">2 selected</span></div><div class=\"panel \"><div class=\"mini-table\"><b>Name</b><b>Folder</b><span>☑ Search support</span><span>Diorama</span><span>☑ Release notes</span><span>Diorama</span><span>☐ Research draft</span><span>Reports</span></div></div><div class=\"line \">Archive preview: 2 conversations</div><div class=\"line subtle\">Spawned descendants listed before apply</div></div></div>"
+      },
+      {
+        "letter": "C",
+        "title": "A conversation command palette",
+        "idea": "Offer keyboard-first organization through a searchable command palette tied to the selected conversation.",
+        "flow": [
+          "Open command palette",
+          "Find “Pin” or “Restore”",
+          "Apply to named conversation"
+        ],
+        "upside": "Fast for frequent keyboard users.",
+        "cost": "Least discoverable without visible menu equivalents.",
+        "behavior": "Always display the target conversation and scope. Use a proposed shortcut such as ⇧⌘P only after checking conflicts. Rename and archive expand into clear second steps.",
+        "mock": "<div class=\"mock\" role=\"img\" aria-label=\"Conversation commands — static interface concept\"><div class=\"chrome\"><span aria-hidden=\"true\">● ● ●</span><b>Conversation commands</b></div><div class=\"stage\"><div class=\"message\"><small>Codex</small><p>Search support</p></div><div class=\"panel floating\"><b>Search support · commands</b><div class=\"panel \">Type a command…</div><div class=\"line selected\">› Pin conversation</div><div class=\"line \">Rename conversation…</div><div class=\"line \">Archive conversation…</div><div class=\"line \">Open archived conversations</div></div><div class=\"line \">Keyboard-first; row menu remains available</div></div></div>"
+      }
+    ]
+  },
+  {
+    "number": 6,
+    "title": "History pagination + message search",
+    "why": "Find an exact past exchange and load long histories without losing your place.",
+    "contract": "Label search scope. In-thread search covers visible user/final assistant messages, not arbitrary tool output. Preserve cursor and scroll anchors.",
+    "recommended": "B",
+    "options": [
+      {
+        "letter": "A",
+        "title": "Find in this conversation",
+        "idea": "A familiar Find bar highlights matches and jumps between them while loading the required turns.",
+        "flow": [
+          "Press ⌘F",
+          "Move between matches",
+          "Read surrounding turn"
+        ],
+        "upside": "Easy to learn; minimal interface overhead.",
+        "cost": "Does not solve “which conversation was it in?” alone.",
+        "behavior": "Keep the current match anchored as pages load. Show “Searching…” separately from no results; offer an explicit broader search action.",
+        "mock": "<div class=\"mock\" role=\"img\" aria-label=\"Find in conversation — static interface concept\"><div class=\"chrome\"><span aria-hidden=\"true\">● ● ●</span><b>Find in conversation</b></div><div class=\"stage\"><div class=\"panel emphasis\">archived results   <b>2 of 5</b>  ↑ ↓</div><div class=\"line subtle\">Search scope: user + final assistant messages</div><div class=\"line \">Load earlier turns…</div><div class=\"message\"><small>You · earlier turn</small><p>Include <mark>archived results</mark> in the search.</p></div><div class=\"message\"><small>Codex</small><p>Archived sessions now appear under the filter.</p></div><div class=\"line \">Jumped to Sep 19 · turn 12</div></div></div>"
+      },
+      {
+        "letter": "B",
+        "title": "A global search workspace",
+        "idea": "Search across conversations with snippet results, folder/provider filters and a preview pane.",
+        "flow": [
+          "Search all conversations",
+          "Inspect snippets",
+          "Open matched turn"
+        ],
+        "upside": "Best when the user remembers content but not location.",
+        "cost": "Consumes the main pane and needs careful scope labels.",
+        "behavior": "Archived inclusion is explicit. Selecting a result previews context before navigation. Unsupported backends show their actual search scope rather than pretending to search everything.",
+        "mock": "<div class=\"mock\" role=\"img\" aria-label=\"Search all conversations — static interface concept\"><div class=\"chrome\"><span aria-hidden=\"true\">● ● ●</span><b>Search all conversations</b></div><div class=\"stage\"><div class=\"panel emphasis\">archived results</div><div class=\"line \"><span class=\"pill \">Codex</span> <span class=\"pill \">Include archived</span></div><div class=\"panel selected\"><b>Search support</b><br>“…include <mark>archived results</mark>…”<br><small>Diorama · Sep 19</small></div><div class=\"panel \"><b>History cleanup</b><br>“…exclude <mark>archived results</mark>…”<br><small>Tools · Sep 17</small></div><div class=\"line \">Selected match → preview context → open turn</div></div></div>"
+      },
+      {
+        "letter": "C",
+        "title": "A turn navigator",
+        "idea": "Place a compact turn outline beside the transcript, with dates, user prompt previews and search markers.",
+        "flow": [
+          "Open turn navigator",
+          "Choose a turn or match",
+          "Load its context"
+        ],
+        "upside": "Excellent for very long, structured sessions.",
+        "cost": "A new navigation model with more visual chrome.",
+        "behavior": "Use known turn metadata to populate the outline progressively. Mark unloaded history rather than inventing turn counts. Keyboard selection follows visible order.",
+        "mock": "<div class=\"mock\" role=\"img\" aria-label=\"Conversation · turn navigator — static interface concept\"><div class=\"chrome\"><span aria-hidden=\"true\">● ● ●</span><b>Conversation · turn navigator</b></div><div class=\"stage\"><div class=\"split\"><div><div class=\"line \"><b>Turns</b></div><div class=\"line \">Sep 20</div><div class=\"panel emphasis\">14  Verify results</div><div class=\"line \">13  Add filtering</div><div class=\"line \">12  Archived…  •</div><div class=\"line \">Sep 19</div><div class=\"line \">Load older…</div></div><aside><div class=\"line \"><b>Turn 14</b></div><div class=\"message\"><small>You</small><p>Verify the filter.</p></div><div class=\"message\"><small>Codex</small><p>I checked the active and archived results.</p></div><span class=\"pill \">Last turn finished</span></aside></div></div></div>"
+      }
+    ]
+  },
+  {
+    "number": 7,
+    "title": "Plan mode",
+    "why": "Let users develop an approach and deliberately hand it over for execution.",
+    "contract": "Use the advertised collaboration mode. Plan mode is distinct from the plan checklist; do not portray it as a sandbox guarantee.",
+    "recommended": "A",
+    "options": [
+      {
+        "letter": "A",
+        "title": "A mode switch in the composer",
+        "idea": "Choose Plan or Work beside the model selector; the selected mode applies to the next submission.",
+        "flow": [
+          "Choose Plan",
+          "Discuss the approach",
+          "Choose Work and send"
+        ],
+        "upside": "Fits the existing composer without a new workflow.",
+        "cost": "Easy to forget the current mode unless it is clearly labeled.",
+        "behavior": "While a turn runs, label changes “For next message”. A transition to Work does not submit or execute by itself. Preserve the plan in the conversation.",
+        "mock": "<div class=\"mock\" role=\"img\" aria-label=\"Composer · choose intent — static interface concept\"><div class=\"chrome\"><span aria-hidden=\"true\">● ● ●</span><b>Composer · choose intent</b></div><div class=\"stage\"><div class=\"message\"><small>Codex</small><p>Proposed approach: preserve storage, add filtering, verify results.</p></div><div class=\"composer\"><p>Work through edge cases first.</p><div class=\"row\"><span class=\"pill blue\">Plan selected</span> <span class=\"pill \">Work</span> <span class=\"drawn-action primary\">Send plan request</span></div></div><div class=\"line subtle\">Mode applies to the next message</div><div class=\"line \">Switching to Work does not start execution</div></div></div>"
+      },
+      {
+        "letter": "B",
+        "title": "A brief → plan → work handoff",
+        "idea": "Start with a concise brief, review the proposed approach, then explicitly start work.",
+        "flow": [
+          "Write the brief",
+          "Revise the plan",
+          "Start work"
+        ],
+        "upside": "Clear commitment boundary for substantial changes.",
+        "cost": "Too many steps for a small everyday request.",
+        "behavior": "The plan review shows scope, constraints and unresolved decisions. “Start work” submits an explicit instruction; it is not a blanket approval for future commands.",
+        "mock": "<div class=\"mock\" role=\"img\" aria-label=\"Plan a change — static interface concept\"><div class=\"chrome\"><span aria-hidden=\"true\">● ● ●</span><b>Plan a change</b></div><div class=\"stage\"><div class=\"line \"><b>Brief → Review plan → Work</b></div><div class=\"panel \"><small>BRIEF</small><br>Add archived search without migration.</div><div class=\"panel emphasis\"><small>PROPOSED PLAN</small><br>1. Inspect existing storage<br>2. Add a filter<br>3. Verify both result sets</div><div class=\"line \"><span class=\"drawn-action \">Request revision</span> <span class=\"drawn-action primary\">Start work</span></div><div class=\"line subtle\">Command approvals still apply</div></div></div>"
+      },
+      {
+        "letter": "C",
+        "title": "A planning document",
+        "idea": "Use a focused plan document with comments, revisions and a deliberate handoff to execution.",
+        "flow": [
+          "Open plan document",
+          "Annotate and revise",
+          "Send selected plan to Work"
+        ],
+        "upside": "Strong for collaborative or lengthy planning.",
+        "cost": "Highest complexity; the document must stay in sync with the conversation.",
+        "behavior": "Edits and comments are local drafts until explicitly sent. Record the plan revision used for the handoff; later edits do not secretly change already-running work.",
+        "mock": "<div class=\"mock\" role=\"img\" aria-label=\"Plan document · revision 3 — static interface concept\"><div class=\"chrome\"><span aria-hidden=\"true\">● ● ●</span><b>Plan document · revision 3</b></div><div class=\"stage\"><div class=\"panel \"><b>Archived search</b><br><small>Scope</small><br>Preserve the database format.<br><small>Steps</small><br>✓ Inspect storage<br>○ Add filter<br>○ Verify results</div><div class=\"panel annotation\">Your comment<br>“Include archived-only mode.”</div><div class=\"line \"><span class=\"drawn-action \">Send revision</span> <span class=\"drawn-action primary\">Start from revision 3</span></div><div class=\"line subtle\">Local draft · not yet sent</div></div></div>"
+      }
+    ]
+  },
+  {
+    "number": 8,
+    "title": "Skills + connectors",
+    "why": "Make available capabilities discoverable at the moment they are useful.",
+    "contract": "Use typed skill/mention inputs and actual installation/auth state. Selecting a capability is separate from granting access or installing it.",
+    "recommended": "A",
+    "options": [
+      {
+        "letter": "A",
+        "title": "An @ picker in the composer",
+        "idea": "Mention a skill or connector while composing; insert a named capability chip into the draft.",
+        "flow": [
+          "Type @",
+          "Choose an available capability",
+          "Send with a visible chip"
+        ],
+        "upside": "Fast and contextual; familiar to chat users.",
+        "cost": "Poorer for browsing unfamiliar capabilities.",
+        "behavior": "Group Skills and Connectors. A disconnected connector offers “Connect…” rather than pretending it is ready. Keep its chip pending until authentication succeeds.",
+        "mock": "<div class=\"mock\" role=\"img\" aria-label=\"Composer · add capability — static interface concept\"><div class=\"chrome\"><span aria-hidden=\"true\">● ● ●</span><b>Composer · add capability</b></div><div class=\"stage\"><div class=\"panel menu\"><b>@ Search capabilities</b><div class=\"line \">Skills</div><div class=\"line selected\">  Summarize document</div><div class=\"line \">Connectors</div><div class=\"line \">  Drive · Connected</div><div class=\"line \">  Linear · Connect…</div></div><div class=\"composer\"><p>Summarize the release notes.</p><div class=\"row\"><span class=\"pill blue\">Summarize document</span> <span class=\"pill \">Drive</span><span class=\"drawn-action primary\">Send</span></div></div></div></div>"
+      },
+      {
+        "letter": "B",
+        "title": "A capability library",
+        "idea": "Provide a browsable library with descriptions, availability and “Use in conversation”.",
+        "flow": [
+          "Browse library",
+          "Read capability details",
+          "Add to draft"
+        ],
+        "upside": "Best discovery and understanding of access.",
+        "cost": "Requires leaving the immediate composition flow.",
+        "behavior": "The detail view explains source, scope and current connection state. “Use” inserts a draft chip only. Installation and sign-in are explicit separate actions.",
+        "mock": "<div class=\"mock\" role=\"img\" aria-label=\"Capabilities library — static interface concept\"><div class=\"chrome\"><span aria-hidden=\"true\">● ● ●</span><b>Capabilities library</b></div><div class=\"stage\"><div class=\"line \"><span class=\"pill blue\">Skills</span> <span class=\"pill \">Connectors</span></div><div class=\"panel \"><b>Summarize document</b><br>Extract claims, evidence and key points.<br><small>Installed skill · workspace available</small><br><span class=\"drawn-action primary\">Use in conversation</span></div><div class=\"panel \"><b>Drive</b><br>Find files you can access.<br><span class=\"pill green\">Connected</span> <span class=\"drawn-action \">Details</span></div></div></div>"
+      },
+      {
+        "letter": "C",
+        "title": "A workspace setup checklist",
+        "idea": "Curate capabilities per working folder and resolve missing connections before starting a task.",
+        "flow": [
+          "Open workspace setup",
+          "Choose relevant capabilities",
+          "Finish required connections"
+        ],
+        "upside": "Good for repeatable team/project workflows.",
+        "cost": "Workspace scoping requires app-side state and careful semantics.",
+        "behavior": "Describe selections as Diorama workspace defaults, not an access boundary. A task can still explicitly add or remove draft mentions; permissions remain independently enforced.",
+        "mock": "<div class=\"mock\" role=\"img\" aria-label=\"Diorama · workspace setup — static interface concept\"><div class=\"chrome\"><span aria-hidden=\"true\">● ● ●</span><b>Diorama · workspace setup</b></div><div class=\"stage\"><div class=\"line \"><b>Capabilities for this workspace</b></div><div class=\"panel \">✓ Code review skill<br>✓ Documentation skill<br>○ Issue tracker · needs sign-in</div><div class=\"line \"><span class=\"drawn-action primary\">Connect issue tracker</span></div><div class=\"panel \"><b>Default draft suggestions</b><br>Code review · Documentation</div><div class=\"line subtle\">Suggestions do not grant permissions</div></div></div>"
+      }
+    ]
+  },
+  {
+    "number": 9,
+    "title": "Branching + code review",
+    "why": "Explore an alternative conversation and inspect code findings without confusing history with file state.",
+    "contract": "Fork conversation history explicitly. A fork is not an isolated filesystem/worktree. Reviews may be inline or detached; findings need file/line provenance.",
+    "recommended": "A",
+    "options": [
+      {
+        "letter": "A",
+        "title": "Message actions + a review entry point",
+        "idea": "Branch from a message menu and start review from the Changes inspector.",
+        "flow": [
+          "Choose branch point or Review",
+          "Name the target",
+          "Open linked conversation"
+        ],
+        "upside": "A small, contextual extension of the existing interface.",
+        "cost": "Relationships are less visible once many branches exist.",
+        "behavior": "Show “Branch through this turn” precisely. New branches link back to their origin and display the working folder. Review prompts let users choose working changes or another supported target.",
+        "mock": "<div class=\"mock\" role=\"img\" aria-label=\"Conversation · branch &amp; review — static interface concept\"><div class=\"chrome\"><span aria-hidden=\"true\">● ● ●</span><b>Conversation · branch & review</b></div><div class=\"stage\"><div class=\"message\"><small>Codex</small><p>Approach A: add a filter to the current query.</p></div><div class=\"panel menu\">Message actions<br><b>Branch through this turn…</b><br>Copy message</div><div class=\"panel \"><b>New branch: Alternative query</b><br>From Search support · turn 8<br><small>Same working folder · files are shared</small></div><div class=\"line \"><span class=\"drawn-action primary\">Review working changes</span></div></div></div>"
+      },
+      {
+        "letter": "B",
+        "title": "A branch map",
+        "idea": "Show conversation ancestry as a small graph, with a selected branch’s review status beside it.",
+        "flow": [
+          "Open branch map",
+          "Choose an alternative",
+          "Review that branch’s current files"
+        ],
+        "upside": "Makes competing approaches easy to understand.",
+        "cost": "Graph complexity grows quickly and can suggest Git isolation.",
+        "behavior": "Use “Conversation branches” as the label. Never draw a merge action unless a separate implementation exists. Review results refer to the filesystem/commit target, not a frozen chat snapshot.",
+        "mock": "<div class=\"mock\" role=\"img\" aria-label=\"Conversation branches — static interface concept\"><div class=\"chrome\"><span aria-hidden=\"true\">● ● ●</span><b>Conversation branches</b></div><div class=\"stage\"><div class=\"panel root-node\"><b>Search support · turn 8</b></div><div class=\"branch-stem\">forked history ↓</div><div class=\"branch-pair\"><div class=\"panel emphasis\"><b>Filter approach</b><br>Current conversation</div><div class=\"panel \"><b>Query rewrite</b><br>Alternative</div></div><div class=\"line \">Selected: Filter approach</div><div class=\"line \"><span class=\"drawn-action primary\">Review working files</span></div><div class=\"line subtle\">Both conversations use /Diorama</div></div></div>"
+      },
+      {
+        "letter": "C",
+        "title": "A review workbench",
+        "idea": "Make code review a focused workspace with findings, diff context and a “Try fix in a new conversation” action.",
+        "flow": [
+          "Start a review",
+          "Inspect findings in diff",
+          "Branch a fix discussion"
+        ],
+        "upside": "Best for serious code review and resolving findings.",
+        "cost": "Largest feature; more than a simple branching menu.",
+        "behavior": "Keep review findings separate from agent-applied edits. “Try fix” forks the discussion, not the repository; any isolated worktree is a separate explicit setup.",
+        "mock": "<div class=\"mock\" role=\"img\" aria-label=\"Review · working changes — static interface concept\"><div class=\"chrome\"><span aria-hidden=\"true\">● ● ●</span><b>Review · working changes</b></div><div class=\"stage\"><div class=\"panel emphasis\"><b>Finding · archived flag ignored</b><br>Search.swift · line 43</div><div class=\"panel code\"><small>42</small> func results() {<br><del>43  query.activeOnly()</del><br><ins>43  query.match(filter)</ins><br><small>44</small> }</div><div class=\"line \"><span class=\"drawn-action \">Discuss finding</span> <span class=\"drawn-action primary\">Try fix in new conversation</span></div><div class=\"line subtle\">Review target: working changes · shared files</div></div></div>"
+      }
+    ]
+  },
+  {
+    "number": 10,
+    "title": "Prompt queues",
+    "why": "Prepare the next instructions without accidentally steering the work already running.",
+    "contract": "Queue is experimental. Show pending, starting and accepted states from server evidence; do not promise dependencies or scheduling the API does not provide.",
+    "recommended": "A",
+    "options": [
+      {
+        "letter": "A",
+        "title": "A queue just above the composer",
+        "idea": "Keep upcoming messages in a compact ordered tray, with explicit “Queue next” and “Send correction” actions.",
+        "flow": [
+          "Write next request",
+          "Queue next",
+          "Edit or reorder before start"
+        ],
+        "upside": "Best fit with steering and the existing composer.",
+        "cost": "Two send intentions need clear labeling.",
+        "behavior": "Show the exact queued text and edit/remove actions until it begins. Use keyboard Move up/down alternatives to drag-and-drop. Once starting, disable edits and reconcile with the server.",
+        "mock": "<div class=\"mock\" role=\"img\" aria-label=\"Conversation · up next — static interface concept\"><div class=\"chrome\"><span aria-hidden=\"true\">● ● ●</span><b>Conversation · up next</b></div><div class=\"stage\"><span class=\"pill blue\">Working: add filter</span><div class=\"panel \"><b>Up next · 2 messages</b><div class=\"line \">1  Run archived search checks  ↑ ↓</div><div class=\"line \">2  Summarize the changes  ↑ ↓</div><div class=\"line \">Each message: Edit · Remove</div></div><div class=\"composer\"><p>Also update the README.</p><div class=\"row\"><span class=\"drawn-action primary\">Queue next</span> <span class=\"drawn-action \">Send correction</span></div></div></div></div>"
+      },
+      {
+        "letter": "B",
+        "title": "An execution timeline",
+        "idea": "Make Now, Next and Later a vertical timeline beside the conversation.",
+        "flow": [
+          "Open timeline",
+          "Add a next message",
+          "Move it earlier or later"
+        ],
+        "upside": "Clear chronological model for long work.",
+        "cost": "Takes a persistent pane and can look like a scheduler.",
+        "behavior": "“Later” means queue order, not a clock time. Show which entry is starting and why the queue is paused, if known. Restart restores server-backed state rather than replaying drafts.",
+        "mock": "<div class=\"mock\" role=\"img\" aria-label=\"Task timeline — static interface concept\"><div class=\"chrome\"><span aria-hidden=\"true\">● ● ●</span><b>Task timeline</b></div><div class=\"stage\"><div class=\"line \"><small>NOW</small></div><div class=\"panel emphasis\">● Add archive filter</div><div class=\"line \">↓ after current work</div><div class=\"panel \"><small>NEXT</small><br>Run archived search checks<br>Edit · Remove</div><div class=\"line \">↓ queue order</div><div class=\"panel \"><small>LATER</small><br>Summarize the changes<br>Move up · Remove</div><div class=\"line \"><span class=\"drawn-action \">Add queued message</span></div></div></div>"
+      },
+      {
+        "letter": "C",
+        "title": "A batch outbox",
+        "idea": "Compose several independent follow-up messages in a batch editor before adding them to the queue.",
+        "flow": [
+          "Draft a batch",
+          "Review exact order",
+          "Add to queue"
+        ],
+        "upside": "Good for a prepared sequence of follow-ups.",
+        "cost": "Higher risk of stale instructions as earlier results change.",
+        "behavior": "These are editable messages, not a dependency graph. Let users review each before submission. Preserve per-entry outcomes if only some adds succeed; never retry the whole batch blindly.",
+        "mock": "<div class=\"mock\" role=\"img\" aria-label=\"Outbox · draft batch — static interface concept\"><div class=\"chrome\"><span aria-hidden=\"true\">● ● ●</span><b>Outbox · draft batch</b></div><div class=\"stage\"><div class=\"panel \"><b>1 · Run checks</b><br>Verify active and archived results.</div><div class=\"panel \"><b>2 · Update docs</b><br>Document the new filter.</div><div class=\"panel \"><b>3 · Report</b><br>Summarize changes and limitations.</div><div class=\"line \"><span class=\"drawn-action primary\">Add 3 messages to queue</span></div><div class=\"line subtle\">Drafts only · nothing submitted yet</div></div></div>"
+      }
+    ]
+  },
+  {
+    "number": 11,
+    "title": "Richer tool results",
+    "why": "Turn raw event payloads into readable evidence without hiding provenance.",
+    "contract": "Render known typed items and keep raw details. Distinguish running, successful, failed and unknown outcomes; only display available assets and verified associations.",
+    "recommended": "A",
+    "options": [
+      {
+        "letter": "A",
+        "title": "Compact inline result cards",
+        "idea": "Replace generic tool rows with recognizable command, source, file and image cards.",
+        "flow": [
+          "Read result summary",
+          "Expand evidence",
+          "Open referenced asset"
+        ],
+        "upside": "Preserves the conversation as the main narrative.",
+        "cost": "A busy tool run can create many cards.",
+        "behavior": "Collapse repeated operations into an expandable group. Success requires an explicit completion/exit result. An unavailable image gets a clear placeholder, not a fabricated thumbnail.",
+        "mock": "<div class=\"mock\" role=\"img\" aria-label=\"Conversation · typed results — static interface concept\"><div class=\"chrome\"><span aria-hidden=\"true\">● ● ●</span><b>Conversation · typed results</b></div><div class=\"stage\"><div class=\"panel \"><b>✓ Command finished</b><br><code>swift test</code><br><small>Exit 0 · 4 tests passed · 1.2 s</small></div><div class=\"panel \"><b>Source opened</b><br>App Server documentation<br><small>learn.chatgpt.com · Open source</small></div><div class=\"panel \"><b>Changed file</b><br>Search.swift · +8 −2<br><small>View diff · Raw details</small></div></div></div>"
+      },
+      {
+        "letter": "B",
+        "title": "An evidence inspector",
+        "idea": "Keep activity compact in the transcript; selecting a tool opens detailed evidence in the shared inspector.",
+        "flow": [
+          "Select an activity row",
+          "Inspect typed details",
+          "Return to conversation"
+        ],
+        "upside": "Keeps long conversations clean while exposing detail.",
+        "cost": "Information is less visible until selected.",
+        "behavior": "Inspector tabs switch between Result, Metadata and Raw. Pinned evidence stays labeled with its source turn; it never silently changes to another tool.",
+        "mock": "<div class=\"mock\" role=\"img\" aria-label=\"Activity + evidence — static interface concept\"><div class=\"chrome\"><span aria-hidden=\"true\">● ● ●</span><b>Activity + evidence</b></div><div class=\"stage\"><div class=\"split\"><div><div class=\"line \"><b>Tool activity</b></div><div class=\"panel emphasis\">✓ swift test</div><div class=\"line \">✓ Read Search.swift</div><div class=\"line \">✓ Open docs</div></div><aside><div class=\"line \"><b>Command result</b></div><span class=\"pill green\">Succeeded</span><div class=\"panel \"><code>swift test</code><br>Folder: /Diorama<br>Exit: 0<br>Duration: 1.2 s</div><div class=\"panel \">4 tests passed<br>No failures</div><div class=\"line \">Result · Metadata · Raw</div></aside></div></div></div>"
+      },
+      {
+        "letter": "C",
+        "title": "An artifacts and evidence shelf",
+        "idea": "Collect files, images, sources and verification results in a dedicated shelf linked back to the conversation.",
+        "flow": [
+          "Open shelf",
+          "Choose an artifact or check",
+          "Jump to source event"
+        ],
+        "upside": "Best for deliverables and visual work.",
+        "cost": "Needs deduplication and careful handling of mutable file paths.",
+        "behavior": "Group by actual result type and retain provenance. Label local previews as current file contents unless snapshots exist. Worker cards link to known child conversations, not inferred relationships.",
+        "mock": "<div class=\"mock\" role=\"img\" aria-label=\"Evidence shelf — static interface concept\"><div class=\"chrome\"><span aria-hidden=\"true\">● ● ●</span><b>Evidence shelf</b></div><div class=\"stage\"><div class=\"line \"><span class=\"pill blue\">Files</span> <span class=\"pill \">Sources</span> <span class=\"pill \">Checks</span></div><div class=\"artifact-grid\"><div class=\"panel \"><span class=\"file-icon\">{ }</span><b>Search.swift</b><small>Changed · turn 14</small></div><div class=\"panel \"><span class=\"file-icon\">✓</span><b>Test result</b><small>Exit 0 · turn 14</small></div></div><div class=\"panel \"><b>Source</b><br>App Server documentation<br><small>Linked to tool event</small></div><div class=\"line \">Open artifact · Jump to evidence</div></div></div>"
+      }
+    ]
+  }
+]

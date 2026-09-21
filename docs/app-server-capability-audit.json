@@ -1,0 +1,1869 @@
+{
+  "version": "0.153.4",
+  "audit_date": "2026-09-20",
+  "scope": "Native Sources/ only; scripts and prior probes are not product support. Ordinary export does not guarantee stable/runtime support.",
+  "ordinary_count": 99,
+  "experimental_union_count": 155,
+  "native_count_including_initialize": 36,
+  "methods": [
+    {
+      "method": "initialize",
+      "diorama_native_request": true,
+      "export": "ordinary",
+      "params": "InitializeParams",
+      "fields": [
+        "capabilities",
+        "clientInfo"
+      ],
+      "description": ""
+    },
+    {
+      "method": "server/diagnostics",
+      "diorama_native_request": false,
+      "export": "experimental-only",
+      "params": "ServerDiagnosticsParams",
+      "fields": [],
+      "description": "Read content-free, process-local diagnostics."
+    },
+    {
+      "method": "thread/start",
+      "diorama_native_request": true,
+      "export": "ordinary",
+      "params": "ThreadStartParams",
+      "fields": [
+        "allowProviderModelFallback",
+        "approvalPolicy",
+        "approvalsReviewer",
+        "baseInstructions",
+        "config",
+        "cwd",
+        "developerInstructions",
+        "dynamicTools",
+        "environments",
+        "ephemeral",
+        "experimentalRawEvents",
+        "historyMode",
+        "mockExperimentalField",
+        "model",
+        "modelProvider",
+        "multiAgentMode",
+        "permissions",
+        "personality",
+        "projectId",
+        "runtimeWorkspaceRoots",
+        "sandbox",
+        "selectedCapabilityRoots",
+        "serviceName",
+        "serviceTier",
+        "sessionStartSource",
+        "threadSource"
+      ],
+      "description": "NEW APIs"
+    },
+    {
+      "method": "thread/resume",
+      "diorama_native_request": true,
+      "export": "ordinary",
+      "params": "ThreadResumeParams",
+      "fields": [
+        "approvalPolicy",
+        "approvalsReviewer",
+        "baseInstructions",
+        "config",
+        "cwd",
+        "developerInstructions",
+        "excludeTurns",
+        "history",
+        "initialTurnsPage",
+        "model",
+        "modelProvider",
+        "path",
+        "permissions",
+        "personality",
+        "runtimeWorkspaceRoots",
+        "sandbox",
+        "serviceTier",
+        "threadId"
+      ],
+      "description": "There are three ways to resume a thread: 1. By thread_id: load the thread from disk by thread_id and resume it. 2. By history: instantiate the thread from memory and resume it. 3. By path: load the thread from disk by path and resume it.\n\nFor non-running threads, the precedence is: history > non-empty path > thread_id. If using history or a non-empty path for a non-running thread, the thread_id param will be ignored.\n\nIf thread_id identifies a running thread, app-server rejoins that thread and treats a non-empty path as a consistency check against the active rollout path. Empty string path values are treated as absent.\n\nPrefer using thread_id whenever possible."
+    },
+    {
+      "method": "thread/fork",
+      "diorama_native_request": true,
+      "export": "ordinary",
+      "params": "ThreadForkParams",
+      "fields": [
+        "approvalPolicy",
+        "approvalsReviewer",
+        "baseInstructions",
+        "beforeTurnId",
+        "config",
+        "cwd",
+        "deferGoalContinuation",
+        "developerInstructions",
+        "ephemeral",
+        "excludeTurns",
+        "lastTurnId",
+        "model",
+        "modelProvider",
+        "path",
+        "permissions",
+        "runtimeWorkspaceRoots",
+        "sandbox",
+        "serviceTier",
+        "threadId",
+        "threadSource"
+      ],
+      "description": "There are two ways to fork a thread: 1. By thread_id: load the thread from disk by thread_id and fork it into a new thread. 2. By path: load the thread from disk by path and fork it into a new thread.\n\nIf using a non-empty path, the thread_id param will be ignored. Empty string path values are treated as absent.\n\nPrefer using thread_id whenever possible."
+    },
+    {
+      "method": "thread/archive",
+      "diorama_native_request": true,
+      "export": "ordinary",
+      "params": "ThreadArchiveParams",
+      "fields": [
+        "threadId"
+      ],
+      "description": ""
+    },
+    {
+      "method": "thread/delete",
+      "diorama_native_request": false,
+      "export": "ordinary",
+      "params": "ThreadDeleteParams",
+      "fields": [
+        "threadId"
+      ],
+      "description": ""
+    },
+    {
+      "method": "thread/unsubscribe",
+      "diorama_native_request": false,
+      "export": "ordinary",
+      "params": "ThreadUnsubscribeParams",
+      "fields": [
+        "threadId"
+      ],
+      "description": ""
+    },
+    {
+      "method": "thread/increment_elicitation",
+      "diorama_native_request": false,
+      "export": "experimental-only",
+      "params": "ThreadIncrementElicitationParams",
+      "fields": [
+        "threadId"
+      ],
+      "description": "Parameters for `thread/increment_elicitation`."
+    },
+    {
+      "method": "thread/decrement_elicitation",
+      "diorama_native_request": false,
+      "export": "experimental-only",
+      "params": "ThreadDecrementElicitationParams",
+      "fields": [
+        "threadId"
+      ],
+      "description": "Parameters for `thread/decrement_elicitation`."
+    },
+    {
+      "method": "thread/name/set",
+      "diorama_native_request": true,
+      "export": "ordinary",
+      "params": "ThreadSetNameParams",
+      "fields": [
+        "name",
+        "threadId"
+      ],
+      "description": ""
+    },
+    {
+      "method": "thread/goal/set",
+      "diorama_native_request": true,
+      "export": "ordinary",
+      "params": "ThreadGoalSetParams",
+      "fields": [
+        "objective",
+        "status",
+        "threadId",
+        "tokenBudget"
+      ],
+      "description": ""
+    },
+    {
+      "method": "thread/goal/get",
+      "diorama_native_request": true,
+      "export": "ordinary",
+      "params": "ThreadGoalGetParams",
+      "fields": [
+        "threadId"
+      ],
+      "description": ""
+    },
+    {
+      "method": "thread/goal/clear",
+      "diorama_native_request": true,
+      "export": "ordinary",
+      "params": "ThreadGoalClearParams",
+      "fields": [
+        "threadId"
+      ],
+      "description": ""
+    },
+    {
+      "method": "thread/queue/add",
+      "diorama_native_request": true,
+      "export": "experimental-only",
+      "params": "ThreadQueueAddParams",
+      "fields": [
+        "clientUserMessageId",
+        "input",
+        "threadId"
+      ],
+      "description": ""
+    },
+    {
+      "method": "thread/queue/list",
+      "diorama_native_request": true,
+      "export": "experimental-only",
+      "params": "ThreadQueueListParams",
+      "fields": [
+        "cursor",
+        "limit",
+        "threadId"
+      ],
+      "description": ""
+    },
+    {
+      "method": "thread/queue/update",
+      "diorama_native_request": false,
+      "export": "experimental-only",
+      "params": "ThreadQueueUpdateParams",
+      "fields": [
+        "input",
+        "queuedSubmissionId",
+        "threadId"
+      ],
+      "description": ""
+    },
+    {
+      "method": "thread/queue/delete",
+      "diorama_native_request": true,
+      "export": "experimental-only",
+      "params": "ThreadQueueDeleteParams",
+      "fields": [
+        "queuedSubmissionId",
+        "threadId"
+      ],
+      "description": ""
+    },
+    {
+      "method": "thread/queue/reorder",
+      "diorama_native_request": false,
+      "export": "experimental-only",
+      "params": "ThreadQueueReorderParams",
+      "fields": [
+        "queuedSubmissionIds",
+        "threadId"
+      ],
+      "description": ""
+    },
+    {
+      "method": "thread/queue/start",
+      "diorama_native_request": true,
+      "export": "experimental-only",
+      "params": "ThreadQueueStartParams",
+      "fields": [
+        "queuedSubmissionId",
+        "threadId"
+      ],
+      "description": ""
+    },
+    {
+      "method": "thread/metadata/update",
+      "diorama_native_request": false,
+      "export": "ordinary",
+      "params": "ThreadMetadataUpdateParams",
+      "fields": [
+        "gitInfo",
+        "projectId",
+        "threadId"
+      ],
+      "description": ""
+    },
+    {
+      "method": "thread/section/move",
+      "diorama_native_request": false,
+      "export": "ordinary",
+      "params": "ThreadSectionMoveParams",
+      "fields": [
+        "beforeThreadId",
+        "sectionId",
+        "threadId"
+      ],
+      "description": "Parameters for moving a thread within a server-owned section ordering."
+    },
+    {
+      "method": "thread/settings/update",
+      "diorama_native_request": false,
+      "export": "experimental-only",
+      "params": "ThreadSettingsUpdateParams",
+      "fields": [
+        "approvalPolicy",
+        "approvalsReviewer",
+        "collaborationMode",
+        "cwd",
+        "effort",
+        "model",
+        "multiAgentMode",
+        "permissions",
+        "personality",
+        "sandboxPolicy",
+        "serviceTier",
+        "summary",
+        "threadId"
+      ],
+      "description": ""
+    },
+    {
+      "method": "thread/memoryMode/set",
+      "diorama_native_request": false,
+      "export": "experimental-only",
+      "params": "ThreadMemoryModeSetParams",
+      "fields": [
+        "mode",
+        "threadId"
+      ],
+      "description": ""
+    },
+    {
+      "method": "memory/reset",
+      "diorama_native_request": false,
+      "export": "experimental-only",
+      "params": null,
+      "fields": [],
+      "description": ""
+    },
+    {
+      "method": "thread/unarchive",
+      "diorama_native_request": true,
+      "export": "ordinary",
+      "params": "ThreadUnarchiveParams",
+      "fields": [
+        "threadId"
+      ],
+      "description": ""
+    },
+    {
+      "method": "thread/compact/start",
+      "diorama_native_request": true,
+      "export": "ordinary",
+      "params": "ThreadCompactStartParams",
+      "fields": [
+        "threadId"
+      ],
+      "description": ""
+    },
+    {
+      "method": "thread/shellCommand",
+      "diorama_native_request": false,
+      "export": "ordinary",
+      "params": "ThreadShellCommandParams",
+      "fields": [
+        "command",
+        "threadId",
+        "timeoutMs"
+      ],
+      "description": ""
+    },
+    {
+      "method": "thread/approveGuardianDeniedAction",
+      "diorama_native_request": false,
+      "export": "ordinary",
+      "params": "ThreadApproveGuardianDeniedActionParams",
+      "fields": [
+        "event",
+        "threadId"
+      ],
+      "description": ""
+    },
+    {
+      "method": "thread/backgroundTerminals/clean",
+      "diorama_native_request": false,
+      "export": "experimental-only",
+      "params": "ThreadBackgroundTerminalsCleanParams",
+      "fields": [
+        "threadId"
+      ],
+      "description": ""
+    },
+    {
+      "method": "thread/backgroundTerminals/list",
+      "diorama_native_request": true,
+      "export": "experimental-only",
+      "params": "ThreadBackgroundTerminalsListParams",
+      "fields": [
+        "cursor",
+        "limit",
+        "threadId"
+      ],
+      "description": ""
+    },
+    {
+      "method": "thread/backgroundTerminals/terminate",
+      "diorama_native_request": true,
+      "export": "experimental-only",
+      "params": "ThreadBackgroundTerminalsTerminateParams",
+      "fields": [
+        "processId",
+        "threadId"
+      ],
+      "description": ""
+    },
+    {
+      "method": "thread/rollback",
+      "diorama_native_request": false,
+      "export": "ordinary",
+      "params": "ThreadRollbackParams",
+      "fields": [
+        "numTurns",
+        "threadId"
+      ],
+      "description": "DEPRECATED: `thread/rollback` will be removed soon."
+    },
+    {
+      "method": "thread/revert",
+      "diorama_native_request": false,
+      "export": "ordinary",
+      "params": "ThreadRevertParams",
+      "fields": [
+        "beforeTurnId",
+        "threadId"
+      ],
+      "description": "Replace a paginated thread's durable history with the prefix before one turn.\n\nThis only changes persisted conversation history. It does not revert local file changes."
+    },
+    {
+      "method": "thread/list",
+      "diorama_native_request": true,
+      "export": "ordinary",
+      "params": "ThreadListParams",
+      "fields": [
+        "ancestorThreadId",
+        "archived",
+        "cursor",
+        "cwd",
+        "limit",
+        "modelProviders",
+        "parentThreadId",
+        "projectId",
+        "searchTerm",
+        "sectionId",
+        "sortDirection",
+        "sortKey",
+        "sourceKinds",
+        "useStateDbOnly"
+      ],
+      "description": ""
+    },
+    {
+      "method": "project/list",
+      "diorama_native_request": false,
+      "export": "experimental-only",
+      "params": "ProjectListParams",
+      "fields": [
+        "cursor",
+        "limit",
+        "sortDirection",
+        "sortKey"
+      ],
+      "description": ""
+    },
+    {
+      "method": "project/read",
+      "diorama_native_request": false,
+      "export": "experimental-only",
+      "params": "ProjectReadParams",
+      "fields": [
+        "projectId"
+      ],
+      "description": ""
+    },
+    {
+      "method": "project/create",
+      "diorama_native_request": false,
+      "export": "experimental-only",
+      "params": "ProjectCreateParams",
+      "fields": [
+        "idempotencyKey",
+        "metadata",
+        "name",
+        "roots"
+      ],
+      "description": ""
+    },
+    {
+      "method": "project/import",
+      "diorama_native_request": false,
+      "export": "experimental-only",
+      "params": "ProjectImportParams",
+      "fields": [
+        "idempotencyKey",
+        "metadata",
+        "name",
+        "roots",
+        "threads"
+      ],
+      "description": ""
+    },
+    {
+      "method": "project/update",
+      "diorama_native_request": false,
+      "export": "experimental-only",
+      "params": "ProjectUpdateParams",
+      "fields": [
+        "metadata",
+        "name",
+        "projectId",
+        "roots"
+      ],
+      "description": ""
+    },
+    {
+      "method": "project/move",
+      "diorama_native_request": false,
+      "export": "experimental-only",
+      "params": "ProjectMoveParams",
+      "fields": [
+        "beforeProjectId",
+        "projectId"
+      ],
+      "description": ""
+    },
+    {
+      "method": "project/delete",
+      "diorama_native_request": false,
+      "export": "experimental-only",
+      "params": "ProjectDeleteParams",
+      "fields": [
+        "projectId"
+      ],
+      "description": ""
+    },
+    {
+      "method": "threadSection/list",
+      "diorama_native_request": false,
+      "export": "ordinary",
+      "params": "ThreadSectionListParams",
+      "fields": [
+        "cursor",
+        "limit"
+      ],
+      "description": "Parameters for listing independently persisted thread sections."
+    },
+    {
+      "method": "threadSection/create",
+      "diorama_native_request": false,
+      "export": "ordinary",
+      "params": "ThreadSectionCreateParams",
+      "fields": [
+        "appearance",
+        "name"
+      ],
+      "description": "Parameters for creating an independently persisted thread section."
+    },
+    {
+      "method": "threadSection/update",
+      "diorama_native_request": false,
+      "export": "ordinary",
+      "params": "ThreadSectionUpdateParams",
+      "fields": [
+        "appearance",
+        "name",
+        "sectionId"
+      ],
+      "description": "Parameters for updating an independently persisted thread section."
+    },
+    {
+      "method": "threadSection/delete",
+      "diorama_native_request": false,
+      "export": "ordinary",
+      "params": "ThreadSectionDeleteParams",
+      "fields": [
+        "sectionId"
+      ],
+      "description": "Parameters for deleting an independently persisted thread section."
+    },
+    {
+      "method": "thread/search",
+      "diorama_native_request": true,
+      "export": "experimental-only",
+      "params": "ThreadSearchParams",
+      "fields": [
+        "archived",
+        "cursor",
+        "limit",
+        "searchTerm",
+        "sortDirection",
+        "sortKey",
+        "sourceKinds"
+      ],
+      "description": ""
+    },
+    {
+      "method": "thread/searchOccurrences",
+      "diorama_native_request": true,
+      "export": "experimental-only",
+      "params": "ThreadSearchOccurrencesParams",
+      "fields": [
+        "cursor",
+        "limit",
+        "searchTerm",
+        "threadId"
+      ],
+      "description": "Parameters for searching visible message occurrences within one paginated thread."
+    },
+    {
+      "method": "thread/loaded/list",
+      "diorama_native_request": false,
+      "export": "ordinary",
+      "params": "ThreadLoadedListParams",
+      "fields": [
+        "cursor",
+        "limit"
+      ],
+      "description": ""
+    },
+    {
+      "method": "thread/read",
+      "diorama_native_request": true,
+      "export": "ordinary",
+      "params": "ThreadReadParams",
+      "fields": [
+        "includeTurns",
+        "threadId"
+      ],
+      "description": ""
+    },
+    {
+      "method": "thread/turns/list",
+      "diorama_native_request": false,
+      "export": "ordinary",
+      "params": "ThreadTurnsListParams",
+      "fields": [
+        "cursor",
+        "itemsView",
+        "limit",
+        "sortDirection",
+        "threadId"
+      ],
+      "description": ""
+    },
+    {
+      "method": "thread/items/list",
+      "diorama_native_request": true,
+      "export": "ordinary",
+      "params": "ThreadItemsListParams",
+      "fields": [
+        "cursor",
+        "limit",
+        "sortDirection",
+        "threadId",
+        "turnId"
+      ],
+      "description": ""
+    },
+    {
+      "method": "thread/inject_items",
+      "diorama_native_request": false,
+      "export": "ordinary",
+      "params": "ThreadInjectItemsParams",
+      "fields": [
+        "items",
+        "threadId"
+      ],
+      "description": "Append raw Responses API items to the thread history without starting a user turn."
+    },
+    {
+      "method": "skills/list",
+      "diorama_native_request": true,
+      "export": "ordinary",
+      "params": "SkillsListParams",
+      "fields": [
+        "cwds",
+        "forceReload"
+      ],
+      "description": ""
+    },
+    {
+      "method": "skills/extraRoots/set",
+      "diorama_native_request": false,
+      "export": "ordinary",
+      "params": "SkillsExtraRootsSetParams",
+      "fields": [
+        "extraRoots"
+      ],
+      "description": ""
+    },
+    {
+      "method": "hooks/list",
+      "diorama_native_request": false,
+      "export": "ordinary",
+      "params": "HooksListParams",
+      "fields": [
+        "cwds"
+      ],
+      "description": ""
+    },
+    {
+      "method": "marketplace/add",
+      "diorama_native_request": false,
+      "export": "ordinary",
+      "params": "MarketplaceAddParams",
+      "fields": [
+        "refName",
+        "source",
+        "sparsePaths"
+      ],
+      "description": ""
+    },
+    {
+      "method": "marketplace/remove",
+      "diorama_native_request": false,
+      "export": "ordinary",
+      "params": "MarketplaceRemoveParams",
+      "fields": [
+        "marketplaceName"
+      ],
+      "description": ""
+    },
+    {
+      "method": "marketplace/upgrade",
+      "diorama_native_request": false,
+      "export": "ordinary",
+      "params": "MarketplaceUpgradeParams",
+      "fields": [
+        "marketplaceName"
+      ],
+      "description": ""
+    },
+    {
+      "method": "plugin/list",
+      "diorama_native_request": false,
+      "export": "ordinary",
+      "params": "PluginListParams",
+      "fields": [
+        "cwds",
+        "forceRefetch",
+        "marketplaceKinds"
+      ],
+      "description": ""
+    },
+    {
+      "method": "plugin/search",
+      "diorama_native_request": false,
+      "export": "experimental-only",
+      "params": "PluginSearchParams",
+      "fields": [
+        "cursor",
+        "cwds",
+        "limit",
+        "scope",
+        "searchTerm"
+      ],
+      "description": ""
+    },
+    {
+      "method": "plugin/installed",
+      "diorama_native_request": false,
+      "export": "ordinary",
+      "params": "PluginInstalledParams",
+      "fields": [
+        "cwds",
+        "installSuggestionPluginNames"
+      ],
+      "description": ""
+    },
+    {
+      "method": "plugin/reconcile",
+      "diorama_native_request": false,
+      "export": "ordinary",
+      "params": "PluginReconcileParams",
+      "fields": [
+        "reason"
+      ],
+      "description": ""
+    },
+    {
+      "method": "plugin/read",
+      "diorama_native_request": false,
+      "export": "ordinary",
+      "params": "PluginReadParams",
+      "fields": [
+        "marketplacePath",
+        "pluginName",
+        "remoteMarketplaceName"
+      ],
+      "description": ""
+    },
+    {
+      "method": "plugin/skill/read",
+      "diorama_native_request": false,
+      "export": "ordinary",
+      "params": "PluginSkillReadParams",
+      "fields": [
+        "remoteMarketplaceName",
+        "remotePluginId",
+        "skillName"
+      ],
+      "description": ""
+    },
+    {
+      "method": "plugin/share/save",
+      "diorama_native_request": false,
+      "export": "ordinary",
+      "params": "PluginShareSaveParams",
+      "fields": [
+        "discoverability",
+        "pluginPath",
+        "remotePluginId",
+        "shareTargets"
+      ],
+      "description": ""
+    },
+    {
+      "method": "plugin/share/updateTargets",
+      "diorama_native_request": false,
+      "export": "ordinary",
+      "params": "PluginShareUpdateTargetsParams",
+      "fields": [
+        "discoverability",
+        "remotePluginId",
+        "shareTargets"
+      ],
+      "description": ""
+    },
+    {
+      "method": "plugin/share/list",
+      "diorama_native_request": false,
+      "export": "ordinary",
+      "params": "PluginShareListParams",
+      "fields": [],
+      "description": ""
+    },
+    {
+      "method": "plugin/share/checkout",
+      "diorama_native_request": false,
+      "export": "ordinary",
+      "params": "PluginShareCheckoutParams",
+      "fields": [
+        "remotePluginId"
+      ],
+      "description": ""
+    },
+    {
+      "method": "plugin/share/delete",
+      "diorama_native_request": false,
+      "export": "ordinary",
+      "params": "PluginShareDeleteParams",
+      "fields": [
+        "remotePluginId"
+      ],
+      "description": ""
+    },
+    {
+      "method": "app/read",
+      "diorama_native_request": false,
+      "export": "ordinary",
+      "params": "AppsReadParams",
+      "fields": [
+        "appIds",
+        "includeTools",
+        "threadId"
+      ],
+      "description": "EXPERIMENTAL - read metadata for specific apps/connectors."
+    },
+    {
+      "method": "app/list",
+      "diorama_native_request": true,
+      "export": "ordinary",
+      "params": "AppsListParams",
+      "fields": [
+        "cursor",
+        "forceRefetch",
+        "limit",
+        "threadId"
+      ],
+      "description": "EXPERIMENTAL - list available apps/connectors."
+    },
+    {
+      "method": "app/installed",
+      "diorama_native_request": true,
+      "export": "ordinary",
+      "params": "AppsInstalledParams",
+      "fields": [
+        "forceRefresh",
+        "threadId"
+      ],
+      "description": "Read the committed installed connector runtime snapshot."
+    },
+    {
+      "method": "fs/readFile",
+      "diorama_native_request": false,
+      "export": "ordinary",
+      "params": "FsReadFileParams",
+      "fields": [
+        "path"
+      ],
+      "description": "Read a file from the host filesystem."
+    },
+    {
+      "method": "fs/writeFile",
+      "diorama_native_request": false,
+      "export": "ordinary",
+      "params": "FsWriteFileParams",
+      "fields": [
+        "dataBase64",
+        "path"
+      ],
+      "description": "Write a file on the host filesystem."
+    },
+    {
+      "method": "fs/createDirectory",
+      "diorama_native_request": false,
+      "export": "ordinary",
+      "params": "FsCreateDirectoryParams",
+      "fields": [
+        "path",
+        "recursive"
+      ],
+      "description": "Create a directory on the host filesystem."
+    },
+    {
+      "method": "fs/getMetadata",
+      "diorama_native_request": false,
+      "export": "ordinary",
+      "params": "FsGetMetadataParams",
+      "fields": [
+        "path"
+      ],
+      "description": "Request metadata for an absolute path."
+    },
+    {
+      "method": "fs/readDirectory",
+      "diorama_native_request": false,
+      "export": "ordinary",
+      "params": "FsReadDirectoryParams",
+      "fields": [
+        "path"
+      ],
+      "description": "List direct child names for a directory."
+    },
+    {
+      "method": "fs/remove",
+      "diorama_native_request": false,
+      "export": "ordinary",
+      "params": "FsRemoveParams",
+      "fields": [
+        "force",
+        "path",
+        "recursive"
+      ],
+      "description": "Remove a file or directory tree from the host filesystem."
+    },
+    {
+      "method": "fs/copy",
+      "diorama_native_request": false,
+      "export": "ordinary",
+      "params": "FsCopyParams",
+      "fields": [
+        "destinationPath",
+        "recursive",
+        "sourcePath"
+      ],
+      "description": "Copy a file or directory tree on the host filesystem."
+    },
+    {
+      "method": "fs/watch",
+      "diorama_native_request": false,
+      "export": "ordinary",
+      "params": "FsWatchParams",
+      "fields": [
+        "path",
+        "watchId"
+      ],
+      "description": "Start filesystem watch notifications for an absolute path."
+    },
+    {
+      "method": "fs/unwatch",
+      "diorama_native_request": false,
+      "export": "ordinary",
+      "params": "FsUnwatchParams",
+      "fields": [
+        "watchId"
+      ],
+      "description": "Stop filesystem watch notifications for a prior `fs/watch`."
+    },
+    {
+      "method": "skills/config/write",
+      "diorama_native_request": true,
+      "export": "ordinary",
+      "params": "SkillsConfigWriteParams",
+      "fields": [
+        "enabled",
+        "name",
+        "path"
+      ],
+      "description": ""
+    },
+    {
+      "method": "plugin/install",
+      "diorama_native_request": false,
+      "export": "ordinary",
+      "params": "PluginInstallParams",
+      "fields": [
+        "installAttemptId",
+        "marketplacePath",
+        "pluginName",
+        "remoteMarketplaceName"
+      ],
+      "description": ""
+    },
+    {
+      "method": "plugin/uninstall",
+      "diorama_native_request": false,
+      "export": "ordinary",
+      "params": "PluginUninstallParams",
+      "fields": [
+        "pluginId"
+      ],
+      "description": ""
+    },
+    {
+      "method": "turn/start",
+      "diorama_native_request": true,
+      "export": "ordinary",
+      "params": "TurnStartParams",
+      "fields": [
+        "additionalContext",
+        "approvalPolicy",
+        "approvalsReviewer",
+        "clientUserMessageId",
+        "collaborationMode",
+        "cwd",
+        "cyberAccessProgram",
+        "effort",
+        "environments",
+        "input",
+        "model",
+        "multiAgentMode",
+        "outputSchema",
+        "permissions",
+        "personality",
+        "responsesapiClientMetadata",
+        "runtimeWorkspaceRoots",
+        "sandboxPolicy",
+        "serviceTier",
+        "serviceTierForTurn",
+        "summary",
+        "threadId",
+        "toolOutput",
+        "turnTrigger"
+      ],
+      "description": ""
+    },
+    {
+      "method": "turn/settings/update",
+      "diorama_native_request": false,
+      "export": "experimental-only",
+      "params": "TurnSettingsUpdateParams",
+      "fields": [
+        "approvalsReviewer",
+        "effort",
+        "model",
+        "serviceTier",
+        "summary",
+        "threadId",
+        "turnId"
+      ],
+      "description": "Experimental settings changes for one running turn, not future turns. Unsupported fields are rejected rather than silently ignored. Any live task kind may accept publication. Child sessions and consumers of frozen initial settings are unchanged."
+    },
+    {
+      "method": "turn/steer",
+      "diorama_native_request": true,
+      "export": "ordinary",
+      "params": "TurnSteerParams",
+      "fields": [
+        "additionalContext",
+        "clientUserMessageId",
+        "expectedTurnId",
+        "input",
+        "responsesapiClientMetadata",
+        "threadId"
+      ],
+      "description": ""
+    },
+    {
+      "method": "turn/interrupt",
+      "diorama_native_request": true,
+      "export": "ordinary",
+      "params": "TurnInterruptParams",
+      "fields": [
+        "threadId",
+        "turnId"
+      ],
+      "description": ""
+    },
+    {
+      "method": "thread/realtime/start",
+      "diorama_native_request": false,
+      "export": "experimental-only",
+      "params": "ThreadRealtimeStartParams",
+      "fields": [
+        "clientManagedHandoffs",
+        "codexResponseHandoffChannelPrefixes",
+        "codexResponseHandoffMode",
+        "codexResponseItemPrefix",
+        "codexResponsesAsItems",
+        "delegationAckFiller",
+        "flushTranscriptTailOnSessionEnd",
+        "includeStartupContext",
+        "initialItems",
+        "model",
+        "outputModality",
+        "prompt",
+        "realtimeEndInstructions",
+        "realtimeSessionId",
+        "realtimeStartInstructions",
+        "threadId",
+        "transport",
+        "version",
+        "voice"
+      ],
+      "description": "EXPERIMENTAL - start a thread-scoped realtime session."
+    },
+    {
+      "method": "thread/realtime/appendAudio",
+      "diorama_native_request": false,
+      "export": "experimental-only",
+      "params": "ThreadRealtimeAppendAudioParams",
+      "fields": [
+        "audio",
+        "threadId"
+      ],
+      "description": "EXPERIMENTAL - append audio input to thread realtime."
+    },
+    {
+      "method": "thread/realtime/appendText",
+      "diorama_native_request": false,
+      "export": "experimental-only",
+      "params": "ThreadRealtimeAppendTextParams",
+      "fields": [
+        "role",
+        "text",
+        "threadId"
+      ],
+      "description": "EXPERIMENTAL - append text input to thread realtime."
+    },
+    {
+      "method": "thread/realtime/appendSpeech",
+      "diorama_native_request": false,
+      "export": "experimental-only",
+      "params": "ThreadRealtimeAppendSpeechParams",
+      "fields": [
+        "text",
+        "threadId"
+      ],
+      "description": "EXPERIMENTAL - append speakable text to thread realtime."
+    },
+    {
+      "method": "thread/realtime/stop",
+      "diorama_native_request": false,
+      "export": "experimental-only",
+      "params": "ThreadRealtimeStopParams",
+      "fields": [
+        "threadId"
+      ],
+      "description": "EXPERIMENTAL - stop thread realtime."
+    },
+    {
+      "method": "thread/timeline/list",
+      "diorama_native_request": false,
+      "export": "experimental-only",
+      "params": "ThreadTimelineListParams",
+      "fields": [
+        "cursor",
+        "limit",
+        "threadId"
+      ],
+      "description": "EXPERIMENTAL - list ordinary and realtime thread history in rollout order."
+    },
+    {
+      "method": "thread/realtime/listVoices",
+      "diorama_native_request": false,
+      "export": "experimental-only",
+      "params": "ThreadRealtimeListVoicesParams",
+      "fields": [],
+      "description": "EXPERIMENTAL - list voices supported by thread realtime."
+    },
+    {
+      "method": "review/start",
+      "diorama_native_request": true,
+      "export": "ordinary",
+      "params": "ReviewStartParams",
+      "fields": [
+        "delivery",
+        "target",
+        "threadId"
+      ],
+      "description": ""
+    },
+    {
+      "method": "model/list",
+      "diorama_native_request": true,
+      "export": "ordinary",
+      "params": "ModelListParams",
+      "fields": [
+        "cursor",
+        "includeHidden",
+        "limit"
+      ],
+      "description": ""
+    },
+    {
+      "method": "modelProvider/capabilities/read",
+      "diorama_native_request": false,
+      "export": "ordinary",
+      "params": "ModelProviderCapabilitiesReadParams",
+      "fields": [],
+      "description": ""
+    },
+    {
+      "method": "experimentalFeature/list",
+      "diorama_native_request": false,
+      "export": "ordinary",
+      "params": "ExperimentalFeatureListParams",
+      "fields": [
+        "cursor",
+        "limit",
+        "threadId"
+      ],
+      "description": ""
+    },
+    {
+      "method": "permissionProfile/list",
+      "diorama_native_request": false,
+      "export": "ordinary",
+      "params": "PermissionProfileListParams",
+      "fields": [
+        "cursor",
+        "cwd",
+        "limit"
+      ],
+      "description": ""
+    },
+    {
+      "method": "experimentalFeature/enablement/set",
+      "diorama_native_request": false,
+      "export": "ordinary",
+      "params": "ExperimentalFeatureEnablementSetParams",
+      "fields": [
+        "enablement"
+      ],
+      "description": ""
+    },
+    {
+      "method": "remoteControl/enable",
+      "diorama_native_request": false,
+      "export": "experimental-only",
+      "params": null,
+      "fields": [],
+      "description": ""
+    },
+    {
+      "method": "remoteControl/disable",
+      "diorama_native_request": false,
+      "export": "experimental-only",
+      "params": null,
+      "fields": [],
+      "description": ""
+    },
+    {
+      "method": "remoteControl/status/read",
+      "diorama_native_request": false,
+      "export": "experimental-only",
+      "params": null,
+      "fields": [],
+      "description": ""
+    },
+    {
+      "method": "remoteControl/pairing/start",
+      "diorama_native_request": false,
+      "export": "experimental-only",
+      "params": "RemoteControlPairingStartParams",
+      "fields": [
+        "manualCode"
+      ],
+      "description": ""
+    },
+    {
+      "method": "remoteControl/pairing/status",
+      "diorama_native_request": false,
+      "export": "experimental-only",
+      "params": "RemoteControlPairingStatusParams",
+      "fields": [
+        "manualPairingCode",
+        "pairingCode"
+      ],
+      "description": ""
+    },
+    {
+      "method": "remoteControl/client/list",
+      "diorama_native_request": false,
+      "export": "experimental-only",
+      "params": "RemoteControlClientsListParams",
+      "fields": [
+        "cursor",
+        "environmentId",
+        "limit",
+        "order"
+      ],
+      "description": ""
+    },
+    {
+      "method": "remoteControl/client/revoke",
+      "diorama_native_request": false,
+      "export": "experimental-only",
+      "params": "RemoteControlClientsRevokeParams",
+      "fields": [
+        "clientId",
+        "environmentId"
+      ],
+      "description": ""
+    },
+    {
+      "method": "collaborationMode/list",
+      "diorama_native_request": true,
+      "export": "experimental-only",
+      "params": "CollaborationModeListParams",
+      "fields": [],
+      "description": "EXPERIMENTAL - list collaboration mode presets."
+    },
+    {
+      "method": "mock/experimentalMethod",
+      "diorama_native_request": false,
+      "export": "experimental-only",
+      "params": "MockExperimentalMethodParams",
+      "fields": [
+        "value"
+      ],
+      "description": "Test-only method used to validate experimental gating."
+    },
+    {
+      "method": "environment/add",
+      "diorama_native_request": false,
+      "export": "experimental-only",
+      "params": "EnvironmentAddParams",
+      "fields": [
+        "connectTimeoutMs",
+        "environmentId",
+        "execServerUrl"
+      ],
+      "description": "Adds or replaces a remote environment by id for later selection."
+    },
+    {
+      "method": "environment/info",
+      "diorama_native_request": false,
+      "export": "experimental-only",
+      "params": "EnvironmentInfoParams",
+      "fields": [
+        "environmentId"
+      ],
+      "description": "Reads information from a configured execution environment."
+    },
+    {
+      "method": "environment/status",
+      "diorama_native_request": false,
+      "export": "experimental-only",
+      "params": "EnvironmentStatusParams",
+      "fields": [
+        "environmentId"
+      ],
+      "description": "Parameters for reading the current status of one configured environment."
+    },
+    {
+      "method": "mcpServer/oauth/login",
+      "diorama_native_request": true,
+      "export": "ordinary",
+      "params": "McpServerOauthLoginParams",
+      "fields": [
+        "clientRegistration",
+        "name",
+        "scopes",
+        "threadId",
+        "timeoutSecs"
+      ],
+      "description": ""
+    },
+    {
+      "method": "config/mcpServer/reload",
+      "diorama_native_request": true,
+      "export": "ordinary",
+      "params": null,
+      "fields": [],
+      "description": ""
+    },
+    {
+      "method": "mcpServerStatus/list",
+      "diorama_native_request": true,
+      "export": "ordinary",
+      "params": "ListMcpServerStatusParams",
+      "fields": [
+        "cursor",
+        "detail",
+        "limit",
+        "threadId"
+      ],
+      "description": ""
+    },
+    {
+      "method": "mcpServer/resource/read",
+      "diorama_native_request": false,
+      "export": "ordinary",
+      "params": "McpResourceReadParams",
+      "fields": [
+        "connectorId",
+        "originCallId",
+        "server",
+        "threadId",
+        "uri"
+      ],
+      "description": ""
+    },
+    {
+      "method": "mcpServer/event/stream/start",
+      "diorama_native_request": false,
+      "export": "experimental-only",
+      "params": "McpServerEventStreamStartParams",
+      "fields": [
+        "_meta",
+        "arguments",
+        "name",
+        "server",
+        "subscriptionId",
+        "threadId"
+      ],
+      "description": ""
+    },
+    {
+      "method": "mcpServer/event/stream/stop",
+      "diorama_native_request": false,
+      "export": "experimental-only",
+      "params": "McpServerEventStreamStopParams",
+      "fields": [
+        "subscriptionId"
+      ],
+      "description": ""
+    },
+    {
+      "method": "mcpServer/tool/call",
+      "diorama_native_request": false,
+      "export": "ordinary",
+      "params": "McpServerToolCallParams",
+      "fields": [
+        "_meta",
+        "arguments",
+        "server",
+        "threadId",
+        "tool"
+      ],
+      "description": ""
+    },
+    {
+      "method": "windowsSandbox/setupStart",
+      "diorama_native_request": false,
+      "export": "ordinary",
+      "params": "WindowsSandboxSetupStartParams",
+      "fields": [
+        "cwd",
+        "mode"
+      ],
+      "description": ""
+    },
+    {
+      "method": "windowsSandbox/readiness",
+      "diorama_native_request": false,
+      "export": "ordinary",
+      "params": null,
+      "fields": [],
+      "description": ""
+    },
+    {
+      "method": "account/login/start",
+      "diorama_native_request": false,
+      "export": "ordinary",
+      "params": "LoginAccountParams",
+      "fields": [],
+      "description": ""
+    },
+    {
+      "method": "account/bedrock/discover",
+      "diorama_native_request": false,
+      "export": "experimental-only",
+      "params": "BedrockDiscoverParams",
+      "fields": [],
+      "description": ""
+    },
+    {
+      "method": "account/bedrock/setup",
+      "diorama_native_request": false,
+      "export": "experimental-only",
+      "params": "BedrockSetupParams",
+      "fields": [],
+      "description": ""
+    },
+    {
+      "method": "account/login/cancel",
+      "diorama_native_request": false,
+      "export": "ordinary",
+      "params": "CancelLoginAccountParams",
+      "fields": [
+        "loginId"
+      ],
+      "description": ""
+    },
+    {
+      "method": "account/logout",
+      "diorama_native_request": false,
+      "export": "ordinary",
+      "params": null,
+      "fields": [],
+      "description": ""
+    },
+    {
+      "method": "account/rateLimits/read",
+      "diorama_native_request": true,
+      "export": "ordinary",
+      "params": null,
+      "fields": [],
+      "description": ""
+    },
+    {
+      "method": "account/rateLimitResetCredit/consume",
+      "diorama_native_request": false,
+      "export": "ordinary",
+      "params": "ConsumeAccountRateLimitResetCreditParams",
+      "fields": [
+        "creditId",
+        "idempotencyKey"
+      ],
+      "description": ""
+    },
+    {
+      "method": "account/usage/read",
+      "diorama_native_request": false,
+      "export": "ordinary",
+      "params": null,
+      "fields": [],
+      "description": ""
+    },
+    {
+      "method": "account/workspaceMessages/read",
+      "diorama_native_request": false,
+      "export": "ordinary",
+      "params": null,
+      "fields": [],
+      "description": ""
+    },
+    {
+      "method": "account/sendAddCreditsNudgeEmail",
+      "diorama_native_request": false,
+      "export": "ordinary",
+      "params": "SendAddCreditsNudgeEmailParams",
+      "fields": [
+        "creditType"
+      ],
+      "description": ""
+    },
+    {
+      "method": "feedback/upload",
+      "diorama_native_request": false,
+      "export": "ordinary",
+      "params": "FeedbackUploadParams",
+      "fields": [
+        "classification",
+        "extraLogFiles",
+        "includeLogs",
+        "reason",
+        "tags",
+        "threadId"
+      ],
+      "description": ""
+    },
+    {
+      "method": "command/exec",
+      "diorama_native_request": false,
+      "export": "ordinary",
+      "params": "CommandExecParams",
+      "fields": [
+        "command",
+        "cwd",
+        "disableOutputCap",
+        "disableTimeout",
+        "env",
+        "outputBytesCap",
+        "permissionProfile",
+        "processId",
+        "sandboxPolicy",
+        "size",
+        "streamStdin",
+        "streamStdoutStderr",
+        "timeoutMs",
+        "tty"
+      ],
+      "description": "Run a standalone command (argv vector) in the server sandbox without creating a thread or turn.\n\nThe final `command/exec` response is deferred until the process exits and is sent only after all `command/exec/outputDelta` notifications for that connection have been emitted."
+    },
+    {
+      "method": "command/exec/write",
+      "diorama_native_request": false,
+      "export": "ordinary",
+      "params": "CommandExecWriteParams",
+      "fields": [
+        "closeStdin",
+        "deltaBase64",
+        "processId"
+      ],
+      "description": "Write stdin bytes to a running `command/exec` session, close stdin, or both."
+    },
+    {
+      "method": "command/exec/terminate",
+      "diorama_native_request": false,
+      "export": "ordinary",
+      "params": "CommandExecTerminateParams",
+      "fields": [
+        "processId"
+      ],
+      "description": "Terminate a running `command/exec` session."
+    },
+    {
+      "method": "command/exec/resize",
+      "diorama_native_request": false,
+      "export": "ordinary",
+      "params": "CommandExecResizeParams",
+      "fields": [
+        "processId",
+        "size"
+      ],
+      "description": "Resize a running PTY-backed `command/exec` session."
+    },
+    {
+      "method": "process/spawn",
+      "diorama_native_request": false,
+      "export": "experimental-only",
+      "params": "ProcessSpawnParams",
+      "fields": [
+        "command",
+        "cwd",
+        "env",
+        "outputBytesCap",
+        "processHandle",
+        "size",
+        "streamStdin",
+        "streamStdoutStderr",
+        "timeoutMs",
+        "tty"
+      ],
+      "description": "Spawn a standalone process (argv vector) without a Codex sandbox on the host where the app server is running.\n\n`process/spawn` returns after the process has started and the connection-scoped `processHandle` has been registered. Process output and exit are reported via `process/outputDelta` and `process/exited` notifications."
+    },
+    {
+      "method": "process/writeStdin",
+      "diorama_native_request": false,
+      "export": "experimental-only",
+      "params": "ProcessWriteStdinParams",
+      "fields": [
+        "closeStdin",
+        "deltaBase64",
+        "processHandle"
+      ],
+      "description": "Write stdin bytes to a running `process/spawn` session, close stdin, or both."
+    },
+    {
+      "method": "process/kill",
+      "diorama_native_request": false,
+      "export": "experimental-only",
+      "params": "ProcessKillParams",
+      "fields": [
+        "processHandle"
+      ],
+      "description": "Terminate a running `process/spawn` session."
+    },
+    {
+      "method": "process/resizePty",
+      "diorama_native_request": false,
+      "export": "experimental-only",
+      "params": "ProcessResizePtyParams",
+      "fields": [
+        "processHandle",
+        "size"
+      ],
+      "description": "Resize a running PTY-backed `process/spawn` session."
+    },
+    {
+      "method": "config/read",
+      "diorama_native_request": false,
+      "export": "ordinary",
+      "params": "ConfigReadParams",
+      "fields": [
+        "cwd",
+        "includeLayers"
+      ],
+      "description": ""
+    },
+    {
+      "method": "externalAgentConfig/detect",
+      "diorama_native_request": false,
+      "export": "ordinary",
+      "params": "ExternalAgentConfigDetectParams",
+      "fields": [
+        "cwds",
+        "includeHome",
+        "maxSessionAgeDays",
+        "maxSessions",
+        "migrationSource",
+        "source"
+      ],
+      "description": ""
+    },
+    {
+      "method": "externalAgentConfig/import",
+      "diorama_native_request": false,
+      "export": "ordinary",
+      "params": "ExternalAgentConfigImportParams",
+      "fields": [
+        "migrationItems",
+        "migrationSource",
+        "providerId",
+        "source"
+      ],
+      "description": ""
+    },
+    {
+      "method": "externalAgentConfig/import/recordHistory",
+      "diorama_native_request": false,
+      "export": "ordinary",
+      "params": "ExternalAgentConfigImportHistoryRecordParams",
+      "fields": [
+        "itemTypeResults",
+        "providerId"
+      ],
+      "description": ""
+    },
+    {
+      "method": "externalAgentConfig/import/readHistories",
+      "diorama_native_request": false,
+      "export": "ordinary",
+      "params": null,
+      "fields": [],
+      "description": ""
+    },
+    {
+      "method": "config/value/write",
+      "diorama_native_request": false,
+      "export": "ordinary",
+      "params": "ConfigValueWriteParams",
+      "fields": [
+        "expectedVersion",
+        "filePath",
+        "keyPath",
+        "mergeStrategy",
+        "value"
+      ],
+      "description": ""
+    },
+    {
+      "method": "config/batchWrite",
+      "diorama_native_request": false,
+      "export": "ordinary",
+      "params": "ConfigBatchWriteParams",
+      "fields": [
+        "edits",
+        "expectedVersion",
+        "filePath",
+        "reloadUserConfig"
+      ],
+      "description": ""
+    },
+    {
+      "method": "configRequirements/read",
+      "diorama_native_request": false,
+      "export": "ordinary",
+      "params": null,
+      "fields": [],
+      "description": ""
+    },
+    {
+      "method": "account/read",
+      "diorama_native_request": false,
+      "export": "ordinary",
+      "params": "GetAccountParams",
+      "fields": [
+        "refreshToken"
+      ],
+      "description": ""
+    },
+    {
+      "method": "fuzzyFileSearch",
+      "diorama_native_request": false,
+      "export": "ordinary",
+      "params": "FuzzyFileSearchParams",
+      "fields": [
+        "cancellationToken",
+        "query",
+        "roots"
+      ],
+      "description": ""
+    },
+    {
+      "method": "fuzzyFileSearch/sessionStart",
+      "diorama_native_request": false,
+      "export": "experimental-only",
+      "params": "FuzzyFileSearchSessionStartParams",
+      "fields": [
+        "roots",
+        "sessionId"
+      ],
+      "description": ""
+    },
+    {
+      "method": "fuzzyFileSearch/sessionUpdate",
+      "diorama_native_request": false,
+      "export": "experimental-only",
+      "params": "FuzzyFileSearchSessionUpdateParams",
+      "fields": [
+        "query",
+        "sessionId"
+      ],
+      "description": ""
+    },
+    {
+      "method": "fuzzyFileSearch/sessionStop",
+      "diorama_native_request": false,
+      "export": "experimental-only",
+      "params": "FuzzyFileSearchSessionStopParams",
+      "fields": [
+        "sessionId"
+      ],
+      "description": ""
+    }
+  ],
+  "schema_sha256": {
+    "ordinary": "25bc001b5dfe3b35785597b8f9ad9e5aaf7e437331fa9921f041c9e0e03fc9f3",
+    "experimental": "05c82ead1a820c765c23d3a1d262e4ae54889785276ee1acf7c494141fd94d70"
+  },
+  "regenerate_commands": [
+    "codex --version",
+    "codex app-server generate-json-schema --out /tmp/diorama-audit-schema",
+    "codex app-server generate-json-schema --experimental --out /tmp/diorama-audit-schema-experimental"
+  ],
+  "baseline_native_count_including_initialize": 11,
+  "implementation_update": "2026-09-20: priorities 1\u201311 baseline implemented. Pins are local, not App Server metadata. Method coverage is not feature parity."
+}

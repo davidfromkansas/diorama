@@ -1,0 +1,68 @@
+[
+  {
+    "source": "Hook \u00b7 reported event; current activity unverified",
+    "sessionID": "0e046d79-3d31-4f59-b36d-0a95268d7e7a",
+    "tool": "Bash",
+    "provider": "Claude Code",
+    "id": "87014223-69CA-4259-A982-244340DB8DDC",
+    "kind": "toolFinished",
+    "observedAt": 811401269.169475,
+    "detail": "/bin/echo DIORAMA_HOOK_SUCCESS",
+    "state": "Working"
+  },
+  {
+    "sessionID": "0e046d79-3d31-4f59-b36d-0a95268d7e7a",
+    "id": "FDEDB284-F690-4B13-81B9-32E82D56C872",
+    "kind": "sessionStarted",
+    "provider": "Claude Code",
+    "source": "Hook \u00b7 reported event; current activity unverified",
+    "observedAt": 811401267.737741
+  },
+  {
+    "sessionID": "0e046d79-3d31-4f59-b36d-0a95268d7e7a",
+    "kind": "stopping",
+    "id": "2D5756D9-6FA9-496A-AF2F-E7527A22EB5A",
+    "observedAt": 811401271.402053,
+    "source": "Hook \u00b7 reported event; current activity unverified",
+    "provider": "Claude Code"
+  },
+  {
+    "kind": "toolStarted",
+    "provider": "Claude Code",
+    "sessionID": "0e046d79-3d31-4f59-b36d-0a95268d7e7a",
+    "tool": "Bash",
+    "state": "Working",
+    "id": "6A6DF141-E063-4B97-B508-FA56D5CE0D1F",
+    "detail": "/usr/bin/false",
+    "observedAt": 811401270.439077,
+    "source": "Hook \u00b7 reported event; current activity unverified"
+  },
+  {
+    "observedAt": 811401269.132982,
+    "tool": "Bash",
+    "sessionID": "0e046d79-3d31-4f59-b36d-0a95268d7e7a",
+    "state": "Working",
+    "source": "Hook \u00b7 reported event; current activity unverified",
+    "detail": "/bin/echo DIORAMA_HOOK_SUCCESS",
+    "id": "D1F32EA9-1AE5-4E25-9319-6D1EB3989919",
+    "kind": "toolStarted",
+    "provider": "Claude Code"
+  },
+  {
+    "source": "Hook \u00b7 reported event; current activity unverified",
+    "sessionID": "0e046d79-3d31-4f59-b36d-0a95268d7e7a",
+    "provider": "Claude Code",
+    "kind": "started",
+    "state": "Working",
+    "id": "B365978D-8771-4C38-B5F1-18CA6E5BCB68",
+    "observedAt": 811401267.751613
+  },
+  {
+    "observedAt": 811401271.415412,
+    "kind": "sessionEnded",
+    "provider": "Claude Code",
+    "sessionID": "0e046d79-3d31-4f59-b36d-0a95268d7e7a",
+    "id": "34307E26-3698-4094-AACE-8432AE7D6F66",
+    "source": "Hook \u00b7 reported event; current activity unverified"
+  }
+]

@@ -1,0 +1,87 @@
+[
+  {
+    "observedAt": 811401328.421956,
+    "detail": "/bin/echo DIORAMA_RESUMED",
+    "tool": "Bash",
+    "state": "Working",
+    "provider": "Claude Code",
+    "kind": "toolStarted",
+    "sessionID": "5eb5e7be-cc4d-4468-95f9-ce8e58c05810",
+    "source": "Hook \u00b7 reported event; current activity unverified",
+    "id": "6F8D7867-5967-4FDB-A18F-2F47EF0EFBB8"
+  },
+  {
+    "kind": "started",
+    "id": "A43E8A73-947B-45A8-BAE1-F9C282C7DBA0",
+    "sessionID": "5eb5e7be-cc4d-4468-95f9-ce8e58c05810",
+    "observedAt": 811401327.409453,
+    "provider": "Claude Code",
+    "source": "Hook \u00b7 reported event; current activity unverified",
+    "state": "Working"
+  },
+  {
+    "id": "08DCF33A-4C8F-4E9B-8509-51A963B4AA4E",
+    "provider": "Claude Code",
+    "source": "Hook \u00b7 reported event; current activity unverified",
+    "kind": "sessionStarted",
+    "observedAt": 811401327.395079,
+    "sessionID": "5eb5e7be-cc4d-4468-95f9-ce8e58c05810"
+  },
+  {
+    "observedAt": 811401328.457611,
+    "sessionID": "5eb5e7be-cc4d-4468-95f9-ce8e58c05810",
+    "detail": "/bin/echo DIORAMA_RESUMED",
+    "tool": "Bash",
+    "source": "Hook \u00b7 reported event; current activity unverified",
+    "kind": "toolFinished",
+    "id": "51435F54-49DB-4331-97C1-3373C39999F8",
+    "provider": "Claude Code",
+    "state": "Working"
+  },
+  {
+    "tool": "Task",
+    "state": "Working",
+    "sessionID": "5eb5e7be-cc4d-4468-95f9-ce8e58c05810",
+    "kind": "toolStarted",
+    "provider": "Claude Code",
+    "id": "A5EA35DE-CB90-4CAF-8DBC-9338029FE645",
+    "detail": "Diorama child verification",
+    "source": "Hook \u00b7 reported event; current activity unverified",
+    "observedAt": 811401329.871075
+  },
+  {
+    "provider": "Claude Code",
+    "sessionID": "5eb5e7be-cc4d-4468-95f9-ce8e58c05810",
+    "source": "Hook \u00b7 reported event; current activity unverified",
+    "id": "1053469A-F508-4CF8-92B2-C3CC0C7A4E42",
+    "kind": "sessionEnded",
+    "observedAt": 811401331.401972
+  },
+  {
+    "observedAt": 811401330.618776,
+    "id": "E700CBCE-20F4-477C-88B8-28B5FDE0503A",
+    "kind": "toolFinished",
+    "provider": "Claude Code",
+    "source": "Hook \u00b7 reported event; current activity unverified",
+    "detail": "Diorama child verification",
+    "sessionID": "5eb5e7be-cc4d-4468-95f9-ce8e58c05810",
+    "state": "Working",
+    "tool": "Task"
+  },
+  {
+    "id": "4B6CE4E6-326B-4CDC-A045-F6ACE83760EC",
+    "sessionID": "5eb5e7be-cc4d-4468-95f9-ce8e58c05810",
+    "provider": "Claude Code",
+    "kind": "stopping",
+    "observedAt": 811401331.388077,
+    "source": "Hook \u00b7 reported event; current activity unverified"
+  },
+  {
+    "sessionID": "5eb5e7be-cc4d-4468-95f9-ce8e58c05810",
+    "provider": "Claude Code",
+    "source": "Hook \u00b7 reported event; current activity unverified",
+    "observedAt": 811401330.582654,
+    "kind": "agentStopped",
+    "id": "38373E1A-5DA1-438D-9368-2AF8F87EC532"
+  }
+]

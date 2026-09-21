@@ -1,0 +1,18 @@
+{
+  "checked_at": "2026-09-19T00:03:21.895652+00:00",
+  "thread_id": "01a0b6cc-6ea4-7f51-842c-112fe57860db",
+  "cli_version": "codex-cli 0.153.4",
+  "desktop_open_evidence": "User confirmed sending READY in Desktop and leaving it open; matching completed transcript turn 01a0b6f8-b04f-7532-9bed-9f2891d23020 at 2026-09-19T00:02:33.145Z.",
+  "checks": {
+    "before_unsubscribe": {
+      "error": "thread 01a0b6cc-6ea4-7f51-842c-112fe57860db already has an active writer"
+    },
+    "separate_connection_unsubscribe": {
+      "status": "notLoaded"
+    },
+    "after_unsubscribe": {
+      "error": "thread 01a0b6cc-6ea4-7f51-842c-112fe57860db already has an active writer"
+    }
+  },
+  "scope": "Only thread/read, goal/get, resume and unsubscribe on separate App Server. No turn/start, Desktop shutdown, archive change, or lock manipulation."
+}

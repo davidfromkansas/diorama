@@ -1,0 +1,103 @@
+[
+  {
+    "operation": "initialize",
+    "ok": true,
+    "error": null
+  },
+  {
+    "operation": "thread/read",
+    "thread_id": "01a0afb5-ef81-7302-a1ba-7a64bf8757d2",
+    "ok": true,
+    "error": null,
+    "turn_count": 1,
+    "item_types": {
+      "userMessage": 1,
+      "agentMessage": 1
+    },
+    "status": {
+      "type": "notLoaded"
+    },
+    "thread_fields": [
+      "agentNickname",
+      "agentRole",
+      "canAcceptDirectInput",
+      "cliVersion",
+      "createdAt",
+      "cwd",
+      "ephemeral",
+      "extra",
+      "forkedFromId",
+      "gitInfo",
+      "historyMode",
+      "id",
+      "model",
+      "modelProvider",
+      "name",
+      "parentThreadId",
+      "path",
+      "preview",
+      "projectId",
+      "reasoningEffort",
+      "recencyAt",
+      "section",
+      "sectionEnteredAt",
+      "sessionId",
+      "source",
+      "status",
+      "threadSource",
+      "turns",
+      "updatedAt"
+    ]
+  },
+  {
+    "operation": "thread/read",
+    "thread_id": "01a0af95-959f-77e3-ab51-b0072fe66b37",
+    "ok": true,
+    "error": null,
+    "turn_count": 5,
+    "item_types": {
+      "userMessage": 5,
+      "reasoning": 17,
+      "agentMessage": 16,
+      "webSearch": 12,
+      "commandExecution": 12,
+      "plan": 1,
+      "fileChange": 2,
+      "mcpToolCall": 1
+    },
+    "status": {
+      "type": "notLoaded"
+    },
+    "thread_fields": [
+      "agentNickname",
+      "agentRole",
+      "canAcceptDirectInput",
+      "cliVersion",
+      "createdAt",
+      "cwd",
+      "ephemeral",
+      "extra",
+      "forkedFromId",
+      "gitInfo",
+      "historyMode",
+      "id",
+      "model",
+      "modelProvider",
+      "name",
+      "parentThreadId",
+      "path",
+      "preview",
+      "projectId",
+      "reasoningEffort",
+      "recencyAt",
+      "section",
+      "sectionEnteredAt",
+      "sessionId",
+      "source",
+      "status",
+      "threadSource",
+      "turns",
+      "updatedAt"
+    ]
+  }
+]

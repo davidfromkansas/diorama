@@ -1,0 +1,277 @@
+[
+  {
+    "id": "3BAA4D01-DEC1-4EA1-91C0-41E090112EF2",
+    "source": "Hook \u00b7 reported event; current activity unverified",
+    "provider": "Claude Code",
+    "kind": "sessionStarted",
+    "sessionID": "d9dbfea6-89a3-46e0-ba37-83a9f2deab0c",
+    "observedAt": 811435662.229856
+  },
+  {
+    "state": "Working",
+    "observedAt": 811435670.301202,
+    "source": "Hook \u00b7 reported event; current activity unverified",
+    "kind": "started",
+    "provider": "Claude Code",
+    "sessionID": "d9dbfea6-89a3-46e0-ba37-83a9f2deab0c",
+    "id": "35004735-A74B-4B06-951D-102B2F838A8F"
+  },
+  {
+    "id": "5420278D-D89F-4919-9675-A7B6A15B4919",
+    "observedAt": 811435673.299208,
+    "source": "Hook \u00b7 reported event; current activity unverified",
+    "provider": "Claude Code",
+    "tool": "Write",
+    "detail": "/Users/david_lietjauw/Documents/ChatGPT/Diorama/.local/hook-verification/claude/work/interactive-approved.txt",
+    "kind": "toolStarted",
+    "callID": "toolu_016G2c4kswr43MK7SX7xCHZB",
+    "state": "Working",
+    "sessionID": "d9dbfea6-89a3-46e0-ba37-83a9f2deab0c"
+  },
+  {
+    "source": "Hook \u00b7 reported event; current activity unverified",
+    "detail": "/Users/david_lietjauw/Documents/ChatGPT/Diorama/.local/hook-verification/claude/work/interactive-approved.txt",
+    "tool": "Write",
+    "sessionID": "d9dbfea6-89a3-46e0-ba37-83a9f2deab0c",
+    "kind": "approval",
+    "observedAt": 811435673.334312,
+    "id": "2DCAF5F7-161A-490D-87C4-8F04BA05FCA4",
+    "state": "Awaiting approval",
+    "provider": "Claude Code"
+  },
+  {
+    "id": "27A0BA20-4BA4-47BA-A54D-114CA217926B",
+    "source": "Hook \u00b7 reported event; current activity unverified",
+    "kind": "approval",
+    "state": "Awaiting approval",
+    "provider": "Claude Code",
+    "observedAt": 811435679.343346,
+    "sessionID": "d9dbfea6-89a3-46e0-ba37-83a9f2deab0c"
+  },
+  {
+    "kind": "toolFinished",
+    "observedAt": 811435736.059076,
+    "id": "1527F5BB-B573-4F0E-99BD-3D984DFC9398",
+    "tool": "Write",
+    "detail": "/Users/david_lietjauw/Documents/ChatGPT/Diorama/.local/hook-verification/claude/work/interactive-approved.txt",
+    "durationMS": 24,
+    "provider": "Claude Code",
+    "state": "Working",
+    "callID": "toolu_016G2c4kswr43MK7SX7xCHZB",
+    "source": "Hook \u00b7 reported event; current activity unverified",
+    "sessionID": "d9dbfea6-89a3-46e0-ba37-83a9f2deab0c"
+  },
+  {
+    "source": "Hook \u00b7 reported event; current activity unverified",
+    "id": "517BE239-18EA-4ABE-830B-E414D101FAB7",
+    "provider": "Claude Code",
+    "sessionID": "d9dbfea6-89a3-46e0-ba37-83a9f2deab0c",
+    "kind": "stopping",
+    "observedAt": 811435737.265107
+  },
+  {
+    "id": "3662FBC0-6E6A-412F-AFC4-109B6566509F",
+    "provider": "Claude Code",
+    "agentID": "aa641989272d16b09",
+    "sessionID": "d9dbfea6-89a3-46e0-ba37-83a9f2deab0c",
+    "observedAt": 811435743.687458,
+    "source": "Hook \u00b7 reported event; current activity unverified",
+    "kind": "agentStopped",
+    "role": ""
+  },
+  {
+    "provider": "Claude Code",
+    "state": "Working",
+    "sessionID": "d9dbfea6-89a3-46e0-ba37-83a9f2deab0c",
+    "source": "Hook \u00b7 reported event; current activity unverified",
+    "id": "C2A0DF96-6085-4463-ACE0-F5FF27107F15",
+    "observedAt": 811435761.913259,
+    "kind": "started"
+  },
+  {
+    "tool": "Write",
+    "provider": "Claude Code",
+    "kind": "toolStarted",
+    "source": "Hook \u00b7 reported event; current activity unverified",
+    "callID": "toolu_01HKxg8RzWFkNvUHKBfjCi1H",
+    "detail": "/Users/david_lietjauw/Documents/ChatGPT/Diorama/.local/hook-verification/claude/work/interactive-denied.txt",
+    "id": "7CC6C585-3DE3-4AFE-85E1-76569DA1144E",
+    "observedAt": 811435763.378549,
+    "state": "Working",
+    "sessionID": "d9dbfea6-89a3-46e0-ba37-83a9f2deab0c"
+  },
+  {
+    "id": "D6E559BD-1951-419D-92A0-834F091B44CD",
+    "tool": "Write",
+    "detail": "/Users/david_lietjauw/Documents/ChatGPT/Diorama/.local/hook-verification/claude/work/interactive-denied.txt",
+    "state": "Awaiting approval",
+    "kind": "approval",
+    "observedAt": 811435763.402008,
+    "sessionID": "d9dbfea6-89a3-46e0-ba37-83a9f2deab0c",
+    "provider": "Claude Code",
+    "source": "Hook \u00b7 reported event; current activity unverified"
+  },
+  {
+    "observedAt": 811435769.405812,
+    "state": "Awaiting approval",
+    "source": "Hook \u00b7 reported event; current activity unverified",
+    "id": "ECCC158B-C3CB-4D44-8265-E66B7C830363",
+    "kind": "approval",
+    "sessionID": "d9dbfea6-89a3-46e0-ba37-83a9f2deab0c",
+    "provider": "Claude Code"
+  },
+  {
+    "kind": "started",
+    "sessionID": "d9dbfea6-89a3-46e0-ba37-83a9f2deab0c",
+    "id": "2615F3C9-07CA-4081-9AB3-F5FEDC09655F",
+    "source": "Hook \u00b7 reported event; current activity unverified",
+    "state": "Working",
+    "observedAt": 811435833.051768,
+    "provider": "Claude Code"
+  },
+  {
+    "provider": "Claude Code",
+    "id": "4E2DB998-8095-4743-AF7A-6B96C205CC24",
+    "tool": "AskUserQuestion",
+    "sessionID": "d9dbfea6-89a3-46e0-ba37-83a9f2deab0c",
+    "source": "Hook \u00b7 reported event; current activity unverified",
+    "observedAt": 811435835.273904,
+    "kind": "toolStarted",
+    "callID": "toolu_01BNquGfR7Nb62XaWowscu3d",
+    "state": "Working"
+  },
+  {
+    "state": "Awaiting approval",
+    "source": "Hook \u00b7 reported event; current activity unverified",
+    "observedAt": 811435835.294845,
+    "id": "650E16B3-C71F-4721-8857-F16C45E82EBB",
+    "provider": "Claude Code",
+    "tool": "AskUserQuestion",
+    "sessionID": "d9dbfea6-89a3-46e0-ba37-83a9f2deab0c",
+    "kind": "approval"
+  },
+  {
+    "sessionID": "d9dbfea6-89a3-46e0-ba37-83a9f2deab0c",
+    "kind": "approval",
+    "observedAt": 811435841.30448,
+    "provider": "Claude Code",
+    "source": "Hook \u00b7 reported event; current activity unverified",
+    "id": "3EF7AEF6-09B9-4B57-9EE0-CC9B2951C26B",
+    "state": "Awaiting approval"
+  },
+  {
+    "durationMS": 1,
+    "observedAt": 811435888.695571,
+    "tool": "AskUserQuestion",
+    "id": "6A19C58B-5C5E-4509-8205-AAB1F9D94B49",
+    "state": "Working",
+    "provider": "Claude Code",
+    "callID": "toolu_01BNquGfR7Nb62XaWowscu3d",
+    "sessionID": "d9dbfea6-89a3-46e0-ba37-83a9f2deab0c",
+    "source": "Hook \u00b7 reported event; current activity unverified",
+    "kind": "toolFinished"
+  },
+  {
+    "kind": "stopping",
+    "observedAt": 811435889.673888,
+    "source": "Hook \u00b7 reported event; current activity unverified",
+    "id": "6EFA2CCE-2666-4C74-BD9F-D6BAD721EE69",
+    "sessionID": "d9dbfea6-89a3-46e0-ba37-83a9f2deab0c",
+    "provider": "Claude Code"
+  },
+  {
+    "id": "DD522DD7-551C-4C21-9C4D-B87B6406B3A2",
+    "kind": "agentStopped",
+    "sessionID": "d9dbfea6-89a3-46e0-ba37-83a9f2deab0c",
+    "observedAt": 811435896.571334,
+    "role": "",
+    "agentID": "ade5fb8bdc29568c6",
+    "source": "Hook \u00b7 reported event; current activity unverified",
+    "provider": "Claude Code"
+  },
+  {
+    "observedAt": 811435943.513669,
+    "kind": "started",
+    "sessionID": "d9dbfea6-89a3-46e0-ba37-83a9f2deab0c",
+    "provider": "Claude Code",
+    "id": "D7FBB61F-71B0-4DAE-9A81-55FCFF85EA98",
+    "source": "Hook \u00b7 reported event; current activity unverified",
+    "state": "Working"
+  },
+  {
+    "kind": "toolStarted",
+    "callID": "toolu_0175Gzv9s2fWmguCuvbDQU8P",
+    "id": "BB5E8DF8-9E0E-46F9-B149-8087B8E79DC7",
+    "provider": "Claude Code",
+    "sessionID": "d9dbfea6-89a3-46e0-ba37-83a9f2deab0c",
+    "observedAt": 811435945.684894,
+    "source": "Hook \u00b7 reported event; current activity unverified",
+    "tool": "Bash",
+    "detail": "/bin/sleep 30",
+    "state": "Working"
+  },
+  {
+    "source": "Hook \u00b7 reported event; current activity unverified",
+    "kind": "approval",
+    "detail": "/bin/sleep 30",
+    "provider": "Claude Code",
+    "tool": "Bash",
+    "id": "5248CB31-2A5B-4203-B71D-1E6B0C31D441",
+    "observedAt": 811435945.710143,
+    "state": "Awaiting approval",
+    "sessionID": "d9dbfea6-89a3-46e0-ba37-83a9f2deab0c"
+  },
+  {
+    "provider": "Claude Code",
+    "sessionID": "d9dbfea6-89a3-46e0-ba37-83a9f2deab0c",
+    "kind": "approval",
+    "source": "Hook \u00b7 reported event; current activity unverified",
+    "state": "Awaiting approval",
+    "observedAt": 811435951.717911,
+    "id": "A49C7636-4130-4EDC-90DD-0FAA7D4B28DA"
+  },
+  {
+    "source": "Hook \u00b7 reported event; current activity unverified",
+    "provider": "Claude Code",
+    "state": "Working",
+    "sessionID": "d9dbfea6-89a3-46e0-ba37-83a9f2deab0c",
+    "kind": "started",
+    "observedAt": 811436004.437757,
+    "id": "982111F3-8E23-4C0E-B58E-65997D3299EF"
+  },
+  {
+    "id": "BE74F9C3-E6B8-4A41-8F41-C80AF2DAA68D",
+    "provider": "Claude Code",
+    "observedAt": 811436005.765414,
+    "kind": "stopping",
+    "source": "Hook \u00b7 reported event; current activity unverified",
+    "sessionID": "d9dbfea6-89a3-46e0-ba37-83a9f2deab0c"
+  },
+  {
+    "source": "Hook \u00b7 reported event; current activity unverified",
+    "observedAt": 811436013.507068,
+    "agentID": "a8914307c97aa79c2",
+    "provider": "Claude Code",
+    "sessionID": "d9dbfea6-89a3-46e0-ba37-83a9f2deab0c",
+    "role": "",
+    "kind": "agentStopped",
+    "id": "EF6DDC1A-4D92-4683-947B-89078E6098DD"
+  },
+  {
+    "observedAt": 811436065.788173,
+    "kind": "idle",
+    "id": "664004C6-A4EC-4896-B2C3-9CE711C1E389",
+    "source": "Hook \u00b7 reported event; current activity unverified",
+    "provider": "Claude Code",
+    "state": "Idle",
+    "sessionID": "d9dbfea6-89a3-46e0-ba37-83a9f2deab0c"
+  },
+  {
+    "kind": "sessionEnded",
+    "source": "Hook \u00b7 reported event; current activity unverified",
+    "observedAt": 811436115.303321,
+    "id": "67F84156-7BCF-48EF-AA48-0B3D18A682BA",
+    "sessionID": "d9dbfea6-89a3-46e0-ba37-83a9f2deab0c",
+    "provider": "Claude Code"
+  }
+]

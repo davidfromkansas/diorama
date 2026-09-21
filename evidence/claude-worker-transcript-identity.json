@@ -1,0 +1,10 @@
+{
+  "version": "2.1.276",
+  "parent_session_id": "9827b3bc-2dd9-484c-bfa0-778234770b85",
+  "worker_agent_id": "a7186c76437000ed2",
+  "nested_subagent_transcript_exists": true,
+  "recorded_sidechain": true,
+  "recorded_agent_id_matches": true,
+  "parent_metadata_matches": true,
+  "method": "read-only designated worker transcript metadata"
+}

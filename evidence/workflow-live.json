@@ -1,0 +1,66 @@
+{
+  "date" : "2026-09-20T10:17:38Z",
+  "folder" : "\/var\/folders\/6m\/ysd0g20d31qbrcynhzm4nr4r0000gn\/T\/diorama-workflow-6341717F-558A-4ABA-AB30-D86BAC565E7B",
+  "results" : [
+    {
+      "check" : "4 goals create\/edit\/clear and account usage",
+      "detail" : "Paused creation, update, retrieval and clear confirmed; account limits returned.",
+      "status" : "passed"
+    },
+    {
+      "check" : "7 actual Plan mode",
+      "detail" : "Real Plan-mode turn completed through native send.",
+      "status" : "passed"
+    },
+    {
+      "check" : "1 steering and 10 queue after success",
+      "detail" : "Correction accepted during a command; queued follow-up ran after completion.",
+      "status" : "passed"
+    },
+    {
+      "check" : "10 remove queued message",
+      "detail" : "Server queue add\/list\/delete confirmed during an active turn.",
+      "status" : "passed"
+    },
+    {
+      "check" : "6 search and paginated items",
+      "detail" : "Both message search methods found the marker; second item page loaded.",
+      "status" : "passed"
+    },
+    {
+      "check" : "8 skill discovery and typed invocation",
+      "detail" : "Project skill discovered and invoked; catalog app count 4147.",
+      "status" : "passed"
+    },
+    {
+      "check" : "2 live structured plan emission",
+      "detail" : "No structured plan event emitted; model reported update_plan unavailable. Fixture rendering coverage remains separate.",
+      "status" : "blocked"
+    },
+    {
+      "check" : "2 plan\/diff and 11 command\/file results",
+      "detail" : "Native typed command\/file results received; diff length 236.",
+      "status" : "passed"
+    },
+    {
+      "check" : "9 fork and review",
+      "detail" : "Distinct idle fork created; real uncommitted-changes review completed; test fork archived.",
+      "status" : "passed"
+    },
+    {
+      "check" : "4 compaction",
+      "detail" : "Explicit compaction request accepted.",
+      "status" : "passed"
+    },
+    {
+      "check" : "4 goal activation and pause",
+      "detail" : "Active goal accepted, explicitly paused, and cleared; any current test turn interrupted.",
+      "status" : "passed"
+    },
+    {
+      "check" : "5 rename\/archive\/restore",
+      "detail" : "Rename round trip and archive\/restore\/archive accepted. Test chat left archived.",
+      "status" : "passed"
+    }
+  ]
+}

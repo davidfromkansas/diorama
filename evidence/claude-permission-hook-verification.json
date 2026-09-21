@@ -1,0 +1,19 @@
+{
+  "client": "Claude Code",
+  "version": "2.1.276",
+  "exit_code": 0,
+  "is_error": false,
+  "reported_cost_usd": 0.023028599999999996,
+  "hook_kinds": [
+    "approval",
+    "sessionEnded",
+    "sessionStarted",
+    "started",
+    "stopping",
+    "toolStarted"
+  ],
+  "target_written": false,
+  "permission_denial_count": 1,
+  "reporter_decision": "none; neutral JSON only",
+  "mode": "noninteractive; no human approval dialog tested"
+}

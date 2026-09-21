@@ -1,0 +1,21 @@
+{
+  "build": "0.5.0 (41)",
+  "app": "/tmp/diorama-session-changes/Diorama.app",
+  "tests": 187,
+  "suites": 48,
+  "test_log": "/tmp/diorama-changes-tests.log",
+  "release_log": "/tmp/diorama-changes-release.log",
+  "codesign": "verified",
+  "native_fixture": [
+    "wide and 480pt review layout",
+    "scope selector",
+    "CI disclosure",
+    "Fix with agent preserves existing draft"
+  ],
+  "not_verified": [
+    "fresh live GitHub CI lifecycle",
+    "full app responsive transitions while live agent edits",
+    "spoken VoiceOver walkthrough"
+  ],
+  "updated": "2026-09-21T19:52:48.083927+08:00"
+}

@@ -1,0 +1,12 @@
+{
+  "detail": "/bin/echo DIORAMA_APPROVAL_OK",
+  "state": "Awaiting approval",
+  "kind": "approval",
+  "sessionID": "01a0b2e6-9bd0-7450-b358-ac1f9592f337",
+  "id": "5D11F6A3-F559-426B-AA33-0905BEB6C0FA",
+  "observedAt": 811400665.869183,
+  "source": "Hook \u00b7 reported event; current activity unverified",
+  "tool": "Bash",
+  "turnID": "01a0b2e6-bf52-7ab1-8a03-b417a2d2f579",
+  "provider": "Codex"
+}

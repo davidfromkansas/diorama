@@ -1,0 +1,26 @@
+{
+  "updatedAt": "2026-09-21T14:01:30.984563+08:00",
+  "version": "0.5.0",
+  "build": 36,
+  "artifact": "/tmp/diorama-onboarding-verified/Diorama.app",
+  "tests": 169,
+  "suites": 40,
+  "result": "passed",
+  "isolatedNativeUI": {
+    "claudeOnly": "Claude model selected; test session routed to Claude",
+    "codexOnly": "OpenAI default selected; test session routed to Codex",
+    "both": "Either provider selectable; composer override preserves saved default",
+    "neither": "Done disabled; simulated login and refresh recovers"
+  },
+  "productionNativeUI": {
+    "OpenAI": "Connected",
+    "Anthropic": "Connected",
+    "defaultModel": "OpenAI \u00b7 Default, unchanged"
+  },
+  "limitations": [
+    "Account availability and login completion matrix uses fixtures with production views and controller",
+    "Fresh OAuth issuance and CLI installation were not exercised"
+  ],
+  "credentialsChanged": false,
+  "codeSignature": "codesign --verify --deep --strict passed"
+}

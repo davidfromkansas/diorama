@@ -1,0 +1,33 @@
+{
+  "updatedAt": "2026-09-21T18:34:22.974003+08:00",
+  "version": "0.5.0",
+  "build": 37,
+  "artifact": "/tmp/diorama-permissions-verified/Diorama.app",
+  "tests": 173,
+  "suites": 42,
+  "result": "passed",
+  "nativeUI": [
+    "Allow once produced accept",
+    "Deny from long-command sheet produced decline",
+    "Decision footer remained present after scrolling command",
+    "Draft preserved",
+    "Network grant preserved permissions and turn scope",
+    "Disconnected decisions disabled"
+  ],
+  "rendering": [
+    "460pt and 800pt widths; card height under 360pt",
+    "460pt screenshot visually inspected"
+  ],
+  "limitations": [
+    "UI decision tests used isolated production-card harness; no new live provider action was authorized",
+    "Full application short-window layout and VoiceOver not exercised",
+    "Unknown tool arguments and raw request remain in technical details"
+  ],
+  "sourceChanges": [
+    "Structured Claude tool metadata",
+    "Shared presentation model",
+    "Fixed permission card outside capped scroll view",
+    "Separate details sheet with fixed decision footer",
+    "Oldest pending request shown first"
+  ]
+}

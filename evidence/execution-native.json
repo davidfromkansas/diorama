@@ -1,0 +1,17 @@
+{
+  "approval_received" : true,
+  "approval_resolved" : true,
+  "date" : "2026-09-20T10:04:06Z",
+  "effective_settings" : "Model: gpt-5.6-sol\nWorking folder: \/Users\/david_lietjauw\/Documents\/ChatGPT\/Diorama\/.local\/execution-probe-DC739F21-C901-4C5F-B617-8CE68671E633\nApproval policy: \"on-request\"\nReviewer: \"user\"\nPermissions: {\n  \"extends\" : null,\n  \"id\" : \":workspace\"\n}\nSandbox: {\n  \"excludeSlashTmp\" : false,\n  \"excludeTmpdirEnvVar\" : false,\n  \"networkAccess\" : false,\n  \"type\" : \"workspaceWrite\",\n  \"writableRoots\" : [\n\n  ]\n}",
+  "input_resolved" : true,
+  "interruption_confirmed" : true,
+  "model_count" : 5,
+  "new_task_streaming_completed" : true,
+  "owned_reconnect" : true,
+  "restart_did_not_start_work" : true,
+  "second_thread_id" : "01a0be46-4e0e-7152-a92e-8042f2bd9bf6",
+  "shutdown_confirmed" : true,
+  "simultaneous_tasks" : true,
+  "thread_id" : "01a0be45-e2b8-7501-95ea-059db4e25e6f",
+  "tool_completed" : true
+}

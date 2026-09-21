@@ -1,0 +1,25 @@
+{
+  "version": "2.1.276",
+  "session_id": "d9dbfea6-89a3-46e0-ba37-83a9f2deab0c",
+  "normal_workspace_trust_review": true,
+  "scenarios": {
+    "approval": "one-time Yes selected; expected file created",
+    "denial": "No selected; target absent",
+    "input": "AskUserQuestion shown; Alpha selected; matching tool result emitted",
+    "permission_notification": "observed after waiting at dialog",
+    "idle_notification": "observed roughly 60 seconds after final response",
+    "interruption": "approved sleep30 then Escape; UI says Interrupted; transcript is_error tool result, no interruption hook"
+  },
+  "hook_counts": {
+    "sessionStarted": 1,
+    "started": 5,
+    "toolStarted": 4,
+    "approval": 8,
+    "toolFinished": 2,
+    "stopping": 3,
+    "agentStopped": 3,
+    "idle": 1,
+    "sessionEnded": 1
+  },
+  "no_unrelated_history_read": true
+}

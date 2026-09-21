@@ -1,0 +1,16 @@
+{
+  "checked_at": "2026-09-18T23:57:51.073248+00:00",
+  "thread_id": "01a0b6cc-6ea4-7f51-842c-112fe57860db",
+  "cli_version": "codex-cli 0.153.4",
+  "scope": "Separate official App Server connection, no Desktop connection access, no prompt or archive mutation.",
+  "desktop_version": "26.908.40834",
+  "desktop_process_seen_before": false,
+  "recorded_turn_in_progress": false,
+  "goal_absent": true,
+  "unsubscribe": {
+    "status": "notLoaded"
+  },
+  "resume_same_id": true,
+  "desktop_process_seen_after": false,
+  "conclusion": "Independent connection returned notLoaded for unsubscribe and resumed the same ID. No main Desktop process was detected, including a follow-up exact executable-name check; this does not demonstrate releasing a Desktop-held lock or that unsubscribe caused release."
+}

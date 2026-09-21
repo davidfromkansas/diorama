@@ -1,0 +1,18 @@
+{
+  "checked_at": "2026-09-18T23:40:53.900394+00:00",
+  "thread_id": "01a0b6cc-6ea4-7f51-842c-112fe57860db",
+  "continue_here_clicked": true,
+  "active_writer_error_visible": true,
+  "retry_button_visible": true,
+  "provider_error": "already has an active writer",
+  "ui_send_verified": true,
+  "phase": "manual_ui_flow_verified",
+  "scope": "Writer-conflict UI directly inspected through accessibility. User reported completing Desktop quit, Diorama Retry/settings review/send, Diorama quit and Desktop reopen. Designated transcript independently verifies exact prompt, expected reply and matching turn completion. No new Desktop return message requested in this UI test; prior native round-trip return separately verified.",
+  "turn_id": "01a0b6e3-ff9c-7490-880c-0753b0ba94d7",
+  "completed_at": "2026-09-18T23:39:53.690Z",
+  "same_conversation_verified": true,
+  "earlier_desktop_marker_recalled": true,
+  "expected_response": "DESKTOP-CEDAR-8426 UI_VERIFIED",
+  "manual_steps_reported_complete_by_user": true,
+  "resolved_automation_blocker": "Computer Use disallows controlling Codex Desktop. No alternate UI automation used. Desktop must be closed manually for this UI test."
+}

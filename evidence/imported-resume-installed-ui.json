@@ -1,0 +1,8 @@
+{
+  "version": "0.3.1",
+  "signature_verified": true,
+  "continue_here_enabled_in_installed_window": true,
+  "diorama_hidden_reviews": 5,
+  "desktop_quit_reopen_tested": false,
+  "scope": "Accessibility inspection of installed window; protocol and controller flow separately live-tested."
+}

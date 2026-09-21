@@ -1,0 +1,122 @@
+[
+  {
+    "sessionID": "9827b3bc-2dd9-484c-bfa0-778234770b85",
+    "source": "Hook \u00b7 reported event; current activity unverified",
+    "state": "Working",
+    "kind": "toolFinished",
+    "id": "F0EB76E0-A523-48BD-8F33-D72FDD6DB032",
+    "tool": "Agent",
+    "durationMS": 3,
+    "observedAt": 811401527.254868,
+    "callID": "toolu_01X32QcsKDNpRQk67G6Eaym3",
+    "provider": "Claude Code",
+    "detail": "Diorama resume verification child task"
+  },
+  {
+    "id": "82C9AF19-DB15-497A-936F-B0608CDB62EE",
+    "sessionID": "9827b3bc-2dd9-484c-bfa0-778234770b85",
+    "source": "Hook \u00b7 reported event; current activity unverified",
+    "provider": "Claude Code",
+    "agentID": "a7186c76437000ed2",
+    "observedAt": 811401527.254865,
+    "role": "general-purpose",
+    "kind": "agentStarted"
+  },
+  {
+    "provider": "Claude Code",
+    "kind": "started",
+    "state": "Working",
+    "observedAt": 811401525.245941,
+    "id": "609C04F0-F57F-4F74-BB15-BD2F9CE9CB86",
+    "sessionID": "9827b3bc-2dd9-484c-bfa0-778234770b85",
+    "source": "Hook \u00b7 reported event; current activity unverified"
+  },
+  {
+    "observedAt": 811401528.683578,
+    "id": "7F8BA872-7CBF-48E6-859A-EEEBB5FAE6A1",
+    "sessionID": "9827b3bc-2dd9-484c-bfa0-778234770b85",
+    "source": "Hook \u00b7 reported event; current activity unverified",
+    "provider": "Claude Code",
+    "kind": "stopping"
+  },
+  {
+    "sessionID": "9827b3bc-2dd9-484c-bfa0-778234770b85",
+    "source": "Hook \u00b7 reported event; current activity unverified",
+    "provider": "Claude Code",
+    "observedAt": 811401524.688254,
+    "id": "D26E6D30-1C24-4C21-91D4-74013BD27F72",
+    "kind": "sessionStarted"
+  },
+  {
+    "sessionID": "9827b3bc-2dd9-484c-bfa0-778234770b85",
+    "kind": "toolStarted",
+    "detail": "Diorama resume verification child task",
+    "state": "Working",
+    "id": "83E33D45-6D52-4202-B393-F36E5FA6324D",
+    "provider": "Claude Code",
+    "source": "Hook \u00b7 reported event; current activity unverified",
+    "callID": "toolu_01X32QcsKDNpRQk67G6Eaym3",
+    "tool": "Agent",
+    "observedAt": 811401527.233997
+  },
+  {
+    "id": "3CBB4184-5CB5-4DF4-92AA-21703D315424",
+    "callID": "toolu_01QufFSn9nDQTdgKuwYyWsuN",
+    "tool": "Bash",
+    "state": "Working",
+    "source": "Hook \u00b7 reported event; current activity unverified",
+    "detail": "/bin/echo DIORAMA_RESUMED",
+    "kind": "toolFinished",
+    "sessionID": "9827b3bc-2dd9-484c-bfa0-778234770b85",
+    "provider": "Claude Code",
+    "durationMS": 40,
+    "observedAt": 811401526.783343
+  },
+  {
+    "source": "Hook \u00b7 reported event; current activity unverified",
+    "sessionID": "9827b3bc-2dd9-484c-bfa0-778234770b85",
+    "id": "2173AD16-5B31-47DF-A53A-7C9B76A28B35",
+    "provider": "Claude Code",
+    "kind": "agentStopped",
+    "role": "general-purpose",
+    "observedAt": 811401528.367695,
+    "agentID": "a7186c76437000ed2"
+  },
+  {
+    "kind": "toolStarted",
+    "callID": "toolu_01QufFSn9nDQTdgKuwYyWsuN",
+    "tool": "Bash",
+    "detail": "/bin/echo DIORAMA_RESUMED",
+    "provider": "Claude Code",
+    "observedAt": 811401526.7324,
+    "id": "4625DCB3-83C3-4DC3-8BBA-0D6E3E0C5B90",
+    "state": "Working",
+    "sessionID": "9827b3bc-2dd9-484c-bfa0-778234770b85",
+    "source": "Hook \u00b7 reported event; current activity unverified"
+  },
+  {
+    "sessionID": "9827b3bc-2dd9-484c-bfa0-778234770b85",
+    "provider": "Claude Code",
+    "source": "Hook \u00b7 reported event; current activity unverified",
+    "kind": "started",
+    "observedAt": 811401528.701633,
+    "state": "Working",
+    "id": "E751D8E8-01A4-453D-B3FC-716F585CFA74"
+  },
+  {
+    "source": "Hook \u00b7 reported event; current activity unverified",
+    "provider": "Claude Code",
+    "id": "F5A6DD47-E4E1-45F5-82C2-9005B1D50425",
+    "observedAt": 811401530.57346,
+    "kind": "sessionEnded",
+    "sessionID": "9827b3bc-2dd9-484c-bfa0-778234770b85"
+  },
+  {
+    "id": "4EBE2BFD-7045-45E2-A25A-B3B6E01E02D6",
+    "provider": "Claude Code",
+    "source": "Hook \u00b7 reported event; current activity unverified",
+    "kind": "stopping",
+    "observedAt": 811401529.941524,
+    "sessionID": "9827b3bc-2dd9-484c-bfa0-778234770b85"
+  }
+]

@@ -1,0 +1,23 @@
+{
+  "client": "Codex CLI",
+  "version": "0.153.4",
+  "exit_code": 0,
+  "timed_out": false,
+  "completed_marker": true,
+  "trust_bypassed": false,
+  "elapsed_seconds": 11.3,
+  "hook_kinds": [
+    "sessionEnded",
+    "sessionStarted",
+    "started",
+    "stopping",
+    "toolFinished",
+    "toolStarted"
+  ],
+  "hook_count": 8,
+  "tool_names": [
+    "",
+    "Bash"
+  ],
+  "provider_hook_settings_modified": false
+}

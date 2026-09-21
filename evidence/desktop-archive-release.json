@@ -1,0 +1,19 @@
+{
+  "checked_at": "2026-09-19T00:06:15.776663+00:00",
+  "thread_id": "01a0b6cc-6ea4-7f51-842c-112fe57860db",
+  "cli_version": "codex-cli 0.153.4",
+  "desktop_open_evidence": "User reports archiving designated conversation and leaving Desktop open; no Desktop control performed by probe.",
+  "prior_held_writer_evidence": "desktop-release-baseline.json",
+  "archived_transcript_confirmed": true,
+  "unarchive_same_id": true,
+  "turn_count_before": 10,
+  "resume_same_id": true,
+  "assistant_reply": "DESKTOP-CEDAR-8426 ARCHIVE_RELEASE_VERIFIED",
+  "retained_context": true,
+  "new_marker": true,
+  "turn_completed": true,
+  "turn_id": "01a0b6fc-30ea-70e3-98eb-b9ed18fb6b80",
+  "tool_items": [],
+  "probe_connection_closed": true,
+  "scope": "Manual Desktop archive followed by official standalone App Server unarchive/resume and one synthetic prompt. Same ID; no fork, Desktop quit, lock-file changes, or product integration."
+}

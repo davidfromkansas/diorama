@@ -1,0 +1,16 @@
+{
+  "updatedAt": "2026-09-21T19:20:29.262499+08:00",
+  "build": 40,
+  "tests": 180,
+  "suites": 46,
+  "artifact": "/tmp/diorama-bubble-keyboard/Diorama.app",
+  "verified": [
+    "Native NSTextView Return, command Return and keypad Enter invoke send",
+    "Shift Return and empty content do not invoke send",
+    "Marked text confirmation does not invoke send",
+    "Bubble rendered and visually inspected with curved trailing tail"
+  ],
+  "limits": [
+    "Keyboard verification uses native event unit tests, not a fresh live provider submission"
+  ]
+}

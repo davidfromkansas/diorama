@@ -1,0 +1,85 @@
+[
+  {
+    "id": "C3C30DAF-08E4-4E07-B384-4FA21718DF76",
+    "provider": "Claude Code",
+    "sessionID": "9827b3bc-2dd9-484c-bfa0-778234770b85",
+    "kind": "stopping",
+    "source": "Hook \u00b7 reported event; current activity unverified",
+    "observedAt": 811401508.012471
+  },
+  {
+    "sessionID": "9827b3bc-2dd9-484c-bfa0-778234770b85",
+    "callID": "toolu_01CdfGjaVPTkwAyUBhUL2zJZ",
+    "observedAt": 811401506.84708,
+    "id": "D817934E-B905-4847-9B97-49D6E23EA5B9",
+    "source": "Hook \u00b7 reported event; current activity unverified",
+    "kind": "toolStarted",
+    "tool": "Bash",
+    "detail": "/usr/bin/false",
+    "provider": "Claude Code",
+    "state": "Working"
+  },
+  {
+    "id": "F87E9762-00BE-4ABD-8D89-049A6386DBC7",
+    "provider": "Claude Code",
+    "sessionID": "9827b3bc-2dd9-484c-bfa0-778234770b85",
+    "kind": "sessionStarted",
+    "source": "Hook \u00b7 reported event; current activity unverified",
+    "observedAt": 811401502.896236
+  },
+  {
+    "sessionID": "9827b3bc-2dd9-484c-bfa0-778234770b85",
+    "state": "Working",
+    "source": "Hook \u00b7 reported event; current activity unverified",
+    "id": "37C35480-440F-4964-845D-22CF510605DB",
+    "tool": "Bash",
+    "kind": "toolStarted",
+    "observedAt": 811401506.651383,
+    "callID": "toolu_01YShtVVTazgZ1TLVsWyYaFP",
+    "provider": "Claude Code",
+    "detail": "/bin/echo DIORAMA_HOOK_SUCCESS"
+  },
+  {
+    "kind": "sessionEnded",
+    "observedAt": 811401508.589025,
+    "id": "B4DF6C5F-4AD8-44F2-9D0B-2D7216E1F97D",
+    "provider": "Claude Code",
+    "sessionID": "9827b3bc-2dd9-484c-bfa0-778234770b85",
+    "source": "Hook \u00b7 reported event; current activity unverified"
+  },
+  {
+    "kind": "started",
+    "state": "Working",
+    "source": "Hook \u00b7 reported event; current activity unverified",
+    "id": "98335CCF-4361-46A4-8740-5AD617DDC3C0",
+    "sessionID": "9827b3bc-2dd9-484c-bfa0-778234770b85",
+    "provider": "Claude Code",
+    "observedAt": 811401504.523003
+  },
+  {
+    "source": "Hook \u00b7 reported event; current activity unverified",
+    "durationMS": 11,
+    "callID": "toolu_01CdfGjaVPTkwAyUBhUL2zJZ",
+    "kind": "toolFailed",
+    "detail": "Exit code 1",
+    "state": "Working",
+    "observedAt": 811401506.870541,
+    "tool": "Bash",
+    "provider": "Claude Code",
+    "id": "A1CB5F4F-9DE8-4C92-ACB1-874C519663F6",
+    "sessionID": "9827b3bc-2dd9-484c-bfa0-778234770b85"
+  },
+  {
+    "source": "Hook \u00b7 reported event; current activity unverified",
+    "observedAt": 811401506.715959,
+    "id": "AF657EF9-9D2D-4F10-9733-36285F51018C",
+    "provider": "Claude Code",
+    "callID": "toolu_01YShtVVTazgZ1TLVsWyYaFP",
+    "durationMS": 49,
+    "tool": "Bash",
+    "kind": "toolFinished",
+    "state": "Working",
+    "sessionID": "9827b3bc-2dd9-484c-bfa0-778234770b85",
+    "detail": "/bin/echo DIORAMA_HOOK_SUCCESS"
+  }
+]

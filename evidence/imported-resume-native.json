@@ -1,0 +1,12 @@
+{
+  "continued_with_prior_context" : true,
+  "date" : "2026-09-20T10:05:29Z",
+  "desktop_quit_reopen_tested" : false,
+  "resumed_approval_resolved" : true,
+  "resumed_same_id_without_turn" : true,
+  "resumed_turn_interruption_confirmed" : true,
+  "return_to_fresh_client_retained_context" : true,
+  "shutdown_confirmed" : true,
+  "thread_id" : "01a0be47-2f1e-7662-b52e-17b09c4c62f8",
+  "writer_conflict_explained" : true
+}

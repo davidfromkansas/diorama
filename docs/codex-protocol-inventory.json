@@ -1,0 +1,3342 @@
+{
+  "codex_version": "0.153.4",
+  "generated_on": "2026-09-20",
+  "source": "codex app-server generate-json-schema (ordinary and --experimental)",
+  "ordinary_export": {
+    "items": [
+      {
+        "name": "userMessage",
+        "fields": [
+          "clientId",
+          "content",
+          "id",
+          "type"
+        ],
+        "required": [
+          "content",
+          "id",
+          "type"
+        ],
+        "description": "",
+        "parameters": ""
+      },
+      {
+        "name": "hookPrompt",
+        "fields": [
+          "fragments",
+          "id",
+          "type"
+        ],
+        "required": [
+          "fragments",
+          "id",
+          "type"
+        ],
+        "description": "",
+        "parameters": ""
+      },
+      {
+        "name": "agentMessage",
+        "fields": [
+          "delivery",
+          "id",
+          "memoryCitation",
+          "phase",
+          "questions",
+          "text",
+          "type"
+        ],
+        "required": [
+          "id",
+          "text",
+          "type"
+        ],
+        "description": "",
+        "parameters": ""
+      },
+      {
+        "name": "functionCallOutput",
+        "fields": [
+          "id",
+          "name",
+          "namespace",
+          "output",
+          "type"
+        ],
+        "required": [
+          "id",
+          "name",
+          "output",
+          "type"
+        ],
+        "description": "",
+        "parameters": ""
+      },
+      {
+        "name": "plan",
+        "fields": [
+          "id",
+          "text",
+          "type"
+        ],
+        "required": [
+          "id",
+          "text",
+          "type"
+        ],
+        "description": "EXPERIMENTAL - proposed plan item content. The completed plan item is authoritative and may not match the concatenation of `PlanDelta` text.",
+        "parameters": ""
+      },
+      {
+        "name": "reasoning",
+        "fields": [
+          "content",
+          "id",
+          "summary",
+          "type"
+        ],
+        "required": [
+          "id",
+          "type"
+        ],
+        "description": "",
+        "parameters": ""
+      },
+      {
+        "name": "commandExecution",
+        "fields": [
+          "aggregatedOutput",
+          "command",
+          "commandActions",
+          "cwd",
+          "durationMs",
+          "exitCode",
+          "id",
+          "pluginId",
+          "processId",
+          "scriptPath",
+          "source",
+          "status",
+          "type"
+        ],
+        "required": [
+          "command",
+          "commandActions",
+          "cwd",
+          "id",
+          "status",
+          "type"
+        ],
+        "description": "",
+        "parameters": ""
+      },
+      {
+        "name": "fileChange",
+        "fields": [
+          "changes",
+          "id",
+          "status",
+          "type"
+        ],
+        "required": [
+          "changes",
+          "id",
+          "status",
+          "type"
+        ],
+        "description": "",
+        "parameters": ""
+      },
+      {
+        "name": "mcpToolCall",
+        "fields": [
+          "appContext",
+          "arguments",
+          "durationMs",
+          "error",
+          "id",
+          "mcpAppResourceUri",
+          "pluginId",
+          "readOnlyHint",
+          "result",
+          "server",
+          "status",
+          "tool",
+          "type"
+        ],
+        "required": [
+          "arguments",
+          "id",
+          "server",
+          "status",
+          "tool",
+          "type"
+        ],
+        "description": "",
+        "parameters": ""
+      },
+      {
+        "name": "dynamicToolCall",
+        "fields": [
+          "arguments",
+          "contentItems",
+          "durationMs",
+          "id",
+          "namespace",
+          "status",
+          "success",
+          "tool",
+          "type"
+        ],
+        "required": [
+          "arguments",
+          "id",
+          "status",
+          "tool",
+          "type"
+        ],
+        "description": "",
+        "parameters": ""
+      },
+      {
+        "name": "collabAgentToolCall",
+        "fields": [
+          "agentsStates",
+          "id",
+          "model",
+          "prompt",
+          "reasoningEffort",
+          "receiverThreadIds",
+          "senderThreadId",
+          "status",
+          "tool",
+          "type"
+        ],
+        "required": [
+          "agentsStates",
+          "id",
+          "receiverThreadIds",
+          "senderThreadId",
+          "status",
+          "tool",
+          "type"
+        ],
+        "description": "",
+        "parameters": ""
+      },
+      {
+        "name": "subAgentActivity",
+        "fields": [
+          "agentPath",
+          "agentThreadId",
+          "id",
+          "kind",
+          "type"
+        ],
+        "required": [
+          "agentPath",
+          "agentThreadId",
+          "id",
+          "kind",
+          "type"
+        ],
+        "description": "",
+        "parameters": ""
+      },
+      {
+        "name": "webSearch",
+        "fields": [
+          "action",
+          "id",
+          "query",
+          "results",
+          "type"
+        ],
+        "required": [
+          "id",
+          "query",
+          "type"
+        ],
+        "description": "",
+        "parameters": ""
+      },
+      {
+        "name": "imageView",
+        "fields": [
+          "id",
+          "path",
+          "type"
+        ],
+        "required": [
+          "id",
+          "path",
+          "type"
+        ],
+        "description": "",
+        "parameters": ""
+      },
+      {
+        "name": "sleep",
+        "fields": [
+          "durationMs",
+          "id",
+          "type"
+        ],
+        "required": [
+          "durationMs",
+          "id",
+          "type"
+        ],
+        "description": "Display item emitted by the interruptible `clock.sleep` tool.",
+        "parameters": ""
+      },
+      {
+        "name": "imageGeneration",
+        "fields": [
+          "failure",
+          "id",
+          "result",
+          "revisedPrompt",
+          "savedPath",
+          "status",
+          "transparentBackground",
+          "type"
+        ],
+        "required": [
+          "id",
+          "result",
+          "status",
+          "type"
+        ],
+        "description": "",
+        "parameters": ""
+      },
+      {
+        "name": "enteredReviewMode",
+        "fields": [
+          "id",
+          "review",
+          "type"
+        ],
+        "required": [
+          "id",
+          "review",
+          "type"
+        ],
+        "description": "",
+        "parameters": ""
+      },
+      {
+        "name": "exitedReviewMode",
+        "fields": [
+          "id",
+          "review",
+          "type"
+        ],
+        "required": [
+          "id",
+          "review",
+          "type"
+        ],
+        "description": "",
+        "parameters": ""
+      },
+      {
+        "name": "contextCompaction",
+        "fields": [
+          "id",
+          "type"
+        ],
+        "required": [
+          "id",
+          "type"
+        ],
+        "description": "",
+        "parameters": ""
+      }
+    ],
+    "user_inputs": [
+      {
+        "name": "text",
+        "fields": [
+          "text",
+          "text_elements",
+          "type"
+        ],
+        "required": [
+          "text",
+          "type"
+        ],
+        "description": "",
+        "parameters": ""
+      },
+      {
+        "name": "image",
+        "fields": [
+          "detail",
+          "type",
+          "url"
+        ],
+        "required": [
+          "type",
+          "url"
+        ],
+        "description": "",
+        "parameters": ""
+      },
+      {
+        "name": "localImage",
+        "fields": [
+          "detail",
+          "path",
+          "type"
+        ],
+        "required": [
+          "path",
+          "type"
+        ],
+        "description": "",
+        "parameters": ""
+      },
+      {
+        "name": "audio",
+        "fields": [
+          "type",
+          "url"
+        ],
+        "required": [
+          "type",
+          "url"
+        ],
+        "description": "",
+        "parameters": ""
+      },
+      {
+        "name": "localAudio",
+        "fields": [
+          "path",
+          "type"
+        ],
+        "required": [
+          "path",
+          "type"
+        ],
+        "description": "",
+        "parameters": ""
+      },
+      {
+        "name": "skill",
+        "fields": [
+          "name",
+          "path",
+          "type"
+        ],
+        "required": [
+          "name",
+          "path",
+          "type"
+        ],
+        "description": "",
+        "parameters": ""
+      },
+      {
+        "name": "mention",
+        "fields": [
+          "name",
+          "path",
+          "type"
+        ],
+        "required": [
+          "name",
+          "path",
+          "type"
+        ],
+        "description": "",
+        "parameters": ""
+      }
+    ],
+    "notifications": [
+      {
+        "name": "error",
+        "fields": [
+          "method",
+          "params"
+        ],
+        "required": [
+          "method",
+          "params"
+        ],
+        "description": "NEW NOTIFICATIONS",
+        "parameters": "ErrorNotification"
+      },
+      {
+        "name": "thread/started",
+        "fields": [
+          "method",
+          "params"
+        ],
+        "required": [
+          "method",
+          "params"
+        ],
+        "description": "",
+        "parameters": "ThreadStartedNotification"
+      },
+      {
+        "name": "thread/status/changed",
+        "fields": [
+          "method",
+          "params"
+        ],
+        "required": [
+          "method",
+          "params"
+        ],
+        "description": "",
+        "parameters": "ThreadStatusChangedNotification"
+      },
+      {
+        "name": "thread/archived",
+        "fields": [
+          "method",
+          "params"
+        ],
+        "required": [
+          "method",
+          "params"
+        ],
+        "description": "",
+        "parameters": "ThreadArchivedNotification"
+      },
+      {
+        "name": "thread/deleted",
+        "fields": [
+          "method",
+          "params"
+        ],
+        "required": [
+          "method",
+          "params"
+        ],
+        "description": "",
+        "parameters": "ThreadDeletedNotification"
+      },
+      {
+        "name": "thread/unarchived",
+        "fields": [
+          "method",
+          "params"
+        ],
+        "required": [
+          "method",
+          "params"
+        ],
+        "description": "",
+        "parameters": "ThreadUnarchivedNotification"
+      },
+      {
+        "name": "thread/closed",
+        "fields": [
+          "method",
+          "params"
+        ],
+        "required": [
+          "method",
+          "params"
+        ],
+        "description": "",
+        "parameters": "ThreadClosedNotification"
+      },
+      {
+        "name": "thread/reverted",
+        "fields": [
+          "method",
+          "params"
+        ],
+        "required": [
+          "method",
+          "params"
+        ],
+        "description": "",
+        "parameters": "ThreadRevertedNotification"
+      },
+      {
+        "name": "skills/changed",
+        "fields": [
+          "method",
+          "params"
+        ],
+        "required": [
+          "method",
+          "params"
+        ],
+        "description": "",
+        "parameters": "SkillsChangedNotification"
+      },
+      {
+        "name": "thread/name/updated",
+        "fields": [
+          "method",
+          "params"
+        ],
+        "required": [
+          "method",
+          "params"
+        ],
+        "description": "",
+        "parameters": "ThreadNameUpdatedNotification"
+      },
+      {
+        "name": "thread/goal/updated",
+        "fields": [
+          "method",
+          "params"
+        ],
+        "required": [
+          "method",
+          "params"
+        ],
+        "description": "",
+        "parameters": "ThreadGoalUpdatedNotification"
+      },
+      {
+        "name": "thread/goal/cleared",
+        "fields": [
+          "method",
+          "params"
+        ],
+        "required": [
+          "method",
+          "params"
+        ],
+        "description": "",
+        "parameters": "ThreadGoalClearedNotification"
+      },
+      {
+        "name": "thread/queue/changed",
+        "fields": [
+          "method",
+          "params"
+        ],
+        "required": [
+          "method",
+          "params"
+        ],
+        "description": "",
+        "parameters": "ThreadQueueChangedNotification"
+      },
+      {
+        "name": "project/changed",
+        "fields": [
+          "method",
+          "params"
+        ],
+        "required": [
+          "method",
+          "params"
+        ],
+        "description": "",
+        "parameters": "ProjectChangedNotification"
+      },
+      {
+        "name": "thread/project/updated",
+        "fields": [
+          "method",
+          "params"
+        ],
+        "required": [
+          "method",
+          "params"
+        ],
+        "description": "",
+        "parameters": "ThreadProjectUpdatedNotification"
+      },
+      {
+        "name": "thread/environment/connected",
+        "fields": [
+          "method",
+          "params"
+        ],
+        "required": [
+          "method",
+          "params"
+        ],
+        "description": "",
+        "parameters": "EnvironmentConnectionNotification"
+      },
+      {
+        "name": "thread/environment/disconnected",
+        "fields": [
+          "method",
+          "params"
+        ],
+        "required": [
+          "method",
+          "params"
+        ],
+        "description": "",
+        "parameters": "EnvironmentConnectionNotification"
+      },
+      {
+        "name": "thread/settings/updated",
+        "fields": [
+          "method",
+          "params"
+        ],
+        "required": [
+          "method",
+          "params"
+        ],
+        "description": "",
+        "parameters": "ThreadSettingsUpdatedNotification"
+      },
+      {
+        "name": "thread/tokenUsage/updated",
+        "fields": [
+          "method",
+          "params"
+        ],
+        "required": [
+          "method",
+          "params"
+        ],
+        "description": "",
+        "parameters": "ThreadTokenUsageUpdatedNotification"
+      },
+      {
+        "name": "turn/started",
+        "fields": [
+          "method",
+          "params"
+        ],
+        "required": [
+          "method",
+          "params"
+        ],
+        "description": "",
+        "parameters": "TurnStartedNotification"
+      },
+      {
+        "name": "hook/started",
+        "fields": [
+          "method",
+          "params"
+        ],
+        "required": [
+          "method",
+          "params"
+        ],
+        "description": "",
+        "parameters": "HookStartedNotification"
+      },
+      {
+        "name": "turn/completed",
+        "fields": [
+          "method",
+          "params"
+        ],
+        "required": [
+          "method",
+          "params"
+        ],
+        "description": "",
+        "parameters": "TurnCompletedNotification"
+      },
+      {
+        "name": "hook/completed",
+        "fields": [
+          "method",
+          "params"
+        ],
+        "required": [
+          "method",
+          "params"
+        ],
+        "description": "",
+        "parameters": "HookCompletedNotification"
+      },
+      {
+        "name": "turn/diff/updated",
+        "fields": [
+          "method",
+          "params"
+        ],
+        "required": [
+          "method",
+          "params"
+        ],
+        "description": "",
+        "parameters": "TurnDiffUpdatedNotification"
+      },
+      {
+        "name": "turn/plan/updated",
+        "fields": [
+          "method",
+          "params"
+        ],
+        "required": [
+          "method",
+          "params"
+        ],
+        "description": "",
+        "parameters": "TurnPlanUpdatedNotification"
+      },
+      {
+        "name": "item/started",
+        "fields": [
+          "method",
+          "params"
+        ],
+        "required": [
+          "method",
+          "params"
+        ],
+        "description": "",
+        "parameters": "ItemStartedNotification"
+      },
+      {
+        "name": "item/autoApprovalReview/started",
+        "fields": [
+          "method",
+          "params"
+        ],
+        "required": [
+          "method",
+          "params"
+        ],
+        "description": "",
+        "parameters": "ItemGuardianApprovalReviewStartedNotification"
+      },
+      {
+        "name": "item/autoApprovalReview/completed",
+        "fields": [
+          "method",
+          "params"
+        ],
+        "required": [
+          "method",
+          "params"
+        ],
+        "description": "",
+        "parameters": "ItemGuardianApprovalReviewCompletedNotification"
+      },
+      {
+        "name": "autoApprovalReview/strictReviewRequired",
+        "fields": [
+          "method",
+          "params"
+        ],
+        "required": [
+          "method",
+          "params"
+        ],
+        "description": "",
+        "parameters": "StrictReviewRequiredNotification"
+      },
+      {
+        "name": "item/completed",
+        "fields": [
+          "method",
+          "params"
+        ],
+        "required": [
+          "method",
+          "params"
+        ],
+        "description": "",
+        "parameters": "ItemCompletedNotification"
+      },
+      {
+        "name": "item/agentMessage/delta",
+        "fields": [
+          "method",
+          "params"
+        ],
+        "required": [
+          "method",
+          "params"
+        ],
+        "description": "",
+        "parameters": "AgentMessageDeltaNotification"
+      },
+      {
+        "name": "item/plan/delta",
+        "fields": [
+          "method",
+          "params"
+        ],
+        "required": [
+          "method",
+          "params"
+        ],
+        "description": "EXPERIMENTAL - proposed plan streaming deltas for plan items.",
+        "parameters": "PlanDeltaNotification"
+      },
+      {
+        "name": "command/exec/outputDelta",
+        "fields": [
+          "method",
+          "params"
+        ],
+        "required": [
+          "method",
+          "params"
+        ],
+        "description": "Stream base64-encoded stdout/stderr chunks for a running `command/exec` session.",
+        "parameters": "CommandExecOutputDeltaNotification"
+      },
+      {
+        "name": "process/outputDelta",
+        "fields": [
+          "method",
+          "params"
+        ],
+        "required": [
+          "method",
+          "params"
+        ],
+        "description": "Stream base64-encoded stdout/stderr chunks for a running `process/spawn` session.",
+        "parameters": "ProcessOutputDeltaNotification"
+      },
+      {
+        "name": "process/exited",
+        "fields": [
+          "method",
+          "params"
+        ],
+        "required": [
+          "method",
+          "params"
+        ],
+        "description": "Final exit notification for a `process/spawn` session.",
+        "parameters": "ProcessExitedNotification"
+      },
+      {
+        "name": "item/commandExecution/outputDelta",
+        "fields": [
+          "method",
+          "params"
+        ],
+        "required": [
+          "method",
+          "params"
+        ],
+        "description": "",
+        "parameters": "CommandExecutionOutputDeltaNotification"
+      },
+      {
+        "name": "item/commandExecution/terminalInteraction",
+        "fields": [
+          "method",
+          "params"
+        ],
+        "required": [
+          "method",
+          "params"
+        ],
+        "description": "",
+        "parameters": "TerminalInteractionNotification"
+      },
+      {
+        "name": "item/fileChange/outputDelta",
+        "fields": [
+          "method",
+          "params"
+        ],
+        "required": [
+          "method",
+          "params"
+        ],
+        "description": "Deprecated legacy apply_patch output stream notification.",
+        "parameters": "FileChangeOutputDeltaNotification"
+      },
+      {
+        "name": "item/fileChange/patchUpdated",
+        "fields": [
+          "method",
+          "params"
+        ],
+        "required": [
+          "method",
+          "params"
+        ],
+        "description": "",
+        "parameters": "FileChangePatchUpdatedNotification"
+      },
+      {
+        "name": "serverRequest/resolved",
+        "fields": [
+          "method",
+          "params"
+        ],
+        "required": [
+          "method",
+          "params"
+        ],
+        "description": "",
+        "parameters": "ServerRequestResolvedNotification"
+      },
+      {
+        "name": "item/mcpToolCall/progress",
+        "fields": [
+          "method",
+          "params"
+        ],
+        "required": [
+          "method",
+          "params"
+        ],
+        "description": "",
+        "parameters": "McpToolCallProgressNotification"
+      },
+      {
+        "name": "mcpServer/oauthLogin/completed",
+        "fields": [
+          "method",
+          "params"
+        ],
+        "required": [
+          "method",
+          "params"
+        ],
+        "description": "",
+        "parameters": "McpServerOauthLoginCompletedNotification"
+      },
+      {
+        "name": "mcpServer/startupStatus/updated",
+        "fields": [
+          "method",
+          "params"
+        ],
+        "required": [
+          "method",
+          "params"
+        ],
+        "description": "",
+        "parameters": "McpServerStatusUpdatedNotification"
+      },
+      {
+        "name": "mcpServer/event/stream/notification",
+        "fields": [
+          "method",
+          "params"
+        ],
+        "required": [
+          "method",
+          "params"
+        ],
+        "description": "",
+        "parameters": "McpServerEventStreamNotification"
+      },
+      {
+        "name": "account/updated",
+        "fields": [
+          "method",
+          "params"
+        ],
+        "required": [
+          "method",
+          "params"
+        ],
+        "description": "",
+        "parameters": "AccountUpdatedNotification"
+      },
+      {
+        "name": "account/rateLimits/updated",
+        "fields": [
+          "method",
+          "params"
+        ],
+        "required": [
+          "method",
+          "params"
+        ],
+        "description": "",
+        "parameters": "AccountRateLimitsUpdatedNotification"
+      },
+      {
+        "name": "app/list/updated",
+        "fields": [
+          "method",
+          "params"
+        ],
+        "required": [
+          "method",
+          "params"
+        ],
+        "description": "",
+        "parameters": "AppListUpdatedNotification"
+      },
+      {
+        "name": "remoteControl/status/changed",
+        "fields": [
+          "method",
+          "params"
+        ],
+        "required": [
+          "method",
+          "params"
+        ],
+        "description": "",
+        "parameters": "RemoteControlStatusChangedNotification"
+      },
+      {
+        "name": "externalAgentConfig/import/progress",
+        "fields": [
+          "method",
+          "params"
+        ],
+        "required": [
+          "method",
+          "params"
+        ],
+        "description": "",
+        "parameters": "ExternalAgentConfigImportProgressNotification"
+      },
+      {
+        "name": "externalAgentConfig/import/completed",
+        "fields": [
+          "method",
+          "params"
+        ],
+        "required": [
+          "method",
+          "params"
+        ],
+        "description": "",
+        "parameters": "ExternalAgentConfigImportCompletedNotification"
+      },
+      {
+        "name": "fs/changed",
+        "fields": [
+          "method",
+          "params"
+        ],
+        "required": [
+          "method",
+          "params"
+        ],
+        "description": "",
+        "parameters": "FsChangedNotification"
+      },
+      {
+        "name": "item/reasoning/summaryTextDelta",
+        "fields": [
+          "method",
+          "params"
+        ],
+        "required": [
+          "method",
+          "params"
+        ],
+        "description": "",
+        "parameters": "ReasoningSummaryTextDeltaNotification"
+      },
+      {
+        "name": "item/reasoning/summaryPartAdded",
+        "fields": [
+          "method",
+          "params"
+        ],
+        "required": [
+          "method",
+          "params"
+        ],
+        "description": "",
+        "parameters": "ReasoningSummaryPartAddedNotification"
+      },
+      {
+        "name": "item/reasoning/textDelta",
+        "fields": [
+          "method",
+          "params"
+        ],
+        "required": [
+          "method",
+          "params"
+        ],
+        "description": "",
+        "parameters": "ReasoningTextDeltaNotification"
+      },
+      {
+        "name": "thread/compacted",
+        "fields": [
+          "method",
+          "params"
+        ],
+        "required": [
+          "method",
+          "params"
+        ],
+        "description": "Deprecated: Use `ContextCompaction` item type instead.",
+        "parameters": "ContextCompactedNotification"
+      },
+      {
+        "name": "model/rerouted",
+        "fields": [
+          "method",
+          "params"
+        ],
+        "required": [
+          "method",
+          "params"
+        ],
+        "description": "",
+        "parameters": "ModelReroutedNotification"
+      },
+      {
+        "name": "model/verification",
+        "fields": [
+          "method",
+          "params"
+        ],
+        "required": [
+          "method",
+          "params"
+        ],
+        "description": "",
+        "parameters": "ModelVerificationNotification"
+      },
+      {
+        "name": "modelProvider/authRecoveryStarted",
+        "fields": [
+          "method",
+          "params"
+        ],
+        "required": [
+          "method",
+          "params"
+        ],
+        "description": "",
+        "parameters": "AuthRecoveryNotification"
+      },
+      {
+        "name": "modelProvider/authRecoveryCompleted",
+        "fields": [
+          "method",
+          "params"
+        ],
+        "required": [
+          "method",
+          "params"
+        ],
+        "description": "",
+        "parameters": "AuthRecoveryNotification"
+      },
+      {
+        "name": "turn/moderationMetadata",
+        "fields": [
+          "method",
+          "params"
+        ],
+        "required": [
+          "method",
+          "params"
+        ],
+        "description": "",
+        "parameters": "TurnModerationMetadataNotification"
+      },
+      {
+        "name": "model/safetyBuffering/updated",
+        "fields": [
+          "method",
+          "params"
+        ],
+        "required": [
+          "method",
+          "params"
+        ],
+        "description": "",
+        "parameters": "ModelSafetyBufferingUpdatedNotification"
+      },
+      {
+        "name": "warning",
+        "fields": [
+          "method",
+          "params"
+        ],
+        "required": [
+          "method",
+          "params"
+        ],
+        "description": "",
+        "parameters": "WarningNotification"
+      },
+      {
+        "name": "guardianWarning",
+        "fields": [
+          "method",
+          "params"
+        ],
+        "required": [
+          "method",
+          "params"
+        ],
+        "description": "",
+        "parameters": "GuardianWarningNotification"
+      },
+      {
+        "name": "deprecationNotice",
+        "fields": [
+          "method",
+          "params"
+        ],
+        "required": [
+          "method",
+          "params"
+        ],
+        "description": "",
+        "parameters": "DeprecationNoticeNotification"
+      },
+      {
+        "name": "configWarning",
+        "fields": [
+          "method",
+          "params"
+        ],
+        "required": [
+          "method",
+          "params"
+        ],
+        "description": "",
+        "parameters": "ConfigWarningNotification"
+      },
+      {
+        "name": "fuzzyFileSearch/sessionUpdated",
+        "fields": [
+          "method",
+          "params"
+        ],
+        "required": [
+          "method",
+          "params"
+        ],
+        "description": "",
+        "parameters": "FuzzyFileSearchSessionUpdatedNotification"
+      },
+      {
+        "name": "fuzzyFileSearch/sessionCompleted",
+        "fields": [
+          "method",
+          "params"
+        ],
+        "required": [
+          "method",
+          "params"
+        ],
+        "description": "",
+        "parameters": "FuzzyFileSearchSessionCompletedNotification"
+      },
+      {
+        "name": "thread/realtime/started",
+        "fields": [
+          "method",
+          "params"
+        ],
+        "required": [
+          "method",
+          "params"
+        ],
+        "description": "",
+        "parameters": "ThreadRealtimeStartedNotification"
+      },
+      {
+        "name": "thread/realtime/itemAdded",
+        "fields": [
+          "method",
+          "params"
+        ],
+        "required": [
+          "method",
+          "params"
+        ],
+        "description": "",
+        "parameters": "ThreadRealtimeItemAddedNotification"
+      },
+      {
+        "name": "thread/realtime/item/started",
+        "fields": [
+          "method",
+          "params"
+        ],
+        "required": [
+          "method",
+          "params"
+        ],
+        "description": "",
+        "parameters": "ThreadRealtimeItemStartedNotification"
+      },
+      {
+        "name": "thread/realtime/item/transcript/delta",
+        "fields": [
+          "method",
+          "params"
+        ],
+        "required": [
+          "method",
+          "params"
+        ],
+        "description": "",
+        "parameters": "ThreadRealtimeItemTranscriptDeltaNotification"
+      },
+      {
+        "name": "thread/realtime/item/completed",
+        "fields": [
+          "method",
+          "params"
+        ],
+        "required": [
+          "method",
+          "params"
+        ],
+        "description": "",
+        "parameters": "ThreadRealtimeItemCompletedNotification"
+      },
+      {
+        "name": "thread/realtime/transcript/delta",
+        "fields": [
+          "method",
+          "params"
+        ],
+        "required": [
+          "method",
+          "params"
+        ],
+        "description": "",
+        "parameters": "ThreadRealtimeTranscriptDeltaNotification"
+      },
+      {
+        "name": "thread/realtime/transcript/done",
+        "fields": [
+          "method",
+          "params"
+        ],
+        "required": [
+          "method",
+          "params"
+        ],
+        "description": "",
+        "parameters": "ThreadRealtimeTranscriptDoneNotification"
+      },
+      {
+        "name": "thread/realtime/outputAudio/delta",
+        "fields": [
+          "method",
+          "params"
+        ],
+        "required": [
+          "method",
+          "params"
+        ],
+        "description": "",
+        "parameters": "ThreadRealtimeOutputAudioDeltaNotification"
+      },
+      {
+        "name": "thread/realtime/sdp",
+        "fields": [
+          "method",
+          "params"
+        ],
+        "required": [
+          "method",
+          "params"
+        ],
+        "description": "",
+        "parameters": "ThreadRealtimeSdpNotification"
+      },
+      {
+        "name": "thread/realtime/error",
+        "fields": [
+          "method",
+          "params"
+        ],
+        "required": [
+          "method",
+          "params"
+        ],
+        "description": "",
+        "parameters": "ThreadRealtimeErrorNotification"
+      },
+      {
+        "name": "thread/realtime/closed",
+        "fields": [
+          "method",
+          "params"
+        ],
+        "required": [
+          "method",
+          "params"
+        ],
+        "description": "",
+        "parameters": "ThreadRealtimeClosedNotification"
+      },
+      {
+        "name": "windows/worldWritableWarning",
+        "fields": [
+          "method",
+          "params"
+        ],
+        "required": [
+          "method",
+          "params"
+        ],
+        "description": "Notifies the user of world-writable directories on Windows, which cannot be protected by the sandbox.",
+        "parameters": "WindowsWorldWritableWarningNotification"
+      },
+      {
+        "name": "windowsSandbox/setupCompleted",
+        "fields": [
+          "method",
+          "params"
+        ],
+        "required": [
+          "method",
+          "params"
+        ],
+        "description": "",
+        "parameters": "WindowsSandboxSetupCompletedNotification"
+      },
+      {
+        "name": "account/login/completed",
+        "fields": [
+          "method",
+          "params"
+        ],
+        "required": [
+          "method",
+          "params"
+        ],
+        "description": "",
+        "parameters": "AccountLoginCompletedNotification"
+      }
+    ],
+    "server_requests": [
+      {
+        "name": "item/commandExecution/requestApproval",
+        "fields": [
+          "id",
+          "method",
+          "params"
+        ],
+        "required": [
+          "id",
+          "method",
+          "params"
+        ],
+        "description": "NEW APIs Sent when approval is requested for a specific command execution. This request is used for Turns started via turn/start.",
+        "parameters": "CommandExecutionRequestApprovalParams"
+      },
+      {
+        "name": "item/fileChange/requestApproval",
+        "fields": [
+          "id",
+          "method",
+          "params"
+        ],
+        "required": [
+          "id",
+          "method",
+          "params"
+        ],
+        "description": "Sent when approval is requested for a specific file change. This request is used for Turns started via turn/start.",
+        "parameters": "FileChangeRequestApprovalParams"
+      },
+      {
+        "name": "item/tool/requestUserInput",
+        "fields": [
+          "id",
+          "method",
+          "params"
+        ],
+        "required": [
+          "id",
+          "method",
+          "params"
+        ],
+        "description": "EXPERIMENTAL - Request input from the user for a tool call.",
+        "parameters": "ToolRequestUserInputParams"
+      },
+      {
+        "name": "mcpServer/elicitation/request",
+        "fields": [
+          "id",
+          "method",
+          "params"
+        ],
+        "required": [
+          "id",
+          "method",
+          "params"
+        ],
+        "description": "Request input for an MCP server elicitation.",
+        "parameters": "McpServerElicitationRequestParams"
+      },
+      {
+        "name": "item/permissions/requestApproval",
+        "fields": [
+          "id",
+          "method",
+          "params"
+        ],
+        "required": [
+          "id",
+          "method",
+          "params"
+        ],
+        "description": "Request approval for additional permissions from the user.",
+        "parameters": "PermissionsRequestApprovalParams"
+      },
+      {
+        "name": "item/tool/call",
+        "fields": [
+          "id",
+          "method",
+          "params"
+        ],
+        "required": [
+          "id",
+          "method",
+          "params"
+        ],
+        "description": "Execute a dynamic tool call on the client.",
+        "parameters": "DynamicToolCallParams"
+      },
+      {
+        "name": "account/chatgptAuthTokens/refresh",
+        "fields": [
+          "id",
+          "method",
+          "params"
+        ],
+        "required": [
+          "id",
+          "method",
+          "params"
+        ],
+        "description": "",
+        "parameters": "ChatgptAuthTokensRefreshParams"
+      },
+      {
+        "name": "attestation/generate",
+        "fields": [
+          "id",
+          "method",
+          "params"
+        ],
+        "required": [
+          "id",
+          "method",
+          "params"
+        ],
+        "description": "Generate a fresh upstream attestation result on demand.",
+        "parameters": "AttestationGenerateParams"
+      },
+      {
+        "name": "applyPatchApproval",
+        "fields": [
+          "id",
+          "method",
+          "params"
+        ],
+        "required": [
+          "id",
+          "method",
+          "params"
+        ],
+        "description": "DEPRECATED APIs below Request to approve a patch. This request is used for Turns started via the legacy APIs (i.e. SendUserTurn, SendUserMessage).",
+        "parameters": "ApplyPatchApprovalParams"
+      },
+      {
+        "name": "execCommandApproval",
+        "fields": [
+          "id",
+          "method",
+          "params"
+        ],
+        "required": [
+          "id",
+          "method",
+          "params"
+        ],
+        "description": "Request to exec a command. This request is used for Turns started via the legacy APIs (i.e. SendUserTurn, SendUserMessage).",
+        "parameters": "ExecCommandApprovalParams"
+      }
+    ]
+  },
+  "experimental_export": {
+    "items": [
+      {
+        "name": "userMessage",
+        "fields": [
+          "clientId",
+          "content",
+          "id",
+          "type"
+        ],
+        "required": [
+          "content",
+          "id",
+          "type"
+        ],
+        "description": "",
+        "parameters": ""
+      },
+      {
+        "name": "hookPrompt",
+        "fields": [
+          "fragments",
+          "id",
+          "type"
+        ],
+        "required": [
+          "fragments",
+          "id",
+          "type"
+        ],
+        "description": "",
+        "parameters": ""
+      },
+      {
+        "name": "agentMessage",
+        "fields": [
+          "delivery",
+          "id",
+          "memoryCitation",
+          "phase",
+          "questions",
+          "text",
+          "type"
+        ],
+        "required": [
+          "id",
+          "text",
+          "type"
+        ],
+        "description": "",
+        "parameters": ""
+      },
+      {
+        "name": "functionCallOutput",
+        "fields": [
+          "id",
+          "name",
+          "namespace",
+          "output",
+          "type"
+        ],
+        "required": [
+          "id",
+          "name",
+          "output",
+          "type"
+        ],
+        "description": "",
+        "parameters": ""
+      },
+      {
+        "name": "plan",
+        "fields": [
+          "id",
+          "text",
+          "type"
+        ],
+        "required": [
+          "id",
+          "text",
+          "type"
+        ],
+        "description": "EXPERIMENTAL - proposed plan item content. The completed plan item is authoritative and may not match the concatenation of `PlanDelta` text.",
+        "parameters": ""
+      },
+      {
+        "name": "reasoning",
+        "fields": [
+          "content",
+          "id",
+          "summary",
+          "type"
+        ],
+        "required": [
+          "id",
+          "type"
+        ],
+        "description": "",
+        "parameters": ""
+      },
+      {
+        "name": "commandExecution",
+        "fields": [
+          "aggregatedOutput",
+          "command",
+          "commandActions",
+          "cwd",
+          "durationMs",
+          "exitCode",
+          "id",
+          "pluginId",
+          "processId",
+          "scriptPath",
+          "source",
+          "status",
+          "type"
+        ],
+        "required": [
+          "command",
+          "commandActions",
+          "cwd",
+          "id",
+          "status",
+          "type"
+        ],
+        "description": "",
+        "parameters": ""
+      },
+      {
+        "name": "fileChange",
+        "fields": [
+          "changes",
+          "id",
+          "status",
+          "type"
+        ],
+        "required": [
+          "changes",
+          "id",
+          "status",
+          "type"
+        ],
+        "description": "",
+        "parameters": ""
+      },
+      {
+        "name": "mcpToolCall",
+        "fields": [
+          "appContext",
+          "arguments",
+          "durationMs",
+          "error",
+          "id",
+          "mcpAppResourceUri",
+          "pluginId",
+          "readOnlyHint",
+          "result",
+          "server",
+          "status",
+          "tool",
+          "type"
+        ],
+        "required": [
+          "arguments",
+          "id",
+          "server",
+          "status",
+          "tool",
+          "type"
+        ],
+        "description": "",
+        "parameters": ""
+      },
+      {
+        "name": "dynamicToolCall",
+        "fields": [
+          "arguments",
+          "contentItems",
+          "durationMs",
+          "id",
+          "namespace",
+          "status",
+          "success",
+          "tool",
+          "type"
+        ],
+        "required": [
+          "arguments",
+          "id",
+          "status",
+          "tool",
+          "type"
+        ],
+        "description": "",
+        "parameters": ""
+      },
+      {
+        "name": "collabAgentToolCall",
+        "fields": [
+          "agentsStates",
+          "id",
+          "model",
+          "prompt",
+          "reasoningEffort",
+          "receiverThreadIds",
+          "senderThreadId",
+          "status",
+          "tool",
+          "type"
+        ],
+        "required": [
+          "agentsStates",
+          "id",
+          "receiverThreadIds",
+          "senderThreadId",
+          "status",
+          "tool",
+          "type"
+        ],
+        "description": "",
+        "parameters": ""
+      },
+      {
+        "name": "subAgentActivity",
+        "fields": [
+          "agentPath",
+          "agentThreadId",
+          "id",
+          "kind",
+          "type"
+        ],
+        "required": [
+          "agentPath",
+          "agentThreadId",
+          "id",
+          "kind",
+          "type"
+        ],
+        "description": "",
+        "parameters": ""
+      },
+      {
+        "name": "webSearch",
+        "fields": [
+          "action",
+          "id",
+          "query",
+          "results",
+          "type"
+        ],
+        "required": [
+          "id",
+          "query",
+          "type"
+        ],
+        "description": "",
+        "parameters": ""
+      },
+      {
+        "name": "imageView",
+        "fields": [
+          "id",
+          "path",
+          "type"
+        ],
+        "required": [
+          "id",
+          "path",
+          "type"
+        ],
+        "description": "",
+        "parameters": ""
+      },
+      {
+        "name": "sleep",
+        "fields": [
+          "durationMs",
+          "id",
+          "type"
+        ],
+        "required": [
+          "durationMs",
+          "id",
+          "type"
+        ],
+        "description": "Display item emitted by the interruptible `clock.sleep` tool.",
+        "parameters": ""
+      },
+      {
+        "name": "imageGeneration",
+        "fields": [
+          "failure",
+          "id",
+          "result",
+          "revisedPrompt",
+          "savedPath",
+          "status",
+          "transparentBackground",
+          "type"
+        ],
+        "required": [
+          "id",
+          "result",
+          "status",
+          "type"
+        ],
+        "description": "",
+        "parameters": ""
+      },
+      {
+        "name": "enteredReviewMode",
+        "fields": [
+          "id",
+          "review",
+          "type"
+        ],
+        "required": [
+          "id",
+          "review",
+          "type"
+        ],
+        "description": "",
+        "parameters": ""
+      },
+      {
+        "name": "exitedReviewMode",
+        "fields": [
+          "id",
+          "review",
+          "type"
+        ],
+        "required": [
+          "id",
+          "review",
+          "type"
+        ],
+        "description": "",
+        "parameters": ""
+      },
+      {
+        "name": "contextCompaction",
+        "fields": [
+          "id",
+          "type"
+        ],
+        "required": [
+          "id",
+          "type"
+        ],
+        "description": "",
+        "parameters": ""
+      }
+    ],
+    "user_inputs": [
+      {
+        "name": "text",
+        "fields": [
+          "text",
+          "text_elements",
+          "type"
+        ],
+        "required": [
+          "text",
+          "type"
+        ],
+        "description": "",
+        "parameters": ""
+      },
+      {
+        "name": "image",
+        "fields": [
+          "detail",
+          "type",
+          "url"
+        ],
+        "required": [
+          "type",
+          "url"
+        ],
+        "description": "",
+        "parameters": ""
+      },
+      {
+        "name": "localImage",
+        "fields": [
+          "detail",
+          "path",
+          "type"
+        ],
+        "required": [
+          "path",
+          "type"
+        ],
+        "description": "",
+        "parameters": ""
+      },
+      {
+        "name": "audio",
+        "fields": [
+          "type",
+          "url"
+        ],
+        "required": [
+          "type",
+          "url"
+        ],
+        "description": "",
+        "parameters": ""
+      },
+      {
+        "name": "localAudio",
+        "fields": [
+          "path",
+          "type"
+        ],
+        "required": [
+          "path",
+          "type"
+        ],
+        "description": "",
+        "parameters": ""
+      },
+      {
+        "name": "skill",
+        "fields": [
+          "name",
+          "path",
+          "type"
+        ],
+        "required": [
+          "name",
+          "path",
+          "type"
+        ],
+        "description": "",
+        "parameters": ""
+      },
+      {
+        "name": "mention",
+        "fields": [
+          "name",
+          "path",
+          "type"
+        ],
+        "required": [
+          "name",
+          "path",
+          "type"
+        ],
+        "description": "",
+        "parameters": ""
+      }
+    ],
+    "notifications": [
+      {
+        "name": "error",
+        "fields": [
+          "method",
+          "params"
+        ],
+        "required": [
+          "method",
+          "params"
+        ],
+        "description": "NEW NOTIFICATIONS",
+        "parameters": "ErrorNotification"
+      },
+      {
+        "name": "thread/started",
+        "fields": [
+          "method",
+          "params"
+        ],
+        "required": [
+          "method",
+          "params"
+        ],
+        "description": "",
+        "parameters": "ThreadStartedNotification"
+      },
+      {
+        "name": "thread/status/changed",
+        "fields": [
+          "method",
+          "params"
+        ],
+        "required": [
+          "method",
+          "params"
+        ],
+        "description": "",
+        "parameters": "ThreadStatusChangedNotification"
+      },
+      {
+        "name": "thread/archived",
+        "fields": [
+          "method",
+          "params"
+        ],
+        "required": [
+          "method",
+          "params"
+        ],
+        "description": "",
+        "parameters": "ThreadArchivedNotification"
+      },
+      {
+        "name": "thread/deleted",
+        "fields": [
+          "method",
+          "params"
+        ],
+        "required": [
+          "method",
+          "params"
+        ],
+        "description": "",
+        "parameters": "ThreadDeletedNotification"
+      },
+      {
+        "name": "thread/unarchived",
+        "fields": [
+          "method",
+          "params"
+        ],
+        "required": [
+          "method",
+          "params"
+        ],
+        "description": "",
+        "parameters": "ThreadUnarchivedNotification"
+      },
+      {
+        "name": "thread/closed",
+        "fields": [
+          "method",
+          "params"
+        ],
+        "required": [
+          "method",
+          "params"
+        ],
+        "description": "",
+        "parameters": "ThreadClosedNotification"
+      },
+      {
+        "name": "thread/reverted",
+        "fields": [
+          "method",
+          "params"
+        ],
+        "required": [
+          "method",
+          "params"
+        ],
+        "description": "",
+        "parameters": "ThreadRevertedNotification"
+      },
+      {
+        "name": "skills/changed",
+        "fields": [
+          "method",
+          "params"
+        ],
+        "required": [
+          "method",
+          "params"
+        ],
+        "description": "",
+        "parameters": "SkillsChangedNotification"
+      },
+      {
+        "name": "thread/name/updated",
+        "fields": [
+          "method",
+          "params"
+        ],
+        "required": [
+          "method",
+          "params"
+        ],
+        "description": "",
+        "parameters": "ThreadNameUpdatedNotification"
+      },
+      {
+        "name": "thread/goal/updated",
+        "fields": [
+          "method",
+          "params"
+        ],
+        "required": [
+          "method",
+          "params"
+        ],
+        "description": "",
+        "parameters": "ThreadGoalUpdatedNotification"
+      },
+      {
+        "name": "thread/goal/cleared",
+        "fields": [
+          "method",
+          "params"
+        ],
+        "required": [
+          "method",
+          "params"
+        ],
+        "description": "",
+        "parameters": "ThreadGoalClearedNotification"
+      },
+      {
+        "name": "thread/queue/changed",
+        "fields": [
+          "method",
+          "params"
+        ],
+        "required": [
+          "method",
+          "params"
+        ],
+        "description": "",
+        "parameters": "ThreadQueueChangedNotification"
+      },
+      {
+        "name": "project/changed",
+        "fields": [
+          "method",
+          "params"
+        ],
+        "required": [
+          "method",
+          "params"
+        ],
+        "description": "",
+        "parameters": "ProjectChangedNotification"
+      },
+      {
+        "name": "thread/project/updated",
+        "fields": [
+          "method",
+          "params"
+        ],
+        "required": [
+          "method",
+          "params"
+        ],
+        "description": "",
+        "parameters": "ThreadProjectUpdatedNotification"
+      },
+      {
+        "name": "thread/environment/connected",
+        "fields": [
+          "method",
+          "params"
+        ],
+        "required": [
+          "method",
+          "params"
+        ],
+        "description": "",
+        "parameters": "EnvironmentConnectionNotification"
+      },
+      {
+        "name": "thread/environment/disconnected",
+        "fields": [
+          "method",
+          "params"
+        ],
+        "required": [
+          "method",
+          "params"
+        ],
+        "description": "",
+        "parameters": "EnvironmentConnectionNotification"
+      },
+      {
+        "name": "thread/settings/updated",
+        "fields": [
+          "method",
+          "params"
+        ],
+        "required": [
+          "method",
+          "params"
+        ],
+        "description": "",
+        "parameters": "ThreadSettingsUpdatedNotification"
+      },
+      {
+        "name": "thread/tokenUsage/updated",
+        "fields": [
+          "method",
+          "params"
+        ],
+        "required": [
+          "method",
+          "params"
+        ],
+        "description": "",
+        "parameters": "ThreadTokenUsageUpdatedNotification"
+      },
+      {
+        "name": "turn/started",
+        "fields": [
+          "method",
+          "params"
+        ],
+        "required": [
+          "method",
+          "params"
+        ],
+        "description": "",
+        "parameters": "TurnStartedNotification"
+      },
+      {
+        "name": "hook/started",
+        "fields": [
+          "method",
+          "params"
+        ],
+        "required": [
+          "method",
+          "params"
+        ],
+        "description": "",
+        "parameters": "HookStartedNotification"
+      },
+      {
+        "name": "turn/completed",
+        "fields": [
+          "method",
+          "params"
+        ],
+        "required": [
+          "method",
+          "params"
+        ],
+        "description": "",
+        "parameters": "TurnCompletedNotification"
+      },
+      {
+        "name": "hook/completed",
+        "fields": [
+          "method",
+          "params"
+        ],
+        "required": [
+          "method",
+          "params"
+        ],
+        "description": "",
+        "parameters": "HookCompletedNotification"
+      },
+      {
+        "name": "turn/diff/updated",
+        "fields": [
+          "method",
+          "params"
+        ],
+        "required": [
+          "method",
+          "params"
+        ],
+        "description": "",
+        "parameters": "TurnDiffUpdatedNotification"
+      },
+      {
+        "name": "turn/plan/updated",
+        "fields": [
+          "method",
+          "params"
+        ],
+        "required": [
+          "method",
+          "params"
+        ],
+        "description": "",
+        "parameters": "TurnPlanUpdatedNotification"
+      },
+      {
+        "name": "item/started",
+        "fields": [
+          "method",
+          "params"
+        ],
+        "required": [
+          "method",
+          "params"
+        ],
+        "description": "",
+        "parameters": "ItemStartedNotification"
+      },
+      {
+        "name": "item/autoApprovalReview/started",
+        "fields": [
+          "method",
+          "params"
+        ],
+        "required": [
+          "method",
+          "params"
+        ],
+        "description": "",
+        "parameters": "ItemGuardianApprovalReviewStartedNotification"
+      },
+      {
+        "name": "item/autoApprovalReview/completed",
+        "fields": [
+          "method",
+          "params"
+        ],
+        "required": [
+          "method",
+          "params"
+        ],
+        "description": "",
+        "parameters": "ItemGuardianApprovalReviewCompletedNotification"
+      },
+      {
+        "name": "autoApprovalReview/strictReviewRequired",
+        "fields": [
+          "method",
+          "params"
+        ],
+        "required": [
+          "method",
+          "params"
+        ],
+        "description": "",
+        "parameters": "StrictReviewRequiredNotification"
+      },
+      {
+        "name": "item/completed",
+        "fields": [
+          "method",
+          "params"
+        ],
+        "required": [
+          "method",
+          "params"
+        ],
+        "description": "",
+        "parameters": "ItemCompletedNotification"
+      },
+      {
+        "name": "item/agentMessage/delta",
+        "fields": [
+          "method",
+          "params"
+        ],
+        "required": [
+          "method",
+          "params"
+        ],
+        "description": "",
+        "parameters": "AgentMessageDeltaNotification"
+      },
+      {
+        "name": "item/plan/delta",
+        "fields": [
+          "method",
+          "params"
+        ],
+        "required": [
+          "method",
+          "params"
+        ],
+        "description": "EXPERIMENTAL - proposed plan streaming deltas for plan items.",
+        "parameters": "PlanDeltaNotification"
+      },
+      {
+        "name": "command/exec/outputDelta",
+        "fields": [
+          "method",
+          "params"
+        ],
+        "required": [
+          "method",
+          "params"
+        ],
+        "description": "Stream base64-encoded stdout/stderr chunks for a running `command/exec` session.",
+        "parameters": "CommandExecOutputDeltaNotification"
+      },
+      {
+        "name": "process/outputDelta",
+        "fields": [
+          "method",
+          "params"
+        ],
+        "required": [
+          "method",
+          "params"
+        ],
+        "description": "Stream base64-encoded stdout/stderr chunks for a running `process/spawn` session.",
+        "parameters": "ProcessOutputDeltaNotification"
+      },
+      {
+        "name": "process/exited",
+        "fields": [
+          "method",
+          "params"
+        ],
+        "required": [
+          "method",
+          "params"
+        ],
+        "description": "Final exit notification for a `process/spawn` session.",
+        "parameters": "ProcessExitedNotification"
+      },
+      {
+        "name": "item/commandExecution/outputDelta",
+        "fields": [
+          "method",
+          "params"
+        ],
+        "required": [
+          "method",
+          "params"
+        ],
+        "description": "",
+        "parameters": "CommandExecutionOutputDeltaNotification"
+      },
+      {
+        "name": "item/commandExecution/terminalInteraction",
+        "fields": [
+          "method",
+          "params"
+        ],
+        "required": [
+          "method",
+          "params"
+        ],
+        "description": "",
+        "parameters": "TerminalInteractionNotification"
+      },
+      {
+        "name": "item/fileChange/outputDelta",
+        "fields": [
+          "method",
+          "params"
+        ],
+        "required": [
+          "method",
+          "params"
+        ],
+        "description": "Deprecated legacy apply_patch output stream notification.",
+        "parameters": "FileChangeOutputDeltaNotification"
+      },
+      {
+        "name": "item/fileChange/patchUpdated",
+        "fields": [
+          "method",
+          "params"
+        ],
+        "required": [
+          "method",
+          "params"
+        ],
+        "description": "",
+        "parameters": "FileChangePatchUpdatedNotification"
+      },
+      {
+        "name": "serverRequest/resolved",
+        "fields": [
+          "method",
+          "params"
+        ],
+        "required": [
+          "method",
+          "params"
+        ],
+        "description": "",
+        "parameters": "ServerRequestResolvedNotification"
+      },
+      {
+        "name": "item/mcpToolCall/progress",
+        "fields": [
+          "method",
+          "params"
+        ],
+        "required": [
+          "method",
+          "params"
+        ],
+        "description": "",
+        "parameters": "McpToolCallProgressNotification"
+      },
+      {
+        "name": "mcpServer/oauthLogin/completed",
+        "fields": [
+          "method",
+          "params"
+        ],
+        "required": [
+          "method",
+          "params"
+        ],
+        "description": "",
+        "parameters": "McpServerOauthLoginCompletedNotification"
+      },
+      {
+        "name": "mcpServer/startupStatus/updated",
+        "fields": [
+          "method",
+          "params"
+        ],
+        "required": [
+          "method",
+          "params"
+        ],
+        "description": "",
+        "parameters": "McpServerStatusUpdatedNotification"
+      },
+      {
+        "name": "mcpServer/event/stream/notification",
+        "fields": [
+          "method",
+          "params"
+        ],
+        "required": [
+          "method",
+          "params"
+        ],
+        "description": "",
+        "parameters": "McpServerEventStreamNotification"
+      },
+      {
+        "name": "account/updated",
+        "fields": [
+          "method",
+          "params"
+        ],
+        "required": [
+          "method",
+          "params"
+        ],
+        "description": "",
+        "parameters": "AccountUpdatedNotification"
+      },
+      {
+        "name": "account/rateLimits/updated",
+        "fields": [
+          "method",
+          "params"
+        ],
+        "required": [
+          "method",
+          "params"
+        ],
+        "description": "",
+        "parameters": "AccountRateLimitsUpdatedNotification"
+      },
+      {
+        "name": "app/list/updated",
+        "fields": [
+          "method",
+          "params"
+        ],
+        "required": [
+          "method",
+          "params"
+        ],
+        "description": "",
+        "parameters": "AppListUpdatedNotification"
+      },
+      {
+        "name": "remoteControl/status/changed",
+        "fields": [
+          "method",
+          "params"
+        ],
+        "required": [
+          "method",
+          "params"
+        ],
+        "description": "",
+        "parameters": "RemoteControlStatusChangedNotification"
+      },
+      {
+        "name": "externalAgentConfig/import/progress",
+        "fields": [
+          "method",
+          "params"
+        ],
+        "required": [
+          "method",
+          "params"
+        ],
+        "description": "",
+        "parameters": "ExternalAgentConfigImportProgressNotification"
+      },
+      {
+        "name": "externalAgentConfig/import/completed",
+        "fields": [
+          "method",
+          "params"
+        ],
+        "required": [
+          "method",
+          "params"
+        ],
+        "description": "",
+        "parameters": "ExternalAgentConfigImportCompletedNotification"
+      },
+      {
+        "name": "fs/changed",
+        "fields": [
+          "method",
+          "params"
+        ],
+        "required": [
+          "method",
+          "params"
+        ],
+        "description": "",
+        "parameters": "FsChangedNotification"
+      },
+      {
+        "name": "item/reasoning/summaryTextDelta",
+        "fields": [
+          "method",
+          "params"
+        ],
+        "required": [
+          "method",
+          "params"
+        ],
+        "description": "",
+        "parameters": "ReasoningSummaryTextDeltaNotification"
+      },
+      {
+        "name": "item/reasoning/summaryPartAdded",
+        "fields": [
+          "method",
+          "params"
+        ],
+        "required": [
+          "method",
+          "params"
+        ],
+        "description": "",
+        "parameters": "ReasoningSummaryPartAddedNotification"
+      },
+      {
+        "name": "item/reasoning/textDelta",
+        "fields": [
+          "method",
+          "params"
+        ],
+        "required": [
+          "method",
+          "params"
+        ],
+        "description": "",
+        "parameters": "ReasoningTextDeltaNotification"
+      },
+      {
+        "name": "thread/compacted",
+        "fields": [
+          "method",
+          "params"
+        ],
+        "required": [
+          "method",
+          "params"
+        ],
+        "description": "Deprecated: Use `ContextCompaction` item type instead.",
+        "parameters": "ContextCompactedNotification"
+      },
+      {
+        "name": "model/rerouted",
+        "fields": [
+          "method",
+          "params"
+        ],
+        "required": [
+          "method",
+          "params"
+        ],
+        "description": "",
+        "parameters": "ModelReroutedNotification"
+      },
+      {
+        "name": "model/verification",
+        "fields": [
+          "method",
+          "params"
+        ],
+        "required": [
+          "method",
+          "params"
+        ],
+        "description": "",
+        "parameters": "ModelVerificationNotification"
+      },
+      {
+        "name": "modelProvider/authRecoveryStarted",
+        "fields": [
+          "method",
+          "params"
+        ],
+        "required": [
+          "method",
+          "params"
+        ],
+        "description": "",
+        "parameters": "AuthRecoveryNotification"
+      },
+      {
+        "name": "modelProvider/authRecoveryCompleted",
+        "fields": [
+          "method",
+          "params"
+        ],
+        "required": [
+          "method",
+          "params"
+        ],
+        "description": "",
+        "parameters": "AuthRecoveryNotification"
+      },
+      {
+        "name": "turn/moderationMetadata",
+        "fields": [
+          "method",
+          "params"
+        ],
+        "required": [
+          "method",
+          "params"
+        ],
+        "description": "",
+        "parameters": "TurnModerationMetadataNotification"
+      },
+      {
+        "name": "model/safetyBuffering/updated",
+        "fields": [
+          "method",
+          "params"
+        ],
+        "required": [
+          "method",
+          "params"
+        ],
+        "description": "",
+        "parameters": "ModelSafetyBufferingUpdatedNotification"
+      },
+      {
+        "name": "warning",
+        "fields": [
+          "method",
+          "params"
+        ],
+        "required": [
+          "method",
+          "params"
+        ],
+        "description": "",
+        "parameters": "WarningNotification"
+      },
+      {
+        "name": "guardianWarning",
+        "fields": [
+          "method",
+          "params"
+        ],
+        "required": [
+          "method",
+          "params"
+        ],
+        "description": "",
+        "parameters": "GuardianWarningNotification"
+      },
+      {
+        "name": "deprecationNotice",
+        "fields": [
+          "method",
+          "params"
+        ],
+        "required": [
+          "method",
+          "params"
+        ],
+        "description": "",
+        "parameters": "DeprecationNoticeNotification"
+      },
+      {
+        "name": "configWarning",
+        "fields": [
+          "method",
+          "params"
+        ],
+        "required": [
+          "method",
+          "params"
+        ],
+        "description": "",
+        "parameters": "ConfigWarningNotification"
+      },
+      {
+        "name": "fuzzyFileSearch/sessionUpdated",
+        "fields": [
+          "method",
+          "params"
+        ],
+        "required": [
+          "method",
+          "params"
+        ],
+        "description": "",
+        "parameters": "FuzzyFileSearchSessionUpdatedNotification"
+      },
+      {
+        "name": "fuzzyFileSearch/sessionCompleted",
+        "fields": [
+          "method",
+          "params"
+        ],
+        "required": [
+          "method",
+          "params"
+        ],
+        "description": "",
+        "parameters": "FuzzyFileSearchSessionCompletedNotification"
+      },
+      {
+        "name": "thread/realtime/started",
+        "fields": [
+          "method",
+          "params"
+        ],
+        "required": [
+          "method",
+          "params"
+        ],
+        "description": "",
+        "parameters": "ThreadRealtimeStartedNotification"
+      },
+      {
+        "name": "thread/realtime/itemAdded",
+        "fields": [
+          "method",
+          "params"
+        ],
+        "required": [
+          "method",
+          "params"
+        ],
+        "description": "",
+        "parameters": "ThreadRealtimeItemAddedNotification"
+      },
+      {
+        "name": "thread/realtime/item/started",
+        "fields": [
+          "method",
+          "params"
+        ],
+        "required": [
+          "method",
+          "params"
+        ],
+        "description": "",
+        "parameters": "ThreadRealtimeItemStartedNotification"
+      },
+      {
+        "name": "thread/realtime/item/transcript/delta",
+        "fields": [
+          "method",
+          "params"
+        ],
+        "required": [
+          "method",
+          "params"
+        ],
+        "description": "",
+        "parameters": "ThreadRealtimeItemTranscriptDeltaNotification"
+      },
+      {
+        "name": "thread/realtime/item/completed",
+        "fields": [
+          "method",
+          "params"
+        ],
+        "required": [
+          "method",
+          "params"
+        ],
+        "description": "",
+        "parameters": "ThreadRealtimeItemCompletedNotification"
+      },
+      {
+        "name": "thread/realtime/transcript/delta",
+        "fields": [
+          "method",
+          "params"
+        ],
+        "required": [
+          "method",
+          "params"
+        ],
+        "description": "",
+        "parameters": "ThreadRealtimeTranscriptDeltaNotification"
+      },
+      {
+        "name": "thread/realtime/transcript/done",
+        "fields": [
+          "method",
+          "params"
+        ],
+        "required": [
+          "method",
+          "params"
+        ],
+        "description": "",
+        "parameters": "ThreadRealtimeTranscriptDoneNotification"
+      },
+      {
+        "name": "thread/realtime/outputAudio/delta",
+        "fields": [
+          "method",
+          "params"
+        ],
+        "required": [
+          "method",
+          "params"
+        ],
+        "description": "",
+        "parameters": "ThreadRealtimeOutputAudioDeltaNotification"
+      },
+      {
+        "name": "thread/realtime/sdp",
+        "fields": [
+          "method",
+          "params"
+        ],
+        "required": [
+          "method",
+          "params"
+        ],
+        "description": "",
+        "parameters": "ThreadRealtimeSdpNotification"
+      },
+      {
+        "name": "thread/realtime/error",
+        "fields": [
+          "method",
+          "params"
+        ],
+        "required": [
+          "method",
+          "params"
+        ],
+        "description": "",
+        "parameters": "ThreadRealtimeErrorNotification"
+      },
+      {
+        "name": "thread/realtime/closed",
+        "fields": [
+          "method",
+          "params"
+        ],
+        "required": [
+          "method",
+          "params"
+        ],
+        "description": "",
+        "parameters": "ThreadRealtimeClosedNotification"
+      },
+      {
+        "name": "windows/worldWritableWarning",
+        "fields": [
+          "method",
+          "params"
+        ],
+        "required": [
+          "method",
+          "params"
+        ],
+        "description": "Notifies the user of world-writable directories on Windows, which cannot be protected by the sandbox.",
+        "parameters": "WindowsWorldWritableWarningNotification"
+      },
+      {
+        "name": "windowsSandbox/setupCompleted",
+        "fields": [
+          "method",
+          "params"
+        ],
+        "required": [
+          "method",
+          "params"
+        ],
+        "description": "",
+        "parameters": "WindowsSandboxSetupCompletedNotification"
+      },
+      {
+        "name": "account/login/completed",
+        "fields": [
+          "method",
+          "params"
+        ],
+        "required": [
+          "method",
+          "params"
+        ],
+        "description": "",
+        "parameters": "AccountLoginCompletedNotification"
+      }
+    ],
+    "server_requests": [
+      {
+        "name": "item/commandExecution/requestApproval",
+        "fields": [
+          "id",
+          "method",
+          "params"
+        ],
+        "required": [
+          "id",
+          "method",
+          "params"
+        ],
+        "description": "NEW APIs Sent when approval is requested for a specific command execution. This request is used for Turns started via turn/start.",
+        "parameters": "CommandExecutionRequestApprovalParams"
+      },
+      {
+        "name": "item/fileChange/requestApproval",
+        "fields": [
+          "id",
+          "method",
+          "params"
+        ],
+        "required": [
+          "id",
+          "method",
+          "params"
+        ],
+        "description": "Sent when approval is requested for a specific file change. This request is used for Turns started via turn/start.",
+        "parameters": "FileChangeRequestApprovalParams"
+      },
+      {
+        "name": "item/tool/requestUserInput",
+        "fields": [
+          "id",
+          "method",
+          "params"
+        ],
+        "required": [
+          "id",
+          "method",
+          "params"
+        ],
+        "description": "EXPERIMENTAL - Request input from the user for a tool call.",
+        "parameters": "ToolRequestUserInputParams"
+      },
+      {
+        "name": "mcpServer/elicitation/request",
+        "fields": [
+          "id",
+          "method",
+          "params"
+        ],
+        "required": [
+          "id",
+          "method",
+          "params"
+        ],
+        "description": "Request input for an MCP server elicitation.",
+        "parameters": "McpServerElicitationRequestParams"
+      },
+      {
+        "name": "item/permissions/requestApproval",
+        "fields": [
+          "id",
+          "method",
+          "params"
+        ],
+        "required": [
+          "id",
+          "method",
+          "params"
+        ],
+        "description": "Request approval for additional permissions from the user.",
+        "parameters": "PermissionsRequestApprovalParams"
+      },
+      {
+        "name": "item/tool/call",
+        "fields": [
+          "id",
+          "method",
+          "params"
+        ],
+        "required": [
+          "id",
+          "method",
+          "params"
+        ],
+        "description": "Execute a dynamic tool call on the client.",
+        "parameters": "DynamicToolCallParams"
+      },
+      {
+        "name": "account/chatgptAuthTokens/refresh",
+        "fields": [
+          "id",
+          "method",
+          "params"
+        ],
+        "required": [
+          "id",
+          "method",
+          "params"
+        ],
+        "description": "",
+        "parameters": "ChatgptAuthTokensRefreshParams"
+      },
+      {
+        "name": "attestation/generate",
+        "fields": [
+          "id",
+          "method",
+          "params"
+        ],
+        "required": [
+          "id",
+          "method",
+          "params"
+        ],
+        "description": "Generate a fresh upstream attestation result on demand.",
+        "parameters": "AttestationGenerateParams"
+      },
+      {
+        "name": "currentTime/read",
+        "fields": [
+          "id",
+          "method",
+          "params"
+        ],
+        "required": [
+          "id",
+          "method",
+          "params"
+        ],
+        "description": "Read the current time from an external clock owned by the client.",
+        "parameters": "CurrentTimeReadParams"
+      },
+      {
+        "name": "applyPatchApproval",
+        "fields": [
+          "id",
+          "method",
+          "params"
+        ],
+        "required": [
+          "id",
+          "method",
+          "params"
+        ],
+        "description": "DEPRECATED APIs below Request to approve a patch. This request is used for Turns started via the legacy APIs (i.e. SendUserTurn, SendUserMessage).",
+        "parameters": "ApplyPatchApprovalParams"
+      },
+      {
+        "name": "execCommandApproval",
+        "fields": [
+          "id",
+          "method",
+          "params"
+        ],
+        "required": [
+          "id",
+          "method",
+          "params"
+        ],
+        "description": "Request to exec a command. This request is used for Turns started via the legacy APIs (i.e. SendUserTurn, SendUserMessage).",
+        "parameters": "ExecCommandApprovalParams"
+      }
+    ]
+  }
+}

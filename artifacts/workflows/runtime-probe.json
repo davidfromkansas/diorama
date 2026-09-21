@@ -1,0 +1,61 @@
+{
+  "time": "2026-09-20T13:05:57+0800",
+  "scope": "Read-only RPC checks; no thread resumed, model turn started, or configuration changed",
+  "results": [
+    {
+      "method": "collaborationMode/list",
+      "status": "supported",
+      "count": 2
+    },
+    {
+      "method": "skills/list",
+      "status": "supported",
+      "count": 1
+    },
+    {
+      "method": "app/list",
+      "status": "unavailable",
+      "reason": "Timed out"
+    },
+    {
+      "method": "mcpServerStatus/list",
+      "status": "supported",
+      "count": 1
+    },
+    {
+      "method": "account/rateLimits/read",
+      "status": "supported",
+      "count": 0
+    },
+    {
+      "method": "thread/list",
+      "status": "supported",
+      "count": 1
+    },
+    {
+      "method": "thread/items/list",
+      "status": "supported",
+      "count": 1
+    },
+    {
+      "method": "thread/goal/get",
+      "status": "supported",
+      "count": 0
+    },
+    {
+      "method": "thread/queue/list",
+      "status": "supported",
+      "count": 0
+    },
+    {
+      "method": "thread/searchOccurrences",
+      "status": "supported",
+      "count": 0
+    },
+    {
+      "method": "thread/search",
+      "status": "supported",
+      "count": 0
+    }
+  ]
+}

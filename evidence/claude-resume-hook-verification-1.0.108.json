@@ -1,0 +1,23 @@
+{
+  "client": "Claude Code",
+  "version": "1.0.108",
+  "exit_code": 0,
+  "timed_out": false,
+  "same_session": false,
+  "is_error": false,
+  "completed_marker": true,
+  "reported_cost_usd": 0.04342455,
+  "source_process_restarted": true,
+  "hook_kinds": [
+    "agentStopped",
+    "sessionEnded",
+    "sessionStarted",
+    "started",
+    "stopping",
+    "toolFinished",
+    "toolStarted"
+  ],
+  "observed_while_cli_running": true,
+  "observer_recreated_without_agent_control": true,
+  "provider_hook_settings_modified": false
+}

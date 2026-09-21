@@ -1,0 +1,53 @@
+[
+  {
+    "id": "D63FD818-9FF1-4A59-A31E-926DEE0B32DB",
+    "source": "Hook \u00b7 reported event; current activity unverified",
+    "role": "",
+    "kind": "agentStopped",
+    "sessionID": "9827b3bc-2dd9-484c-bfa0-778234770b85",
+    "provider": "Claude Code",
+    "agentID": "a50a94d2a214e5979",
+    "observedAt": 811434801.79991
+  },
+  {
+    "id": "E7874FF6-10BD-49F9-80F5-102016AA9C65",
+    "provider": "Claude Code",
+    "sessionID": "9827b3bc-2dd9-484c-bfa0-778234770b85",
+    "kind": "sessionEnded",
+    "observedAt": 811434803.820668,
+    "source": "Hook \u00b7 reported event; current activity unverified"
+  },
+  {
+    "observedAt": 811434803.122558,
+    "id": "B0D75886-37AB-4BB4-B45D-818527FD5D3E",
+    "sessionID": "9827b3bc-2dd9-484c-bfa0-778234770b85",
+    "source": "Hook \u00b7 reported event; current activity unverified",
+    "provider": "Claude Code",
+    "kind": "compacted"
+  },
+  {
+    "source": "Hook \u00b7 reported event; current activity unverified",
+    "provider": "Claude Code",
+    "kind": "sessionStarted",
+    "observedAt": 811434770.659935,
+    "sessionID": "9827b3bc-2dd9-484c-bfa0-778234770b85",
+    "id": "3490BC87-E1D5-402D-BB4D-6656FD960CB6"
+  },
+  {
+    "id": "C3C26C2A-2322-47B5-AEAC-0051BB8166CC",
+    "provider": "Claude Code",
+    "kind": "compact",
+    "source": "Hook \u00b7 reported event; current activity unverified",
+    "state": "Working",
+    "observedAt": 811434772.962124,
+    "sessionID": "9827b3bc-2dd9-484c-bfa0-778234770b85"
+  },
+  {
+    "id": "CB2950AF-3AAE-49C1-8CC8-D540E21814CA",
+    "kind": "sessionStarted",
+    "observedAt": 811434801.813706,
+    "provider": "Claude Code",
+    "sessionID": "9827b3bc-2dd9-484c-bfa0-778234770b85",
+    "source": "Hook \u00b7 reported event; current activity unverified"
+  }
+]

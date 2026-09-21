@@ -1,0 +1,76 @@
+{
+  "tested_at": "2026-09-18T22:43:00.691338+00:00",
+  "version": "codex-cli 0.153.4",
+  "checks": {
+    "seed": {
+      "ok": true,
+      "result": {
+        "remembered": true
+      }
+    },
+    "separate_server_resume_while_owner_open": {
+      "ok": false,
+      "error": "RuntimeError: thread 01a0b6af-f814-7163-8eec-05717710d2d1 already has an active writer"
+    },
+    "fork_while_owner_open": {
+      "ok": true,
+      "result": {
+        "distinct_id": true,
+        "remembered": true,
+        "forkedFromId": "01a0b6af-f814-7163-8eec-05717710d2d1"
+      }
+    },
+    "owner_unsubscribe": {
+      "ok": true,
+      "result": {
+        "status": "unsubscribed"
+      }
+    },
+    "resume_immediately_after_unsubscribe": {
+      "ok": false,
+      "error": "RuntimeError: thread 01a0b6af-f814-7163-8eec-05717710d2d1 already has an active writer"
+    },
+    "resume_after_owner_process_exit": {
+      "ok": true,
+      "result": {
+        "same_id": true,
+        "remembered": true,
+        "new_turn": true
+      }
+    },
+    "return_to_new_original_client": {
+      "ok": true,
+      "result": {
+        "same_id": true,
+        "roundtrip_context": true
+      }
+    },
+    "two_clients_same_server": {
+      "ok": true,
+      "result": {
+        "transport": "loopback WebSocket",
+        "same_thread_id": true,
+        "first_reply": true,
+        "second_retained_context": true,
+        "second_reply": true,
+        "second_saw_own_completion": true,
+        "first_saw_second_completion": true
+      }
+    }
+  },
+  "source_id": "01a0b6af-f814-7163-8eec-05717710d2d1",
+  "fork_id": "01a0b6b0-1773-7612-8c73-acdb7fd8ce04",
+  "shared_id": "01a0b6b3-5fa3-7593-994f-c7fff8638ff9",
+  "unix_proxy_probe": {
+    "ok": false,
+    "error": "Initialization timed out over the official Unix proxy after canonical socket setup. TCP WebSocket tested separately."
+  },
+  "desktop": {
+    "version": "26.901.51231 (8109)",
+    "default_control_socket_available": false,
+    "default_control_socket_check": "Official codex app-server daemon version returned no such file or directory",
+    "quit_reopen_tested": false,
+    "reason": "Desktop hosts this active task; no user app was closed",
+    "prior_archive_roundtrip_evidence": "evidence/codex-appserver-roundtrip.json"
+  }
+}

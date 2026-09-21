@@ -1,0 +1,14 @@
+[
+  {
+    "case": "writable",
+    "exit_code": 0,
+    "neutral_output": true,
+    "elapsed_ms": 359
+  },
+  {
+    "case": "unwritable",
+    "exit_code": 0,
+    "neutral_output": true,
+    "elapsed_ms": 7
+  }
+]

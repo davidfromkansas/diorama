@@ -1,0 +1,19 @@
+{
+  "client": "Codex CLI",
+  "exit_code": 0,
+  "timed_out": false,
+  "completed_marker": true,
+  "same_session": true,
+  "source_process_restarted": true,
+  "hook_kinds": [
+    "sessionEnded",
+    "sessionStarted",
+    "started",
+    "stopping",
+    "toolFinished",
+    "toolStarted"
+  ],
+  "observed_while_cli_running": true,
+  "observer_recreated_without_agent_control": true,
+  "trust_bypassed": false
+}

@@ -1,0 +1,15 @@
+{
+  "version": "0.3.0",
+  "build": "3",
+  "installed_path": "/Users/david_lietjauw/Applications/Diorama.app",
+  "signature_verified": true,
+  "native_ui_observed": {
+    "new_codex_task_toolbar": true,
+    "imported_continue_disabled": true,
+    "history_source": "Codex App Server",
+    "folders": 346,
+    "sessions": 1310,
+    "diorama_internal_reviews_hidden": 5
+  },
+  "ui_limitation": "Installed window inspected via accessibility. Automated sheet clicking could not run because osascript lacks assistive access; execution lifecycle was verified via the native Swift controller against the real App Server."
+}

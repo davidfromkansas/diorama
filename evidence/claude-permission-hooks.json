@@ -1,0 +1,58 @@
+[
+  {
+    "detail": "/Users/david_lietjauw/Documents/ChatGPT/Diorama/.local/hook-verification/claude/work/permission-probe.txt",
+    "tool": "Write",
+    "callID": "toolu_01MgLKmiDRUPH4k6H3k6D1ZJ",
+    "kind": "toolStarted",
+    "sessionID": "3db51e31-d4c5-4a5d-b97e-14e8ddabca84",
+    "source": "Hook \u00b7 reported event; current activity unverified",
+    "provider": "Claude Code",
+    "id": "807E70DB-878E-4A67-B3CF-0A9D7F8222DB",
+    "observedAt": 811401565.866588,
+    "state": "Working"
+  },
+  {
+    "provider": "Claude Code",
+    "kind": "sessionStarted",
+    "source": "Hook \u00b7 reported event; current activity unverified",
+    "observedAt": 811401563.046846,
+    "id": "FFEF21B4-634F-4733-93AE-11882B5AD258",
+    "sessionID": "3db51e31-d4c5-4a5d-b97e-14e8ddabca84"
+  },
+  {
+    "detail": "/Users/david_lietjauw/Documents/ChatGPT/Diorama/.local/hook-verification/claude/work/permission-probe.txt",
+    "id": "588EC470-1C27-4966-BD83-B12D320E53D2",
+    "kind": "approval",
+    "observedAt": 811401565.884851,
+    "tool": "Write",
+    "provider": "Claude Code",
+    "state": "Awaiting approval",
+    "source": "Hook \u00b7 reported event; current activity unverified",
+    "sessionID": "3db51e31-d4c5-4a5d-b97e-14e8ddabca84"
+  },
+  {
+    "source": "Hook \u00b7 reported event; current activity unverified",
+    "observedAt": 811401567.703356,
+    "provider": "Claude Code",
+    "kind": "sessionEnded",
+    "id": "84BC7485-54B6-4008-A0E5-0DD96B1A9131",
+    "sessionID": "3db51e31-d4c5-4a5d-b97e-14e8ddabca84"
+  },
+  {
+    "observedAt": 811401567.103527,
+    "provider": "Claude Code",
+    "sessionID": "3db51e31-d4c5-4a5d-b97e-14e8ddabca84",
+    "kind": "stopping",
+    "id": "51CEF3B3-DFF6-452D-B96A-756F40FAE30E",
+    "source": "Hook \u00b7 reported event; current activity unverified"
+  },
+  {
+    "source": "Hook \u00b7 reported event; current activity unverified",
+    "id": "DDF5BB29-4CB6-4203-8940-2CE4F55FB058",
+    "observedAt": 811401563.61186,
+    "sessionID": "3db51e31-d4c5-4a5d-b97e-14e8ddabca84",
+    "kind": "started",
+    "state": "Working",
+    "provider": "Claude Code"
+  }
+]

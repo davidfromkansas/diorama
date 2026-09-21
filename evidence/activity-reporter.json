@@ -1,0 +1,20 @@
+{
+  "reporter": {
+    "exit_code": 0,
+    "neutral_output": true,
+    "elapsed_ms": 477,
+    "records": 1,
+    "private_fields_omitted": true,
+    "gui_required": false
+  },
+  "malformed_input_fail_open": true,
+  "claude_isolated": {
+    "timed_out": true,
+    "model_execution": "unavailable: intentionally disconnected isolated configuration",
+    "hook_kinds_observed": [
+      "sessionStarted",
+      "started"
+    ],
+    "normal_settings_modified": false
+  }
+}

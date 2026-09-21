@@ -1,0 +1,40 @@
+{
+  "updatedAt": "2026-09-21T10:46:54.926851+08:00",
+  "version": "0.5.0",
+  "build": 33,
+  "tests": 155,
+  "suites": 37,
+  "result": "passed",
+  "artifact": "/tmp/diorama-stable-release/Diorama.app",
+  "codeSignature": "codesign --verify --deep --strict passed",
+  "claudeSession": "e742bfb7-ec55-4077-997c-e6401a1edb1f",
+  "verifiedInNativeUI": [
+    "Project session creation with isolated worktree and inherited instructions",
+    "Subscription-backed replies",
+    "Image interpretation and local file reading",
+    "Allow once and deny decisions",
+    "Resume after restart",
+    "Haiku to Sonnet model switch",
+    "Queue tray and send next",
+    "Plan Mode and interactive question answer",
+    "Stop returns composer to interrupted state",
+    "File picker attachment and return to composer"
+  ],
+  "fixes": [
+    "Project mutation exclusivity crash",
+    "Stable composer control identity across adaptive layout",
+    "Collapse Claude canvas instructions as system context",
+    "Bound attachment tray height",
+    "Restore parent window focus after file picker",
+    "Avoid repeated identical scroll state writes",
+    "Provider-neutral composer accessibility label"
+  ],
+  "limitations": [
+    "Running OS command termination was not independently verified",
+    "Clipboard paste and drag/drop not exercised in this UI pass",
+    "No long-running stability soak",
+    "Claude Goal, Steer and dynamic reasoning effort remain unsupported",
+    "Cross-app simultaneous ownership and Desktop synchronization not verified"
+  ],
+  "crashRetest": "Previously failing Plan Mode/send transitions passed after stable layout change; no new crash observed during retest"
+}

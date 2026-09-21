@@ -1,0 +1,71 @@
+{
+  "date": "2026-09-21T00:45:50.100464+08:00",
+  "version": "0.4.0",
+  "build": "29",
+  "regression_suite": "144 tests / 33 suites passed",
+  "live_app_server": {
+    "base": "9bbccb3e1cff557be52722c9c32b3cd18311052d",
+    "branch": "codex/session-81a587c0-a0b0-4d25-9a8e-5491d15c691b",
+    "context_received": true,
+    "date": "2026-09-20T16:23:27Z",
+    "phase": "Last turn finished",
+    "thread": "01a0bfa1-1f8a-73a1-8371-c69901c58cbf",
+    "worktree": "/var/folders/6m/ysd0g20d31qbrcynhzm4nr4r0000gn/T/diorama-project-live-D13C60FF-6985-4E14-A1C7-7F5349B33ECF/trees/F97EC7E1-12A8-41F6-B5C0-C387D40EE15A/81A587C0-A0B0-4D25-9A8E-5491D15C691B"
+  },
+  "ui_verified": [
+    "Projects landing page",
+    "New Project creates local repository and opens Project",
+    "Context instructions save and survive navigation",
+    "First Send creates worktree and returns context verification word",
+    "Primary checkout unchanged by first Send",
+    "Files chooses base versus session worktree",
+    "File preview",
+    "Add file reference to Project context",
+    "Attach base snapshot to existing session draft without sending",
+    "Final installed build relaunch; Queue disabled before session exists",
+    "GitHub nycsim clone completed and Project survived relaunch",
+    "Merged PR list, details, changed files and diff loaded in app",
+    "Second UI session returned updated context verification word on a distinct worktree and branch",
+    "New session used later base commit; first session retained original snapshot",
+    "Attachment draft persisted across app restart",
+    "Custom location typed into New Project created repo in /private/tmp",
+    "Remove from Diorama removed disposable sidebar entry while retaining repository",
+    "Command-1 and Command-4 section navigation"
+  ],
+  "github_read_checks": [
+    "Public repository PR listing succeeded",
+    "PR detail template succeeded"
+  ],
+  "not_verified": [
+    "Live GitHub repository creation/publishing (no remote created)",
+    "Native custom-parent folder chooser completion: repeated automation timeout; app main thread sampled idle; restart restored automation"
+  ],
+  "source_notes": "docs/PROJECTS.md",
+  "installed": "/Users/david_lietjauw/Applications/Diorama.app",
+  "signature_verification": "Passed: installed and dist bundles",
+  "binary_matches_final_release": true,
+  "retest": {
+    "date": "2026-09-21T00:39:00.765722+08:00",
+    "regression_suite": "144 tests / 33 suites passed",
+    "live_app_server": {
+      "base": "1c75b4465e23cbbb4f7bf264a9a6bac3f2a08b47",
+      "branch": "codex/session-47080ff2-2030-40ba-bc52-80a19f0d9120",
+      "context_received": true,
+      "date": "2026-09-20T16:36:20Z",
+      "phase": "Last turn finished",
+      "thread": "01a0bfac-ef11-7860-9111-8f783742336e",
+      "worktree": "/var/folders/6m/ysd0g20d31qbrcynhzm4nr4r0000gn/T/diorama-project-live-8A769854-0240-423B-ACAE-86CD8B19CC4F/trees/93731C03-A5D2-4688-ADBD-A5270634457F/47080FF2-2030-40BA-BC52-80A19F0D9120"
+    },
+    "additional_checks": [
+      "Ignored files prevent cleanup despite clean ordinary git status",
+      "Attachment snapshot retains exact committed bytes after source edits",
+      "Occupied workspace folder is preserved",
+      "Installed signature verified and executable matches final release"
+    ],
+    "ui_status": "Final installed build relaunched; GitHub import and second isolated session passed; restored app on nycsim Sessions"
+  },
+  "findings": [
+    "PR check detail formatter displays <no value> for missing fields",
+    "Session title briefly showed an injected markup fragment after completion; clean title visible after restart"
+  ]
+}

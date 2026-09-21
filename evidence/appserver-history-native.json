@@ -1,0 +1,34 @@
+{
+  "test_date_local": "2026-09-19",
+  "codex_cli_version": "0.153.4",
+  "diorama_version": "0.2.0",
+  "suite": "DIORAMA_APPSERVER_PROBE=1 swift test",
+  "reported_tests": 42,
+  "failures": 0,
+  "unrelated_opt_in_activity_probe_skipped": true,
+  "combined_records": 1305,
+  "appserver_records": 999,
+  "archived_records": 4,
+  "designated_history_id": "01a0b54c-d0a1-7f01-8866-0c2ae746a94e",
+  "designated_history_source": "Codex App Server",
+  "designated_history_entries": 8,
+  "designated_history_fallback": false,
+  "diorama_main_conversation_classification_passed": true,
+  "diorama_internal_review_classification_passed": true,
+  "installed_ui_observed": {
+    "folder": "Diorama",
+    "conversations": 2,
+    "subagents": 0,
+    "hidden_internal_reviews": 4,
+    "main_title": "Choose app structure for agent UI",
+    "transcript_source": "Codex App Server"
+  },
+  "methods_allowed": ["initialize", "initialized", "thread/list", "thread/read"],
+  "execution_or_handoff_enabled": false,
+  "limitations": [
+    "Known guardian-review metadata requires local-file supplementation when threadSource is null.",
+    "Existing hook/transcript activity remains separate from App Server history.",
+    "Discovery can use local-file fallback for records absent from the provider database.",
+    "Incomplete history, unsupported item types and transport failures use labeled fallback."
+  ]
+}

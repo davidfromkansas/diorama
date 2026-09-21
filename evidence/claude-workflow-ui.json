@@ -1,0 +1,36 @@
+{
+  "updatedAt": "2026-09-21T13:41:38.460294+08:00",
+  "build": 35,
+  "version": "0.5.0",
+  "method": "Native Diorama UI through accessibility actions and screenshots; real Claude subscription",
+  "session": "e742bfb7-ec55-4077-997c-e6401a1edb1f",
+  "passed": [
+    "Plan and Goal mutually exclusive",
+    "Goal sends and completes across two responses",
+    "Edit objective and budget; save paused",
+    "Pause stops automatic continuation",
+    "Resume starts subsequent work",
+    "Square Stop returns to send arrow",
+    "Direct Interrupt & steer receives UI_STEER_OK",
+    "Queued Interrupt & steer removes tray copy and receives UI_QUEUE_STEER_OK once",
+    "Quit while goal active; reopen goal paused",
+    "Review goal reconnects without sending a prompt or resuming work",
+    "Automatic continuation displayed as collapsed system context",
+    "Clear removes goal tray",
+    "Final restart history shows DISPLAY_FIRST and DISPLAY_SECOND once each, without internal status markers; model-control metadata collapsed"
+  ],
+  "fixes": [
+    "Add saved goal recovery preview and Review goal action",
+    "Collapse automatic goal continuation instead of blue user bubble",
+    "Strip internal markers from block-format saved assistant messages",
+    "Collapse native model-control metadata"
+  ],
+  "tests": 167,
+  "suites": 39,
+  "artifact": "/tmp/diorama-ui-verified/Diorama.app",
+  "limitations": [
+    "No long-running stability soak",
+    "Does not establish behavior of every external tool subprocess",
+    "Full cross-app synchronization not tested"
+  ]
+}

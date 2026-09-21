@@ -1,0 +1,17 @@
+{
+  "session_id": "01a0afb5-ef81-7302-a1ba-7a64bf8757d2",
+  "returncode": 0,
+  "timed_out": false,
+  "grew_while_cli_running": true,
+  "states_observed": [
+    "completed",
+    "working",
+    "completed",
+    "completed"
+  ],
+  "observer_recreated_during_run": true,
+  "bytes_added": 11383,
+  "tool_call_seen": true,
+  "tool_result_seen": true,
+  "method": "existing CLI transcript polled every 250ms; observer objects recreated without controlling CLI"
+}

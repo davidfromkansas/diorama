@@ -1,0 +1,22 @@
+{
+  "updated": "2026-09-21T23:09:32+08:00",
+  "build": "0.5.0 (42)",
+  "app": "/tmp/diorama-model-switch/Diorama.app",
+  "tests": {
+    "passed": 193,
+    "suites": 50,
+    "log": "/tmp/diorama-switch-tests.log"
+  },
+  "signatureVerification": "codesign --verify --deep --strict passed",
+  "verified": [
+    "Simulated round-trip provider switching",
+    "Stable conversation, worktree metadata, branch and PR association",
+    "History and uncommitted file preservation",
+    "Draft retained on preparation failure",
+    "Paused goal transfer and idempotent queue import"
+  ],
+  "notVerified": [
+    "Fresh authenticated end-to-end provider switch",
+    "Full manual UI walkthrough"
+  ]
+}

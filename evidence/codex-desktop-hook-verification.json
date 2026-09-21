@@ -1,0 +1,22 @@
+{
+  "desktop_version": "26.901.51231",
+  "cli_seed_version": "0.153.4",
+  "session_id": "01a0b500-7233-7c82-91ff-5334fa8e5ba6",
+  "method": "CLI seeded designated task; CLI closed; desktop app send_message_to_thread resumed it",
+  "normal_project_hook_trust_review": true,
+  "turns": {
+    "01a0b502-03d1-7b01-aef7-63400fb4d12f": [
+      "stopping",
+      "toolFinished",
+      "toolStarted"
+    ],
+    "01a0b504-8ab5-7d33-afb6-a40385790964": [
+      "stopping",
+      "toolFinished",
+      "toolStarted"
+    ]
+  },
+  "background_probe_frontmost_app": "Claude",
+  "app_restart_tested": false,
+  "desktop_UserPromptSubmit_observed": false
+}

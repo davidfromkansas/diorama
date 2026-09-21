@@ -1,0 +1,25 @@
+{
+  "date": "2026-09-18T23:24:15.103196+00:00",
+  "thread_id": "01a0b6cc-6ea4-7f51-842c-112fe57860db",
+  "phase": "complete",
+  "desktop_return_turn_verified": true,
+  "desktop_running_before": true,
+  "writer_held_before_exit": true,
+  "quit_command_exit": 0,
+  "desktop_exit_observed": true,
+  "native_test_exit": 0,
+  "reopen_command_exit": 0,
+  "desktop_reopened": true,
+  "desktop_version_on_followup": "26.908.40834",
+  "desktop_return_turn_id": "01a0b6db-045a-7211-a108-d612e995fab4",
+  "desktop_return_completed_at": "2026-09-18T23:30:05.471Z",
+  "desktop_return_evidence": {
+    "method": "User manually sent the requested message in Desktop; designated transcript inspected read-only.",
+    "prompt_did_not_supply_marker_values": true,
+    "recalled_diorama_marker": true,
+    "recalled_desktop_marker": true,
+    "matching_turn_completion_recorded": true,
+    "scope": "One disposable tool-free conversation; Diorama leg used native ExecutionController, not GUI click-through."
+  },
+  "resolved_return_check_blocker": "After restart, send_message_to_thread/read_thread tools are not exposed. Computer Use explicitly disallows com.openai.codex for safety reasons; no alternate UI automation attempted."
+}

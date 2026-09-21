@@ -1,0 +1,13 @@
+.local/
+__pycache__/
+*.pyc
+.build/
+dist/
+.swiftpm/
+.diorama/canvases/
+
+# macOS metadata and local credentials
+.DS_Store
+.env
+.env.*
+!.env.example

@@ -1,0 +1,51 @@
+{
+  "date": "2026-09-20T18:24:33.489885+08:00",
+  "build": "0.3.19 (22), isolated copy before the final normalized-folder/title fixes",
+  "checks": [
+    {
+      "check": "Folder picker",
+      "status": "passed",
+      "observed": "Navigated to /private/tmp/Diorama-Acceptance-UI; the task sheet displayed the selected folder."
+    },
+    {
+      "check": "Task preparation and Plan mode",
+      "status": "passed",
+      "observed": "Prepared a task, selected the advertised Plan menu item, sent a prompt, and saw UI_ACCEPTANCE_42 in the conversation."
+    },
+    {
+      "check": "Goal controls",
+      "status": "passed",
+      "observed": "Saved Disposable UI goal paused; confirmed paused status and cleared it."
+    },
+    {
+      "check": "Usage",
+      "status": "passed",
+      "observed": "Opened the popover and observed reported tokens, model context capacity and an account reset time."
+    },
+    {
+      "check": "Find",
+      "status": "passed",
+      "observed": "Searched UI_ACCEPTANCE_42 and selected the assistant result; Matching turn showed the response."
+    },
+    {
+      "check": "Rename",
+      "status": "passed",
+      "observed": "Saved Diorama UI acceptance verified and observed the new title in both list and header."
+    },
+    {
+      "check": "Pin/unpin",
+      "status": "passed",
+      "observed": "After pinning, the menu changed to Unpin in Diorama; then unpinned the test chat."
+    },
+    {
+      "check": "Skill selection",
+      "status": "passed",
+      "observed": "Opened the live picker and selected a skill; the visible button changed from Use to Remove. No global skill enable/disable action was used."
+    }
+  ],
+  "limitations": [
+    "Automation intermittently timed out; resetting the tool connection recovered the app once. Final cleanup reconnection also timed out.",
+    "Final normalized-folder selection and title sanitation fixes verified by regression tests, not a repeated UI run.",
+    "UI archive/restore, queue controls, review and every rich tool preview were not all clicked end to end; separate controller/fixture evidence applies."
+  ]
+}

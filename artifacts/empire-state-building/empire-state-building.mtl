@@ -1,0 +1,14 @@
+newmtl Limestone
+Kd 0.68 0.64 0.54
+
+newmtl Setback_trim
+Kd 0.82 0.78 0.67
+
+newmtl Windows
+Kd 0.18 0.25 0.28
+
+newmtl Aluminum_spire
+Kd 0.67 0.72 0.73
+
+newmtl Entrance
+Kd 0.28 0.32 0.31

@@ -1,0 +1,115 @@
+[
+  {
+    "source": "Hook \u00b7 reported event; current activity unverified",
+    "sessionID": "01a0b500-7233-7c82-91ff-5334fa8e5ba6",
+    "id": "6D0C8917-E065-44B8-A6C5-77BB2D0FF265",
+    "observedAt": 811435928.255178,
+    "provider": "Codex",
+    "kind": "sessionStarted"
+  },
+  {
+    "state": "Working",
+    "id": "FAFE1E5F-3C45-43E2-9AC2-95A63B11D4FD",
+    "kind": "started",
+    "turnID": "01a0b500-db5a-7862-a104-41be4e6b9950",
+    "observedAt": 811435928.267248,
+    "source": "Hook \u00b7 reported event; current activity unverified",
+    "sessionID": "01a0b500-7233-7c82-91ff-5334fa8e5ba6",
+    "provider": "Codex"
+  },
+  {
+    "sessionID": "01a0b500-7233-7c82-91ff-5334fa8e5ba6",
+    "turnID": "01a0b500-db5a-7862-a104-41be4e6b9950",
+    "id": "C176163B-7ADD-4411-86D5-00F640CE99D4",
+    "kind": "stopping",
+    "observedAt": 811435931.010444,
+    "source": "Hook \u00b7 reported event; current activity unverified",
+    "provider": "Codex"
+  },
+  {
+    "kind": "sessionEnded",
+    "observedAt": 811435962.257205,
+    "provider": "Codex",
+    "source": "Hook \u00b7 reported event; current activity unverified",
+    "id": "05083FF5-957B-4CCD-94DA-198A15A852C1",
+    "sessionID": "01a0b500-7233-7c82-91ff-5334fa8e5ba6"
+  },
+  {
+    "provider": "Codex",
+    "kind": "sessionStarted",
+    "source": "Hook \u00b7 reported event; current activity unverified",
+    "observedAt": 811436004.984898,
+    "sessionID": "01a0b500-7233-7c82-91ff-5334fa8e5ba6",
+    "id": "FE1397BC-4120-47C8-8B8E-F5CC002BD4DC"
+  },
+  {
+    "observedAt": 811436009.11692,
+    "id": "A2F90E7E-B430-4617-A770-12B7B7E9A268",
+    "provider": "Codex",
+    "tool": "Bash",
+    "callID": "exec-2dd4d040-96d9-43a1-9cbf-5dcd3d62b0be",
+    "source": "Hook \u00b7 reported event; current activity unverified",
+    "state": "Working",
+    "detail": "/bin/echo DIORAMA_DESKTOP_OK",
+    "turnID": "01a0b502-03d1-7b01-aef7-63400fb4d12f",
+    "kind": "toolStarted",
+    "sessionID": "01a0b500-7233-7c82-91ff-5334fa8e5ba6"
+  },
+  {
+    "tool": "Bash",
+    "state": "Working",
+    "observedAt": 811436009.186262,
+    "provider": "Codex",
+    "turnID": "01a0b502-03d1-7b01-aef7-63400fb4d12f",
+    "detail": "/bin/echo DIORAMA_DESKTOP_OK",
+    "source": "Hook \u00b7 reported event; current activity unverified",
+    "sessionID": "01a0b500-7233-7c82-91ff-5334fa8e5ba6",
+    "id": "71CA8E40-01E6-4451-B033-DDAFEB7B7F69",
+    "kind": "toolFinished",
+    "callID": "exec-2dd4d040-96d9-43a1-9cbf-5dcd3d62b0be"
+  },
+  {
+    "source": "Hook \u00b7 reported event; current activity unverified",
+    "sessionID": "01a0b500-7233-7c82-91ff-5334fa8e5ba6",
+    "kind": "stopping",
+    "id": "6D487C2C-C012-4615-9A6A-D94BA48706AC",
+    "turnID": "01a0b502-03d1-7b01-aef7-63400fb4d12f",
+    "provider": "Codex",
+    "observedAt": 811436014.865915
+  },
+  {
+    "state": "Working",
+    "source": "Hook \u00b7 reported event; current activity unverified",
+    "observedAt": 811436174.347618,
+    "sessionID": "01a0b500-7233-7c82-91ff-5334fa8e5ba6",
+    "callID": "exec-77cde44a-c65f-457b-b686-49cb765956aa",
+    "id": "2C5A8A9F-A513-4023-BE90-E5A0AC2CDEF5",
+    "tool": "Bash",
+    "kind": "toolStarted",
+    "provider": "Codex",
+    "turnID": "01a0b504-8ab5-7d33-afb6-a40385790964",
+    "detail": "/bin/sleep 3 && /bin/echo DIORAMA_BACKGROUND_OK"
+  },
+  {
+    "kind": "toolFinished",
+    "observedAt": 811436177.425634,
+    "detail": "/bin/sleep 3 && /bin/echo DIORAMA_BACKGROUND_OK",
+    "sessionID": "01a0b500-7233-7c82-91ff-5334fa8e5ba6",
+    "id": "985F4F84-6572-42CB-A477-C37A7268DC3A",
+    "provider": "Codex",
+    "tool": "Bash",
+    "turnID": "01a0b504-8ab5-7d33-afb6-a40385790964",
+    "source": "Hook \u00b7 reported event; current activity unverified",
+    "callID": "exec-77cde44a-c65f-457b-b686-49cb765956aa",
+    "state": "Working"
+  },
+  {
+    "kind": "stopping",
+    "sessionID": "01a0b500-7233-7c82-91ff-5334fa8e5ba6",
+    "source": "Hook \u00b7 reported event; current activity unverified",
+    "turnID": "01a0b504-8ab5-7d33-afb6-a40385790964",
+    "provider": "Codex",
+    "observedAt": 811436179.900176,
+    "id": "F5C5EE51-5515-433D-8868-92C36C570C5D"
+  }
+]
