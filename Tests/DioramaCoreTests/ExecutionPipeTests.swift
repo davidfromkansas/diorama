@@ -16,6 +16,7 @@ struct ExecutionPipeTests {
             if 'id' not in r: continue
             if r['method']=='thread/read': continue
             result={'payload':'x'*(4*1024*1024)} if r['method']=='model/list' else {}
+            if r['method']=='thread/list': result={'data':[{'id':'child','parentThreadId':r['params'].get('ancestorThreadId')}]}
             print(json.dumps({'id':r['id'],'result':result}),flush=True)
         """
         try script.write(to: server, atomically: true, encoding: .utf8)
@@ -23,6 +24,8 @@ struct ExecutionPipeTests {
         let transport = CodexExecutionTransport(executable: server, timeout: .seconds(5))
         try await transport.connect()
         do {
+            let children = try await transport.request("thread/list", .object(["ancestorThreadId": .string("root")]))
+            #expect(children["data"].array.first?["parentThreadId"].string == "root")
             let reply = try await transport.request("model/list", .object([:]))
             #expect(reply["payload"].string?.count == 4 * 1024 * 1024)
             do { _ = try await transport.request("thread/read", .object([:])); Issue.record("Expected read timeout") }

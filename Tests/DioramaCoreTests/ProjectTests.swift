@@ -68,6 +68,24 @@ struct ProjectTests {
         #expect(throws: (any Error).self) { try ProjectStorage.load(from: file) }
         #expect(try String(contentsOf: file, encoding: .utf8) == "invalid json")
     }
+    @Test func projectDraftModesSurviveStorageAndLegacyFiles() throws {
+        var project = DioramaProject(name: "Draft", folder: "/fixture", commonDirectory: "/fixture/.git", base: "main", remote: nil)
+        project.draft = "Plan this change"
+        project.draftMode = "plan"
+        project.draftGoal = false
+        let data = try JSONEncoder().encode(project)
+        let restored = try JSONDecoder().decode(DioramaProject.self, from: data)
+        #expect(restored.draftMode == "plan")
+        #expect(restored.draftGoal == false)
+        #expect(restored.draft == project.draft)
+        project.draftMode = "default"; project.draftGoal = true
+        #expect(try JSONDecoder().decode(DioramaProject.self, from: JSONEncoder().encode(project)).draftGoal == true)
+        var legacy = try #require(JSONSerialization.jsonObject(with: data) as? [String: Any])
+        legacy.removeValue(forKey: "draftMode"); legacy.removeValue(forKey: "draftGoal")
+        let old = try JSONDecoder().decode(DioramaProject.self, from: JSONSerialization.data(withJSONObject: legacy))
+        #expect(old.draftMode == nil && old.draftGoal == nil)
+        #expect(old.draft == project.draft)
+    }
     @Test func cleanupProtectsUnmergedAndIgnoredFiles() async throws {
         let root = try await repository(); defer { try? FileManager.default.removeItem(at: root) }
         let p = try await ProjectGit.discover(root.path)

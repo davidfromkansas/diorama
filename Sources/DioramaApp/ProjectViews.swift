@@ -435,8 +435,6 @@ struct ProjectDraftView: View {
     @State private var model = UserDefaults.standard.string(forKey: "defaultAgentModel") ?? ""
     @State private var effort = ""
     @State private var approval: ApprovalReviewChoice = .inherit
-    @State private var mode = "default"
-    @State private var goal = false
     @State private var queue = false
     @State private var attachments: [ConversationAttachment] = []
     @State private var capabilities: [CapabilityInput] = []
@@ -445,6 +443,18 @@ struct ProjectDraftView: View {
     @State private var cached = false
     @State private var error: String?
     private var project: DioramaProject { projects.projects.first { $0.id == projectID } ?? .unavailable }
+    private var mode: String { project.draftMode ?? "default" }
+    private var goal: Bool { mode != "plan" && project.draftGoal == true }
+    private var modeBinding: Binding<String> {
+        Binding(get: { mode }, set: { value in
+            projects.update(projectID) { $0.draftMode = value; if value == "plan" { $0.draftGoal = false } }
+        })
+    }
+    private var goalBinding: Binding<Bool> {
+        Binding(get: { goal }, set: { value in
+            projects.update(projectID) { $0.draftGoal = value; if value { $0.draftMode = "default" } }
+        })
+    }
     var body: some View {
         VStack(alignment: .leading, spacing: 14) {
             Spacer()
@@ -478,7 +488,7 @@ struct ProjectDraftView: View {
             ConversationComposer(controller: library.execution, model: $model, effort: $effort,
                 prompt: Binding(get: { project.draft }, set: { value in projects.update(projectID) { $0.draft = value } }),
                 attachments: $attachments, approvalReview: $approval, effectiveModel: "", sending: projects.busy.contains(projectID), active: false,
-                capabilities: $capabilities, folder: project.folder, mode: $mode, goalMode: $goal, queueMode: $queue, queueAvailable: false, send: send)
+                capabilities: $capabilities, folder: project.folder, mode: modeBinding, goalMode: goalBinding, queueMode: $queue, queueAvailable: false, send: send)
             Spacer()
         }.padding(28).frame(maxWidth: 850)
         .task {
@@ -496,7 +506,7 @@ struct ProjectDraftView: View {
         guard !projects.busy.contains(projectID) else { return }
         projects.busy.insert(projectID); error = nil
         let prompt = project.draft, files = attachments, selectedBase = project.linkedBase ?? base, useCached = project.linkedBase != nil || cached
-        let linkedFrom = project.linkedFrom
+        let linkedFrom = project.linkedFrom, selectedMode = mode, selectedGoal = goal
         Task {
             defer { projects.busy.remove(projectID) }
             do {
@@ -533,14 +543,15 @@ struct ProjectDraftView: View {
                 projects.updateWorkspace(projectID, id: work.id) { $0.deliveryAttempted = true }
                 try projects.checkpoint()
                 do {
-                    try await library.execution.sendWithGoal(id: thread, prompt: combined, model: model, effort: effort, attachments: files, approvalReview: approval, mode: mode, capabilities: capabilities, goal: goal)
+                    try await library.execution.sendWithGoal(id: thread, prompt: combined, model: model, effort: effort, attachments: files, approvalReview: approval, mode: selectedMode, capabilities: capabilities, goal: selectedGoal)
                 } catch let failure as ExecutionRPCRejection {
                     projects.updateWorkspace(projectID, id: work.id) { $0.deliveryAttempted = false }
                     throw failure
                 }
                 library.syncOwnedSessions()
                 let selected = (library.execution.tasks[thread]?.provider ?? .codex).rawValue + ":" + thread
-                projects.update(projectID) { $0.draft = ""; $0.draftAttachments = []; $0.draftModel = nil; $0.linkedFrom = nil; $0.linkedBase = nil; $0.pendingWorkspace = nil; $0.selectedSession = selected }
+                projects.update(projectID) { $0.draft = ""; $0.draftAttachments = []; $0.draftModel = nil; $0.draftMode = nil; $0.draftGoal = nil; $0.linkedFrom = nil; $0.linkedBase = nil; $0.pendingWorkspace = nil; $0.selectedSession = selected }
+                library.saveDraft(selected, text: "", attachments: [], mode: selectedMode)
                 library.selectedID = selected; attachments = []
             } catch { self.error = error.localizedDescription }
         }

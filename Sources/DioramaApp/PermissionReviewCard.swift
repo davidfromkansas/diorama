@@ -3,29 +3,32 @@ import DioramaCore
 
 struct PermissionReviewCard: View {
     let request: ExecutionRequest
+    var relatedItem: WireValue = .null
     let connected: Bool
     let respond: (WireValue) -> Void
     @State private var reviewing = false
-    private var presentation: PermissionPresentation { PermissionPresentation(request: request) }
+    private var presentation: PermissionPresentation { PermissionPresentation(request: request, relatedItem: relatedItem) }
     private var unavailable: Bool { request.responding || !connected }
     private var extras: [ApprovalDecision] { request.approvalDecisions.filter { !["accept", "decline"].contains($0.value.string ?? "") } }
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 12) {
-            Label(request.responding ? "Decision sent · awaiting response" : connected ? "Permission needed" : "Connection lost · reconnect to respond", systemImage: "hand.raised")
-                .font(.caption).foregroundStyle(.secondary)
-            Text(presentation.title).font(.title3.weight(.semibold))
-            if let reason = presentation.reason { Text("Agent’s reason: " + reason).font(.body).lineLimit(2).textSelection(.enabled) }
+        VStack(alignment: .leading, spacing: 8) {
+            Label(presentation.title, systemImage: "hand.raised").font(.headline)
+            if request.responding || !connected {
+                Text(request.responding ? "Decision sent · awaiting response" : "Connection lost · reconnect to respond")
+                    .font(.caption).foregroundStyle(.secondary)
+            }
+            if let reason = presentation.reason { Text("Agent’s reason: " + reason).font(.callout).lineLimit(1).textSelection(.enabled) }
             Text(presentation.target).font(.system(size: 13, design: .monospaced))
-                .lineLimit(4).textSelection(.enabled).frame(maxWidth: .infinity, alignment: .leading)
-                .padding(12).background(Color.primary.opacity(0.04), in: RoundedRectangle(cornerRadius: 8))
+                .lineLimit(2).textSelection(.enabled).frame(maxWidth: .infinity, alignment: .leading)
+                .padding(8).background(Color.primary.opacity(0.04), in: RoundedRectangle(cornerRadius: 8))
             ViewThatFits(in: .horizontal) {
                 HStack { reviewButton; Spacer(); decisions }
-                VStack(alignment: .leading, spacing: 12) { reviewButton; HStack { Spacer(); decisions } }
+                VStack(alignment: .leading, spacing: 8) { reviewButton; HStack { Spacer(); decisions } }
             }
             Text(presentation.scope).font(.caption).foregroundStyle(.secondary)
         }
-        .padding(20)
+        .padding(12)
         .background(Color(nsColor: .controlBackgroundColor), in: RoundedRectangle(cornerRadius: 16))
         .overlay(RoundedRectangle(cornerRadius: 16).strokeBorder(Color.primary.opacity(0.12)))
         .sheet(isPresented: $reviewing) { reviewSheet }
@@ -39,10 +42,9 @@ struct PermissionReviewCard: View {
             } else {
                 if request.decisions.contains("decline") { Button("Deny") { decide(.string("decline")) } }
                 if request.decisions.contains("accept") { Button("Allow once") { decide(.string("accept")) }.buttonStyle(.borderedProminent) }
-                if !extras.isEmpty { Button("More options…") { reviewing = true } }
                 if request.approvalDecisions.isEmpty { Text("Unsupported request · use Stop to cancel").font(.caption) }
             }
-        }.controlSize(.large).disabled(unavailable)
+        }.disabled(unavailable)
     }
     private var reviewSheet: some View {
         VStack(alignment: .leading, spacing: 16) {

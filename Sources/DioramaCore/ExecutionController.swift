@@ -59,6 +59,7 @@ public struct ExecutedTask: Identifiable, Sendable {
     public var liveStartedAt: Date?
     public var transcript = Transcript()
     public var activity: [ActivityEvent] = []
+    public var structuredActivity = SessionActivitySnapshot()
     public var error: String?
     public var canvasNotice: String?
     public var terminalTurns: Set<String> = []
@@ -93,6 +94,19 @@ private struct TaskBookmark: Codable {
 @Observable @MainActor
 public final class ExecutionController {
     public internal(set) var tasks: [String: ExecutedTask] = [:]
+    public private(set) var recordedActivity: [String: SessionActivitySnapshot] = [:]
+    private var activityImports: Set<String> = []
+    private var activityMembership: [String: [ActivitySessionIdentity]] = [:]
+    public func registerActivityConversation(_ members: [ActivitySessionIdentity]) {
+        for member in members {
+            activityMembership[member.key] = members
+            if tasks[member.id]?.provider != member.provider, let activityDirectory, recordedActivity[member.key] == nil {
+                recordedActivity[member.key] = SessionActivityStore.read(directory: activityDirectory, provider: member.provider, id: member.id)
+            }
+        }
+    }
+    private var agentRefreshes: Set<String> = []
+    private var childFilterAvailable: Bool?
     public private(set) var requests: [String: ExecutionRequest] = [:]
     public internal(set) var collaborationModes: [WireValue] = []
     public internal(set) var rateLimits: WireValue = .null
@@ -126,6 +140,9 @@ public final class ExecutionController {
     public static let handoffExplanation = "Continue this same conversation through Codex’s official resume API. Another client may still own it. Diorama never removes locks, archives, or forks to acquire it."
     let transport: any ExecutionTransport
     private let journal: URL?
+    private let activityDirectory: URL?
+    private let activityStore: SessionActivityStore?
+    private var activityWrites: [String: Task<Void, Never>] = [:]
     private let canvas: ConversationCanvas?
     private var eventTask: Task<Void, Never>?
     private var sequence = 0
@@ -134,10 +151,17 @@ public final class ExecutionController {
     }
     public init(transport: any ExecutionTransport = CodexExecutionTransport(), journal: URL? = nil, canvas: ConversationCanvas? = nil) {
         self.transport = transport; self.journal = journal; self.canvas = canvas
+        activityDirectory = journal?.deletingLastPathComponent().appendingPathComponent("SessionActivity")
+        activityStore = activityDirectory.map { SessionActivityStore(directory: $0) }
         if let journal, let data = try? Data(contentsOf: journal), let saved = try? JSONDecoder().decode([TaskBookmark].self, from: data) {
             for item in saved { tasks[item.id] = ExecutedTask(id: item.id, title: item.title, folder: item.folder, parentID: item.parentID, phase: .disconnected, error: "Previous run: read saved history and explicitly reconnect before sending. No work has been restarted.")
                 tasks[item.id]?.model = item.model ?? ""
                 tasks[item.id]?.provider = Provider(rawValue: item.provider ?? "") ?? .codex
+                if let activityDirectory {
+                    let provider = tasks[item.id]!.provider
+                    let snapshot = SessionActivityStore.read(directory: activityDirectory, provider: provider, id: item.id)
+                    tasks[item.id]?.structuredActivity = snapshot
+                }
                 tasks[item.id]?.workflow.steeredQueueIDs = item.pendingQueueSteers ?? []
                 tasks[item.id]?.workflow.queueUncertain = !(item.pendingQueueSteers ?? []).isEmpty
             }
@@ -457,6 +481,10 @@ public final class ExecutionController {
         }
         // Stop-and-quit is an explicit user action covering owned terminal commands too.
         for task in tasks.values where task.attached { try await stopBackgroundTerminals(id: task.id) }
+        for (id, task) in tasks {
+            activityWrites[id]?.cancel()
+            try await activityStore?.save(task.structuredActivity, provider: task.provider, id: id, members: activityMembership[task.provider.rawValue + ":" + id] ?? [])
+        }
         await transport.shutdown(); connected = false
         for id in tasks.keys { tasks[id]?.attached = false }
     }
@@ -479,6 +507,8 @@ public final class ExecutionController {
         let method = event["method"].string ?? "", p = event["params"]
         if method == "diorama/sessionDisconnected" || method == "diorama/providerDisconnected" {
             for id in tasks.keys where tasks[id]?.attached == true && (p["threadId"].string == id || p["provider"].string == tasks[id]?.provider.rawValue) {
+                tasks[id]?.structuredActivity.lastKnown = true
+                saveActivity(id)
                 tasks[id]?.attached = false; tasks[id]?.phase = .disconnected; tasks[id]?.error = p["reason"].string
                 requests = requests.filter { $0.value.threadID != id }
             }
@@ -496,12 +526,24 @@ public final class ExecutionController {
         }
         if method == "thread/started", let id = p["thread"]["id"].string, let parent = p["thread"]["parentThreadId"].string, tasks[parent]?.attached == true {
             tasks[id] = ExecutedTask(id: id, title: p["thread"]["agentNickname"].string ?? "Subagent", folder: p["thread"]["cwd"].string ?? tasks[parent]!.folder, parentID: parent, attached: true)
+            var state = tasks[parent]!.structuredActivity
+            let item: WireValue = .object(["type": .string("collabAgentToolCall"), "id": .string(id), "senderThreadId": .string(parent), "receiverThreadIds": .array([.string(id)]), "agentsStates": .object([id: .object(["agentNickname": p["thread"]["agentNickname"], "status": p["thread"]["status"]["type"]])])])
+            SessionActivityReducer.ingest(.object(["method": .string("item/started"), "params": .object(["item": item])]), provider: .codex, sessionID: parent, into: &state)
+            tasks[parent]?.structuredActivity = state; saveActivity(parent)
             persist()
         }
         if method == "account/rateLimits/updated" { rateLimits = p; return }
         if ["warning", "configWarning", "deprecationNotice"].contains(method) { featureErrors[method] = p["message"].string ?? p.pretty; return }
-        let id = p["threadId"].string ?? p["thread"]["id"].string ?? ""
-        if tasks[id] != nil {
+        // Some notifications identify only the turn. Route only when that identity is unique.
+        let matching = p["turnId"].string.map { turn in tasks.values.filter { $0.turnID == turn }.map(\.id) } ?? []
+        let id = p["threadId"].string ?? p["thread"]["id"].string ?? (matching.count == 1 ? matching[0] : "")
+        if let task = tasks[id] {
+            var snapshot = task.structuredActivity
+            SessionActivityReducer.ingest(event, provider: task.provider, sessionID: id, into: &snapshot)
+            if snapshot != task.structuredActivity {
+                tasks[id]?.structuredActivity = snapshot
+                saveActivity(id)
+            }
             switch method {
             case "thread/goal/updated": tasks[id]?.workflow.goal = p["goal"]; scheduleNextQueued(id); return
             case "thread/goal/cleared": tasks[id]?.workflow.goal = .null; return
@@ -600,7 +642,7 @@ public final class ExecutionController {
             if done { tasks[id]?.toolProgress.removeValue(forKey: itemID) }
             if type == "reasoning" { return }
             let kind: String; let text: String
-            if type == "agentMessage" || type == "plan" { kind = "Assistant"; text = item["text"].string ?? "" }
+            if type == "agentMessage" || type == "plan" { kind = type == "plan" ? "Proposed plan" : "Assistant"; text = item["text"].string ?? "" }
             else if type == "userMessage" {
                 let content = item["content"].array.compactMap { $0["text"].string ?? ($0["type"].string == "localImage" ? "Image: \($0["path"].string ?? "attachment")" : "[Image attachment]") }.joined(separator: "\n")
                 for (index, part) in MessageContent.split(content, provider: .codex).enumerated() {
@@ -616,13 +658,110 @@ public final class ExecutionController {
             setEntry(id, itemID: itemID, kind: kind, text: text, append: false,
                      image: TranscriptImage(itemType: type, path: item["path"].string), tool: ToolResult(item: item))
         case "item/agentMessage/delta", "item/plan/delta", "item/commandExecution/outputDelta":
-            if let itemID = p["itemId"].string, let delta = p["delta"].string { setEntry(id, itemID: itemID, kind: method.contains("commandExecution") ? "Tool activity" : "Assistant", text: delta, append: true) }
+            if let itemID = p["itemId"].string, let delta = p["delta"].string { setEntry(id, itemID: itemID, kind: method.contains("commandExecution") ? "Tool activity" : method == "item/plan/delta" ? "Proposed plan" : "Assistant", text: delta, append: true) }
         case "item/mcpToolCall/progress":
             if let itemID = p["itemId"].string { tasks[id]?.toolProgress[itemID] = p["message"].string ?? p["progress"].scalarText }
         case "error": tasks[id]?.error = p["error"]["message"].string ?? "Provider reported an error"
         default: break
         }
     }
+    public func refreshAgents(_ session: Session) async {
+        guard connected, session.provider == .codex, agentRefreshes.insert(session.sessionID).inserted else { return }
+        defer { agentRefreshes.remove(session.sessionID) }
+        var snapshot = activitySnapshot(provider: session.provider, id: session.sessionID)
+        // Capability-check experimental discovery once. Results still require explicit parent metadata;
+        // old servers may silently ignore unknown filters.
+        if childFilterAvailable != false {
+            do {
+                var candidates: [WireValue] = [], cursor: String?, seen = Set<String>()
+                for _ in 0..<5 {
+                    var params: [String: WireValue] = ["ancestorThreadId": .string(session.sessionID), "sourceKinds": .array([.string("subAgentThreadSpawn")]), "limit": .number(100)]
+                    if let cursor { params["cursor"] = .string(cursor) }
+                    let result = try await transport.request("thread/list", .object(params))
+                    candidates += result["data"].array
+                    cursor = result["nextCursor"].string
+                    guard let next = cursor, seen.insert(next).inserted else { break }
+                    if Task.isCancelled { return }
+                }
+                childFilterAvailable = true
+                func parent(_ child: WireValue) -> String? {
+                    child["parentThreadId"].string ?? child["source"]["subAgent"]["thread_spawn"]["parent_thread_id"].string ?? child["source"]["subagent"]["thread_spawn"]["parent_thread_id"].string
+                }
+                // Resolve from explicit edges, even when pages arrive child-before-parent.
+                // This also protects against servers silently ignoring an experimental filter.
+                var known = Set([session.sessionID] + snapshot.agents.map(\.nativeID))
+                var changed = true
+                while changed {
+                    changed = false
+                    for child in candidates {
+                        guard let parent = parent(child), known.contains(parent), let id = child["id"].string, known.insert(id).inserted else { continue }
+                        changed = true
+                        let item: WireValue = .object(["type": .string("collabToolCall"), "id": .string(id), "newThreadId": .string(id), "senderThreadId": .string(parent)])
+                        SessionActivityReducer.ingest(.object(["method": .string("item/completed"), "params": .object(["item": item])]), provider: .codex, sessionID: session.sessionID, into: &snapshot)
+                    }
+                }
+            } catch {
+                // A timeout/disconnection is not proof that the experimental filter is unsupported.
+                childFilterAvailable = error is ExecutionRPCRejection ? false : nil
+            }
+        }
+        for agent in snapshot.agents.prefix(20) where agent.provider == Provider.codex.rawValue {
+            do {
+                let response = try await transport.request("thread/read", .object(["threadId": .string(agent.nativeID), "includeTurns": .bool(false)]))
+                guard response["thread"]["id"].string == agent.nativeID else { continue }
+                if let index = snapshot.records.firstIndex(where: { $0.id == agent.id }) {
+                    var record = snapshot.records[index]
+                    // Runtime idle/notLoaded is not an agent-completed assertion.
+                    record.data = .object(record.data.object.merging(["runtimeStatus": response["thread"]["status"]]) { _, new in new })
+                    record.observedAt = Date()
+                    snapshot.apply(record)
+                }
+            } catch { /* Last reported state is retained; absent history is shown by child inspection. */ }
+            if Task.isCancelled { return }
+        }
+        // Merge against live updates that arrived while awaiting reads; never replace newer streamed records.
+        var latest = activitySnapshot(provider: session.provider, id: session.sessionID)
+        for record in snapshot.records where !latest.records.contains(where: { $0.id == record.id && $0.observedAt > record.observedAt }) { latest.apply(record) }
+        if tasks[session.sessionID] != nil { tasks[session.sessionID]?.structuredActivity = latest; saveActivity(session.sessionID) }
+        else { recordedActivity[session.provider.rawValue + ":" + session.sessionID] = latest }
+    }
+
+    public func activitySnapshot(provider: Provider, id: String) -> SessionActivitySnapshot {
+        if let task = tasks[id], task.provider == provider { return task.structuredActivity }
+        return recordedActivity[provider.rawValue + ":" + id] ?? .init()
+    }
+    public func importActivity(_ session: Session, transcript: Transcript) async {
+        let key = session.provider.rawValue + ":" + session.sessionID
+        guard !activityImports.contains(key), tasks[session.sessionID]?.attached != true else { return }
+        activityImports.insert(key)
+        var snapshot = activityDirectory.map { SessionActivityStore.read(directory: $0, provider: session.provider, id: session.sessionID) } ?? .init()
+        if snapshot.records.isEmpty { snapshot = await SessionActivityHistory.read(session) }
+        // App Server saved-history plans and collaboration items retain their native type.
+        for entry in transcript.entries {
+            var item = entry.tool?.item ?? .null
+            if entry.kind == "Proposed plan" { item = .object(["id": .string(entry.providerItemID ?? entry.id), "type": .string("plan"), "text": .string(entry.text)]) }
+            if item != .null {
+                SessionActivityReducer.ingest(.object(["method": .string("item/completed"), "params": .object(["item": item])]), provider: session.provider, sessionID: session.sessionID, into: &snapshot)
+            }
+        }
+        snapshot.lastKnown = true
+        guard tasks[session.sessionID]?.attached != true else { return }
+        if tasks[session.sessionID] != nil { tasks[session.sessionID]?.structuredActivity = snapshot }
+        recordedActivity[key] = snapshot
+        try? await activityStore?.save(snapshot, provider: session.provider, id: session.sessionID, members: activityMembership[key] ?? [])
+    }
+
+    private func saveActivity(_ id: String) {
+        guard let activityStore else { return }
+        activityWrites[id]?.cancel()
+        activityWrites[id] = Task { [weak self] in
+            do { try await Task.sleep(for: .milliseconds(250)) } catch { return }
+            guard let task = self?.tasks[id] else { return }
+            do { try await activityStore.save(task.structuredActivity, provider: task.provider, id: id, members: self?.activityMembership[task.provider.rawValue + ":" + id] ?? []) }
+            catch { self?.tasks[id]?.error = "Could not save activity history: " + error.localizedDescription }
+        }
+    }
+
     private func refreshRequestPhase(_ id: String) {
         guard let task = tasks[id], task.turnID != nil, task.phase != .disconnected else { return }
         let pending = requests.values.filter { $0.threadID == id && $0.isBlocking }

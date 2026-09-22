@@ -31,7 +31,7 @@ public enum SessionChanges {
         let names = try await git(folder, ["diff", "--no-ext-diff", "--no-textconv", "--name-status", "-z", "--find-renames", base, "--"])
         var files = parseNames(names)
         let untracked = try await git(folder, ["ls-files", "--others", "--exclude-standard", "-z"])
-        files += untracked.split(separator: "\0").map { ChangedFile(path: String($0), status: "Added", untracked: true) }
+        files += untracked.split(separator: "\0").filter { !Self.isGeneratedCanvas(String($0)) }.map { ChangedFile(path: String($0), status: "Added", untracked: true) }
         let stats = try await git(folder, ["diff", "--no-ext-diff", "--no-textconv", "--numstat", "-z", "--find-renames", base, "--"])
         let counts = parseStats(stats)
         for i in files.indices { if let count = counts[files[i].path] { files[i].added = count.0; files[i].removed = count.1 } }
@@ -48,8 +48,18 @@ public enum SessionChanges {
                 }
             }
         }
-        let status = try await git(folder, ["status", "--porcelain=v1", "-z"])
-        return ChangesSnapshot(files: files.sorted { $0.path < $1.path }, head: head, branch: branch, dirty: !status.isEmpty)
+        let status = try await git(folder, ["status", "--porcelain=v1", "-z", "--untracked-files=all"])
+        // Tracked canvases remain reviewable. Only app-generated, untracked artifacts
+        // are excluded; they must not make published CI appear out of date.
+        let dirty = status.split(separator: "\0").contains { record in
+            !record.hasPrefix("?? ") || !Self.isGeneratedCanvas(String(record.dropFirst(3)))
+        }
+        return ChangesSnapshot(files: files.sorted { $0.path < $1.path }, head: head, branch: branch, dirty: dirty)
+    }
+    private static func isGeneratedCanvas(_ path: String) -> Bool {
+        guard path.hasPrefix(".diorama/canvases/"), path.hasSuffix(".html") else { return false }
+        let name = path.dropFirst(".diorama/canvases/".count).dropLast(5)
+        return name.count == 64 && name.allSatisfy { "0123456789abcdef".contains($0) }
     }
     public static func parseNames(_ value: String) -> [ChangedFile] {
         let parts = value.split(separator: "\0", omittingEmptySubsequences: false).map(String.init)

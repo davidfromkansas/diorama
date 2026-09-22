@@ -172,7 +172,8 @@ public enum AppServerHistory {
                         return "[\(block["type"] as? String ?? "attachment") attachment]"
                     }.joined(separator: "\n")
                     for part in MessageContent.split(content, provider: .codex) { append(part.context ? "System context" : "You", part.text) }
-                case "agentMessage", "plan": append("Assistant", item["text"] as? String ?? "")
+                case "agentMessage": append("Assistant", item["text"] as? String ?? "")
+                case "plan": append("Proposed plan", item["text"] as? String ?? "")
                 case "hookPrompt": append("System context", formatted(item))
                 case "imageView":
                     append("Tool activity", formatted(item), image: TranscriptImage(itemType: "imageView", path: item["path"] as? String))

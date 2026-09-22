@@ -51,6 +51,8 @@ public struct DioramaProject: Codable, Identifiable, Equatable, Sendable {
     public var draft = ""
     public var draftAttachments: [String] = []
     public var draftModel: String?
+    public var draftMode: String?
+    public var draftGoal: Bool?
     public var linkedFrom: String?
     public var linkedBase: String?
     public var pendingWorkspace: String?
@@ -223,6 +225,7 @@ public struct ProjectPullRequest: Codable, Identifiable, Sendable {
 }
 
 public struct ConversationDraft: Codable, Sendable {
+    public var mode: String?
     public var text = ""
     public var attachments: [String] = []
     public init() {}

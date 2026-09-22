@@ -13,7 +13,8 @@ struct ExecutionModelPicker: View {
                 Text(claude ? "Anthropic" : "OpenAI").font(.caption).foregroundStyle(.secondary)
                 let choices = controller.models.filter { $0.id.hasPrefix("claude/") == claude }
                 if choices.isEmpty {
-                    Button(claude ? "Log in to Anthropic…" : "Log in to OpenAI…") { openSettings() }
+                    if controller.connecting { Text("Checking available models…").foregroundStyle(.secondary) }
+                    else { Button(claude ? "Connect or refresh Anthropic…" : "Connect or refresh OpenAI…") { openSettings() } }
                 } else {
                     ForEach(choices) { choice in
                         Button { model = choice.id; effort = "" } label: {
@@ -22,6 +23,9 @@ struct ExecutionModelPicker: View {
                     }
                 }
             }
+            Button(controller.connecting ? "Refreshing models…" : "Refresh models") {
+                Task { await controller.refreshModels() }
+            }.disabled(controller.connecting)
             let levels = controller.models.first { $0.id == (model.isEmpty ? effectiveModel : model) }?.efforts ?? []
             if !levels.isEmpty {
                 Picker("Reasoning", selection: $effort) {
@@ -116,7 +120,9 @@ struct ExecutionRequestView: View {
     var body: some View {
         if !request.isInput && !request.isElicitation {
             VStack(alignment: .leading, spacing: 8) {
-                PermissionReviewCard(request: request, connected: controller.connected, respond: respond)
+                PermissionReviewCard(request: request, relatedItem: controller.tasks[request.threadID]?.transcript.entries.last(where: {
+                    $0.tool?.item["id"] == request.params["itemId"] && $0.turnID == request.params["turnId"].string
+                })?.tool?.item ?? .null, connected: controller.connected, respond: respond)
                 if let error { Text(error).foregroundStyle(.red).textSelection(.enabled) }
             }
         } else { legacyRequest }
@@ -292,7 +298,7 @@ struct ExecutionControls: View {
                 if library.execution.resumeErrors[session.sessionID]?.contains("active goal") == true {
                     Button("Pause goal and reconnect") { Task { do { try await library.execution.pauseGoalAndResume(session: session) } catch { self.error = error.localizedDescription } } }
                 }
-                if let message = error ?? library.execution.resumeErrors[session.sessionID] {
+                if let message = error ?? library.execution.resumeErrors[session.sessionID] ?? library.execution.tasks[session.sessionID]?.error {
                     Text(message).font(.caption).foregroundStyle(.orange).textSelection(.enabled)
                 }
             }.padding(16)
@@ -302,6 +308,7 @@ struct ExecutionControls: View {
             recoveredGoal = session.provider == .claude ? ClaudeExecutionTransport.savedGoal(sessionID: session.sessionID) : .null
         }
         .onAppear {
+            mode = library.drafts[session.id]?.mode ?? library.execution.tasks[session.sessionID]?.workflow.mode ?? "default"
             if session.provider == .claude { model = library.execution.tasks[session.sessionID]?.model ?? "claude/default" }
             if let draft = library.drafts[session.id] {
                 prompt = draft.text
@@ -309,6 +316,7 @@ struct ExecutionControls: View {
             }
         }
         .onChange(of: library.drafts[session.id]?.text) { if let text = library.drafts[session.id]?.text, text != prompt { prompt = text } }
+        .onChange(of: mode) { library.saveDraft(session.id, text: prompt, attachments: attachments, mode: mode) }
         .onChange(of: prompt) { library.saveDraft(session.id, text: prompt, attachments: attachments) }
         .onChange(of: attachments) { library.saveDraft(session.id, text: prompt, attachments: attachments) }
     }
@@ -527,7 +535,7 @@ struct ConversationComposer: View {
                     }
                     .buttonStyle(.plain)
                     .accessibilityLabel(active ? "Stop task" : queued ? "Queue message" : "Send message")
-                    .help(active ? "Stop the current task" : "Send message (⌘Return)")
+                    .help(active ? "Stop the current task" : "Send message (Return); Shift-Return adds a new line")
                     .disabled(active ? stoppingTurn || threadID.flatMap { controller.tasks[$0]?.turnID } == nil : sending || (prompt.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty && attachments.isEmpty))        }
     }
     private func stopTurn() {

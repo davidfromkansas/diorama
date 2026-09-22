@@ -71,8 +71,9 @@ public actor ClaudeExecutionTransport: ExecutionTransport {
     private var toolItems: [String: WireValue] = [:]
     private var permissionMode = "default"
     private let executable: URL?
-    public init(folder: String, sessionID: String = UUID().uuidString.lowercased(), resume: Bool = false, context: String? = nil, executable: URL? = nil) {
-        self.folder = folder; self.sessionID = sessionID; self.resume = resume; self.context = context; self.executable = executable
+    private let backend: ClaudeBackend
+    public init(folder: String, sessionID: String = UUID().uuidString.lowercased(), resume: Bool = false, context: String? = nil, executable: URL? = nil, backend: ClaudeBackend = .automatic) {
+        self.folder = folder; self.sessionID = sessionID; self.resume = resume; self.context = context; self.executable = executable; self.backend = backend
         (events, sink) = AsyncStream.makeStream(of: WireValue.self)
     }
     deinit { reader?.cancel(); try? input?.close(); try? output?.close(); if let process, process.isRunning { process.terminate() }; sink.finish() }
@@ -88,6 +89,19 @@ public actor ClaudeExecutionTransport: ExecutionTransport {
         let home = FileManager.default.homeDirectoryForCurrentUser
         return [home.appendingPathComponent(".local/bin/claude"), URL(fileURLWithPath: "/opt/homebrew/bin/claude"), URL(fileURLWithPath: "/usr/local/bin/claude")].first { FileManager.default.isExecutableFile(atPath: $0.path) }
     }
+    /// A GUI launch can inherit PWD from the process that opened Diorama.
+    /// Claude consults it during startup, independently of Process.currentDirectoryURL.
+    /// Keep both representations of the working directory aligned for CLI and SDK.
+    static func childEnvironment(_ source: [String: String], folder: String, executable: URL) -> [String: String] {
+        var environment = source
+        // Explicit API credentials must never silently override subscription login.
+        for key in ["ANTHROPIC_API_KEY", "ANTHROPIC_AUTH_TOKEN", "CLAUDE_CODE_OAUTH_TOKEN", "ANTHROPIC_BASE_URL", "CLAUDE_CODE_USE_BEDROCK", "CLAUDE_CODE_USE_VERTEX", "CLAUDE_CODE_USE_FOUNDRY"] { environment.removeValue(forKey: key) }
+        environment["PWD"] = URL(fileURLWithPath: folder).standardizedFileURL.path
+        environment.removeValue(forKey: "OLDPWD")
+        environment["CLAUDE_CODE_ENABLE_TODO_TOOLS"] = "1"
+        environment["DIORAMA_CLAUDE_EXECUTABLE"] = executable.path
+        return environment
+    }
     public func connect() async throws {
         if process?.isRunning == true { return }
         guard UUID(uuidString: sessionID) != nil else { throw ExecutionRPCRejection("Invalid Claude session identity") }
@@ -96,9 +110,14 @@ public actor ClaudeExecutionTransport: ExecutionTransport {
         child.executableURL = binary
         child.arguments = ["-p", "--allow-dangerously-skip-permissions", "--input-format", "stream-json", "--output-format", "stream-json", "--verbose", "--include-partial-messages", "--permission-prompt-tool", "stdio", resume ? "--resume" : "--session-id", sessionID]
         if let context { child.arguments! += ["--append-system-prompt", context] }
-        // Explicit API credentials must never silently override the user's subscription login.
-        var environment = ProcessInfo.processInfo.environment
-        for key in ["ANTHROPIC_API_KEY", "ANTHROPIC_AUTH_TOKEN", "CLAUDE_CODE_OAUTH_TOKEN", "ANTHROPIC_BASE_URL", "CLAUDE_CODE_USE_BEDROCK", "CLAUDE_CODE_USE_VERTEX", "CLAUDE_CODE_USE_FOUNDRY"] { environment.removeValue(forKey: key) }
+        let requested = ProcessInfo.processInfo.environment["DIORAMA_CLAUDE_BACKEND"].flatMap(ClaudeBackend.init(rawValue:)) ?? backend
+        let runtime = requested == .cli || (executable != nil && requested == .automatic) ? nil : ClaudeSDKRuntime.discover()
+        if requested == .sdk && runtime == nil { throw ExecutionRPCRejection("Claude SDK helper is missing. Reinstall Diorama or select the CLI backend.") }
+        if let runtime {
+            child.executableURL = runtime.node
+            child.arguments = [runtime.directory.appendingPathComponent("index.mjs").path] + (child.arguments ?? [])
+        }
+        let environment = Self.childEnvironment(ProcessInfo.processInfo.environment, folder: folder, executable: binary)
         child.environment = environment; child.currentDirectoryURL = URL(fileURLWithPath: folder)
         child.standardInput = stdin; child.standardOutput = stdout; child.standardError = FileHandle.nullDevice
         try child.run(); process = child; input = stdin.fileHandleForWriting; output = stdout.fileHandleForReading
@@ -135,14 +154,20 @@ public actor ClaudeExecutionTransport: ExecutionTransport {
             catch { pending.removeValue(forKey: id)?.resume(throwing: error); return }
             Task { [weak self] in
                 try? await Task.sleep(for: .seconds(20))
-                await self?.expire(id)
+                await self?.expire(id, initializing: payload["subtype"]?.string == "initialize")
             }
         }
     }
-    private func expire(_ id: String) { pending.removeValue(forKey: id)?.resume(throwing: AppServerFailure("Claude response timed out. Check the conversation before retrying.")) }
+    private func expire(_ id: String, initializing: Bool) {
+        let message = initializing
+            ? "Claude did not finish starting within 20 seconds. No message was sent. Try again; if this continues, check Claude in Settings."
+            : "Claude response timed out. Check the conversation before retrying."
+        pending.removeValue(forKey: id)?.resume(throwing: AppServerFailure(message))
+    }
     private func write(_ value: WireValue) throws {
         guard let input, process?.isRunning == true else { throw AppServerFailure("Claude disconnected") }
-        var data = try JSONEncoder().encode(value); data.append(10); try input.write(contentsOf: data)
+        var data = try JSONEncoder().encode(value)
+        data.append(10); try input.write(contentsOf: data)
     }
     private func emit(_ method: String, _ values: [String: WireValue] = [:], requestID: WireValue? = nil) {
         var p = values; p["threadId"] = .string(sessionID)
@@ -309,6 +334,12 @@ public actor ClaudeExecutionTransport: ExecutionTransport {
         try write(.object(["type": .string("control_response"), "response": .object(["subtype": .string("error"), "request_id": id, "error": .string(message)])]))
     }
     private func receive(_ e: WireValue) {
+        // Both the CLI and SDK feed the same provider-neutral reducer. Reasoning is ignored there.
+        if ["assistant", "user", "system", "result", "rate_limit_event"].contains(e["type"].string ?? "") {
+            emit("diorama/claudeActivity", ["event": e])
+        }
+        // Child content belongs in child inspection, never in the parent's conversation.
+        if e["parent_tool_use_id"].string != nil { return }
         switch e["type"].string {
         case "control_response":
             let r = e["response"], id = r["request_id"].string ?? ""
@@ -339,9 +370,17 @@ public actor ClaudeExecutionTransport: ExecutionTransport {
                 } else { emit("item/agentMessage/delta", ["itemId": .string(textID), "delta": .string(value)]) }
             }
         case "assistant":
-            if goalOutput { emitGoalText(text) }
+            let complete = e["message"]["content"].array.filter { $0["type"].string == "text" }.compactMap { $0["text"].string }.joined(separator: "\n")
+            if !complete.isEmpty {
+                text = complete
+                if goalOutput { emitGoalText(text) }
+                else { emit("item/completed", ["item": .object(["id": .string(textID), "type": .string("agentMessage"), "text": .string(complete)])]) }
+            }
             for block in e["message"]["content"].array {
                 if block["type"].string == "tool_use", let id = block["id"].string {
+                    if block["name"].string == "ExitPlanMode", let plan = block["input"]["plan"].string {
+                        emit("item/completed", ["item": .object(["id": .string(id + ":plan"), "type": .string("plan"), "text": .string(plan)])])
+                    }
                     let item: WireValue = .object(["id": .string(id), "type": .string("mcpToolCall"), "tool": block["name"], "arguments": block["input"], "status": .string("inProgress")])
                     toolItems[id] = item; emit("item/started", ["item": item])
                 }

@@ -1,0 +1,32 @@
+{
+  "date": "2026-09-22",
+  "rootCauses": [
+    "tools.update_plan.enabled is opt-in",
+    "V1 agents.max_depth defaults to 1",
+    "Diorama transport omitted thread/list from its allowlist"
+  ],
+  "fix": "Process-scoped checklist enablement, V1 depth 2, read-only descendant discovery allowed",
+  "liveRuns": [
+    {
+      "runtime": "desktop-bundled 0.154.0-alpha.6.2",
+      "model": "gpt-5.5",
+      "seconds": 65.374,
+      "result": "passed"
+    },
+    {
+      "runtime": "standalone 0.153.4",
+      "model": "gpt-6-astra",
+      "seconds": 56.757,
+      "result": "passed"
+    }
+  ],
+  "assertions": [
+    "two completed checklist steps",
+    "at least two agent records with explicit nested parent relationship",
+    "saved child history includes fixture marker",
+    "journal restore is last-known"
+  ],
+  "regressionTests": 206,
+  "globalSettingsChanged": false,
+  "limits": "These bounded live scenarios pass; not an assertion about every provider/model/version or a completed VoiceOver audio walkthrough."
+}

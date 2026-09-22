@@ -8,6 +8,7 @@ mkdir -p "$app_path/Contents/MacOS"
 cp "$build_path/release/Diorama" "$app_path/Contents/MacOS/Diorama"
 cp "$build_path/release/DioramaReporter" "$app_path/Contents/MacOS/DioramaReporter"
 codesign --force --sign - "$app_path/Contents/MacOS/DioramaReporter"
+./scripts/package-claude-helper.sh "$app_path"
 mkdir -p "$app_path/Contents/Resources/Licenses"
 cp -f "$build_path/checkouts/swift-markdown-ui/LICENSE" "$app_path/Contents/Resources/Licenses/MarkdownUI.txt"
 cp -f "$build_path/checkouts/NetworkImage/LICENSE" "$app_path/Contents/Resources/Licenses/NetworkImage.txt"
@@ -21,8 +22,8 @@ cat > "$app_path/Contents/Info.plist" <<'PLIST'
 <key>CFBundleName</key><string>Diorama</string>
 <key>CFBundleDisplayName</key><string>Diorama</string>
 <key>CFBundlePackageType</key><string>APPL</string>
-<key>CFBundleShortVersionString</key><string>0.5.0</string>
-<key>CFBundleVersion</key><string>42</string>
+<key>CFBundleShortVersionString</key><string>0.6.0</string>
+<key>CFBundleVersion</key><string>43</string>
 <key>LSMinimumSystemVersion</key><string>14.0</string>
 <key>NSHighResolutionCapable</key><true/>
 </dict></plist>

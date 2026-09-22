@@ -1,0 +1,83 @@
+{
+  "date": "2026-09-22",
+  "sdk": "0.3.278",
+  "cli": "2.1.276",
+  "account": {
+    "subscriptionType": "Claude Max",
+    "apiProvider": "firstParty"
+  },
+  "sampleCountPerTransport": 1,
+  "timingsMs": {
+    "sdk": {
+      "initMs": 1267,
+      "firstTextMs": 14802,
+      "totalMs": 24272
+    },
+    "directCLI": {
+      "initMs": 1250,
+      "firstTextMs": 15122,
+      "totalMs": 24522
+    }
+  },
+  "observedEvents": {
+    "sdk": [
+      "assistant",
+      "rate_limit_event",
+      "result:success",
+      "system:init",
+      "system:status",
+      "system:task_notification",
+      "system:task_progress",
+      "system:task_started",
+      "system:task_updated",
+      "system:thinking_tokens",
+      "user"
+    ],
+    "directCLI": [
+      "assistant",
+      "control_request",
+      "control_response",
+      "rate_limit_event",
+      "result:success",
+      "system:init",
+      "system:status",
+      "system:task_notification",
+      "system:task_progress",
+      "system:task_started",
+      "system:task_updated",
+      "system:thinking_tokens",
+      "user"
+    ]
+  },
+  "sdkHistory": {
+    "parentMessages": 24,
+    "childCount": 1,
+    "childMessageCounts": [
+      4
+    ]
+  },
+  "controls": {
+    "allowedFile": true,
+    "deniedFileExists": false,
+    "planPayloadReceived": true,
+    "interruptReceipt": {
+      "interrupt": {
+        "still_queued": []
+      }
+    },
+    "resultSubtypes": [
+      "success",
+      "success",
+      "error_during_execution",
+      "success"
+    ],
+    "recoveryText": "INTERRUPT_RECOVERED"
+  },
+  "limitations": [
+    "Single comparison, not a latency benchmark",
+    "Packaged app, signing and notarization not tested",
+    "Diorama queue/goal integration not tested",
+    "Subscription billing account metadata verified; invoice not inspected",
+    "Third-party distribution policy requires clarification"
+  ]
+}

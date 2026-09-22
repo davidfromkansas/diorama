@@ -11,3 +11,6 @@ dist/
 .env
 .env.*
 !.env.example
+
+# Claude SDK helper dependencies
+helpers/claude/node_modules/

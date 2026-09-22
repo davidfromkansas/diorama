@@ -11,6 +11,7 @@ final class LibraryModel {
     let library = ImportedSessionLibrary()
     let projects: ProjectModel
     let reviews = SessionReviewStore()
+    var activityPanels: [String: ActivityPanelState] = [:]
     let conversations: DioramaConversationModel
     func appendReviewDraft(_ session: String, text: String) {
         var draft = drafts[session] ?? ConversationDraft()
@@ -23,8 +24,10 @@ final class LibraryModel {
         guard let data = UserDefaults.standard.data(forKey: "conversationDrafts") else { return [:] }
         return (try? JSONDecoder().decode([String: ConversationDraft].self, from: data)) ?? [:]
     }()
-    func saveDraft(_ session: String, text: String, attachments: [ConversationAttachment]) {
-        var draft = ConversationDraft(); draft.text = text; draft.attachments = attachments.map { $0.url.path }
+    func saveDraft(_ session: String, text: String, attachments: [ConversationAttachment], mode: String? = nil) {
+        var draft = drafts[session] ?? ConversationDraft();
+        if let mode { draft.mode = mode }
+         draft.text = text; draft.attachments = attachments.map { $0.url.path }
         drafts[session] = draft
         if let data = try? JSONEncoder().encode(drafts) { UserDefaults.standard.set(data, forKey: "conversationDrafts") }
     }
@@ -245,6 +248,7 @@ final class LibraryModel {
         let result = await library.transcript(for: session, limit: entryLimit)
         guard !Task.isCancelled, selectedID == session.id else { return }
         if transcript != result || transcriptSessionID != session.id { transcript = result; transcriptSessionID = session.id }
+        await execution.importActivity(session, transcript: result)
     }
 }
 
@@ -422,10 +426,39 @@ struct SessionView: View {
     let session: Session
     @Bindable var model: LibraryModel
     var hasLocalReview = false
+    var activityAction: ((String) -> Void)?
+    private var activityState: ActivityPanelState { model.activityState(session) }
+    private func openActivity(_ section: String) {
+        activityState.section = section
+        if let activityAction { activityAction(section) } else { showChanges = false; activityState.visible = true }
+    }
     @State private var showDetails = false
     @State private var showChanges = false
     @State private var showFind = false
+    @State private var transcriptScrollID: String?
     var body: some View {
+        // Project sessions already have a review host. Even a hidden inspector
+        // installs a native split view whose intrinsic height can push the
+        // approval controls and composer outside the project viewport.
+        if hasLocalReview {
+            conversationContent
+        } else {
+            conversationContent
+                .inspector(isPresented: Binding(get: { showChanges || activityState.visible }, set: { if !$0 { showChanges = false; activityState.visible = false } })) {
+                    if activityState.visible {
+                        SessionActivityPanel(session: session, library: model, state: activityState, close: { activityState.visible = false })
+                            .inspectorColumnWidth(min: 380, ideal: 520, max: 900)
+                    } else {
+                        VStack(spacing: 0) {
+                            ReviewChangesControls(model: model, session: session)
+                            Divider()
+                            ExecutionChangesView(work: model.execution.tasks[session.sessionID]?.work ?? ExecutionWork())
+                        }.inspectorColumnWidth(min: 400, ideal: 580, max: 900)
+                    }
+                }
+        }
+    }
+    private var conversationContent: some View {
         VStack(alignment: .leading, spacing: 0) {
             VStack(alignment: .leading, spacing: 10) {
                 HStack(alignment: .top, spacing: 12) {
@@ -440,6 +473,7 @@ struct SessionView: View {
                         if !hasLocalReview { Button("Review") { showChanges = true } }
                         Menu { ConversationActions(model: model, session: session) } label: { Image(systemName: "ellipsis.circle") }
                     }
+                    Button("Activity") { openActivity(activityState.section) }
                     Button { showDetails.toggle() } label: { Image(systemName: "info.circle") }
                         .buttonStyle(.plain).help("Conversation details").accessibilityLabel("Conversation details")
                         .popover(isPresented: $showDetails) {
@@ -470,7 +504,11 @@ struct SessionView: View {
             }.pickerStyle(.segmented).padding(.horizontal, 26).padding(.bottom, 12)
             }
             if let task = model.execution.tasks[session.sessionID], task.attached {
-                if !task.work.plan.isEmpty { ExecutionPlanView(work: task.work).padding(.horizontal, 24).padding(.bottom, 10) }
+                let snapshot = model.activitySnapshot(session)
+                HStack {
+                    if !snapshot.steps.isEmpty { Button("Steps · \(snapshot.steps.filter { $0.status == "completed" }.count) of \(snapshot.steps.count) completed") { openActivity("Steps") } }
+                    if !snapshot.agents.isEmpty { Button("Agents · " + snapshot.agentSummary) { openActivity("Agents") } }
+                }.font(.callout).padding(.horizontal, 24).padding(.bottom, 10)
                 if !hasLocalReview && !task.work.diff.isEmpty {
                     Button("Changes · \(task.work.files.count) files · +\(task.work.files.reduce(0) { $0 + $1.additions }) −\(task.work.files.reduce(0) { $0 + $1.deletions })") { showChanges.toggle() }
                         .padding(.horizontal, 24).padding(.bottom, 10)
@@ -481,7 +519,7 @@ struct SessionView: View {
                 HTMLCanvasView(session: session, livePhase: model.execution.tasks[session.sessionID]?.attached == true ? model.execution.tasks[session.sessionID]?.phase : nil, activities: CanvasActivity.current(model.execution.tasks[session.sessionID]), observedSummary: model.summary(session))
                     .id(session.id)
             } else if model.viewMode == .activity {
-                ActivityTimeline(summary: model.summary(session), livePhase: model.execution.tasks[session.sessionID]?.attached == true ? model.execution.tasks[session.sessionID]?.phase : nil)
+                SessionActivityPanel(session: session, library: model, state: activityState, close: { model.viewMode = .conversation })
             } else if model.transcriptSessionID != session.id && !model.showingLiveTurn && !model.outgoing.values.contains(where: { $0.sessionID == session.sessionID }) {
                 ProgressView("Reading transcript…").frame(maxWidth: .infinity, maxHeight: .infinity)
             } else if let error = model.displayedTranscript.error {
@@ -499,7 +537,7 @@ struct SessionView: View {
                                 }
                             }
                         }
-                        if model.displayedTranscript.entries.isEmpty { Text("No supported conversation entries yet.").foregroundStyle(.secondary) }
+                        if model.displayedTranscript.entries.isEmpty { Text(model.execution.tasks[session.sessionID]?.phase.active == true ? "Your conversation will appear here." : "No messages yet.").foregroundStyle(.secondary) }
                         ForEach(model.displayedTranscript.entries) { entry in
                             VStack(alignment: .trailing, spacing: 6) {
                             if entry.kind == "Provider switch" {
@@ -507,7 +545,7 @@ struct SessionView: View {
                                     Text(entry.text.components(separatedBy: "\n").dropFirst(2).joined(separator: "\n")).font(.caption).textSelection(.enabled)
                                 }.font(.caption).foregroundStyle(.secondary).padding(.vertical, 12)
                             } else {
-                            EntryView(entry: entry, selectWorker: { model.openWorker($0) }, progress: model.execution.tasks[session.sessionID]?.toolProgress[entry.tool?.item["id"].string ?? ""])
+                            EntryView(entry: entry, viewPlan: { activityState.selectedPlan = model.activitySnapshot(session).plans.first(where: { $0.nativeID == entry.providerItemID || $0.detail == entry.text })?.id; openActivity("Plan") }, selectWorker: { model.openWorker($0) }, progress: model.execution.tasks[session.sessionID]?.toolProgress[entry.tool?.item["id"].string ?? ""])
                                 .contextMenu {
                                     if let turn = entry.turnID, session.provider == .codex {
                                         Button("Fork through this turn") { model.forkConversation(session, through: turn) }.disabled(model.execution.tasks[session.sessionID]?.phase.active == true)
@@ -526,14 +564,18 @@ struct SessionView: View {
                             }
                         }
                     }.scrollTargetLayout().padding(24).frame(maxWidth: 800, alignment: .leading).frame(maxWidth: .infinity)
-                }.defaultScrollAnchor(.bottom)
+                }.frame(minHeight: 0, maxHeight: .infinity).layoutPriority(-1).defaultScrollAnchor(.bottom)
                 .onChange(of: model.execution.tasks[session.sessionID]?.transcript) { model.reconcileOutgoing(session.sessionID) }
-                .scrollPosition(id: Binding(get: { model.scrollPositions[session.id] }, set: { value in
-                    if let value, model.scrollPositions[session.id] != value {
-                        model.scrollPositions[session.id] = value
-                        UserDefaults.standard.set(model.scrollPositions, forKey: "conversationScrollPositions")
-                    }
-                }))
+                .scrollPosition(id: $transcriptScrollID, anchor: .top)
+                .onAppear { transcriptScrollID = model.scrollPositions[session.id] }
+                .task(id: transcriptScrollID) {
+                    // Scroll layout writes must not synchronously invalidate the shared library.
+                    guard let position = transcriptScrollID else { return }
+                    do { try await Task.sleep(for: .milliseconds(350)) } catch { return }
+                    guard model.scrollPositions[session.id] != position else { return }
+                    model.scrollPositions[session.id] = position
+                    UserDefaults.standard.set(model.scrollPositions, forKey: "conversationScrollPositions")
+                }
             }
             Divider()
             ExecutionControls(library: model, session: session).id(session.id)
@@ -541,13 +583,6 @@ struct SessionView: View {
 
         }
         .sheet(isPresented: $showFind) { ConversationSearchView(model: model, threadID: session.sessionID) }
-        .inspector(isPresented: $showChanges) {
-            VStack(spacing: 0) {
-            ReviewChangesControls(model: model, session: session)
-            Divider()
-            ExecutionChangesView(work: model.execution.tasks[session.sessionID]?.work ?? ExecutionWork())
-            }.inspectorColumnWidth(min: 400, ideal: 580, max: 900)
-        }
         .onChange(of: session.id) { showChanges = false }
         .onChange(of: model.showingLiveTurn) { if !model.showingLiveTurn { showChanges = false } }
     }
@@ -555,6 +590,7 @@ struct SessionView: View {
 
 struct EntryView: View {
     let entry: Entry
+    var viewPlan: (() -> Void)?
     var selectWorker: ((String) -> Void)?
     var progress: String?
     @Environment(\.colorScheme) private var colorScheme
@@ -566,7 +602,15 @@ struct EntryView: View {
                 if let image = entry.image {
                     ToolImagePreview(reference: image)
                 }
-                if let tool = entry.tool {
+                if entry.kind == "Proposed plan" {
+                    VStack(alignment: .leading, spacing: 10) {
+                        Label("Proposed plan", systemImage: "doc.text").font(.headline)
+                        Text(entry.text).lineLimit(3).foregroundStyle(.secondary)
+                        if let viewPlan { Button("View plan", action: viewPlan) }
+                        else { DisclosureGroup("View plan") { TranscriptContent(text: entry.text) } }
+                    }.padding(16).frame(maxWidth: .infinity, alignment: .leading)
+                        .background(Color.accentColor.opacity(0.08), in: RoundedRectangle(cornerRadius: 12))
+                } else if let tool = entry.tool {
                     RichToolResultView(result: tool, selectWorker: selectWorker, progress: progress)
                 } else if entry.category == .activity || entry.category == .context {
                     DisclosureGroup {

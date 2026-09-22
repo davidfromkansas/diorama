@@ -62,6 +62,7 @@ extension LibraryModel {
         let previous = conversations.records
         conversations.records.removeAll { $0.id == record.id }; conversations.records.append(record)
         do { try conversations.save() } catch { conversations.records = previous; throw error }
+        execution.registerActivityConversation(record.segments.compactMap { segment in Provider(rawValue: segment.provider).map { ActivitySessionIdentity(provider: $0, id: segment.nativeID) } })
         execution.retireProviderSession(session.sessionID)
         // Membership is authoritative. The existing workspace object retains branch, base, context and PR.
         if let project, let work { projects.updateWorkspace(project.id, id: work.id) { $0.threadID = targetID } }
@@ -71,6 +72,7 @@ extension LibraryModel {
     }
     func restoreConversationMembership() {
         for record in conversations.records {
+            execution.registerActivityConversation(record.segments.compactMap { segment in Provider(rawValue: segment.provider).map { ActivitySessionIdentity(provider: $0, id: segment.nativeID) } })
             if let first = record.segments.first, let provider = Provider(rawValue: first.provider) {
                 execution.conversationCanvasIdentity[record.activeID] = (provider, first.nativeID)
             }

@@ -17,6 +17,9 @@ trap 'rm -rf "$stage"' EXIT
 /usr/bin/ditto "$app_path" "$stage/Diorama.app"
 xattr -cr "$stage/Diorama.app"
 if [[ -n "${DIORAMA_SIGN_IDENTITY:-}" ]]; then
+  if [[ -f "$stage/Diorama.app/Contents/Resources/ClaudeHelper/node" ]]; then
+    codesign --force --options runtime --timestamp --entitlements "$stage/Diorama.app/Contents/Resources/ClaudeHelper/node-entitlements.plist" --sign "$DIORAMA_SIGN_IDENTITY" "$stage/Diorama.app/Contents/Resources/ClaudeHelper/node"
+  fi
   codesign --force --options runtime --timestamp --sign "$DIORAMA_SIGN_IDENTITY" "$stage/Diorama.app/Contents/MacOS/DioramaReporter"
   codesign --force --options runtime --timestamp --sign "$DIORAMA_SIGN_IDENTITY" "$stage/Diorama.app"
 fi

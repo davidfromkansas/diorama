@@ -3,6 +3,23 @@ import Testing
 @testable import DioramaCore
 
 struct SessionChangesTests {
+    @Test func generatedCanvasDoesNotPolluteReviewButTrackedCanvasRemainsVisible() async throws {
+        let root = try await ProjectTests().repository(); defer { try? FileManager.default.removeItem(at: root) }
+        let base = try await ProjectCommand.git(root.path, ["rev-parse", "HEAD"])
+        let work = ProjectWorkspace(id: "canvas", folder: root.path, branch: "main", baseCommit: base, context: ProjectContext())
+        let directory = root.appendingPathComponent(".diorama/canvases")
+        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        let path = ".diorama/canvases/" + String(repeating: "a", count: 64) + ".html"
+        try Data("generated".utf8).write(to: root.appendingPathComponent(path))
+        let clean = try await SessionChanges.snapshot(work, scope: .session)
+        #expect(clean.files.isEmpty && !clean.dirty)
+        try Data("user document".utf8).write(to: directory.appendingPathComponent("notes.html"))
+        let manual = try await SessionChanges.snapshot(work, scope: .session)
+        #expect(manual.files.map(\.path) == [".diorama/canvases/notes.html"])
+        #expect(manual.dirty)
+        _ = try await ProjectCommand.git(root.path, ["add", path])
+        #expect(try await SessionChanges.snapshot(work, scope: .session).files.contains { $0.path == path })
+    }
     @Test func scopesAndIsolation() async throws {
         let root = try await ProjectTests().repository(); defer { try? FileManager.default.removeItem(at: root) }
         let project = try await ProjectGit.discover(root.path)

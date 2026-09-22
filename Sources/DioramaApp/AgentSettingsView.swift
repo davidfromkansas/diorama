@@ -20,7 +20,7 @@ struct AgentSettingsView: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 22) {
             Text(onboarding ? "Choose your default model" : "Models & accounts").font(.title2.bold())
-            Text("New sessions use this model. You can choose another in the composer.").foregroundStyle(.secondary)
+            Text("New sessions use this model. You can choose another in the composer.").foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
             Picker("Default model", selection: $defaultModel) {
                 if info["codex"].bool { Text("OpenAI · Default").tag("") }
                 else { Text(controller.models.isEmpty ? "Connect an account to choose a model" : "Choose a model").tag("") }
@@ -34,7 +34,7 @@ struct AgentSettingsView: View {
             Divider()
             account("OpenAI", connected: info["codex"].bool, claude: false)
             account("Anthropic", connected: info["claude"].bool, claude: true)
-            Text("Claude uses your Claude subscription through the official Claude Code login. Diorama does not fall back to API billing.").font(.caption).foregroundStyle(.secondary)
+            Text("Claude uses your Claude subscription through the official Claude Code login. Diorama does not fall back to API billing.").font(.caption).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
             if let detail = info["claudeError"].string { Text(detail).font(.caption).foregroundStyle(.orange).textSelection(.enabled) }
             if let error { Text(error).foregroundStyle(.orange).textSelection(.enabled) }
             HStack {
@@ -46,9 +46,9 @@ struct AgentSettingsView: View {
     }
     private func account(_ name: String, connected: Bool, claude: Bool) -> some View {
         HStack {
-            VStack(alignment: .leading) { Text(name).font(.headline); Text(connected ? "Connected" : "Not connected").font(.caption).foregroundStyle(.secondary) }
+            VStack(alignment: .leading) { Text(name).font(.headline); Text(refreshing || info == .null ? "Checking…" : connected ? "Connected" : "Not connected").font(.caption).foregroundStyle(.secondary) }
             Spacer()
-            Button(connected ? "Manage login…" : "Log in…") { login(claude: claude) }
+            Button(connected ? "Manage login…" : "Log in…") { login(claude: claude) }.disabled(refreshing || info == .null)
         }
     }
     private func refresh() {

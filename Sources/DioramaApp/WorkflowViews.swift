@@ -1,9 +1,26 @@
 import SwiftUI
 import DioramaCore
 
+private struct WorkflowPresentation {
+    let id: String
+    let provider: Provider
+    let phase: ExecutionPhase
+    let workflow: WorkflowState
+    init(_ task: ExecutedTask) {
+        id = task.id; provider = task.provider; phase = task.phase; workflow = task.workflow
+    }
+}
+
 struct WorkflowControls: View {
     let controller: ExecutionController
-    let task: ExecutedTask
+    private let initial: WorkflowPresentation
+    private var task: WorkflowPresentation {
+        controller.tasks[initial.id].map(WorkflowPresentation.init) ?? initial
+    }
+    init(controller: ExecutionController, task: ExecutedTask, mode: Binding<String>, capabilities: Binding<[CapabilityInput]>, queueNext: Binding<Bool>) {
+        self.controller = controller; self.initial = WorkflowPresentation(task)
+        self._mode = mode; self._capabilities = capabilities; self._queueNext = queueNext
+    }
     @Binding var mode: String
     @Binding var capabilities: [CapabilityInput]
     @Binding var queueNext: Bool

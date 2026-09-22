@@ -37,7 +37,14 @@ extension ExecutionController {
     }
     public func loadWorkflow(id: String) async {
         guard connected, tasks[id]?.attached == true else { return }
-        do { tasks[id]?.workflow.goal = try await transport.request("thread/goal/get", .object(["threadId": .string(id)]))["goal"]; featureErrors["goals"] = nil }
+        do {
+            // Finish the suspension before opening a mutable dictionary access.
+            // A nested assignment across await writes an old task snapshot back
+            // over events received while the provider request is in flight.
+            let reply = try await transport.request("thread/goal/get", .object(["threadId": .string(id)]))
+            tasks[id]?.workflow.goal = reply["goal"]
+            featureErrors["goals"] = nil
+        }
         catch { featureErrors["goals"] = error.localizedDescription }
         await refreshQueue(id: id)
     }

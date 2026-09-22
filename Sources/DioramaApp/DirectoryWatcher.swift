@@ -2,7 +2,7 @@ import Foundation
 import CoreServices
 
 /// FSEvents watches whole trees without opening every transcript or keeping agents alive.
-final class DirectoryWatcher {
+@MainActor final class DirectoryWatcher {
     private var stream: FSEventStreamRef?
     private let callback: Callback
     private final class Callback: @unchecked Sendable {

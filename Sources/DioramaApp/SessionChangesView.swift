@@ -36,22 +36,22 @@ struct SessionReviewContainer: View {
     var body: some View {
         VStack(spacing: 0) {
             HStack(spacing: 14) {
-                Button { review.visible.toggle() } label: {
+                Button { review.visible.toggle(); library.activityState(session).visible = false } label: {
                     let snapshot = review.snapshot
                     Text("Changes" + (snapshot.map { " · \($0.files.count) files · +\($0.added) −\($0.removed)" } ?? ""))
                 }.accessibilityLabel("Review session changes")
-                if let pr = work?.pullRequest { Button(pr.summary) { review.visible = true; review.checksExpanded.toggle() } }
+                if let pr = work?.pullRequest { Button(pr.summary) { library.activityState(session).visible = false; review.visible = true; review.checksExpanded.toggle() } }
                 Spacer(minLength: 0)
             }.font(.callout).padding(.horizontal, 20).padding(.vertical, 10)
             GeometryReader { geometry in
-                if review.visible, let work {
+                if (review.visible || library.activityState(session).visible), let work {
                     if geometry.size.width >= 1000 {
                         HSplitView {
-                            SessionView(session: session, model: library, hasLocalReview: true).frame(minWidth: 450)
-                            panel(work).frame(minWidth: 380, idealWidth: 520)
+                            SessionView(session: session, model: library, hasLocalReview: true, activityAction: { section in review.visible = false; library.activityState(session).section = section; library.activityState(session).visible = true }).frame(minWidth: 450)
+                            reviewPanel(work).frame(minWidth: 380, idealWidth: 520)
                         }
-                    } else { panel(work) }
-                } else { SessionView(session: session, model: library, hasLocalReview: true) }
+                    } else { reviewPanel(work) }
+                } else { SessionView(session: session, model: library, hasLocalReview: true, activityAction: { section in review.visible = false; library.activityState(session).section = section; library.activityState(session).visible = true }) }
             }
         }
         .task(id: workspaceID) {
@@ -73,6 +73,11 @@ struct SessionReviewContainer: View {
         .onChange(of: review.visible) { if review.visible { Task { await refreshLocal() } } }
         .onChange(of: phase) { if phase == .active { Task { await refreshLocal() }; Task { await refreshPR(force: true) } } }
         .onChange(of: library.execution.tasks[session.sessionID]?.phase) { Task { await refreshLocal() }; Task { await refreshPR(force: true) } }
+    }
+    @ViewBuilder private func reviewPanel(_ workspace: ProjectWorkspace) -> some View {
+        if library.activityState(session).visible {
+            SessionActivityPanel(session: session, library: library, state: library.activityState(session), close: { library.activityState(session).visible = false })
+        } else { panel(workspace) }
     }
     func panel(_ workspace: ProjectWorkspace) -> some View {
         VStack(alignment: .leading, spacing: 12) {

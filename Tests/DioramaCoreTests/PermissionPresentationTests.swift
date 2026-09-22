@@ -5,6 +5,18 @@ struct PermissionPresentationTests {
     func request(_ params: WireValue, method: String = "item/commandExecution/requestApproval") -> ExecutionRequest {
         ExecutionRequest(wireID: .string("permission"), method: method, params: params)
     }
+    @Test func codexFileApprovalUsesOnlyMatchingItem() {
+        let r = request(.object(["itemId": .string("patch")]), method: "item/fileChange/requestApproval")
+        let item: WireValue = .object(["id": .string("patch"), "type": .string("fileChange"), "changes": .array([
+            .object(["path": .string("/tmp/index.html"), "kind": .object(["type": .string("update")]), "diff": .string("-old\n+new")])
+        ])])
+        let presentation = PermissionPresentation(request: r, relatedItem: item)
+        #expect(presentation.target == "1 file · index.html")
+        #expect(presentation.details.contains("/tmp/index.html"))
+        #expect(presentation.details.contains("-old\n+new"))
+        let other = request(.object(["itemId": .string("other")]), method: r.method)
+        #expect(!PermissionPresentation(request: other, relatedItem: item).details.contains("index.html"))
+    }
     @Test func structuredClaudeReadPreservesExactPath() {
         let r = request(.object(["toolName": .string("Read"), "toolInput": .object(["file_path": .string("/tmp/space name/file.txt")]), "availableDecisions": .array([.string("accept"), .string("decline")])]))
         let p = PermissionPresentation(request: r)

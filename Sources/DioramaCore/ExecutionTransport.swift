@@ -49,6 +49,10 @@ public protocol ExecutionTransport: Sendable {
 
 /// Separate from the history reader: this connection owns only explicitly created/resumed tasks.
 public actor CodexExecutionTransport: ExecutionTransport {
+    // Scoped to Diorama's child process: do not modify the user's global Codex settings.
+    // update_plan is opt-in; V1 delegation otherwise stops after one child level.
+    public static let launchArguments = ["app-server", "--stdio", "--config", "tools.update_plan.enabled=true", "--config", "agents.max_depth=2"]
+
     public nonisolated let events: AsyncStream<WireValue>
     private let eventSink: AsyncStream<WireValue>.Continuation
     private var process: Process?
@@ -79,7 +83,8 @@ public actor CodexExecutionTransport: ExecutionTransport {
         let candidates = [home.appendingPathComponent(".local/bin/codex"), URL(fileURLWithPath: "/opt/homebrew/bin/codex"), URL(fileURLWithPath: "/usr/local/bin/codex")]
         guard let binary = executable ?? candidates.first(where: { FileManager.default.isExecutableFile(atPath: $0.path) }) else { throw AppServerFailure("Install Codex CLI before running tasks") }
         let child = Process(), stdin = Pipe(), stdout = Pipe()
-        child.executableURL = binary; child.arguments = ["app-server", "--stdio"]
+        child.executableURL = binary
+        child.arguments = Self.launchArguments
         child.standardInput = stdin; child.standardOutput = stdout; child.standardError = FileHandle.nullDevice
         child.currentDirectoryURL = home
         try child.run()
@@ -100,7 +105,7 @@ public actor CodexExecutionTransport: ExecutionTransport {
         } catch { fail("Initialization failed: \(error.localizedDescription)"); throw error }
     }
     public func request(_ method: String, _ params: WireValue) async throws -> WireValue {
-        let allowed = ["account/read", "initialize", "model/list", "thread/start", "thread/resume", "thread/read", "thread/turns/list", "thread/goal/get", "turn/start", "turn/steer", "turn/interrupt", "thread/goal/set", "thread/goal/clear", "thread/compact/start", "account/rateLimits/read", "collaborationMode/list", "thread/name/set", "thread/archive", "thread/unarchive", "thread/fork", "review/start", "thread/queue/add", "thread/queue/list", "thread/queue/delete", "thread/queue/start", "skills/list", "skills/config/write", "app/list", "app/installed", "mcpServerStatus/list", "mcpServer/oauth/login", "config/mcpServer/reload", "thread/search", "thread/searchOccurrences", "thread/items/list", "thread/backgroundTerminals/list", "thread/backgroundTerminals/terminate"]
+        let allowed = ["account/read", "initialize", "model/list", "thread/start", "thread/resume", "thread/read", "thread/list", "thread/turns/list", "thread/goal/get", "turn/start", "turn/steer", "turn/interrupt", "thread/goal/set", "thread/goal/clear", "thread/compact/start", "account/rateLimits/read", "collaborationMode/list", "thread/name/set", "thread/archive", "thread/unarchive", "thread/fork", "review/start", "thread/queue/add", "thread/queue/list", "thread/queue/delete", "thread/queue/start", "skills/list", "skills/config/write", "app/list", "app/installed", "mcpServerStatus/list", "mcpServer/oauth/login", "config/mcpServer/reload", "thread/search", "thread/searchOccurrences", "thread/items/list", "thread/backgroundTerminals/list", "thread/backgroundTerminals/terminate"]
         guard allowed.contains(method) else { throw AppServerFailure("Execution method is not supported: \(method)") }
         guard process?.isRunning == true, ready || method == "initialize" else { throw AppServerFailure("Execution connection unavailable; no request was sent") }
         serial += 1; let id = WireValue.string("diorama-\(serial)"); let key = id.key
@@ -116,7 +121,7 @@ public actor CodexExecutionTransport: ExecutionTransport {
     }
     private func expire(_ key: String, method: String) {
         timers.removeValue(forKey: key)
-        let readOnly = ["thread/read", "thread/turns/list", "thread/goal/get", "collaborationMode/list", "model/list", "account/read"].contains(method)
+        let readOnly = ["thread/read", "thread/list", "thread/turns/list", "thread/goal/get", "collaborationMode/list", "model/list", "account/read"].contains(method)
         let detail = readOnly ? "Loading conversation or settings timed out. This request did not send a message." : "Submission outcome may be unknown; it was not retried."
         pending.removeValue(forKey: key)?.resume(throwing: AppServerFailure("\(method) response timed out. " + detail))
     }

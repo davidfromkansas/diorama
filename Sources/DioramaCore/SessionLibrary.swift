@@ -181,7 +181,24 @@ public actor SessionLibrary {
             result.earlierContentOmitted = start > 0
             var entries: [Entry] = []
             var uuids: Set<String> = []
-            for (index, line) in completeLines(data).enumerated() {
+            let lines = completeLines(data)
+            // Newer Codex rollouts contain authoritative UI items as well as
+            // model response records. Prefer those explicit identities per turn,
+            // so local fallback can reconcile with the live App Server stream.
+            var structuredMessages: [String: Set<String>] = [:]
+            if provider == .codex {
+                for line in lines {
+                    guard let record = object(line), record["type"] as? String == "event_msg",
+                          let payload = record["payload"] as? [String: Any], payload["type"] as? String == "item_completed",
+                          let turn = payload["turn_id"] as? String, let item = payload["item"] as? [String: Any],
+                          item["id"] is String, let type = item["type"] as? String,
+                          ["UserMessage", "AgentMessage", "Plan"].contains(type) else { continue }
+                    structuredMessages[turn, default: []].insert(type)
+                }
+            }
+            var currentTurn: String?
+            var currentItem: String?
+            for (index, line) in lines.enumerated() {
                 if Task.isCancelled { break }
                 guard let record = object(line) else { result.malformed += 1; continue }
                 if provider == .claude, let uuid = record["uuid"] as? String {
@@ -190,21 +207,40 @@ public actor SessionLibrary {
                 let timestamp = record["timestamp"] as? String
                 func append(_ kind: String, _ body: String) {
                     guard !body.isEmpty else { return }
-                    entries.append(Entry(id: "\(start)-\(index)-\(entries.count)", kind: kind, text: body, timestamp: timestamp))
+                    entries.append(Entry(id: "\(start)-\(index)-\(entries.count)", kind: kind, text: body, timestamp: timestamp, turnID: currentTurn, providerItemID: currentItem))
                 }
                 if provider == .codex {
                     guard let payload = record["payload"] as? [String: Any] else { continue }
                     let type = payload["type"] as? String ?? ""
+                    currentItem = nil
+                    if let turn = payload["turn_id"] as? String { currentTurn = turn }
                     if record["type"] as? String == "event_msg" {
+                        if type == "item_completed", let item = payload["item"] as? [String: Any], let nativeID = item["id"] as? String {
+                            currentItem = nativeID
+                            let text = item["text"] as? String ?? (item["content"] as? [[String: Any]] ?? []).compactMap { $0["text"] as? String }.joined(separator: "\n")
+                            switch item["type"] as? String {
+                            case "UserMessage":
+                                for part in MessageContent.split(text, provider: .codex) { append(part.context ? "System context" : "You", part.text) }
+                            case "AgentMessage": append("Assistant", text)
+                            case "Plan": append("Proposed plan", text)
+                            default: break
+                            }
+                            currentItem = nil
+                        }
                         let states = ["task_started": "Working", "task_complete": "Last turn finished", "turn_aborted": "Interrupted"]
                         if let state = states[type] { result.state = state; append("Event", state) }
                     } else if record["type"] as? String == "response_item" {
+                        currentItem = payload["id"] as? String
                         switch type {
                         case "message":
                             let role = payload["role"] as? String ?? ""
                             if role == "user" {
-                                for part in MessageContent.split(content(payload["content"]), provider: .codex) { append(part.context ? "System context" : "You", part.text) }
-                            } else if role == "assistant" { append("Assistant", content(payload["content"])) }
+                                let parts = MessageContent.split(content(payload["content"]), provider: .codex)
+                                // Context-only environment records are not user UI items.
+                                if !(structuredMessages[currentTurn ?? ""]?.contains("UserMessage") == true && parts.contains(where: { !$0.context })) {
+                                    for part in parts { append(part.context ? "System context" : "You", part.text) }
+                                }
+                            } else if role == "assistant", structuredMessages[currentTurn ?? ""]?.contains("AgentMessage") != true { append("Assistant", content(payload["content"])) }
                             else if role == "system" || role == "developer" { append("System context", content(payload["content"])) }
                         case "function_call", "custom_tool_call":
                             append("Tool call", (payload["name"] as? String ?? "Tool") + "\n" + content(payload["arguments"] ?? payload["input"]))
@@ -223,7 +259,9 @@ public actor SessionLibrary {
                         case "text":
                             let text = block["text"] as? String ?? ""
                             for part in MessageContent.split(kind == "Assistant" ? text.replacingOccurrences(of: #"(?m)^DIORAMA_GOAL_[A-Fa-f0-9-]{36}:(?:COMPLETE|CONTINUE|BLOCKED)[ \t]*$"#, with: "", options: .regularExpression) : text, provider: .claude) { append(part.context ? "System context" : kind, part.text) }
-                        case "tool_use": append("Tool call", (block["name"] as? String ?? "Tool") + "\n" + content(block["input"]))
+                        case "tool_use":
+                            if block["name"] as? String == "ExitPlanMode", let args = block["input"] as? [String: Any], let plan = args["plan"] as? String { append("Proposed plan", plan) }
+                            else { append("Tool call", (block["name"] as? String ?? "Tool") + "\n" + content(block["input"])) }
                         case "tool_result": append("Tool result", content(block["content"]))
                         default: break
                         }
