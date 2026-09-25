@@ -50,8 +50,7 @@ public actor AppServerConnection: AppServerReading {
     private func connect() throws {
         close()
         let home = FileManager.default.homeDirectoryForCurrentUser
-        let candidates = [home.appendingPathComponent(".local/bin/codex"), URL(fileURLWithPath: "/opt/homebrew/bin/codex"), URL(fileURLWithPath: "/usr/local/bin/codex")]
-        guard let binary = executable ?? candidates.first(where: { FileManager.default.isExecutableFile(atPath: $0.path) }) else {
+        guard let binary = executable ?? AgentExecutable.resolve("codex") else {
             throw AppServerFailure("Codex CLI not found; local fallback active")
         }
         let child = Process(), stdin = Pipe(), stdout = Pipe()

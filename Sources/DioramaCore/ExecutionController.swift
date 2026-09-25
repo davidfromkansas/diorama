@@ -200,6 +200,18 @@ public final class ExecutionController {
         connected = false
         await connect()
     }
+    /// Read the router's cached catalog while independent provider checks complete.
+    public func onboardingSnapshot() async -> WireValue {
+        let info = await connectionInfo()
+        guard info["codex"].bool || info["claude"].bool else { return info }
+        if let reply = try? await transport.request("model/list", .object([:])) {
+            models = reply["data"].array.compactMap { m in
+                guard let id = m["model"].string else { return nil }
+                return ExecutionModel(id: id, name: m["displayName"].string ?? id, efforts: m["supportedReasoningEfforts"].array.compactMap { $0["reasoningEffort"].string }, defaultEffort: m["defaultReasoningEffort"].string ?? "", isDefault: m["isDefault"].bool)
+            }
+        }
+        return info
+    }
     public func connectionInfo() async -> WireValue {
         (try? await transport.request("diorama/connections", .object([:]))) ?? .null
     }

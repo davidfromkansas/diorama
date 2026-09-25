@@ -91,7 +91,7 @@ public enum ProjectCommand {
     public static func run(_ executable: String, _ arguments: [String], folder: String? = nil) async throws -> String {
         String(decoding: try await data(executable, arguments, folder: folder), as: UTF8.self).trimmingCharacters(in: .whitespacesAndNewlines)
     }
-    public static func data(_ executable: String, _ arguments: [String], folder: String? = nil, environmentOverrides: [String: String] = [:]) async throws -> Data {
+    public static func data(_ executable: String, _ arguments: [String], folder: String? = nil, environmentOverrides: [String: String] = [:], timeout: TimeInterval = 60) async throws -> Data {
         let temporary = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
         FileManager.default.createFile(atPath: temporary.path, contents: nil)
         let output = try FileHandle(forWritingTo: temporary)
@@ -116,7 +116,7 @@ public enum ProjectCommand {
         let started = Date()
         do {
             while process.isRunning {
-                if Date().timeIntervalSince(started) > 60 { throw AppServerFailure("Command timed out. Try refreshing again.") }
+                if Date().timeIntervalSince(started) > timeout { throw AppServerFailure("Command timed out. Try refreshing again.") }
                 if try output.offset() > 4 * 1024 * 1024 || errorOutput.offset() > 4 * 1024 * 1024 {
                     throw AppServerFailure("Command output is too large to preview. Open this file externally.")
                 }

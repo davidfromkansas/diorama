@@ -76,13 +76,16 @@ public actor CodexExecutionTransport: ExecutionTransport {
         if let process, process.isRunning { process.terminate() }
         eventSink.finish()
     }
+    private var selectedBinary: URL?
     public func connect() async throws {
-        if ready, process?.isRunning == true { return }
+        let selected = executable ?? AgentExecutable.resolve("codex")
+        if ready, process?.isRunning == true, selected == selectedBinary { return }
+        if ready, selected != selectedBinary { fail("Codex installation changed") }
         guard process == nil else { throw AppServerFailure("Execution connection is initializing or unavailable") }
         let home = FileManager.default.homeDirectoryForCurrentUser
-        let candidates = [home.appendingPathComponent(".local/bin/codex"), URL(fileURLWithPath: "/opt/homebrew/bin/codex"), URL(fileURLWithPath: "/usr/local/bin/codex")]
-        guard let binary = executable ?? candidates.first(where: { FileManager.default.isExecutableFile(atPath: $0.path) }) else { throw AppServerFailure("Install Codex CLI before running tasks") }
+        guard let binary = executable ?? AgentExecutable.resolve("codex") else { throw AppServerFailure("Install Codex CLI before running tasks") }
         let child = Process(), stdin = Pipe(), stdout = Pipe()
+        selectedBinary = binary
         child.executableURL = binary
         child.arguments = Self.launchArguments
         child.standardInput = stdin; child.standardOutput = stdout; child.standardError = FileHandle.nullDevice
