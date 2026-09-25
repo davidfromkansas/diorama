@@ -19,6 +19,11 @@ public struct Session: Identifiable, Hashable, Sendable {
     public var classification: SessionClassification = .unknown
     public var classificationEvidence: String = "No recognized session metadata"
     public var historySource = "Local transcript"
+    public var origin: SessionOrigin = .unknown
+    public var desktopSessionID: String? = nil
+    public var lastObservedHook: Date? = nil
+    public var observationOnly: Bool { origin == .claudeDesktop }
+    public var sourceLabel: String { provider == .claude ? origin.label : provider.rawValue }
     public var projectName: String { project.isEmpty ? "Unknown project" : URL(fileURLWithPath: project).lastPathComponent }
 }
 
@@ -102,7 +107,11 @@ public actor SessionLibrary {
         let session: Session?
     }
     private var cache: [URL: Cached] = [:]
-    public init(roots: [StorageRoot] = StorageRoot.defaults()) { self.roots = roots }
+    private let desktop: ClaudeDesktopHistory?
+    public init(roots: [StorageRoot]? = nil, desktop: ClaudeDesktopHistory? = nil) {
+        self.roots = roots ?? StorageRoot.defaults()
+        self.desktop = desktop ?? (roots == nil ? ClaudeDesktopHistory() : nil)
+    }
 
     public func scan() -> LibrarySnapshot {
         let fm = FileManager.default
@@ -159,12 +168,22 @@ public actor SessionLibrary {
         }
         cache = cache.filter { visited.contains($0.key) }
         if unrecognized > 0 { notices.append("\(unrecognized) files have no recognized session metadata in their first 512 KiB.") }
+        if let desktop {
+            let merged = desktop.merging(Array(sessions.values))
+            return LibrarySnapshot(sessions: merged.sessions, notices: notices + merged.notices)
+        }
         return LibrarySnapshot(sessions: sessions.values.sorted { $0.modified > $1.modified }, notices: notices)
     }
 
     public func transcript(for session: Session, limit: Int = 300) -> Transcript {
-        guard let url = session.url else { var result = Transcript(); result.error = "No local transcript available"; return result }
-        return Self.readTranscript(url: url, provider: session.provider, limit: limit)
+        guard let url = session.url else {
+            var result = Transcript(); result.source = session.historySource
+            result.error = session.observationOnly ? "Desktop session discovered, but its local transcript is unavailable. Resume it in Claude Desktop and refresh Diorama." : "No local transcript available"
+            return result
+        }
+        var transcript = Self.readTranscript(url: url, provider: session.provider, limit: limit)
+        if session.observationOnly { transcript.source = session.historySource }
+        return transcript
     }
 
     public static func readTranscript(url: URL, provider: Provider, limit: Int = 300) -> Transcript {
@@ -274,7 +293,7 @@ public actor SessionLibrary {
         return result
     }
 
-    private static func metadata(data: Data, url: URL, root: StorageRoot, modified: Date, size: Int) -> Session? {
+    static func metadata(data: Data, url: URL, root: StorageRoot, modified: Date, size: Int) -> Session? {
         var sid: String?
         var project = ""
         var preview = ""

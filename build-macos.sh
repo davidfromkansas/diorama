@@ -23,7 +23,8 @@ cat > "$app_path/Contents/Info.plist" <<'PLIST'
 <key>CFBundleDisplayName</key><string>Diorama</string>
 <key>CFBundlePackageType</key><string>APPL</string>
 <key>CFBundleShortVersionString</key><string>0.6.0</string>
-<key>CFBundleVersion</key><string>43</string>
+<key>CFBundleVersion</key><string>44</string>
+<key>DioramaGitHubClientID</key><string>Ov23liN3O8j2ksYfPj0j</string>
 <key>LSMinimumSystemVersion</key><string>14.0</string>
 <key>NSHighResolutionCapable</key><true/>
 </dict></plist>

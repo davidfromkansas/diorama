@@ -36,13 +36,14 @@ struct AgentSettingsView: View {
             account("Anthropic", connected: info["claude"].bool, claude: true)
             Text("Claude uses your Claude subscription through the official Claude Code login. Diorama does not fall back to API billing.").font(.caption).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
             if let detail = info["claudeError"].string { Text(detail).font(.caption).foregroundStyle(.orange).textSelection(.enabled) }
+            if !onboarding { Divider(); GitHubSettingsView() }
             if let error { Text(error).foregroundStyle(.orange).textSelection(.enabled) }
             HStack {
                 Button(refreshing ? "Checking…" : "Refresh connections", action: refresh).disabled(refreshing)
                 Spacer()
                 if let finish { Button("Done", action: finish).keyboardShortcut(.defaultAction).disabled(refreshing || !selectionAvailable || error != nil) }
             }
-        }.padding(28).frame(width: 520).interactiveDismissDisabled(onboarding).task { refresh() }
+        }.padding(28).frame(width: 620).interactiveDismissDisabled(onboarding).task { refresh() }
     }
     private func account(_ name: String, connected: Bool, claude: Bool) -> some View {
         HStack {

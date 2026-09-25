@@ -45,6 +45,14 @@ public struct HookCapability: Sendable {
     public let events: [String]
     public let explanation: String
     public var canInstall: Bool { !events.isEmpty }
+    public static func desktopProfile(version: String) -> HookCapability {
+        guard version == "2.7032.0" else {
+            return .init(provider: .claude, version: version, events: [], explanation: "Desktop hook setup is unavailable for this unvalidated version. Readable local history remains available.")
+        }
+        return .init(provider: .claude, version: version,
+                     events: ["SessionStart", "UserPromptSubmit", "PreToolUse", "PostToolUse", "PostToolUseFailure", "PermissionRequest", "Notification", "Stop", "SessionEnd"],
+                     explanation: "Local Code sessions only. Reporter settings are shared with Claude Code CLI. Delivery depends on workspace trust; last observed events do not establish current activity.")
+    }
     public static func profile(provider: Provider, version: String) -> HookCapability {
         // Only the inspected Codex release is eligible for experimental setup. Never assume
         // current Claude documentation describes the old installed 1.x executable.
@@ -61,7 +69,7 @@ public struct HookCapability: Sendable {
         if provider == .claude, version == "2.1.276" {
             return .init(provider: provider, version: version,
                          events: ["PreToolUse", "PostToolUse", "PostToolUseFailure", "PermissionRequest", "Notification", "UserPromptSubmit", "SessionStart", "SessionEnd", "Stop", "SubagentStart", "SubagentStop", "PreCompact", "PostCompact"],
-                         explanation: "CLI verified: tools, subagents, compaction, resume, interactive approval/denial, AskUserQuestion, permission notifications and idle notifications. Approval resolution lacks correlation IDs. Command cancellation was tested but emitted no dedicated interruption hook; its transcript records a rejected tool result. Generic permission reminders may obscure the more specific input label. Unified Claude Desktop requires a separate integration. Restart Claude Code after setup.")
+                         explanation: "CLI verified: tools, subagents, compaction, resume, interactive approval/denial, AskUserQuestion, permission notifications and idle notifications. Approval resolution lacks correlation IDs. Command cancellation was tested but emitted no dedicated interruption hook; its transcript records a rejected tool result. Generic permission reminders may obscure the more specific input label. Desktop Code validation is listed separately below. Restart Claude Code after setup.")
         }
         return .init(provider: provider, version: version, events: [], explanation: "Hook setup unavailable for this unvalidated version. Transcript observation remains available. Do not assume current documentation applies to this client.")
     }
@@ -106,7 +114,14 @@ public struct HookConfiguration: Sendable {
             }
         }
         if !remove {
-            for event in events {
+            var requested = Set(events)
+            if let original, let previous = try JSONSerialization.jsonObject(with: original) as? [String: Any],
+               let priorHooks = previous["hooks"] as? [String: [[String: Any]]] {
+                for (event, groups) in priorHooks where groups.contains(where: { group in
+                    (group["hooks"] as? [[String: Any]] ?? []).contains { $0["command"] as? String == command }
+                }) { requested.insert(event) }
+            }
+            for event in requested.sorted() {
                 var groups = hooks[event] as? [[String: Any]] ?? []
                 groups.append(["matcher": "", "hooks": [["type": "command", "command": command, "timeout": 1]]])
                 hooks[event] = groups
@@ -114,6 +129,22 @@ public struct HookConfiguration: Sendable {
         }
         object["hooks"] = hooks
         return try JSONSerialization.data(withJSONObject: object, options: [.prettyPrinted, .sortedKeys])
+    }
+    /// Display only Diorama's proposed entries, never unrelated provider secrets/settings.
+    public func displayPreview(_ updated: Data) throws -> String {
+        guard let object = try JSONSerialization.jsonObject(with: updated) as? [String: Any],
+              let hooks = object["hooks"] as? [String: [[String: Any]]] else { throw CocoaError(.fileReadCorruptFile) }
+        var owned: [String: [[String: Any]]] = [:]
+        for (event, groups) in hooks {
+            let filtered = groups.compactMap { group -> [String: Any]? in
+                let handlers = (group["hooks"] as? [[String: Any]] ?? []).filter { $0["command"] as? String == command }
+                guard !handlers.isEmpty else { return nil }
+                return ["matcher": group["matcher"] as? String ?? "", "hooks": handlers]
+            }
+            if !filtered.isEmpty { owned[event] = filtered }
+        }
+        let data = try JSONSerialization.data(withJSONObject: ["hooks": owned], options: [.prettyPrinted, .sortedKeys])
+        return String(decoding: data, as: UTF8.self)
     }
     public func installed() -> Bool {
         guard let data = try? original(), let object = try? JSONSerialization.jsonObject(with: data) as? [String: Any],

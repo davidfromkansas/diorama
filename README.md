@@ -9,6 +9,10 @@ open dist/Diorama.app
 
 Requires macOS 14 or later. This local build targets Apple Silicon and is ad-hoc signed; it is not notarized for public distribution. Building requires Xcode with Swift 6.2 or later (tested with Swift 6.3.1). The native app does not depend on Python or a web server. Codex execution uses the locally configured Codex account.
 
+### Claude Code Desktop observation
+
+Local conversations from Claude Desktop’s **Code tab** are discovered through Desktop metadata and matched to local Claude transcripts. Older readable history and selected conversation updates appear automatically; Desktop imports are view-only. Connections includes a separate Desktop reporter setup and hook-delivery status. Chat, Cowork, cloud and SSH sessions are excluded. See [setup, storage details and verification limits](docs/CLAUDE_DESKTOP_OBSERVATION.md).
+
 ### Acceptance-tested update (0.3.19)
 
 Build 22 fixes asynchronous file pickers, normalized-folder selection for new tasks, and canvas instructions leaking into displayed titles. The final suite passes 120 tests; real execution, approvals, resume, goals, queue, search, skills, fork and review paths were exercised. See [the acceptance report](docs/ACCEPTANCE_RESULTS.md) for native UI results and remaining live-provider gaps.

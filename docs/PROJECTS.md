@@ -21,7 +21,7 @@ Project records live at ~/Library/Application Support/Diorama/Projects/projects.
 
 Preparation saves a pending workspace identifier before creating files. Thread creation and first-message submission have persistent uncertainty flags. An unknown outcome is never automatically replayed; users can inspect the prepared conversation or create a separate session. A definitive RPC rejection can be retried.
 
-Git commands use argument arrays, not interpolated shell commands. GitHub functionality uses the installed gh CLI and its existing account. PR listing/inspection is read-only; review/merge remains on GitHub. Publishing a newly created repository is optional, defaults to private, and pushes only its initial empty commit. No GitHub repository is created during automated verification.
+Git commands use argument arrays, not interpolated shell commands. GitHub functionality uses Diorama’s OAuth account from Settings → GitHub and its own Keychain entry. It does not use Terminal’s gh login. Owned sessions offer a Create PR preview; review and merging remain on GitHub. Publishing a newly created repository is optional, defaults to private, and pushes only its initial empty commit. No GitHub repository is created during automated verification.
 
 ## Validation
 
@@ -29,7 +29,7 @@ Core tests cover separate worktrees, independent edits, canonical-path retries, 
 
 ## Practical limits
 
-- The GitHub repository chooser shows up to 100 results; a known repository URL can always be entered directly. PR lists support Load more.
+- The GitHub repository chooser loads 100 repositories per page and offers Load more; a known repository URL can also be entered directly. PR lists support Load more.
 - Setup scripts, automatic ignored-file copying, dependencies, and dev-server port allocation are not configured automatically.
 - Claude Code imports remain read-only. Diorama does not edit Desktop's private project metadata.
 - Uncertain creation requires inspecting imported history; there is no automatic guessing of thread identity.

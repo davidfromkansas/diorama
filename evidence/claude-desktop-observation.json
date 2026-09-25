@@ -1,0 +1,30 @@
+{
+  "desktopVersion": "2.7032.0",
+  "metadataFormat": "local_<UUID>.json",
+  "identityLink": "cliSessionId -> JSONL sessionId",
+  "desktopOriginRecordsIncludingSubagents": 282,
+  "readableTranscripts": 263,
+  "offlineSuiteTestsPassed": 242,
+  "desktopChecksIncludingReadOnlyProbePassed": 11,
+  "liveDesktopHookDelivery": "verified for user-created local Testing conversation on 2026-09-25",
+  "liveBackgroundAndRestart": "not verified",
+  "observationOnly": true,
+  "sourceContentExported": false,
+  "nativeConnectionsPanelVerified": true,
+  "sharedReporterConfiguredViaNativeUI": true,
+  "lastTargetedTestsPassed": 34,
+  "releaseBuildSucceeded": true,
+  "strictDeepSignatureVerified": true,
+  "finalAppRelaunched": true,
+  "liveDesktopEventsVerified": [
+    "SessionStart",
+    "UserPromptSubmit",
+    "Stop"
+  ],
+  "liveDesktopTranscriptVerified": true,
+  "liveDesktopRegistryIdentityVerified": true,
+  "liveConversationUIVerification": "verified: Testing displays user message, assistant reply, Claude Code Desktop label and view-only controls",
+  "liveFollowUpRefreshVerification": "verified after selection fix: selected Testing transcript updated automatically with DIORAMA_REFRESH_FIXED_OK without reselecting or manually refreshing",
+  "selectionRegressionTestsPassed": 2,
+  "selectionFixRebuiltSignedAndLaunched": true
+}

@@ -30,10 +30,16 @@ struct SessionReviewContainer: View {
     let projectID: String
     @Bindable var library: LibraryModel
     @Bindable var review: SessionReviewState
+    var inspectorTab: WorkspaceInspector? = nil
+    var openDocument: ((WorkspaceDocument) -> Void)? = nil
     @Environment(\.scenePhase) private var phase
+    @State private var showPR = false
+    @State private var updatingBranch = false
     private var project: DioramaProject? { library.projects.projects.first { $0.id == projectID } }
     private var work: ProjectWorkspace? { project?.workspaces.first { $0.id == workspaceID } }
     var body: some View {
+        Group {
+            if let inspectorTab { compactInspector(inspectorTab) } else {
         VStack(spacing: 0) {
             HStack(spacing: 14) {
                 Button { review.visible.toggle(); library.activityState(session).visible = false } label: {
@@ -54,12 +60,14 @@ struct SessionReviewContainer: View {
                 } else { SessionView(session: session, model: library, hasLocalReview: true, activityAction: { section in review.visible = false; library.activityState(session).section = section; library.activityState(session).visible = true }) }
             }
         }
+        }
+        }
         .task(id: workspaceID) {
             await refreshLocal()
             while !Task.isCancelled {
                 try? await Task.sleep(for: .seconds(2))
                 if Task.isCancelled { return }
-                if review.visible && phase == .active { await refreshLocal() }
+                if (review.visible || inspectorTab != nil) && phase == .active { await refreshLocal() }
             }
         }
         .task(id: workspaceID + "pr") {
@@ -73,6 +81,62 @@ struct SessionReviewContainer: View {
         .onChange(of: review.visible) { if review.visible { Task { await refreshLocal() } } }
         .onChange(of: phase) { if phase == .active { Task { await refreshLocal() }; Task { await refreshPR(force: true) } } }
         .onChange(of: library.execution.tasks[session.sessionID]?.phase) { Task { await refreshLocal() }; Task { await refreshPR(force: true) } }
+        .sheet(isPresented: $showPR) {
+            if let work, !session.observationOnly { GitHubPRView(projectID: projectID, workspace: work, library: library) }
+        }
+    }
+    @ViewBuilder private func compactInspector(_ tab: WorkspaceInspector) -> some View {
+        VStack(alignment: .leading, spacing: 12) {
+            HStack {
+                Text(work?.pullRequest?.summary ?? (review.snapshot?.branch ?? "Session changes")).font(.caption).lineLimit(2)
+                Spacer()
+                Button { Task { await refreshLocal(); await refreshPR(force: true) } } label: { Image(systemName: "arrow.clockwise") }.help("Refresh review")
+            }.padding(.horizontal, 12).padding(.top, 12)
+            if !session.observationOnly, work?.cleaned == false, project?.remote.flatMap({ try? GitHubGit.https($0) }) != nil {
+                Button(work?.pullRequest?.state == "OPEN" ? "Update PR" : "Create PR") { showPR = true }
+                    .buttonStyle(.borderedProminent).padding(.horizontal, 12)
+                    .disabled(library.execution.tasks.values.contains { $0.phase.active && $0.folder == work?.folder })
+            }
+            if tab == .checks {
+                ScrollView {
+                    VStack(alignment: .leading, spacing: 12) {
+                        if let pr = work?.pullRequest { prDetails(pr) }
+                        else if review.prBusy { ProgressView("Checking pull requests…") }
+                        else { Text("No linked pull request").foregroundStyle(.secondary) }
+                        if !review.candidates.isEmpty {
+                            Menu("Choose pull request") { ForEach(review.candidates) { pr in Button(pr.title) { savePR(pr) } } }
+                        }
+                        if let error = review.prError { Text(error).foregroundStyle(.orange).textSelection(.enabled) }
+                    }.padding(12)
+                }
+            } else {
+                Picker("Changes scope", selection: $review.scope) { ForEach(ChangeScope.allCases, id: \.self) { Text($0.rawValue).tag($0) } }.labelsHidden().padding(.horizontal, 12)
+                if let error = review.error { ContentUnavailableView("Changes unavailable", systemImage: "folder.badge.questionmark", description: Text(error)) }
+                else if review.snapshot == nil { ProgressView("Reading changes…").frame(maxWidth: .infinity, maxHeight: .infinity) }
+                else if review.snapshot?.files.isEmpty == true { ContentUnavailableView("No file changes", systemImage: "arrow.triangle.branch", description: Text("This worktree matches the comparison.")) }
+                else {
+                    List {
+                        ForEach(review.snapshot?.files ?? []) { file in
+                            Button {
+                                review.selected = file.path
+                                if let work { openDocument?(WorkspaceDocument(folder: work.folder, path: file.path, workspaceID: work.id, changeScope: review.scope.rawValue)) }
+                            } label: {
+                                HStack {
+                                    Image(systemName: "doc.text")
+                                    Text(file.path).lineLimit(2).help(file.path)
+                                    Spacer(minLength: 4)
+                                    Text("+\(file.added)").foregroundStyle(.green)
+                                    Text("−\(file.removed)").foregroundStyle(.red)
+                                }.font(.system(size: 11)).padding(.vertical, 4).contentShape(Rectangle())
+                            }.buttonStyle(.plain)
+                        }
+                    }.scrollContentBackground(.hidden)
+                }
+            }
+            Spacer(minLength: 0)
+        }.frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+            .onAppear { if tab == .checks { review.checksExpanded = true } }
+            .onChange(of: tab) { if tab == .checks { review.checksExpanded = true } }
     }
     @ViewBuilder private func reviewPanel(_ workspace: ProjectWorkspace) -> some View {
         if library.activityState(session).visible {
@@ -96,7 +160,7 @@ struct SessionReviewContainer: View {
             }
             if let error = review.prError {
                 Text("PR status unavailable. " + error).font(.caption).foregroundStyle(.secondary).lineLimit(3)
-                Link("GitHub CLI setup", destination: URL(string: "https://cli.github.com/manual/gh_auth_login")!)
+                Text("Manage your GitHub account in Diorama Settings.").font(.caption)
             }
             if let error = review.error { ContentUnavailableView("Changes unavailable", systemImage: "folder.badge.questionmark", description: Text(error)) }
             else if review.snapshot?.files.isEmpty == true { ContentUnavailableView("No changes", systemImage: "checkmark", description: Text("This worktree matches the selected comparison.")) }
@@ -134,6 +198,21 @@ struct SessionReviewContainer: View {
                 }
                 HStack {
                     if let url = URL(string: pr.url) { Link("Open on GitHub", destination: url) }
+                    if pr.state == "MERGED", let base = pr.baseRefName, !session.observationOnly {
+                        Button(updatingBranch ? "Updating…" : "Update local " + base) {
+                            guard let project else { return }
+                            updatingBranch = true
+                            Task {
+                                defer { updatingBranch = false }
+                                do {
+                                    try await GitHubBranchUpdate.update(projectFolder: project.folder, pullRequest: pr) { folder in
+                                        await MainActor.run { library.execution.tasks.values.contains { $0.phase.active && $0.folder == folder } }
+                                    }
+                                    review.prError = nil; await refreshLocal()
+                                } catch { review.prError = error.localizedDescription }
+                            }
+                        }.disabled(updatingBranch || review.prError != nil)
+                    }
                     if pr.checks.contains(where: { $0.result == "Failed" }) {
                         Button(review.preparingFix ? "Preparing context…" : "Fix with agent") {
                             review.preparingFix = true
@@ -157,7 +236,6 @@ struct SessionReviewContainer: View {
             let snapshot = try await SessionChanges.snapshot(work, scope: scope)
             guard !Task.isCancelled, scope == review.scope else { return }
             review.snapshot = snapshot; review.error = nil
-            if let linked = self.work?.pullRequest, linked.headRefName != snapshot.branch { savePR(nil) }
             if !snapshot.files.contains(where: { $0.path == review.selected }) { review.selected = snapshot.files.first?.path }
             await refreshPatch()
         } catch { if !Task.isCancelled { review.error = error.localizedDescription } }

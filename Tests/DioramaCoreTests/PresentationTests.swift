@@ -107,3 +107,18 @@ struct PresentationTests {
         #expect(SessionPresentation.selection(nil, rows: rows) == main.id)
     }
 }
+
+extension PresentationTests {
+    @Test func largeDeepHierarchyPreservesOrderWithoutQuadraticScansOrRecursion() {
+        let input = (0..<10_000).map { index in
+            session("s\(index)", index == 0 ? .conversation : .subagent, parent: index == 0 ? nil : "s\(index - 1)")
+        }
+        var rows: [SessionRow] = []
+        let duration = ContinuousClock().measure { rows = SessionPresentation.rows(input, showInternal: false) }
+        #expect(rows.map(\.id) == input.map(\.id))
+        #expect(rows.last?.depth == 9_999)
+        #expect(rows.allSatisfy { !$0.parentUnavailable })
+        #expect(duration < .seconds(1))
+        print("10,000-node session hierarchy: \(duration)")
+    }
+}

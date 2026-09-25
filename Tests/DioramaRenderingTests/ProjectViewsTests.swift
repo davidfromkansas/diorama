@@ -40,3 +40,41 @@ import Testing
         #expect(try ProjectStorage.load(from: file).isEmpty)
     }
 }
+
+extension ProjectViewsTests {
+    @Test func localPreparationRetriesRetainLocationAndDraft() async throws {
+        let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: root) }
+        _ = try await ProjectCommand.git(root.path, ["init", "-b", "main"])
+        _ = try await ProjectCommand.git(root.path, ["-c", "user.name=Test", "-c", "user.email=test@example.invalid", "commit", "--allow-empty", "-m", "Seed"])
+        let storage = root.appendingPathComponent("projects.json")
+        let projects = ProjectModel(storageURL: storage)
+        var project = try await ProjectGit.discover(root.path)
+        project.draft = "Keep my message"
+        project.draftStart = SessionStartOptions(folder: root.path, reference: "main", createWorktree: false)
+        projects.projects = [project]
+        let first = try await projects.prepare(projectID: project.id, base: "main", cached: true, options: project.draftStart)
+        let restored = ProjectModel(storageURL: storage)
+        let retry = try await restored.prepare(projectID: project.id, base: "missing", cached: true,
+            options: SessionStartOptions(folder: "/missing", reference: "missing"))
+        #expect(first == retry)
+        #expect(restored.projects.first?.draft == "Keep my message")
+        #expect(restored.projects.first?.workspaces.count == 1)
+        #expect(restored.projects.first?.fetchedAt == nil)
+    }
+    @Test func newConversationControlsRenderAtNarrowWidth() throws {
+        let projects = ProjectModel(storageURL: URL(fileURLWithPath: "/private/tmp/absent-" + UUID().uuidString))
+        var project = DioramaProject(name: "Example", folder: "/Projects/Example", commonDirectory: "/Projects/Example/.git", base: "origin/main", remote: nil)
+        project.draftStart = SessionStartOptions(folder: project.folder, reference: "main")
+        projects.projects = [project]
+        let library = LibraryModel(projects: projects)
+        let view = ProjectDraftView(projectID: project.id, projects: projects, library: library)
+            .frame(width: 760, height: 520).environment(\.colorScheme, .dark)
+        let host = NSHostingView(rootView: view)
+        host.frame.size = CGSize(width: 760, height: 520); host.layoutSubtreeIfNeeded()
+        let bitmap = try #require(host.bitmapImageRepForCachingDisplay(in: host.bounds))
+        host.cacheDisplay(in: host.bounds, to: bitmap)
+        try #require(bitmap.representation(using: .png, properties: [:])).write(to: URL(fileURLWithPath: "/private/tmp/diorama-local-start.png"))
+    }
+}

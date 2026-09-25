@@ -37,7 +37,7 @@ struct ProjectTests {
         #expect(!FileManager.default.fileExists(atPath: second.folder))
         #expect(try await ProjectCommand.git(root.path, ["rev-parse", "--verify", second.branch]) == second.baseCommit)
     }
-    @Test func latestRemoteAndExplicitOfflineFallback() async throws {
+    @Test func localStartupDoesNotFetchRemote() async throws {
         let remote = try await repository(); defer { try? FileManager.default.removeItem(at: remote) }
         let local = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
         defer { try? FileManager.default.removeItem(at: local) }
@@ -46,12 +46,9 @@ struct ProjectTests {
         try Data("new remote".utf8).write(to: remote.appendingPathComponent("sample.txt"))
         _ = try await ProjectCommand.git(remote.path, ["commit", "-am", "Update"])
         let work = try await ProjectGit.createWorkspace(project: project, id: "fresh", root: local.appendingPathComponent("trees"))
-        #expect(try await ProjectGit.preview(folder: work.folder, path: "sample.txt") == "new remote")
+        #expect(try await ProjectGit.preview(folder: work.folder, path: "sample.txt") == "original")
         #expect(try await ProjectGit.preview(folder: local.path, path: "sample.txt") == "original")
         _ = try await ProjectCommand.git(local.path, ["remote", "set-url", "origin", "/nonexistent/diorama-test-remote"])
-        await #expect(throws: (any Error).self) {
-            try await ProjectGit.createWorkspace(project: project, id: "offline", root: local.appendingPathComponent("trees"))
-        }
         let cached = try await ProjectGit.createWorkspace(project: project, id: "offline", useCached: true, root: local.appendingPathComponent("trees"))
         #expect(cached.baseCommit == work.baseCommit)
     }
@@ -62,6 +59,7 @@ struct ProjectTests {
         var p = DioramaProject(name: "Example", folder: "/example", commonDirectory: "/example/.git", base: "origin/main", remote: "example")
         p.draft = "Do not lose this"; p.context.references = ["docs/spec.md", "https://example.com"]
         p.pendingWorkspace = "recovery"
+        p.draftStart = SessionStartOptions(folder: "/example", reference: "main", createWorktree: false)
         try ProjectStorage.save([p], to: file)
         #expect(try ProjectStorage.load(from: file) == [p])
         try Data("invalid json".utf8).write(to: file)

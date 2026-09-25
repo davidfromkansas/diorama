@@ -49,6 +49,10 @@ public struct LinkedPullRequest: Codable, Equatable, Identifiable, Sendable {
     public var headRepositoryOwner: RepositoryOwner?
     public var statusCheckRollup: [PRCheck]?
     public var updatedAt: Date?
+    public var baseRefName: String? = nil
+    public var mergedAt: String? = nil
+    public var mergeCommit: String? = nil
+    public var body: String? = nil
     public struct RepositoryName: Codable, Equatable, Sendable { public var name: String }
     public struct RepositoryOwner: Codable, Equatable, Sendable { public var login: String }
     public var checks: [PRCheck] { statusCheckRollup ?? [] }
@@ -73,19 +77,19 @@ public actor PullRequestService {
     public static let shared = PullRequestService()
     public typealias GitHubCommand = @Sendable ([String]) async throws -> String
     private let command: GitHubCommand
-    public init(command: @escaping GitHubCommand = { try await ProjectCommand.gh($0) }) { self.command = command }
+    public init(command: @escaping GitHubCommand = { try await GitHubPullRequests.command($0) }) { self.command = command }
     private var inflight: [String: Task<[LinkedPullRequest], Error>] = [:]
     private var cache: [String: (Date, [LinkedPullRequest])] = [:]
     private static let fields = "number,title,url,state,isDraft,headRefName,headRefOid,headRepository,headRepositoryOwner,statusCheckRollup"
     public func discover(project: DioramaProject, workspace: ProjectWorkspace, force: Bool = false) async throws -> [LinkedPullRequest] {
         let command = self.command
-        if workspace.cleaned {
-            guard let pr = workspace.pullRequest else { return [] }
+        if let pr = workspace.pullRequest {
             return try await query(key: pr.url, force: force) {
                 let text = try await command(["pr", "view", pr.url, "--json", Self.fields])
                 return [try JSONDecoder().decode(LinkedPullRequest.self, from: Data(text.utf8))]
             }
         }
+        if workspace.cleaned { return [] }
         let branch = try await ProjectCommand.git(workspace.folder, ["symbolic-ref", "--short", "HEAD"])
         guard let remote = project.remote, let base = GitHubRepository.parse(remote) else { return [] }
         let pushRemote = (try? await ProjectCommand.git(workspace.folder, ["config", "--get", "branch.\(branch).pushRemote"]))
@@ -96,7 +100,7 @@ public actor PullRequestService {
         guard let head = GitHubRepository.parse(headRemote) else { return [] }
         let key = base.argument + ":" + head.argument + ":" + branch
         return try await query(key: key, force: force) {
-            let text = try await command(["pr", "list", "--repo", base.argument, "--head", branch, "--state", "all", "--limit", "100", "--json", Self.fields])
+            let text = try await command(["pr", "list", "--repo", base.argument, "--head", branch, "--head-owner", String(head.name.split(separator: "/")[0]), "--state", "all", "--limit", "100", "--json", Self.fields])
             return try JSONDecoder().decode([LinkedPullRequest].self, from: Data(text.utf8)).filter { $0.matches(head: head, branch: branch) }
         }
     }
@@ -116,9 +120,7 @@ public actor PullRequestService {
             guard let link = check.url, let url = URL(string: link), url.host == URL(string: pr.url)?.host else { continue }
             let parts = url.path.split(separator: "/").map(String.init)
             guard parts.count >= 5, parts[2] == "actions", parts[3] == "runs", Int(parts[4]) != nil, runs.insert(parts[4]).inserted else { continue }
-            let repo = (url.host ?? "github.com") + "/" + parts[0] + "/" + parts[1]
-            if let logs = try? await ProjectCommand.gh(["run", "view", parts[4], "--repo", repo, "--log-failed"]) { prompt += String(logs.prefix(12_000)) + "\n" }
-            else { prompt += "Failure output unavailable; use the check link.\n" }
+            prompt += "Use the check link to inspect failure output on GitHub.\n"
             if runs.count >= 3 { break }
         }
         return prompt

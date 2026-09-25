@@ -11,6 +11,7 @@ final class LibraryModel {
     let library = ImportedSessionLibrary()
     let projects: ProjectModel
     let reviews = SessionReviewStore()
+    let navigation: WorkspaceNavigation
     var activityPanels: [String: ActivityPanelState] = [:]
     let conversations: DioramaConversationModel
     func appendReviewDraft(_ session: String, text: String) {
@@ -49,7 +50,8 @@ final class LibraryModel {
         persistOutgoing()
     }
     let execution: ExecutionController
-    init(execution: ExecutionController? = nil, projects: ProjectModel? = nil, conversations: DioramaConversationModel? = nil) {
+    init(execution: ExecutionController? = nil, projects: ProjectModel? = nil, conversations: DioramaConversationModel? = nil, navigation: WorkspaceNavigation? = nil) {
+        self.navigation = navigation ?? WorkspaceNavigation()
         self.execution = execution ?? ExecutionController(transport: AgentExecutionTransport(), journal: ExecutionController.defaultJournal, canvas: ConversationCanvas())
         self.projects = projects ?? ProjectModel()
         self.conversations = conversations ?? DioramaConversationModel()
@@ -58,7 +60,7 @@ final class LibraryModel {
     var showNewTask = false
     var projectNavigation = false
     var showingLiveTurn: Bool {
-        guard let id = selected?.sessionID, let task = execution.tasks[id] else { return false }
+        guard selected?.observationOnly != true, let id = selected?.sessionID, let task = execution.tasks[id] else { return false }
         return task.attached && !task.transcript.entries.isEmpty
     }
     var displayedTranscript: Transcript {
@@ -112,7 +114,8 @@ final class LibraryModel {
             projects.update(project.id) { $0.selectedSession = selectedID; $0.section = "Sessions" }
         }
     }
-    var sessions: [Session] = []
+    var sessions: [Session] = [] { didSet { sessionsRevision &+= 1 } }
+    private(set) var sessionsRevision: UInt64 = 0
     var notices: [String] = []
     var selectedID: String?
     var selectedFolderID: String?
@@ -175,8 +178,8 @@ final class LibraryModel {
         // Watch transcripts, not Codex's runtime database/logs: our reader must not
         // trigger another discovery pass through its own App Server housekeeping.
         // A missing root still watches its parent so first-time sessions appear.
-        let roots = StorageRoot.defaults().map {
-            FileManager.default.fileExists(atPath: $0.url.path) ? $0.url.path : $0.url.deletingLastPathComponent().path
+        let roots = (StorageRoot.defaults().map(\.url) + [ClaudeDesktopPaths.defaults.metadata]).map {
+            FileManager.default.fileExists(atPath: $0.path) ? $0.path : $0.deletingLastPathComponent().path
         }
         try? FileManager.default.createDirectory(at: HookStore.base, withIntermediateDirectories: true, attributes: [.posixPermissions: 0o700])
         watcher = DirectoryWatcher(paths: roots + [HookStore.base.path]) { [weak self] in
@@ -194,8 +197,9 @@ final class LibraryModel {
         query = ""; provider = "All"; activityFilter = "All"
         selectedFolderID = WorkingFolder.group([session]).first?.id; selectedID = session.id
         viewMode = execution.tasks[session.sessionID]?.attached != true ? .activity : .conversation; showInbox = false
-        if projectNavigation, let project = projects.projects.first(where: { projects.sessions($0, library: self).contains(where: { $0.id == session.id }) }) {
-            projects.selectedID = project.id; projects.update(project.id) { $0.selectedSession = session.id; $0.section = "Sessions" }
+        openInWorkspace(session)
+        if let project = projects.selected {
+            navigation.tabs[project.id + ":" + session.id] = viewMode == .activity ? .activity : .conversation
         }
     }
     var showInternal = UserDefaults.standard.bool(forKey: "showInternalSessions") {
@@ -237,6 +241,7 @@ final class LibraryModel {
             sessions = sessions.compactMap { incoming[$0.id] } + snapshot.sessions.filter { !existing.contains($0.id) }
             syncOwnedSessions()
             for folder in WorkingFolder.group(sessions) where !folderOrder.contains(folder.id) { folderOrder.append(folder.id) }
+            execution.observeDesktopSessions(snapshot.sessions)
             activity = activitySnapshot; notices = snapshot.notices; scannedAt = Date()
             reconcileSelection()
         }
@@ -267,11 +272,19 @@ struct DioramaApp: App {
                 .frame(minWidth: 760, minHeight: 600)
                 .preferredColorScheme(.dark)
         }
-        .defaultSize(width: 1250, height: 820)
+        .defaultSize(width: 1320, height: 850)
+        .windowStyle(.hiddenTitleBar)
         .commands {
             CommandGroup(after: .newItem) {
                 Button("New session") { model.showNewTask = true }.keyboardShortcut("n")
                 Button("Refresh sessions") { Task { await model.refresh() } }.keyboardShortcut("r")
+                Button("Toggle sidebar") { model.navigation.layout.sidebarVisible.toggle() }.keyboardShortcut("b")
+                Button("Toggle inspector") { model.navigation.layout.inspectorVisible.toggle() }.keyboardShortcut("b", modifiers: [.command, .option])
+                Button("Find session") { model.navigation.searchPresented = true }.keyboardShortcut("k")
+                Button("Focus composer") { model.focusWorkspaceComposer() }.keyboardShortcut("l")
+                Button("Back") { if let route = model.navigation.back() { model.navigate(route, record: false) } }.keyboardShortcut("[")
+                Button("Forward") { if let route = model.navigation.forward() { model.navigate(route, record: false) } }.keyboardShortcut("]")
+                Button("Home") { model.navigate(.home) }.keyboardShortcut("h", modifiers: [.command, .shift])
                 ForEach(Array(["Sessions", "Pull Requests", "Files", "Context"].enumerated()), id: \.offset) { index, section in
                     Button(section) { if let id = model.projects.selectedID { model.projects.update(id) { $0.section = section } } }
                         .keyboardShortcut(KeyEquivalent(Character(String(index + 1))))
@@ -344,7 +357,7 @@ struct LibraryView: View {
                             VStack(alignment: .leading, spacing: 6) {
                                 Text((model.pinned.contains(session.id) ? "📌 " : "") + markdownTitle(session.title)).font(.system(size: 13, weight: .medium)).lineLimit(2)
                                 HStack {
-                                    Text(session.provider.rawValue)
+                                    Text(session.sourceLabel)
                                     Text(row.label)
                                     if session.archived { Text("Archived") }
                                 }.font(.caption2).foregroundStyle(.secondary)
@@ -427,6 +440,7 @@ struct SessionView: View {
     @Bindable var model: LibraryModel
     var hasLocalReview = false
     var activityAction: ((String) -> Void)?
+    var shellContent = false
     private var activityState: ActivityPanelState { model.activityState(session) }
     private func openActivity(_ section: String) {
         activityState.section = section
@@ -463,8 +477,8 @@ struct SessionView: View {
             VStack(alignment: .leading, spacing: 10) {
                 HStack(alignment: .top, spacing: 12) {
                     VStack(alignment: .leading, spacing: 5) {
-                        Text(markdownTitle(session.title)).font(.system(size: 16, weight: .semibold)).lineLimit(2).textSelection(.enabled)
-                        Text("\(session.provider.rawValue) · Last reported: \(model.summary(session).state.rawValue) · \(model.health)")
+                        if !shellContent { Text(markdownTitle(session.title)).font(.system(size: 16, weight: .medium)).lineLimit(2).textSelection(.enabled) }
+                        Text("\(session.sourceLabel) · Last reported: \(model.summary(session).state.rawValue) · \(model.health)")
                             .font(.caption).foregroundStyle(.secondary)
                     }
                     Spacer(minLength: 0)
@@ -485,23 +499,18 @@ struct SessionView: View {
                                 if let parent = session.parentID { Text("Recorded parent: " + parent) }
                                 Text("Discovery: " + session.historySource)
                                 Text("\(model.displayedTranscript.source) · \(model.displayedTranscript.malformed) unrecognized records")
-                                Text("Recorded status may be stale. Unified Claude Desktop is not connected.").foregroundStyle(.secondary)
+                                Text("Recorded status may be stale. Claude Code Desktop conversations are view-only.").foregroundStyle(.secondary)
                                 if let url = session.url { Button("Reveal transcript") { NSWorkspace.shared.activateFileViewerSelecting([url]) } }
                             }.font(.caption).textSelection(.enabled).padding(20).frame(width: 380)
                         }
                 }
-            }.padding(.horizontal, 24).padding(.vertical, 16)
-            if model.projectNavigation {
-                HStack {
-                    Spacer()
-                    Picker("Conversation view", selection: $model.viewMode) {
-                        ForEach(ConversationViewMode.allCases, id: \.self) { mode in Text(mode.rawValue).tag(mode) }
-                    }.pickerStyle(.menu).labelsHidden().fixedSize()
-                }.padding(.horizontal, 24).padding(.bottom, 8)
-            } else {
-            Picker("View", selection: $model.viewMode) {
-                ForEach(ConversationViewMode.allCases, id: \.self) { mode in Text(mode.rawValue).tag(mode) }
-            }.pickerStyle(.segmented).padding(.horizontal, 26).padding(.bottom, 12)
+            }.buttonStyle(.borderless).padding(.horizontal, 20).padding(.vertical, shellContent ? 8 : 12)
+            if !shellContent {
+                HStack(spacing: 0) {
+                    ForEach(ConversationViewMode.allCases, id: \.self) { mode in
+                        WorkspaceTabButton(title: mode.rawValue, selected: model.viewMode == mode) { model.viewMode = mode }
+                    }
+                }.padding(.horizontal, 12)
             }
             if let task = model.execution.tasks[session.sessionID], task.attached {
                 let snapshot = model.activitySnapshot(session)
@@ -626,7 +635,7 @@ struct EntryView: View {
                 }
             }
             .padding(isUser ? 16 : 4)
-            .background(isUser ? Color(red: 0.0, green: 0.36, blue: 0.82) : Color.clear, in: UserMessageBubble())
+            .background(isUser ? DioramaStyle.raised : Color.clear, in: RoundedRectangle(cornerRadius: 8))
             .environment(\.colorScheme, isUser ? .dark : colorScheme)
             .help(entry.timestamp ?? entry.kind)
             if isUser == false { Spacer(minLength: 0) }
@@ -658,8 +667,8 @@ struct ConnectionsView: View {
                 }
             }
             Divider()
-            Text("Unified Claude Desktop: not connected").font(.headline)
-            Text("Claude Code history can be read locally. We have not verified a supported feed for the unified Claude desktop experience.").font(.callout).foregroundStyle(.secondary)
+            Text("Claude Chat / Cowork: not connected").font(.headline)
+            Text("Local Claude Code Desktop history is observed through session metadata and transcripts. Chat, Cowork, cloud and SSH sessions are outside this integration.").font(.callout).foregroundStyle(.secondary)
             if !model.notices.isEmpty {
                 ScrollView { Text(model.notices.joined(separator: "\n")).font(.caption).textSelection(.enabled).frame(maxWidth: .infinity, alignment: .leading) }.frame(maxHeight: 130)
             }

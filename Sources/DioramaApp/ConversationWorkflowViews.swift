@@ -216,7 +216,7 @@ extension LibraryModel {
             if !sessions.contains(where: { $0.id == session.id }) { sessions.append(session) }
             archiveFilter = "All"; query = ""; provider = "All"; activityFilter = "All"
             if !folderOrder.contains(session.project) { folderOrder.append(session.project) }
-            selectedFolderID = session.project; selectedID = session.id
+            selectedFolderID = session.project; openInWorkspace(session)
             Task { await readSelected() }
         } catch { workflowError = error.localizedDescription }
     }

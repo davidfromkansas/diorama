@@ -202,7 +202,10 @@ struct ExecutionControls: View {
     @State private var recoveredGoal: WireValue = .null
     var body: some View {
         Group {
-        if let task = library.execution.tasks[session.sessionID], task.attached, task.phase != .disconnected {
+        if session.observationOnly {
+            Text("Viewing Claude Code Desktop · Continue this conversation in Claude Desktop.")
+                .font(.caption).foregroundStyle(.secondary).padding(16)
+        } else if let task = library.execution.tasks[session.sessionID], task.attached, task.phase != .disconnected {
             VStack(alignment: .leading, spacing: 10) {
                 if let error = error ?? task.error { Text(error).font(.caption).foregroundStyle(.orange).textSelection(.enabled) }
                 if !model.isEmpty, model.hasPrefix("claude/") != (session.provider == .claude) { Text("Your next message continues here with the selected provider. Files and branch stay unchanged.").font(.caption).foregroundStyle(.secondary) }
@@ -316,6 +319,10 @@ struct ExecutionControls: View {
             }
         }
         .onChange(of: library.drafts[session.id]?.text) { if let text = library.drafts[session.id]?.text, text != prompt { prompt = text } }
+        .onChange(of: library.drafts[session.id]?.attachments) {
+            let saved = (library.drafts[session.id]?.attachments ?? []).compactMap { try? ConversationAttachment(url: URL(fileURLWithPath: $0)) }
+            if saved != attachments { attachments = saved }
+        }
         .onChange(of: mode) { library.saveDraft(session.id, text: prompt, attachments: attachments, mode: mode) }
         .onChange(of: prompt) { library.saveDraft(session.id, text: prompt, attachments: attachments) }
         .onChange(of: attachments) { library.saveDraft(session.id, text: prompt, attachments: attachments) }
@@ -502,8 +509,8 @@ struct ConversationComposer: View {
 
             }
             .padding(16)
-            .background(colorScheme == .dark ? Color(white: 0.16) : Color(white: 0.97), in: RoundedRectangle(cornerRadius: 26))
-            .overlay(RoundedRectangle(cornerRadius: 26).strokeBorder(Color.primary.opacity(0.08), lineWidth: 1))
+            .background(colorScheme == .dark ? DioramaStyle.raised : Color(white: 0.97), in: RoundedRectangle(cornerRadius: 12))
+            .overlay(RoundedRectangle(cornerRadius: 12).strokeBorder(Color.primary.opacity(0.08), lineWidth: 1))
         }.modifier(AttachmentDropTarget(attachments: $attachments, disabled: sending))
         .onChange(of: model) {
             if model.hasPrefix("claude/") { effort = ""; capabilities.wrappedValue = [] }
@@ -531,7 +538,7 @@ struct ConversationComposer: View {
                         if active { stopTurn() } else { send() }
                     } label: {
                         Image(systemName: active ? "stop.fill" : "arrow.up").font(.system(size: 18, weight: .semibold)).foregroundStyle(.white).frame(width: 36, height: 36)
-                            .background(Color(red: 0.16, green: 0.39, blue: 0.79), in: Circle())
+                            .background(DioramaStyle.accent, in: Circle())
                     }
                     .buttonStyle(.plain)
                     .accessibilityLabel(active ? "Stop task" : queued ? "Queue message" : "Send message")
