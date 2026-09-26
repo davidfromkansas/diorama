@@ -69,7 +69,8 @@ jobs:
       - name: Run Swift regression tests
         run: |
           set -o pipefail
-          swift test --scratch-path "$RUNNER_TEMP/diorama-build" 2>&1 | tee "$RUNNER_TEMP/swift-tests.log"
+          # Native UI suites share AppKit/WebKit process state; avoid CI contention.
+          swift test --no-parallel --scratch-path "$RUNNER_TEMP/diorama-build" 2>&1 | tee "$RUNNER_TEMP/swift-tests.log"
       - name: Run Claude helper tests
         run: |
           set -o pipefail

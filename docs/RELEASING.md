@@ -22,7 +22,7 @@ The job imports signing material and Apple’s pinned G2 intermediate into a tem
 
 1. Bump both version and build in `build-macos.sh`. Commit the intended source and release changes. Do not reuse a published version.
 2. Push the commit and create a lightweight `vVERSION` tag at that exact commit. Push the tag to start the release job. A manual retry must also select that existing tag.
-3. The job checks that tag and bundle version agree and no release already exists. It runs Swift/helper tests, builds the app, signs the Node runtime, reporter, app and DMG, submits to Apple, and staples the accepted ticket.
+3. The job checks that tag and bundle version agree and no release already exists. It runs the full Swift suite serially to avoid concurrent AppKit/WebKit test interference, runs helper tests, builds the app, signs the Node runtime, reporter, app and DMG, submits to Apple, and staples the accepted ticket.
 4. The job verifies the actual mounted app signature, architectures, Applications shortcut and Gatekeeper acceptance. Only then does it create a draft, inspect the tag/assets, publish, download the installer and compare the checksum/bytes.
 5. Check the run and download link. If publication succeeds but download verification fails, inspect the published release before retrying. Existing releases (including drafts) deliberately block reruns; never overwrite assets to hide a failed attempt.
 
