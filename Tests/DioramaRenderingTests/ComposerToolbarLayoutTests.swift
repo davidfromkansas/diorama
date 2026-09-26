@@ -34,7 +34,9 @@ private struct ToolbarProbeButton: NSViewRepresentable {
             try await Task.sleep(for: .milliseconds(100))
             host.layoutSubtreeIfNeeded()
             try #require(probe.buttons.count == 2)
-            let frames = probe.buttons.map { $0.convert($0.bounds, to: host) }
+            // AppKit's bezel/shadow can extend beyond its SwiftUI alignment area
+            // (seven points on each side on macOS 15). Test layout, not shadow bounds.
+            let frames = probe.buttons.map { $0.convert($0.alignmentRect(forFrame: $0.bounds), to: host) }
             #expect(!frames[0].intersects(frames[1]))
             #expect(frames.allSatisfy { $0.minX >= -1 && $0.maxX <= width + 1 }, "width=\(width), host=\(host.frame), controls=\(frames)")
         }

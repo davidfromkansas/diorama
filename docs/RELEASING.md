@@ -16,7 +16,7 @@ Configure these repository Actions secrets under Settings → Secrets and variab
 
 This uses the same secret naming as AgentSim. Certificates may use the same Developer ID identity; credentials remain independently configured per repository. GitHub's job token publishes to this repository, so no separate publishing token is required. GitHub secrets cannot be read back to copy them between repositories.
 
-The job imports signing material into a temporary Keychain, validates notarization credentials, and deletes the temporary Keychain/key files when done. Credential values are not written to source, release artifacts, or uploaded logs. A signing or notarization failure stops publication; there is no ad-hoc fallback in CI.
+The job imports signing material and Apple’s pinned G2 intermediate into a temporary Keychain, adds it to the disposable runner’s search list, validates notarization credentials, and deletes the temporary Keychain/key files when done. Credential values are not written to source, release artifacts, or uploaded logs. A signing or notarization failure stops publication; there is no ad-hoc fallback in CI.
 
 ## Release a new version
 
