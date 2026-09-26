@@ -6,7 +6,7 @@ on:
   workflow_dispatch:
 
 permissions:
-  contents: write
+  contents: read
 
 concurrency:
   group: diorama-macos-release
@@ -18,6 +18,7 @@ jobs:
     runs-on: macos-15
     timeout-minutes: 60
     env:
+      RELEASE_REPOSITORY: davidfromkansas/diorama-releases
       DEVELOPER_DIR: /Applications/Xcode_26.2.app/Contents/Developer
     steps:
       - uses: actions/checkout@v4
@@ -33,9 +34,11 @@ jobs:
         id: version
         shell: bash
         env:
-          GH_TOKEN: ${{ github.token }}
+          GH_TOKEN: ${{ secrets.RELEASES_GITHUB_TOKEN }}
         run: |
           set -euo pipefail
+          : "${GH_TOKEN:?Missing RELEASES_GITHUB_TOKEN}"
+          test "$GITHUB_REPOSITORY" = davidfromkansas/diorama
           test "$(uname -m)" = arm64
           swift --version
           version=$(sed -n 's/.*CFBundleShortVersionString<\/key><string>\([^<]*\).*/\1/p' build-macos.sh)
@@ -46,7 +49,7 @@ jobs:
           test "$(git rev-parse "$tag^{commit}")" = "$GITHUB_SHA"
           if [[ "$GITHUB_REF_TYPE" == tag ]]; then test "$GITHUB_REF_NAME" = "$tag"; fi
           # List successfully before checking absence: network errors must not mean "no release".
-          gh api --paginate "repos/$GITHUB_REPOSITORY/releases?per_page=100" --jq '.[].tag_name' > "$RUNNER_TEMP/release-tags"
+          gh api --paginate "repos/$RELEASE_REPOSITORY/releases?per_page=100" --jq '.[].tag_name' > "$RUNNER_TEMP/release-tags"
           if grep -Fxq "$tag" "$RUNNER_TEMP/release-tags"; then
             echo '::error::A release already exists for this version; do not overwrite its assets.'
             exit 1
@@ -101,33 +104,11 @@ jobs:
         run: bash scripts/verify-release.sh "$RUNNER_TEMP/output/Diorama-${{ steps.version.outputs.version }}-${{ steps.version.outputs.build }}-arm64.dmg"
       - name: Publish verified download
         env:
-          GH_TOKEN: ${{ github.token }}
+          GH_TOKEN: ${{ secrets.RELEASES_GITHUB_TOKEN }}
           RELEASE_TAG: ${{ steps.version.outputs.tag }}
           RELEASE_VERSION: ${{ steps.version.outputs.version }}
           RELEASE_BUILD: ${{ steps.version.outputs.build }}
-        run: |
-          set -euo pipefail
-          image="Diorama-$RELEASE_VERSION-$RELEASE_BUILD-arm64.dmg"
-          notes="$RUNNER_TEMP/release-notes.md"
-          cat > "$notes" <<EOF_NOTES
-          Diorama **$RELEASE_VERSION ($RELEASE_BUILD)** — built, Developer ID signed, and notarized through GitHub Actions.
-
-          Download **$image**, open it, and drag Diorama into Applications.
-
-          - Requires Apple Silicon and macOS 14 or later. This private repository requires access to download.
-          - Includes account onboarding: connect OpenAI or Claude, with optional GitHub setup. Existing installations and Claude subscriptions are preserved.
-          - Official Codex or Claude Code CLI installation and authentication are required for the corresponding provider; Desktop apps are optional.
-          - Swift regression tests and Claude helper tests passed. The DMG, stapled notarization ticket, app signature, and Gatekeeper assessment passed.
-          - Clean-user onboarding and authentication on a fresh Mac still require tester verification. Notarization does not establish that coverage.
-          - Source: \`$GITHUB_SHA\`. [Build and verification logs](https://github.com/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID).
-          EOF_NOTES
-          gh release create "$RELEASE_TAG" "$RUNNER_TEMP/output/$image" "$RUNNER_TEMP/output/$image.sha256" --verify-tag --draft --title "Diorama $RELEASE_VERSION ($RELEASE_BUILD)" --notes-file "$notes" --target "$GITHUB_SHA"
-          gh release view "$RELEASE_TAG" --json tagName,isDraft,assets
-          test "$(gh api "repos/$GITHUB_REPOSITORY/git/ref/tags/$RELEASE_TAG" --jq .object.sha)" = "$GITHUB_SHA"
-          gh release edit "$RELEASE_TAG" --draft=false --latest
-          gh release download "$RELEASE_TAG" --pattern "$image*" --dir "$RUNNER_TEMP/download"
-          (cd "$RUNNER_TEMP/download" && shasum -a 256 -c "$image.sha256")
-          cmp "$RUNNER_TEMP/output/$image" "$RUNNER_TEMP/download/$image"
+        run: bash scripts/publish-release.sh
       - name: Remove temporary credentials
         if: always()
         run: |
