@@ -1,0 +1,64 @@
+Building for debugging...
+[0/7] Write sources
+[1/7] Write swift-version--58304C5D6DBC2206.txt
+[3/5] Emitting module DioramaRenderingTests
+[4/5] Compiling DioramaRenderingTests LiveExternalViewerProbe.swift
+/Users/david_lietjauw/Developer/Diorama/Tests/DioramaRenderingTests/LiveExternalViewerProbe.swift:157:19: warning: 'accepting' mutated after capture by sendable closure
+105 |         }
+106 |         var window = ProbeMeasurementWindow(waitSeconds: waitSeconds, duration: duration)
+107 |         var accepting = true
+    |             `- note: variable defined here
+108 |         var reading = false
+109 |         var pendingReceipt: Date?
+110 |         let watcher = DirectoryWatcher(paths: [try #require(session.url).deletingLastPathComponent().path]) {
+    |                                                                                                             `- note: variable captured by sendable closure
+111 |             guard accepting else { return }
+    |                   `- note: capturing use
+112 |             notifications += 1
+113 |             pendingReceipt = pendingReceipt ?? Date()
+    :
+155 |             try await Task.sleep(for: .milliseconds(100))
+156 |         }
+157 |         accepting = false
+    |                   `- warning: 'accepting' mutated after capture by sendable closure
+158 |         while reading { try await Task.sleep(for: .milliseconds(10)) }
+159 |         withExtendedLifetime(watcher) {}
+[4/6] Write Objects.LinkFileList
+[5/6] Linking DioramaPackageTests
+Build complete! (1.87s)
+Test Suite 'Selected tests' started at 2026-09-28 01:07:22.538.
+Test Suite 'DioramaPackageTests.xctest' started at 2026-09-28 01:07:22.539.
+Test Suite 'DioramaPackageTests.xctest' passed at 2026-09-28 01:07:22.539.
+	 Executed 0 tests, with 0 failures (0 unexpected) in 0.000 (0.000) seconds
+Test Suite 'Selected tests' passed at 2026-09-28 01:07:22.539.
+	 Executed 0 tests, with 0 failures (0 unexpected) in 0.000 (0.001) seconds
+◇ Test run started.
+↳ Testing Library Version: 1743
+↳ Target Platform: arm64e-apple-macos14.0
+◇ Suite ExternalViewerTests started.
+◇ Test externalSceneWorksWithoutAttachmentAndExpires() started.
+✔ Test externalSceneWorksWithoutAttachmentAndExpires() passed after 0.054 seconds.
+◇ Test watcherDeliversThirtyAppendsWithoutPolling() started.
+EXTERNAL_VIEWER_FIXTURE updates=30 evidence_to_model_p95_ms=60 max_ms=62
+✔ Test watcherDeliversThirtyAppendsWithoutPolling() passed after 1.512 seconds.
+◇ Test thirtyAppendsWithMountedRichConversationMeetLayoutBudget() started.
+MOUNTED_VIEWER_FIXTURE updates=30 evidence_to_layout_p95_ms=59 max_ms=59 pixel_latency_measured=false
+✔ Test thirtyAppendsWithMountedRichConversationMeetLayoutBudget() passed after 1.779 seconds.
+◇ Test claudeCancellationStopsExternalSceneImmediately() started.
+✔ Test claudeCancellationStopsExternalSceneImmediately() passed after 0.078 seconds.
+◇ Test claudeChildSharingSessionIDAppearsAndFinishes() started.
+✔ Test claudeChildSharingSessionIDAppearsAndFinishes() passed after 0.114 seconds.
+◇ Test switchedSelectionAndMissingSourceKeepCorrectHistory() started.
+✔ Test switchedSelectionAndMissingSourceKeepCorrectHistory() passed after 0.075 seconds.
+◇ Test pauseReconcilesMissedBurstWithoutDuplicates() started.
+✔ Test pauseReconcilesMissedBurstWithoutDuplicates() passed after 0.154 seconds.
+◇ Test twentySubagentsDoNotDelayParentUpdatesOrMoveDesks() started.
+✔ Test twentySubagentsDoNotDelayParentUpdatesOrMoveDesks() passed after 0.080 seconds.
+✔ Suite ExternalViewerTests passed after 3.850 seconds.
+◇ Suite ProbeMeasurementWindowTests started.
+◇ Test lateSourceGetsFullMeasurementWindow() started.
+✔ Test lateSourceGetsFullMeasurementWindow() passed after 0.001 seconds.
+◇ Test noActivityEndsWithoutStartingMeasurement() started.
+✔ Test noActivityEndsWithoutStartingMeasurement() passed after 0.001 seconds.
+✔ Suite ProbeMeasurementWindowTests passed after 0.001 seconds.
+✔ Test run with 10 tests in 2 suites passed after 3.851 seconds.

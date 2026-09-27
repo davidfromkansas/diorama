@@ -30,3 +30,15 @@ The user-operated third turn completed. An independent Desktop-specific opt-in t
 Classification: **Passed — three-turn saved-output coverage**. This is not the 30 correlated live-update/pixel-latency acceptance gate. The pre-armed 180-second probe ended before the user submitted turn 3 approximately 53 minutes later; its empty report remains a failed measurement attempt with no execution requests. Native scroll controls again failed or returned inconsistent positions, so this run does not claim a turn-3 pixel comparison. No further user prompt is required merely to confirm the saved-output result.
 
 Evidence: `artifacts/live-followup/desktop-three-turns.log` and `desktop-three-turns-summary.json`. Remaining work includes reliably coordinated screen timing, lifecycle/recovery cases, and the independent Codex gate. PR #1 remains a draft.
+
+## Activity-triggered probe window
+
+The observer probe now separates waiting from measurement. `DIORAMA_VIEWER_PROBE_WAIT_SECONDS` defaults to 7200 seconds (bounded to 5–43200); `DIORAMA_VIEWER_PROBE_SECONDS` still controls the full measurement interval, default 60 seconds (bounded to 5–900). The measurement clock starts on the first newly observed conversation entry after baseline loading, not on readiness or a filesystem notification. A later event does not extend the measurement window. The clock is monotonic.
+
+The report includes the waiting limit, actual wait, and explicit measurement status. No-activity expiry is Not verified and continues failing the probe's nonempty-samples assertion. It must never be presented as a latency pass. `VIEWER_LIVE_PROBE_READY` means waiting; `VIEWER_LIVE_PROBE_MEASURING` means new activity started the measurement window. An unrelated new event in the selected session can start the window, so use only the designated disposable session.
+
+Deterministic regressions cover a 53-minute delay followed by a full 180-second recording, repeated activity not extending the deadline, and a quiet source reaching its separate wait deadline. This is test-harness code only; the shipping app and execution transports are unchanged.
+
+To run: set `DIORAMA_VIEWER_PROBE_SESSION`, `DIORAMA_VIEWER_PROBE_OUTPUT` to an existing evidence directory, `DIORAMA_VIEWER_PROBE_IGNORE_HOOKS=1`, and the desired wait/measurement durations, then run `swift test --no-parallel --filter LiveExternalViewerProbe/measuresDesignatedExternalSession`. Wait for READY before source interaction. Stop the process if cancelling a verification session; SwiftPM can hold its build lock while the test waits. Do not leave a quiet probe running as a substitute for coordinated testing.
+
+This change only fixes test coordination. The probe records model timings, not screen presentation. Paired pixel capture and the remaining client/lifecycle checks are still required; the draft PR must not be marked ready based on these harness tests.

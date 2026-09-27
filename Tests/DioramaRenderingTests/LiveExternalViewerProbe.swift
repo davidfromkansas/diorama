@@ -95,9 +95,20 @@ import Testing
             }
         }
         defer { sampling.cancel() }
+        let duration = min(900, max(5, Double(env["DIORAMA_VIEWER_PROBE_SECONDS"] ?? "60") ?? 60))
+        let waitSeconds = min(43_200, max(5, Double(env["DIORAMA_VIEWER_PROBE_WAIT_SECONDS"] ?? "7200") ?? 7200))
+        let clock = ContinuousClock()
+        let armed = clock.now
+        func elapsed() -> Double {
+            let parts = armed.duration(to: clock.now).components
+            return Double(parts.seconds) + Double(parts.attoseconds) / 1e18
+        }
+        var window = ProbeMeasurementWindow(waitSeconds: waitSeconds, duration: duration)
+        var accepting = true
         var reading = false
         var pendingReceipt: Date?
         let watcher = DirectoryWatcher(paths: [try #require(session.url).deletingLastPathComponent().path]) {
+            guard accepting else { return }
             notifications += 1
             pendingReceipt = pendingReceipt ?? Date()
             guard !reading else { return }
@@ -109,6 +120,13 @@ import Testing
                     await model.readSelected()
                     let now = Date()
                     let new = model.transcript.entries.filter { seen.insert(probeIdentity($0)).inserted }
+                    if !new.isEmpty {
+                        let wasWaiting = window.startedAt == nil
+                        window.observe(at: elapsed())
+                        if wasWaiting, window.startedAt != nil {
+                            print("VIEWER_LIVE_PROBE_MEASURING")
+                        }
+                    }
                     for entry in new {
                         if let source = ActivityParser.date(entry.timestamp) { sourceToModel.append(now.timeIntervalSince(source) * 1000) }
                         if let modified = model.observations[session.id]?.sourceModifiedAt { evidenceToModel.append(now.timeIntervalSince(modified) * 1000) }
@@ -131,8 +149,13 @@ import Testing
             try Data("ready".utf8).write(to: URL(fileURLWithPath: path + ".ready"), options: .atomic)
         }
         try FileHandle.standardOutput.write(contentsOf: Data("VIEWER_LIVE_PROBE_READY provider=\(session.provider.rawValue) origin=\(session.origin.rawValue)\n".utf8))
-        let duration = min(900, max(5, Double(env["DIORAMA_VIEWER_PROBE_SECONDS"] ?? "60") ?? 60))
-        try await Task.sleep(for: .seconds(duration))
+        // Readiness is not source activity: the user may arrive much later.
+        // Unrelated directory notifications and unchanged rereads cannot start the timer.
+        while !window.isFinished(at: elapsed()) {
+            try await Task.sleep(for: .milliseconds(100))
+        }
+        accepting = false
+        while reading { try await Task.sleep(for: .milliseconds(10)) }
         withExtendedLifetime(watcher) {}
         sampling.cancel()
         await sampling.value
@@ -150,6 +173,8 @@ import Testing
         }
         let report: [String: Any] = ["provider": session.provider.rawValue, "origin": session.origin.rawValue,
             "notifications": notifications, "duration_seconds": duration,
+            "wait_limit_seconds": waitSeconds, "waited_seconds": window.startedAt ?? elapsed(),
+            "measurement_status": window.startedAt == nil ? "Not verified: no new source activity" : "Collected model timings; pixels unverified",
             "evidence_to_model": summary(evidenceToModel), "source_timestamp_to_model": summary(sourceToModel),
             "pixel_latency_measured": false, "source_client_visible_time_measured": false,
             "execution_requests": 0, "samples": samples, "observer_reads_hooks": env["DIORAMA_VIEWER_PROBE_IGNORE_HOOKS"] != "1",
@@ -159,7 +184,7 @@ import Testing
             try JSONSerialization.data(withJSONObject: report, options: [.prettyPrinted, .sortedKeys]).write(to: URL(fileURLWithPath: path))
         }
         print("VIEWER_LIVE_PROBE_RESULT " + String(decoding: try JSONSerialization.data(withJSONObject: report, options: .sortedKeys), as: UTF8.self))
-        #expect(!evidenceToModel.isEmpty, "Send a bounded prompt in the designated source client while the probe is running")
+        #expect(!evidenceToModel.isEmpty, "No new source entries arrived before the separate activity-wait deadline; no latency verdict is available")
     }
 }
 private actor ProbeReadOnlyTransport: ExecutionTransport {
@@ -203,5 +228,39 @@ private actor ReadableEvidenceSampler {
             if intervals[id] == nil && intervals.count < 4000 { intervals[id] = Interval(lower: previous, upper: readBy) }
         }
         signature = current; previous = checkedAt
+    }
+}
+
+/// Test-only monotonic time window. Baseline history is excluded by the caller's seen set.
+struct ProbeMeasurementWindow {
+    let waitSeconds: Double
+    let duration: Double
+    private(set) var startedAt: Double?
+    mutating func observe(at elapsed: Double) {
+        guard startedAt == nil, elapsed < waitSeconds else { return }
+        startedAt = elapsed
+    }
+    func isFinished(at elapsed: Double) -> Bool {
+        if let startedAt { return elapsed >= startedAt + duration }
+        return elapsed >= waitSeconds
+    }
+}
+
+struct ProbeMeasurementWindowTests {
+    @Test func lateSourceGetsFullMeasurementWindow() {
+        var window = ProbeMeasurementWindow(waitSeconds: 7200, duration: 180)
+        #expect(!window.isFinished(at: 3180)) // User arrives 53 minutes later.
+        window.observe(at: 3180)
+        #expect(!window.isFinished(at: 3359))
+        #expect(window.isFinished(at: 3360))
+        window.observe(at: 3350)
+        #expect(window.startedAt == 3180) // Later events cannot extend the run.
+    }
+    @Test func noActivityEndsWithoutStartingMeasurement() {
+        var window = ProbeMeasurementWindow(waitSeconds: 7200, duration: 180)
+        #expect(!window.isFinished(at: 7199))
+        #expect(window.isFinished(at: 7200))
+        window.observe(at: 7200)
+        #expect(window.startedAt == nil)
     }
 }
