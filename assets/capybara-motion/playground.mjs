@@ -1,0 +1,40 @@
+import * as THREE from 'three';
+import {GLTFLoader} from '../capybara/viewer/vendor/GLTFLoader.js';
+import {OrbitControls} from '../capybara/viewer/vendor/OrbitControls.js';
+import {CapybaraMotion} from './controller.mjs';
+const $=id=>document.getElementById(id),stage=$('stage');
+const renderer=new THREE.WebGLRenderer({antialias:true});renderer.setPixelRatio(Math.min(devicePixelRatio,2));renderer.shadowMap.enabled=true;renderer.shadowMap.type=THREE.PCFSoftShadowMap;renderer.toneMapping=THREE.ACESFilmicToneMapping;stage.prepend(renderer.domElement);
+const scene=new THREE.Scene();scene.background=new THREE.Color('#eee9df');
+const camera=new THREE.PerspectiveCamera(35,1,.01,30);camera.position.set(2.1,1.7,3.4);
+const controls=new OrbitControls(camera,renderer.domElement);controls.target.set(0,.4,0);controls.maxPolarAngle=Math.PI*.48;controls.minDistance=1.2;controls.maxDistance=7;controls.update();
+scene.add(new THREE.HemisphereLight('#fff5e8','#b5b2a5',2));const light=new THREE.DirectionalLight('#fff5e7',2.5);light.position.set(-2,4,3);light.castShadow=true;light.shadow.mapSize.set(2048,2048);Object.assign(light.shadow.camera,{left:-3,right:3,top:3,bottom:-3});light.shadow.normalBias=.008;scene.add(light);
+const floor=new THREE.Mesh(new THREE.PlaneGeometry(6,6),new THREE.MeshStandardMaterial({color:'#dfdfd0',roughness:1}));floor.rotation.x=-Math.PI/2;floor.position.y=-.002;floor.receiveShadow=true;scene.add(floor);
+const grid=new THREE.GridHelper(6,30,'#bcc4b0','#ccd0bf');scene.add(grid);
+const marker=new THREE.Mesh(new THREE.RingGeometry(.055,.07,40),new THREE.MeshBasicMaterial({color:'#718c58',side:THREE.DoubleSide}));marker.rotation.x=-Math.PI/2;marker.position.y=.003;marker.visible=false;scene.add(marker);
+let motion,skeleton,paused=false;
+try {
+ const [gltf,manifest]=await Promise.all([new GLTFLoader().loadAsync('./capybara-animated.glb'),fetch('./manifest.json').then(r=>r.json())]);
+ gltf.scene.traverse(o=>{if(o.isMesh){o.castShadow=true;o.receiveShadow=true;}});
+ motion=new CapybaraMotion(gltf.scene,gltf.animations,manifest);scene.add(motion.root);
+ skeleton=new THREE.SkeletonHelper(gltf.scene);skeleton.visible=false;skeleton.material.depthTest=false;skeleton.renderOrder=2;scene.add(skeleton);
+ $('error').textContent='';
+ window.capybaraLab={motion,scene,camera,renderer,skeleton,manifest};
+ const mq=matchMedia('(prefers-reduced-motion: reduce)');$('reduced').checked=mq.matches;motion.reducedMotion=mq.matches;
+ mq.addEventListener('change',e=>{$('reduced').checked=e.matches;motion.reducedMotion=e.matches;});
+} catch(e){$('error').textContent=`Load failed: ${e.message}`;console.error(e);}
+function go(target){if(!motion)return;motion.moveTo(target,{gait:$('gait').value});marker.position.set(target.x,.003,target.z);marker.visible=true;}
+$('gait').onchange=()=>motion?.setGait($('gait').value);
+$('cross').onclick=()=>go(new THREE.Vector3(motion?.root.position.x>0?-1:1,0,0));
+$('stop').onclick=()=>{motion?.stop();marker.visible=false;};
+$('turnL').onclick=()=>motion?.turnTo(motion.root.rotation.y+Math.PI/2);
+$('turnR').onclick=()=>motion?.turnTo(motion.root.rotation.y-Math.PI/2);
+$('rig').onchange=()=>{if(skeleton)skeleton.visible=$('rig').checked;};$('grid').onchange=()=>grid.visible=$('grid').checked;
+$('reduced').onchange=()=>{if(motion)motion.reducedMotion=$('reduced').checked;};
+$('pause').onclick=()=>{paused=!paused;$('pause').textContent=paused?'Resume':'Pause';};
+$('reset').onclick=()=>{if(motion){motion.stop();motion.velocity=0;motion.root.position.set(0,0,0);motion.root.rotation.y=0;marker.visible=false;}};
+const ray=new THREE.Raycaster();let down;
+renderer.domElement.addEventListener('pointerdown',e=>down=[e.clientX,e.clientY]);
+renderer.domElement.addEventListener('pointerup',e=>{if(!down||Math.hypot(e.clientX-down[0],e.clientY-down[1])>5||e.button!==0)return;const r=renderer.domElement.getBoundingClientRect();ray.setFromCamera(new THREE.Vector2((e.clientX-r.left)/r.width*2-1,1-(e.clientY-r.top)/r.height*2),camera);const hit=ray.intersectObject(floor)[0];if(hit){hit.point.y=0;go(hit.point);}});
+new ResizeObserver(()=>{renderer.setSize(stage.clientWidth,stage.clientHeight);camera.aspect=stage.clientWidth/stage.clientHeight;camera.updateProjectionMatrix();}).observe(stage);
+const clock=new THREE.Clock(),previousPosition=new THREE.Vector3();let lastReport=0;
+renderer.setAnimationLoop(()=>{const dt=clock.getDelta();if(motion&&!paused)motion.update(dt);if(motion){const shift=motion.root.position.clone().sub(previousPosition);camera.position.add(shift);controls.target.add(shift);previousPosition.copy(motion.root.position);controls.update();}if(motion&&clock.elapsedTime-lastReport>.15){lastReport=clock.elapsedTime;const d=motion.debug;$('state').textContent=`${d.state.toUpperCase()}\nSpeed  ${d.speed.toFixed(3)} m/s\nPhase  ${d.phase.toFixed(2)}\n\nBASE LAYER\nIdle   ${d.weights.idle.toFixed(2)}\nWalk   ${d.weights.walk.toFixed(2)}\nRun    ${d.weights.run.toFixed(2)}\n\n${motion.model.getObjectByName('head')?'Head joint ready':'Head joint missing'}\n${motion.path.length} destinations remaining`;if(!motion.path.length)marker.visible=false;}renderer.render(scene,camera);});

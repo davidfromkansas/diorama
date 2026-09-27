@@ -1,0 +1,18 @@
+{
+  "url": "http://127.0.0.1:8766/viewer/",
+  "browser": "Codex in-app browser",
+  "verified": [
+    "GLB and all 18 clip names load",
+    "Body animation with independent big_smile and smile targets",
+    "Skeleton overlay",
+    "Wireframe toggle",
+    "0.5x playback and restart",
+    "Front and three-quarter orthographic camera selection",
+    "Seated typing with desk and chair",
+    "Carrying with a prop attached between the hands",
+    "Working-day sequence starts and progresses",
+    "Responsive narrow-width inspector layout"
+  ],
+  "console_errors": [],
+  "console_warnings": []
+}

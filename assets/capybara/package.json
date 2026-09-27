@@ -1,0 +1,8 @@
+{
+  "name": "diorama-capybara-asset",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Authoring, inspection, and validation tools for the capybara GLB",
+  "scripts": {"validate": "node validate_gltf.cjs"},
+  "devDependencies": {"gltf-validator": "2.0.0-dev.3.10"}
+}

@@ -1,0 +1,30 @@
+{
+  "errors": [],
+  "joints": 25,
+  "triangles": 142240,
+  "loopMaxDifference": {
+    "idle": 0,
+    "run": 0,
+    "walk": 0
+  },
+  "normalizedWeights": true,
+  "finiteAnimationSamples": true,
+  "floorBounds": {
+    "idle": {
+      "minFloor": -1.0053035737200844e-07,
+      "maxFloor": 5.8637727562427244e-08,
+      "samples": 21
+    },
+    "run": {
+      "minFloor": -0.00037819892168045044,
+      "maxFloor": 0.010649630799889565,
+      "samples": 21
+    },
+    "walk": {
+      "minFloor": -2.1248817574814893e-05,
+      "maxFloor": 2.0982279238523915e-05,
+      "samples": 21
+    }
+  },
+  "animatedSHA256": "beeb5a6d72ff601e80f9db8816a0582b73c114117cec9b67e55bc8fa7cf3cdce"
+}
