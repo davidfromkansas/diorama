@@ -42,3 +42,9 @@ Deterministic regressions cover a 53-minute delay followed by a full 180-second 
 To run: set `DIORAMA_VIEWER_PROBE_SESSION`, `DIORAMA_VIEWER_PROBE_OUTPUT` to an existing evidence directory, `DIORAMA_VIEWER_PROBE_IGNORE_HOOKS=1`, and the desired wait/measurement durations, then run `swift test --no-parallel --filter LiveExternalViewerProbe/measuresDesignatedExternalSession`. Wait for READY before source interaction. Stop the process if cancelling a verification session; SwiftPM can hold its build lock while the test waits. Do not leave a quiet probe running as a substitute for coordinated testing.
 
 This change only fixes test coordination. The probe records model timings, not screen presentation. Paired pixel capture and the remaining client/lifecycle checks are still required; the draft PR must not be marked ready based on these harness tests.
+
+## Practical conversation fix — duplicated Claude usage cards
+
+The designated Desktop transcript contained 46 usage-bearing records for 25 native assistant message IDs because Claude persists content blocks separately. Diorama emitted a usage card for every block. The normalizer now retains one usage card per session/agent/message identity, updates it with the latest reported values, and retains each source reference. It does not remove text or tool blocks, sum repeated measurements, or combine different agents. Records without a native message identity stay separate.
+
+Validation: 9 Claude output tests passed; 5 additional real-history/source/rendering checks passed, including the designated three-turn Desktop output acceptance. Narrow/wide card fixtures rendered successfully. No new latency instrumentation or source prompts were needed. This practical fix does not alter the outstanding live-timing classification.

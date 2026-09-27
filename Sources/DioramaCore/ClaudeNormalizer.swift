@@ -44,6 +44,7 @@ public enum ClaudeNormalizer {
     public static func parse(_ data: Data, scope: String, start: UInt64 = 0, limit: Int = 300, sourcePath: String? = nil) -> Transcript {
         var result = Transcript(), entries: [Entry] = []
         var calls: [String: Int] = [:], seen = Set<String>()
+        var messageUsage: [String: Int] = [:]
         var offset = start
         func unknown(_ type: String) { result.unrecognizedTypes[String(type.prefix(100)), default: 0] += 1 }
         for line in SessionLibrary.completeLines(data) {
@@ -173,7 +174,20 @@ public enum ClaudeNormalizer {
                 }
             }
             if let usage = message["usage"] as? [String: Any] {
-                entries.append(entry(base + ":usage", "Event", "", .init(title: "Claude message usage", status: "Reported", agentID: agent, category: "usage", evidence: safe(["usage": usage, "scope": "message"])) ))
+                let presentation = ClaudePresentation(title: "Claude message usage", status: "Reported", agentID: agent, category: "usage", evidence: safe(["usage": usage, "scope": "message"]))
+                let row = entry(base + ":usage", "Event", "", presentation)
+                // Desktop persists each content block separately, repeating message-level
+                // usage. Update the existing card without deduplicating the actual blocks.
+                let key = (message["id"] as? String).flatMap { id in
+                    id.isEmpty ? nil : [r["sessionId"] as? String ?? scope, owner, id].joined(separator: "\u{1f}")
+                }
+                if let key, let index = messageUsage[key] {
+                    entries[index].claude = presentation
+                    entries[index].sourceRecords = (entries[index].sourceRecords ?? []) + (row.sourceRecords ?? [])
+                } else {
+                    if let key { messageUsage[key] = entries.count }
+                    entries.append(row)
+                }
             }
         }
         result.earlierContentOmitted = start > 0 || entries.count > limit

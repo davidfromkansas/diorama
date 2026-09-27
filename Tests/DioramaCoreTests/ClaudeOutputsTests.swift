@@ -19,6 +19,24 @@ struct ClaudeOutputsTests {
         #expect(preview.kind == "html")
         #expect(String(decoding: preview.data, as: UTF8.self).contains("<button"))
     }
+    @Test func splitMessageUsageUpdatesOneCardWithoutDroppingContent() throws {
+        let first = #"{"uuid":"a","type":"assistant","message":{"id":"msg1","usage":{"output_tokens":10},"content":[{"type":"text","text":"Checking file"}]}}"#
+        let second = #"{"uuid":"b","type":"assistant","message":{"id":"msg1","usage":{"output_tokens":20},"content":[{"type":"tool_use","id":"read1","name":"Read","input":{}}]}}"#
+        let initial = try #require(parse(first).entries.first { $0.claude?.category == "usage" })
+        let after = parse(first + "\n" + second)
+        let usage = after.entries.filter { $0.claude?.category == "usage" }
+        #expect(usage.count == 1)
+        #expect(usage.first?.id == initial.id)
+        #expect(usage.first?.claude?.evidence?["usage"]["output_tokens"].number == 20)
+        #expect(after.entries.contains { $0.text == "Checking file" })
+        #expect(after.entries.contains { $0.claude?.callID == "read1" })
+    }
+    @Test func usageWithoutIdentityAndDifferentOwnersStaysSeparate() {
+        let record = #"{"uuid":"a","type":"assistant","message":{"id":"shared","usage":{"output_tokens":10},"content":[]}}"#
+        let other = record.replacingOccurrences(of: #""uuid":"a""#, with: #""uuid":"b","agentId":"child""#)
+        let missing = record.replacingOccurrences(of: #""id":"shared",""#, with: "\"").replacingOccurrences(of: #""uuid":"a""#, with: #""uuid":"c""#)
+        #expect(parse(record + "\n" + other + "\n" + missing).entries.filter { $0.claude?.category == "usage" }.count == 3)
+    }
     @Test func correlatedArtifactGuidanceKeepsIdentityAndDoesNotBecomeArtifact() throws {
         let call = #"{"uuid":"a","type":"assistant","message":{"content":[{"type":"tool_use","id":"t1","name":"Artifact","input":{"action":"quickstart"}}]}}"#
         let result = #"{"uuid":"b","type":"user","message":{"content":[{"type":"tool_result","tool_use_id":"t1","content":"Instructions to create a page"}]}}"#
