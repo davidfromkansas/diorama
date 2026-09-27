@@ -23,6 +23,7 @@ public struct SessionActivityRecord: Codable, Equatable, Identifiable, Sendable 
 /// Same snapshot contract for direct CLI, Agent SDK and Codex App Server.
 public struct SessionActivitySnapshot: Codable, Equatable, Sendable {
     public var version = 1
+    public var codexTurn: String? = nil
     public var records: [SessionActivityRecord] = []
     public var events: [SessionActivityRecord] = []
     public var lastKnown = false
@@ -86,10 +87,10 @@ public enum SessionActivityReducer {
         let method = event["method"].string ?? "", p = event["params"]
         let turn = p["turnId"].string
         func record(_ kind: String, _ id: String, _ title: String, status: String = "unknown", detail: String = "", parent: String? = nil, data: WireValue = .null, time: Date? = nil) -> SessionActivityRecord {
-            .init(id: provider.rawValue + ":" + sessionID + ":" + kind + ":" + id, provider: provider.rawValue, sessionID: sessionID,
+            .init(id: provider.rawValue + ":" + sessionID + ":" + kind + ":" + (provider == .codex && kind == "tool" ? (turn ?? "unknown") + ":" : "") + id, provider: provider.rawValue, sessionID: sessionID,
                   turnID: turn, nativeID: id, parentID: parent, kind: kind, title: String(title.prefix(500)), status: status,
                   detail: String(detail.prefix(kind == "proposal" ? 65536 : 4000)), source: provider == .claude ? "Claude structured event" : "Codex App Server",
-                  recordedAt: time, observedAt: now, data: bounded(data))
+                  recordedAt: time ?? ActivityParser.date(p["timestamp"].string), observedAt: now, data: bounded(data))
         }
         if method == "diorama/claudeActivity" {
             let e = p["event"], type = e["type"].string ?? "", sub = e["subtype"].string ?? ""
@@ -159,12 +160,12 @@ public enum SessionActivityReducer {
                     record("agent", child, states[child]?["agentNickname"].string ?? "Subagent", status: states[child]?["status"].string ?? i["agentStatus"].string ?? i["agentStatus"]["status"].string ?? "unknown", detail: i["prompt"].string ?? "", parent: i["senderThreadId"].string ?? sessionID)
                 }
             }
-            if type == "subAgentActivity", let child = i["agentId"].string ?? i["threadId"].string {
+            if type == "subAgentActivity", let child = i["agentThreadId"].string ?? i["agentId"].string ?? i["threadId"].string {
                 return [record("agent", child, i["agentNickname"].string ?? "Subagent", status: i["status"].string ?? "unknown", detail: i["message"].string ?? "", parent: i["parentThreadId"].string ?? sessionID)]
             }
             if type == "contextCompaction" { return [record("state", id, "Context compaction", status: method == "item/completed" ? "completed" : "running")] }
             if ["commandExecution", "mcpToolCall", "fileChange", "webSearch", "dynamicToolCall"].contains(type) {
-                return [record("tool", id, i["tool"].string ?? type, status: method == "item/started" ? "running" : i["status"].string ?? "completed", detail: i["command"].string ?? "", data: .object(["durationMs": i["durationMs"], "exitCode": i["exitCode"], "files": .array(i["changes"].array.map { .object(["path": $0["path"], "kind": $0["kind"]]) })]))]
+                return [record("tool", id, i["tool"].string ?? type, status: method == "item/started" ? "running" : ToolResult(item: i)?.status ?? "Reported", detail: i["command"].string ?? "", data: .object(["nativeItem": .bool(true), "durationMs": i["durationMs"], "exitCode": i["exitCode"], "files": .array(i["changes"].array.map { .object(["path": $0["path"], "kind": $0["kind"]]) })]))]
             }
         }
         if method == "thread/tokenUsage/updated" { return [record("usage", turn ?? "thread", "Reported token usage", status: "reported", data: p["tokenUsage"])] }

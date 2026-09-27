@@ -59,7 +59,7 @@ struct ProjectContextView: View {
         }
         .task(id: project.base + project.context.references.joined()) {
             let refs = project.context.references.filter { !$0.hasPrefix("http://") && !$0.hasPrefix("https://") }
-            if let paths = try? await ProjectGit.files(folder: project.folder, revision: project.base) {
+            if let paths = try? await (project.isGitBacked ? ProjectGit.files(folder: project.folder, revision: project.base) : ProjectFolder.files(project.folder)) {
                 if !Task.isCancelled { missing = Set(refs).subtracting(paths) }
             }
         }
@@ -138,7 +138,7 @@ struct ProjectFilesView: View {
     }
     private var locationPicker: some View {
                 Picker("Files from", selection: $location) {
-                    Text("Project base · " + project.base).tag("base")
+                    Text(project.isGitBacked ? "Project base · " + project.base : "Working folder").tag("base")
                     ForEach(project.workspaces.filter { !$0.cleaned }) { work in Text(work.branch).tag(work.id) }
                 }.labelsHidden().frame(maxWidth: .infinity)
     }
@@ -173,7 +173,7 @@ struct ProjectFilesView: View {
                                 if !$0.context.references.contains(selection) { $0.context.references.append(selection); $0.context.revision = UUID().uuidString }
                             }}
                             Button(project.selectedSession == nil ? "Attach to new session" : "Attach to session") { attach(selection) }
-                            if location != "base" {
+                            if location != "base" || !project.isGitBacked {
                                 Button("Open externally") { NSWorkspace.shared.open(URL(fileURLWithPath: folder).appendingPathComponent(selection)) }
                             }
                         }.padding(14)
@@ -208,8 +208,8 @@ struct ProjectFilesView: View {
         loading = true; error = nil; selection = nil; files = []; preview = ""; revision = nil
         defer { loading = false }
         do {
-            let resolved = location == "base" ? try await ProjectCommand.git(project.folder, ["rev-parse", "--verify", project.base + "^{commit}"]) : nil
-            let result = try await ProjectGit.files(folder: folder, revision: resolved, showIgnored: showIgnored)
+            let resolved = project.isGitBacked && location == "base" ? try await ProjectCommand.git(project.folder, ["rev-parse", "--verify", project.base + "^{commit}"]) : nil
+            let result = project.isGitBacked ? try await ProjectGit.files(folder: folder, revision: resolved, showIgnored: showIgnored) : try await ProjectFolder.files(folder)
             guard !Task.isCancelled else { return }
             revision = resolved; files = result; tree = ProjectFileNode.tree(result)
             if let saved = project.fileSelection, result.contains(saved) { selection = saved }

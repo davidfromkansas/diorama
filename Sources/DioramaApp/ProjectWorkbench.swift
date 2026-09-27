@@ -13,7 +13,7 @@ struct ProjectWorkbench: View {
     private var work: ProjectWorkspace? { project.workspaces.first { $0.threadID != nil && $0.threadID == session?.sessionID } }
     private var navigation: WorkspaceNavigation { library.navigation }
     private var key: String { projectID + ":" + (project.selectedSession ?? "draft") }
-    private var tab: WorkspaceTab { navigation.tabs[key] ?? .conversation }
+    private var tab: WorkspaceTab { navigation.tabs[key] ?? .workspace }
     var body: some View {
         HStack(spacing: 0) {
             VStack(spacing: 0) {
@@ -51,9 +51,9 @@ struct ProjectWorkbench: View {
     private var tabStrip: some View {
         ScrollView(.horizontal) {
             HStack(spacing: 0) {
-                ForEach([WorkspaceTab.conversation, .activity, .html], id: \.title) { value in
+                ForEach([WorkspaceTab.workspace, .conversation, .activity, .html], id: \.title) { value in
                     WorkspaceTabButton(title: value.title, selected: tab == value) { select(value) }
-                        .disabled(session == nil && value != .conversation)
+                        .disabled(session == nil && value != .conversation && value != .workspace)
                 }
                 if tab == .context { WorkspaceTabButton(title: "Context", selected: true) { } }
                 if tab == .pullRequests { WorkspaceTabButton(title: "Pull Requests", selected: true) { } }
@@ -70,13 +70,14 @@ struct ProjectWorkbench: View {
         switch tab { case .conversation, .activity, .html: true; default: false }
     }
     private var center: some View {
-        ZStack {
+        WorkspacePaneStack {
             Group {
                 if let session {
-                    SessionView(session: session, model: library, hasLocalReview: true, activityAction: { section in
+                    SessionView(session: session, model: library, hasLocalReview: project.isGitBacked, activityAction: { section in
                         library.activityState(session).section = section; select(.activity)
                     }, shellContent: true).id(session.id)
-                } else { ProjectDraftView(projectID: projectID, projects: library.projects, library: library) }
+                } else if project.isGitBacked { ProjectDraftView(projectID: projectID, projects: library.projects, library: library) }
+                else { ContentUnavailableView("No conversation selected", systemImage: "bubble.left", description: Text("Start a task in your preferred client using this folder, then view it here. Starting tasks in Diorama requires Git.")) }
             }.opacity(showsConversation ? 1 : 0).allowsHitTesting(showsConversation).accessibilityHidden(!showsConversation)
             if !showsConversation {
                 VStack(spacing: 0) {
@@ -85,8 +86,13 @@ struct ProjectWorkbench: View {
                             .font(.caption).foregroundStyle(.orange).padding(10)
                     }
                     switch tab {
+                    case .workspace:
+                        WorkspaceSessionScene(library: library, session: session,
+                            openConversation: { select(.conversation) }, openActivity: { select(.activity) }).id(key)
                     case .context: ProjectContextView(projectID: projectID, projects: library.projects)
-                    case .pullRequests: LinkedProjectPRView(projectID: projectID, library: library)
+                    case .pullRequests:
+                        if project.isGitBacked { LinkedProjectPRView(projectID: projectID, library: library) }
+                        else { ContentUnavailableView("Git required", systemImage: "arrow.triangle.branch", description: Text("Pull requests require a Git repository.")) }
                     case .document(let document): WorkspaceDocumentView(document: document, projectID: projectID, library: library, returnToConversation: { select(.conversation) }).id(document.id)
                     default: EmptyView()
                     }
@@ -105,6 +111,8 @@ struct ProjectWorkbench: View {
             Divider()
             if navigation.layout.inspector == .files {
                 ProjectFilesView(projectID: projectID, projects: library.projects, library: library, inspectorOnly: true, openDocument: openDocument).id(key)
+            } else if !project.isGitBacked {
+                ContentUnavailableView("Git required", systemImage: "arrow.triangle.branch", description: Text("Changes and checks require a Git repository. Conversations, agents, and files remain available."))
             } else if let session, let work {
                 SessionReviewContainer(session: session, workspaceID: work.id, projectID: projectID, library: library, review: library.reviews.state(work.id), inspectorTab: navigation.layout.inspector, openDocument: openDocument).id(work.id)
             } else if navigation.layout.inspector == .changes, let session {

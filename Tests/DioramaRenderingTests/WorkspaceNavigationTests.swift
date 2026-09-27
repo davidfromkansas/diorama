@@ -161,6 +161,8 @@ extension WorkspaceNavigationTests {
         ]
         for (name, view) in views {
             let host = NSHostingView(rootView: view.background(DioramaStyle.canvas).environment(\.colorScheme, .dark))
+            // Keep the fixture's explicit viewport when async loading changes intrinsic size.
+            host.sizingOptions = []
             host.frame = NSRect(x: 0, y: 0, width: 760, height: 600)
             let window = NSWindow(contentRect: host.frame, styleMask: [.borderless], backing: .buffered, defer: false); window.contentView = host
             try await Task.sleep(for: .milliseconds(150)); host.layoutSubtreeIfNeeded()

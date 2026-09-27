@@ -568,8 +568,12 @@ private struct HelpLink: View {
 @MainActor
 final class DioramaApplicationDelegate: NSObject, NSApplicationDelegate {
     var execution: ExecutionController?
+    var developmentReload: DevelopmentReload?
     func applicationShouldTerminateAfterLastWindowClosed(_ sender: NSApplication) -> Bool { false }
     func applicationShouldTerminate(_ sender: NSApplication) -> NSApplication.TerminateReply {
+        if let developmentReload, developmentReload.isRequestingQuit {
+            return .terminateNow // Development reload has already completed idle shutdown.
+        }
         guard let execution else { return .terminateNow }
         guard execution.connected || execution.hasUncertainWork else { return .terminateNow }
         Task {

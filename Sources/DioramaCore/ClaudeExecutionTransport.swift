@@ -193,6 +193,7 @@ public actor ClaudeExecutionTransport: ExecutionTransport {
     public func request(_ method: String, _ p: WireValue) async throws -> WireValue {
         switch method {
         case "collaborationMode/list": return .object(["data": .array([.object(["mode": .string("default")]), .object(["mode": .string("plan")])])])
+        case "diorama/capabilities": return try await control(["subtype": .string("capability_discovery")])
         case "model/list": return .object(["data": .array(Self.modelRows(catalog))])
         case "thread/start", "thread/resume":
             return .object(["thread": .object(["id": .string(sessionID)]), "cwd": .string(folder), "model": .string(model), "approvalPolicy": .string(permissionMode)])

@@ -49,6 +49,8 @@ public struct DioramaProject: Codable, Identifiable, Equatable, Sendable {
     public var name: String
     public var folder: String
     public var commonDirectory: String
+    public var isGitBacked: Bool { !commonDirectory.isEmpty }
+    public var folderIdentity: String { URL(fileURLWithPath: folder).standardizedFileURL.resolvingSymlinksInPath().path }
     public var base: String
     public var remote: String?
     public var fetchedAt: Date?
@@ -146,6 +148,58 @@ public enum ProjectCommand {
             throw AppServerFailure("GitHub CLI is required. Install gh and sign in with gh auth login, then retry.")
         }
         return try await run(executable, args, folder: folder)
+    }
+}
+
+/// Opening a folder is passive; Git discovery remains strict for execution paths.
+public enum ProjectFolder {
+    public static func open(_ path: String) async throws -> DioramaProject {
+        let url = URL(fileURLWithPath: path).standardizedFileURL.resolvingSymlinksInPath()
+        let values = try url.resourceValues(forKeys: [.isDirectoryKey, .isReadableKey])
+        guard values.isDirectory == true, values.isReadable == true else {
+            throw AppServerFailure("Choose a readable project folder.")
+        }
+        do { return try await ProjectGit.discover(url.path) }
+        catch {
+            try Task.checkCancellation()
+            // A broken or inaccessible repository is not a plain folder.
+            var ancestor = url
+            while true {
+                if FileManager.default.fileExists(atPath: ancestor.appendingPathComponent(".git").path) { throw error }
+                let parent = ancestor.deletingLastPathComponent()
+                if parent.path == ancestor.path { break }
+                ancestor = parent
+            }
+            return DioramaProject(name: url.lastPathComponent, folder: url.path, commonDirectory: "", base: "", remote: nil)
+        }
+    }
+
+    public static func files(_ folder: String) async throws -> [String] {
+        try await Task.detached { try listFiles(folder) }.value
+    }
+
+    private static func listFiles(_ folder: String) throws -> [String] {
+        let root = URL(fileURLWithPath: folder).standardizedFileURL.resolvingSymlinksInPath()
+        var failure: (any Error)?
+        guard let enumerator = FileManager.default.enumerator(at: root, includingPropertiesForKeys: [.isRegularFileKey, .isSymbolicLinkKey], options: [.skipsHiddenFiles], errorHandler: { _, error in failure = error; return false }) else {
+            throw AppServerFailure("This folder could not be read.")
+        }
+        var result: [String] = []
+        var count = 0
+        for case let url as URL in enumerator {
+            count += 1
+            guard count <= 20_000 else { throw AppServerFailure("This folder is too large to list. Open it in Finder to browse all files.") }
+            let values = try url.resourceValues(forKeys: [.isRegularFileKey, .isSymbolicLinkKey])
+            // Directory enumeration does not follow symbolic links.
+            if values.isSymbolicLink == true { continue }
+            if values.isRegularFile == true {
+                let path = url.standardizedFileURL.resolvingSymlinksInPath().path
+                guard path.hasPrefix(root.path + "/") else { continue }
+                result.append(String(path.dropFirst(root.path.count + 1)))
+            }
+        }
+        if let failure { throw failure }
+        return result.sorted()
     }
 }
 

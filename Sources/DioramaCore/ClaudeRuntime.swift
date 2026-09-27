@@ -36,16 +36,15 @@ extension ExecutionController {
         if let runtime = ClaudeSDKRuntime.discover() {
             let data = try await ProjectCommand.data(runtime.node.path, [runtime.directory.appendingPathComponent("history.mjs").path, parentID, childID, folder])
             let messages = try JSONDecoder().decode([WireValue].self, from: data)
-            var transcript = Transcript(); transcript.source = "Claude SDK · read-only saved history"
+            var lines = Data()
             for message in messages {
-                for (index, block) in message["message"]["content"].array.enumerated() {
-                    if block["type"].string != "text" {
-                        transcript.entries.append(Entry(id: (message["uuid"].string ?? UUID().uuidString) + ":\(index)", kind: "Tool activity", text: block["type"].string == "tool_use" ? "Tool: " + (block["name"].string ?? "Unknown") : block["is_error"].bool ? "Tool failed" : "Tool returned", timestamp: nil))
-                        continue
-                    }
-                    transcript.entries.append(Entry(id: (message["uuid"].string ?? UUID().uuidString) + ":\(index)", kind: message["type"].string == "user" ? "You" : "Assistant", text: block["text"].string ?? "", timestamp: nil))
-                }
+                lines.append(try JSONEncoder().encode(message))
+                lines.append(0x0a)
             }
+            var transcript = await Task.detached {
+                ClaudeNormalizer.parse(lines, scope: parentID + ":" + childID)
+            }.value
+            transcript.source = "Claude SDK · read-only saved history"
             return transcript
         }
         let encoded = folder.replacingOccurrences(of: "[^a-zA-Z0-9]", with: "-", options: .regularExpression)

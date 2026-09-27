@@ -63,3 +63,67 @@ test('saved history accepts string or block content and excludes reasoning', () 
   assert.equal(rows[0].message.content[0].text, 'assignment');
   assert.deepEqual(rows[1].message.content, [{ type: 'text', text: 'answer' }]);
 });
+
+test('capability discovery reads SDK state without sending prompts and preserves partial results', async () => {
+  const input = new PassThrough(), output = new PassThrough(), events = [];
+  let prompts = 0, closed = false, wake;
+  output.on('data', b => events.push(...b.toString().trim().split('\n').map(JSON.parse)));
+  const server = await serve({ input, output, argv: [], env: {}, sdkQuery: args => {
+    void (async () => { for await (const prompt of args.prompt) prompts++; })();
+    return {
+      initializationResult: async () => ({ account: { subscriptionType: 'max', apiProvider: 'firstParty' } }),
+      supportedCommands: async () => [{ name: 'draw', description: 'Draws' }, { name: 'help', builtin: true }],
+      mcpServerStatus: async () => { throw Error('Server unavailable'); },
+      close: () => { closed = true; wake?.(); },
+      async *[Symbol.asyncIterator]() {
+        yield { type: 'system', subtype: 'init', skills: ['draw'], plugins: [{ name: 'art', path: '/art' }] };
+        while (!closed) await new Promise(r => wake = r);
+      }
+    };
+  } });
+  input.write(JSON.stringify({ type: 'control_request', request_id: 'init', request: { subtype: 'initialize' } }) + '\n');
+  await tick();
+  input.write(JSON.stringify({ type: 'control_request', request_id: 'discover', request: { subtype: 'capability_discovery' } }) + '\n');
+  await tick();
+  const result = events.find(e => e.response?.request_id === 'discover').response.response;
+  assert.equal(prompts, 0); assert.equal(result.commands[0].name, 'draw');
+  assert.deepEqual(result.skills, ['draw']); assert.equal(result.plugins[0].name, 'art');
+  assert.match(result.errors.servers, /Server unavailable/); assert.deepEqual(result.servers, []);
+  server.close(); input.end();
+});
+
+test('saved history preserves correlated tool evidence and rich results without reasoning', () => {
+  const rows = historyPreview([
+    { type: 'assistant', uuid: 'call', message: { content: [{ type: 'tool_use', name: 'Artifact', id: 'tool-1', input: { action: 'quickstart' } }] } },
+    { type: 'user', uuid: 'result', message: { content: [{ type: 'tool_result', tool_use_id: 'tool-1', content: [{ type: 'text', text: 'guidance' }, { type: 'thinking', thinking: 'secret' }, { type: 'resource_link', uri: 'https://example.com/output', name: 'Output' }] }] } }
+  ]);
+  assert.equal(rows[0].message.content[0].input.action, 'quickstart');
+  assert.equal(rows[1].message.content[0].tool_use_id, 'tool-1');
+  assert.equal(rows[1].message.content[0].content.length, 2);
+  assert.equal(JSON.stringify(rows).includes('secret'), false);
+});
+
+test('history retains Claude event metadata and message usage without sending input', () => {
+  const rows = historyPreview([
+    { type: 'result', uuid: 'result', usage: { input_tokens: 10, cache_read_input_tokens: 40 }, total_cost_usd: 0.01 },
+    { type: 'progress', uuid: 'progress', data: { type: 'bash_progress', output: 'building' } },
+    { type: 'assistant', uuid: 'message', message: { usage: { output_tokens: 3 }, content: [{ type: 'text', text: 'done' }] } }
+  ]);
+  assert.equal(rows[0].usage.cache_read_input_tokens, 40);
+  assert.equal(rows[0].total_cost_usd, 0.01);
+  assert.equal(rows[1].data.type, 'bash_progress');
+  assert.equal(rows[2].message.usage.output_tokens, 3);
+});
+
+test('history retains cumulative saved cost-state and mode without reinterpreting them', () => {
+  const rows = historyPreview([
+    { type: 'mode', mode: 'normal' },
+    { type: 'cost-state', totalCostUSD: 0.25, totalDuration: 7100, hasUnknownModelCost: true,
+      modelUsage: { fixture: { inputTokens: 2, cacheReadInputTokens: 100 } } }
+  ]);
+  assert.equal(rows[0].mode, 'normal');
+  assert.equal(rows[1].totalCostUSD, 0.25);
+  assert.equal(rows[1].modelUsage.fixture.cacheReadInputTokens, 100);
+  assert.equal(rows[1].hasUnknownModelCost, true);
+  assert.equal(rows[1].usage, undefined);
+});

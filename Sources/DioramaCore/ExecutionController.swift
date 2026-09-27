@@ -95,7 +95,6 @@ private struct TaskBookmark: Codable {
 public final class ExecutionController {
     public internal(set) var tasks: [String: ExecutedTask] = [:]
     public private(set) var recordedActivity: [String: SessionActivitySnapshot] = [:]
-    private var activityImports: Set<String> = []
     private var activityMembership: [String: [ActivitySessionIdentity]] = [:]
     public func registerActivityConversation(_ members: [ActivitySessionIdentity]) {
         for member in members {
@@ -765,10 +764,14 @@ public final class ExecutionController {
         if let task = tasks[id], task.provider == provider { return task.structuredActivity }
         return recordedActivity[provider.rawValue + ":" + id] ?? .init()
     }
+    public func observeActivity(_ session: Session, snapshot: SessionActivitySnapshot) {
+        guard tasks[session.sessionID]?.attached != true else { return }
+        recordedActivity[session.provider.rawValue + ":" + session.sessionID] = snapshot
+    }
+
     public func importActivity(_ session: Session, transcript: Transcript) async {
         let key = session.provider.rawValue + ":" + session.sessionID
-        guard !activityImports.contains(key), tasks[session.sessionID]?.attached != true else { return }
-        activityImports.insert(key)
+        guard tasks[session.sessionID]?.attached != true else { return }
         var snapshot = activityDirectory.map { SessionActivityStore.read(directory: $0, provider: session.provider, id: session.sessionID) } ?? .init()
         if snapshot.records.isEmpty { snapshot = await SessionActivityHistory.read(session) }
         // App Server saved-history plans and collaboration items retain their native type.

@@ -19,9 +19,10 @@ struct WorkspaceDocument: Codable, Hashable, Identifiable {
     var title: String { URL(fileURLWithPath: path).lastPathComponent + (changeScope == nil ? "" : " · Diff") }
 }
 enum WorkspaceTab: Codable, Equatable {
-    case conversation, activity, html, context, pullRequests, document(WorkspaceDocument)
+    case workspace, conversation, activity, html, context, pullRequests, document(WorkspaceDocument)
     var title: String {
         switch self {
+        case .workspace: "Workspace"
         case .conversation: "Conversation"
         case .activity: "Activity"
         case .html: "HTML view"
@@ -152,6 +153,7 @@ struct WorkspaceTabButton: View {
 extension LibraryModel {
     func navigate(_ destination: WorkspaceDestination, record: Bool = true) {
         if record { navigation.visit(destination) }
+        viewMode = .workspace
         switch destination {
         case .home: projects.selectedID = nil; selectedID = nil
         case .imported(let session):
@@ -159,6 +161,7 @@ extension LibraryModel {
             selectedFolderID = sessions.first(where: { $0.id == session }).flatMap { WorkingFolder.group([$0]).first?.id }
             selectedID = session
         case .project(let id, let session):
+            navigation.tabs[id + ":" + (session ?? "draft")] = .workspace
             guard projects.projects.contains(where: { $0.id == id }) else { navigate(.home); return }
             projects.selectedID = id
             projects.update(id) {

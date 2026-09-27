@@ -89,6 +89,12 @@ public actor AgentExecutionTransport: ExecutionTransport {
         }
         if method == "collaborationMode/list", !codexConnected { return .object(["data": .array([.object(["mode": .string("default")]), .object(["mode": .string("plan")])])]) }
         let id = params["threadId"].string ?? ""
+        if method == "diorama/capabilities" {
+            guard params["dioramaProvider"].string == Provider.claude.rawValue, let transport = claude[id] else {
+                return .object([:]) // Local metadata only. Never attach or resume to browse.
+            }
+            return try await transport.request(method, params)
+        }
         if method == "thread/start", params["model"].string?.hasPrefix("claude/") == true {
             guard !catalog.isEmpty else { throw ExecutionRPCRejection(claudeError ?? "Connect Claude in Settings") }
             let newID = UUID().uuidString.lowercased()

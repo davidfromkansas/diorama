@@ -43,11 +43,13 @@ final class ProjectModel {
         body(&projects[i]); save()
     }
     func add(_ project: DioramaProject) {
-        if let existing = projects.first(where: { $0.commonDirectory == project.commonDirectory }) { selectedID = existing.id; return }
+        if let existing = projects.first(where: {
+            $0.folderIdentity == project.folderIdentity || ($0.isGitBacked && project.isGitBacked && $0.commonDirectory == project.commonDirectory)
+        }) { selectedID = existing.id; return }
         projects.append(project); selectedID = project.id; save()
     }
     func sessions(_ project: DioramaProject, library: LibraryModel) -> [Session] {
-        let paths = Set([project.folder] + project.workspaces.map(\.folder))
+        let paths = Set(([project.folder] + project.workspaces.map(\.folder)).map { URL(fileURLWithPath: $0).standardizedFileURL.resolvingSymlinksInPath().path })
         let ids = Set(project.workspaces.compactMap(\.threadID))
         let revision = library.sessionsRevision
         if let cached = sessionCache[project.id], cached.libraryID == ObjectIdentifier(library),
@@ -56,7 +58,7 @@ final class ProjectModel {
             return cached.sessions
         }
         let knownAssociations = associations
-        let rows = library.sessions.filter { ids.contains($0.sessionID) || paths.contains($0.project) || knownAssociations[$0.project] == project.commonDirectory }
+        let rows = library.sessions.filter { ids.contains($0.sessionID) || paths.contains(URL(fileURLWithPath: $0.project).standardizedFileURL.resolvingSymlinksInPath().path) || (project.isGitBacked && knownAssociations[$0.project] == project.commonDirectory) }
         sessionCache[project.id] = ProjectSessionCache(libraryID: ObjectIdentifier(library), sessionsRevision: revision,
             associationsRevision: associationsRevision, commonDirectory: project.commonDirectory, paths: paths, threadIDs: ids, sessions: rows)
         return rows
@@ -70,6 +72,7 @@ final class ProjectModel {
     }
     func prepare(projectID: String, base: String, cached: Bool, options: SessionStartOptions? = nil, switchConfirmed: Bool = false, activeFolders: Set<String> = []) async throws -> ProjectWorkspace {
         guard let initial = projects.first(where: { $0.id == projectID }) else { throw AppServerFailure("Project unavailable") }
+        guard initial.isGitBacked else { throw AppServerFailure("Starting sessions in Diorama requires Git. You can still view externally started sessions.") }
         let id = initial.pendingWorkspace ?? UUID().uuidString
         update(projectID) { $0.pendingWorkspace = id }
         try checkpoint()
@@ -140,9 +143,19 @@ struct ProjectsRootView: View {
         .onChange(of: library.showNewTask) {
             if library.showNewTask {
                 library.showNewTask = false
-                if let id = projects.selected?.id { projects.update(id) { $0.section = "Sessions"; $0.selectedSession = nil } }
+                if let id = projects.selected?.id { library.navigate(.project(id, nil)) }
                 else { library.navigation.searchPresented = false; addMode = "Choose Project" }
                 library.selectedID = nil
+            }
+        }
+        .onReceive(NotificationCenter.default.publisher(for: NSApplication.didBecomeActiveNotification)) { _ in
+            if !library.paused { Task { await library.readSelected() } }
+        }
+        .task(id: library.selectedID) {
+            guard library.selectedID != nil else { return }
+            while !Task.isCancelled {
+                if !library.paused { await library.readSelected() }
+                do { try await Task.sleep(for: .seconds(2)) } catch { return }
             }
         }
         .task {
@@ -159,7 +172,7 @@ struct ProjectsRootView: View {
             let panel = NSOpenPanel(); panel.canChooseDirectories = true; panel.canChooseFiles = false
             panel.begin { response in
                 if response == .OK, let url = panel.url {
-                    Task { do { projects.add(try await ProjectGit.discover(url.path)); addMode = nil } catch { projects.error = error.localizedDescription } }
+                    Task { do { projects.add(try await ProjectFolder.open(url.path)); addMode = nil } catch { projects.error = error.localizedDescription } }
                 }
             }
         }
@@ -302,6 +315,10 @@ struct ProjectDetailView: View {
             HStack {
                 Image(systemName: "folder").foregroundStyle(DioramaStyle.accent)
                 Text(project.name).font(.system(size: 12, weight: .medium)).lineLimit(1)
+                if !project.isGitBacked {
+                    Text("No Git detected").font(.caption).foregroundStyle(.secondary)
+                        .help("You can still view conversations, agents, and files. Git features are unavailable.")
+                }
                 if let session = library.sessions.first(where: { $0.id == project.selectedSession }) {
                     Image(systemName: "chevron.right").font(.system(size: 9)).foregroundStyle(.tertiary)
                     Text(markdownTitle(session.title)).font(.system(size: 12)).foregroundStyle(.secondary).lineLimit(1)
@@ -314,7 +331,7 @@ struct ProjectDetailView: View {
                 }
                 Menu {
                     Button("Shared context") { section.wrappedValue = "Context" }
-                    Button("Pull Requests") { section.wrappedValue = "Pull Requests" }
+                    Button("Pull Requests") { section.wrappedValue = "Pull Requests" }.disabled(!project.isGitBacked)
                     Button("Files") { section.wrappedValue = "Files" }
                     if let session = library.sessions.first(where: { $0.id == project.selectedSession }),
                        let work = project.workspaces.first(where: { $0.threadID == session.sessionID }) {
@@ -323,7 +340,7 @@ struct ProjectDetailView: View {
                         Text("Base: " + String(work.baseCommit.prefix(10)))
                         Button("View session context") { contextSnapshot = work.context }
                         Button("Reveal worktree") { NSWorkspace.shared.open(URL(fileURLWithPath: work.folder)) }
-                        if let source = work.linkedFrom { Button("Open original session") { projects.update(projectID) { $0.selectedSession = source }; library.selectedID = source } }
+                        if let source = work.linkedFrom { Button("Open original session") { library.navigate(.project(projectID, source)) } }
                         if session.archived, !work.cleaned, work.isManagedWorktree { Button("Clean up worktree…") { cleanup(work) } }
                     }
                     Divider()
@@ -334,15 +351,17 @@ struct ProjectDetailView: View {
                         Button("Open on GitHub") { NSWorkspace.shared.open(url) }
                     } else {
                         Text("Local only")
-                        Button("Publish to GitHub…") { publishSheet = true }
+                        Button("Publish to GitHub…") { publishSheet = true }.disabled(!project.isGitBacked)
                     }
                     Button("Locate folder…") { locate() }
-                    Button("Connect GitHub repository…") { remoteSheet = true }
+                    Button("Connect GitHub repository…") { remoteSheet = true }.disabled(!project.isGitBacked)
+                    if !project.isGitBacked { Text("Git features require a Git repository.") }
                     Divider()
                     Button("Remove from Diorama") { projects.projects.removeAll { $0.id == projectID }; projects.selectedID = nil; projects.save() }.disabled(projects.busy.contains(projectID))
                 } label: { Image(systemName: "ellipsis") }.menuStyle(.borderlessButton).fixedSize()
-                Button("New Session") { projects.update(projectID) { $0.section = "Sessions"; $0.selectedSession = nil }; library.selectedID = nil }
-                    .disabled(projects.busy.contains(projectID))
+                Button("New Session") { library.navigate(.project(projectID, nil)) }
+                    .disabled(projects.busy.contains(projectID) || !project.isGitBacked)
+                    .help(project.isGitBacked ? "Start a new session" : "Starting sessions in Diorama requires Git. External sessions remain viewable.")
             }.buttonStyle(.borderless).padding(.horizontal, 16).frame(height: 38).background(DioramaStyle.sidebar)
             Divider()
             ProjectWorkbench(projectID: projectID, library: library)
@@ -396,8 +415,8 @@ struct ProjectDetailView: View {
         let panel = NSOpenPanel(); panel.canChooseDirectories = true; panel.canChooseFiles = false
         panel.begin { response in
             if response == .OK, let url = panel.url { Task { do {
-                let found = try await ProjectGit.discover(url.path)
-                projects.update(projectID) { $0.folder = found.folder; $0.commonDirectory = found.commonDirectory }
+                let found = try await ProjectFolder.open(url.path)
+                projects.update(projectID) { $0.folder = found.folder; $0.commonDirectory = found.commonDirectory; $0.base = found.base; $0.remote = found.remote }
             } catch { projects.error = error.localizedDescription } } }
         }
     }

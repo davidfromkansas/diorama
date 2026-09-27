@@ -58,9 +58,21 @@ public struct ActivitySummary: Sendable {
     public var latestState: ActivityEvent? {
         var latest: ActivityEvent?
         var activeTurn: String?
-        for event in events where event.state != nil {
+        for event in events {
+            if event.state == nil {
+                if let request = latest, request.state?.needsAttention == true,
+                   let call = request.callID, event.callID == call,
+                   ["toolFinished", "toolFailed"].contains(event.kind) {
+                    var resolved = event; resolved.state = .working; latest = resolved
+                }
+                continue
+            }
             if event.kind == "started" { activeTurn = event.turnID }
-            if ["finished", "interrupted"].contains(event.kind), let activeTurn,
+            // Claude emits a generic permission notification for its question UI.
+            // Keep the more specific, still-unanswered AskUserQuestion evidence.
+            if event.state == .approval, event.callID == nil, event.tool == nil,
+               latest?.state == .input, latest?.tool == "AskUserQuestion" { continue }
+            if event.kind != "started", let activeTurn,
                let turn = event.turnID, turn != activeTurn { continue }
             latest = event
         }
@@ -81,6 +93,8 @@ public struct ActivitySummary: Sendable {
                    ["toolFinished", "toolFailed"].contains(later.kind) { return true }
                 if let turn = request.turnID, later.turnID == turn,
                    ["finished", "interrupted"].contains(later.kind) { return true }
+                if request.turnID == nil, later.turnID == nil,
+                   ["finished", "interrupted", "started"].contains(later.kind) { return true }
                 return false
             }
         }
@@ -132,22 +146,40 @@ public enum ActivityParser {
             let call = p["call_id"] as? String
             if ["function_call", "custom_tool_call"].contains(type) {
                 let args = (p["arguments"] as? String).flatMap { try? JSONSerialization.jsonObject(with: Data($0.utf8)) } as? [String: Any]
-                return [event("toolStarted", call: call, tool: p["name"] as? String, detail: clipped(args?["command"] ?? args?["cmd"] ?? args?["file_path"]), turn: turn)]
+                return [event("toolStarted", .working, call: call, tool: p["name"] as? String, detail: clipped(args?["command"] ?? args?["cmd"] ?? args?["file_path"]), turn: turn)]
             }
             if ["function_call_output", "custom_tool_call_output"].contains(type) { return [event("toolFinished", call: call, turn: turn)] }
-        } else if let message = r["message"] as? [String: Any], let blocks = message["content"] as? [[String: Any]] {
-            return blocks.enumerated().compactMap { index, block in
+        } else if let message = r["message"] as? [String: Any] {
+            let blocks = message["content"] as? [[String: Any]] ?? []
+            var events: [ActivityEvent] = []
+            // Claude persists cancellation as a synthetic user message. Do not
+            // mistake its exact sentinel for a newly submitted prompt.
+            let interruptionMarkers: Set<String> = ["[Request interrupted by user]", "[Request interrupted by user for tool use]"]
+            let soleText = (message["content"] as? String) ?? (blocks.count == 1 && blocks[0]["type"] as? String == "text" ? blocks[0]["text"] as? String : nil)
+            if r["type"] as? String == "user", let soleText, interruptionMarkers.contains(soleText) {
+                return [event("interrupted", .interrupted)]
+            }
+            if r["type"] as? String == "user", r["isMeta"] as? Bool != true,
+               !blocks.contains(where: { $0["type"] as? String == "tool_result" }),
+               message["content"] is String || blocks.contains(where: { $0["type"] as? String == "text" }) {
+                events.append(event("started", .working))
+            }
+            events += blocks.enumerated().compactMap { index, block in
                 var result: ActivityEvent
                 switch block["type"] as? String {
                 case "tool_use":
                     let args = block["input"] as? [String: Any]
-                    result = event("toolStarted", call: block["id"] as? String, tool: block["name"] as? String, detail: clipped(args?["command"] ?? args?["file_path"]))
+                    result = event("toolStarted", block["name"] as? String == "AskUserQuestion" ? .input : .working, call: block["id"] as? String, tool: block["name"] as? String, detail: clipped(args?["command"] ?? args?["file_path"]))
                 case "tool_result":
                     result = event(block["is_error"] as? Bool == true ? "toolFailed" : "toolFinished", call: block["tool_use_id"] as? String)
                 default: return nil
                 }
                 result.id = id + ":\(index)"; return result
             }
+            if r["type"] as? String == "assistant", message["stop_reason"] as? String == "end_turn" {
+                events.append(event("finished", .finished))
+            }
+            return events
         }
         return []
     }
@@ -207,7 +239,7 @@ public actor ActivityLibrary {
     }
     private var cursors: [URL: Cursor] = [:]
     public init() {}
-    public func scan(_ sessions: [Session], hookDirectory: URL? = HookStore.directory) -> [String: ActivitySummary] {
+    public func scan(_ sessions: [Session], hookDirectory: URL? = HookStore.directory, retainingOtherCursors: Bool = false) -> [String: ActivitySummary] {
         var result: [String: ActivitySummary] = [:]
         let hooks = hookDirectory.map { HookStore.read(directory: $0) } ?? []
         for session in sessions {
@@ -288,7 +320,14 @@ public actor ActivityLibrary {
                 result[session.id] = .merged(c.events + scoped)
             } catch { result[session.id] = .merged((cursors[url]?.events ?? []) + scoped, error: error.localizedDescription) }
         }
-        let urls = Set(sessions.compactMap(\.url)); cursors = cursors.filter { urls.contains($0.key) }
+        let urls = Set(sessions.compactMap(\.url))
+        if retainingOtherCursors {
+            // A selected parent and its children are read separately. Preserve their
+            // lifecycle baseline instead of repeatedly bootstrapping a short tail.
+            for key in cursors.keys.filter({ !urls.contains($0) }).sorted(by: { $0.path < $1.path }).prefix(max(0, cursors.count - 24)) {
+                cursors.removeValue(forKey: key)
+            }
+        } else { cursors = cursors.filter { urls.contains($0.key) } }
         return result
     }
 }

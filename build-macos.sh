@@ -2,13 +2,27 @@
 set -eu
 cd "${0:A:h}"
 build_path="${DIORAMA_BUILD_PATH:-$PWD/.build}"
-swift build -c release --scratch-path "$build_path"
+configuration="${DIORAMA_BUILD_CONFIGURATION:-release}"
+[[ "$configuration" == "debug" || "$configuration" == "release" ]] || { echo "Invalid build configuration" >&2; exit 1; }
+swift build -c "$configuration" --scratch-path "$build_path"
 app_path="${DIORAMA_APP_PATH:-$PWD/dist/Diorama.app}"
 mkdir -p "$app_path/Contents/MacOS"
-cp "$build_path/release/Diorama" "$app_path/Contents/MacOS/Diorama"
-cp "$build_path/release/DioramaReporter" "$app_path/Contents/MacOS/DioramaReporter"
+cp "$build_path/$configuration/Diorama" "$app_path/Contents/MacOS/Diorama"
+cp "$build_path/$configuration/DioramaReporter" "$app_path/Contents/MacOS/DioramaReporter"
 codesign --force --sign - "$app_path/Contents/MacOS/DioramaReporter"
-./scripts/package-claude-helper.sh "$app_path"
+mkdir -p "$app_path/Contents/Resources"
+for resource_bundle in "$build_path/$configuration/"*.bundle(N); do
+  /usr/bin/ditto "$resource_bundle" "$app_path/Contents/Resources/${resource_bundle:t}"
+done
+helper_source="${DIORAMA_REUSE_HELPER_FROM:-}"
+helper_stamp=$(shasum helpers/claude/{index,bridge,history,history-format}.mjs helpers/claude/package{,-lock}.json scripts/package-claude-helper.sh)
+if [[ -n "$helper_source" && -x "$helper_source/node" && -f "$helper_source/source.sha1" &&
+      "$(cat "$helper_source/source.sha1")" == "$helper_stamp" ]]; then
+  /usr/bin/ditto "$helper_source" "$app_path/Contents/Resources/ClaudeHelper"
+else
+  ./scripts/package-claude-helper.sh "$app_path"
+fi
+printf '%s\n' "$helper_stamp" > "$app_path/Contents/Resources/ClaudeHelper/source.sha1"
 mkdir -p "$app_path/Contents/Resources/Licenses"
 cp -f "$build_path/checkouts/swift-markdown-ui/LICENSE" "$app_path/Contents/Resources/Licenses/MarkdownUI.txt"
 cp -f "$build_path/checkouts/NetworkImage/LICENSE" "$app_path/Contents/Resources/Licenses/NetworkImage.txt"
@@ -29,6 +43,13 @@ cat > "$app_path/Contents/Info.plist" <<'PLIST'
 <key>NSHighResolutionCapable</key><true/>
 </dict></plist>
 PLIST
+# Opt-in source watching is restricted to this local development build.
+if [[ -n "${DIORAMA_DEVELOPMENT_ROOT:-}" ]]; then
+  printf '%s\n' "$DIORAMA_DEVELOPMENT_ROOT" > "$app_path/Contents/Resources/DevelopmentRoot.txt"
+  touch "$app_path/Contents/Resources/DevelopmentBuildDate.txt"
+else
+  rm -f "$app_path/Contents/Resources/DevelopmentRoot.txt" "$app_path/Contents/Resources/DevelopmentBuildDate.txt"
+fi
 # Generated bundles inside synced folders can acquire Finder/file-provider metadata.
 # Strip extended attributes from this build output before signing (never source files).
 xattr -cr "$app_path"

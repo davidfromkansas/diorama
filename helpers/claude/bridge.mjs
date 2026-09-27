@@ -13,7 +13,7 @@ export async function serve({ sdkQuery = query, input = process.stdin, output = 
   const value = name => { const i = argv.indexOf(name); return i < 0 ? undefined : argv[i + 1]; };
   const sessionId = value('--session-id'), resume = value('--resume'), append = value('--append-system-prompt');
   const queue = [], approvals = new Map();
-  let wake, closed = false, q, ready = false;
+  let wake, closed = false, q, ready = false, runtimeMetadata = {};
   const emit = event => { if (!closed) output.write(JSON.stringify(event) + '\n'); };
   async function* prompts() {
     while (!closed) {
@@ -60,10 +60,23 @@ export async function serve({ sdkQuery = query, input = process.stdin, output = 
           if (!subscriptionAccount(response.account)) throw Error('Claude subscription authentication required. No prompt was sent.');
           ready = true;
           // Consume continuously, including while waiting on approvals and subsequent user input.
-          void (async () => { try { for await (const message of q) emit(message); } catch (error) {
+          void (async () => { try { for await (const message of q) {
+            if (message.type === 'system' && message.subtype === 'init') runtimeMetadata = message;
+            emit(message);
+          } } catch (error) {
             emit({ type: 'result', subtype: 'error_during_execution', is_error: true, errors: [String(error)] }); close();
           } })();
           break;
+        case 'capability_discovery': {
+          if (!ready) throw Error('Not initialized');
+          const sections = await Promise.allSettled([q.supportedCommands(), q.mcpServerStatus()]);
+          response = { commands: [], servers: [], skills: runtimeMetadata.skills ?? [], tools: runtimeMetadata.tools ?? [], plugins: runtimeMetadata.plugins ?? [], errors: {} };
+          for (const [index, key] of ['commands', 'servers'].entries()) {
+            if (sections[index].status === 'fulfilled') response[key] = sections[index].value;
+            else response.errors[key] = String(sections[index].reason);
+          }
+          break;
+        }
         case 'set_model': if (!ready) throw Error('Not initialized'); await q.setModel(r.model); break;
         case 'set_permission_mode': if (!ready) throw Error('Not initialized'); await q.setPermissionMode(r.mode); break;
         case 'interrupt': if (!ready) throw Error('Not initialized'); response = await q.interrupt() ?? {}; break;

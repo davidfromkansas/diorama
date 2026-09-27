@@ -74,10 +74,14 @@ public actor AppServerConnection: AppServerReading {
         nextID += 1; let id = nextID
         try send(["id": id, "method": method, "params": params])
         let deadline = Date().addingTimeInterval(timeout)
+        var scannedBytes = 0
+        var bytes = [UInt8](repeating: 0, count: 65536)
         while Date() < deadline {
             try Task.checkCancellation()
-            while let end = buffer.firstIndex(of: 10) {
+            while let offset = buffer.newlineOffset(startingAt: scannedBytes) {
+                let end = buffer.index(buffer.startIndex, offsetBy: offset)
                 let line = Data(buffer.prefix(upTo: end)); buffer.removeSubrange(...end)
+                scannedBytes = 0
                 guard let object = try JSONSerialization.jsonObject(with: line) as? [String: Any] else { continue }
                 if object["method"] != nil {
                     // A history-only client never executes a tool or grants an approval.
@@ -91,12 +95,12 @@ public actor AppServerConnection: AppServerReading {
                 guard let result = object["result"] else { throw AppServerFailure("Missing App Server result") }
                 return try JSONSerialization.data(withJSONObject: result)
             }
+            scannedBytes = buffer.count
             guard let output else { throw AppServerFailure("App Server disconnected") }
             var descriptor = pollfd(fd: output.fileDescriptor, events: Int16(POLLIN), revents: 0)
             let ready = poll(&descriptor, 1, 100)
             if ready < 0 && errno != EINTR { throw AppServerFailure("App Server pipe error") }
             if ready > 0 {
-                var bytes = [UInt8](repeating: 0, count: 65536)
                 let count = Darwin.read(output.fileDescriptor, &bytes, bytes.count)
                 if count == 0 { throw AppServerFailure("App Server exited") }
                 if count > 0 { buffer.append(contentsOf: bytes.prefix(count)) }
@@ -159,18 +163,27 @@ public enum AppServerHistory {
             }
             let turnID = turn["id"] as? String ?? "turn"
             let timestamp = (turn["startedAt"] as? Double).map { "Turn started " + ISO8601DateFormatter().string(from: Date(timeIntervalSince1970: $0)) }
-            for (index, item) in items.enumerated() {
+            for (index, originalItem) in items.enumerated() {
+                let normalized = CodexOutputEvidence.canonical(CodexOutputEvidence.wire(originalItem), cwd: thread["cwd"] as? String)
+                let item = try JSONSerialization.jsonObject(with: JSONEncoder().encode(normalized)) as? [String: Any] ?? originalItem
+                var partIndex = 0
                 let key = turnID + ":" + (item["id"] as? String ?? String(index))
                 func append(_ kind: String, _ text: String, image: TranscriptImage? = nil) {
-                    if !text.isEmpty { result.entries.append(Entry(id: key + ":\(result.entries.count)", kind: kind, text: text, timestamp: timestamp, image: image, tool: (try? JSONDecoder().decode(WireValue.self, from: JSONSerialization.data(withJSONObject: item))).flatMap(ToolResult.init), turnID: turnID, providerItemID: item["id"] as? String)) }
+                    defer { partIndex += 1 }
+                    if !text.isEmpty { result.entries.append(Entry(id: key + ":\(partIndex)", kind: kind, text: text, timestamp: timestamp, image: image, tool: (try? JSONDecoder().decode(WireValue.self, from: JSONSerialization.data(withJSONObject: item))).flatMap(ToolResult.init), turnID: turnID, providerItemID: item["id"] as? String)) }
                 }
                 switch item["type"] as? String {
                 case "userMessage":
                     let content = (item["content"] as? [[String: Any]] ?? []).compactMap { block -> String? in
-                        if block["type"] as? String == "text" { return block["text"] as? String }
+                        if (block["type"] as? String)?.lowercased() == "text" { return block["text"] as? String }
                         return "[\(block["type"] as? String ?? "attachment") attachment]"
                     }.joined(separator: "\n")
                     for part in MessageContent.split(content, provider: .codex) { append(part.context ? "System context" : "You", part.text) }
+                    let media = normalized["content"].array.filter { $0["type"].string?.lowercased() != "text" }
+                    if !media.isEmpty {
+                        append("Tool activity", "User attachments")
+                        result.entries[result.entries.count - 1].tool = ToolResult(item: .object(["type": .string("functionCallOutput"), "name": .string("User attachments"), "id": .string(key + ":attachments"), "output": .array(media)]))
+                    }
                 case "agentMessage": append("Assistant", item["text"] as? String ?? "")
                 case "plan": append("Proposed plan", item["text"] as? String ?? "")
                 case "hookPrompt": append("System context", formatted(item))
@@ -181,8 +194,16 @@ public enum AppServerHistory {
                 case "contextCompaction": append("Event", "Conversation compacted")
                 case "enteredReviewMode", "exitedReviewMode": append("Event", item["type"] as? String ?? "Review")
                 case "reasoning": break // Preserve the existing boundary: no reasoning records.
-                default: throw AppServerFailure("App Server returned an unsupported history item")
+                default:
+                    let type = item["type"] as? String ?? "unknown"
+                    result.unrecognizedTypes["item/" + String(type.prefix(100)), default: 0] += 1
+                    append("Event", "Unrecognized Codex item · " + String(type.prefix(100)))
+                    result.entries[result.entries.count - 1].codex = .init(category: "unknown", title: "Unrecognized event · " + String(type.prefix(100)), evidence: CodexOutputEvidence.safeDetails(normalized))
                 }
+            }
+            // Retain Codex presentation independently of other providers.
+            for index in result.entries.indices where result.entries[index].codex == nil {
+                if let tool = result.entries[index].tool { result.entries[index].codex = .tool(tool) }
             }
             // Status here describes a persisted turn, never the independent server's runtime status.
             switch turn["status"] as? String {
@@ -197,9 +218,9 @@ public enum AppServerHistory {
         return result
     }
     private static func formatted(_ item: [String: Any]) -> String {
-        guard let data = try? JSONSerialization.data(withJSONObject: item, options: [.prettyPrinted, .sortedKeys]) else { return "Unavailable tool details" }
+        guard JSONSerialization.isValidJSONObject(item) else { return "Unavailable tool details" }
         let label = item["command"] as? String ?? item["tool"] as? String ?? item["type"] as? String ?? "Tool activity"
-        return label + "\n\n```json\n" + String(decoding: data, as: UTF8.self) + "\n```"
+        return label + "\n\n```json\n" + CodexOutputEvidence.safeDetails(CodexOutputEvidence.wire(item)).pretty + "\n```"
     }
 }
 
