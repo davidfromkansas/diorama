@@ -1,0 +1,62 @@
+
+> diorama-claude-helper@1.0.0 test
+> node --test bridge.test.mjs
+
+TAP version 13
+# Subtest: subscription gate rejects API credentials
+ok 1 - subscription gate rejects API credentials
+  ---
+  duration_ms: 0.539
+  type: 'test'
+  ...
+# Subtest: bridge keeps session, controls, approvals, child metadata and usage
+ok 2 - bridge keeps session, controls, approvals, child metadata and usage
+  ---
+  duration_ms: 45.912291
+  type: 'test'
+  ...
+# Subtest: initialization refuses API account before accepting prompts
+ok 3 - initialization refuses API account before accepting prompts
+  ---
+  duration_ms: 11.862667
+  type: 'test'
+  ...
+# Subtest: saved history accepts string or block content and excludes reasoning
+ok 4 - saved history accepts string or block content and excludes reasoning
+  ---
+  duration_ms: 0.347125
+  type: 'test'
+  ...
+# Subtest: capability discovery reads SDK state without sending prompts and preserves partial results
+ok 5 - capability discovery reads SDK state without sending prompts and preserves partial results
+  ---
+  duration_ms: 23.331042
+  type: 'test'
+  ...
+# Subtest: saved history preserves correlated tool evidence and rich results without reasoning
+ok 6 - saved history preserves correlated tool evidence and rich results without reasoning
+  ---
+  duration_ms: 0.193125
+  type: 'test'
+  ...
+# Subtest: history retains Claude event metadata and message usage without sending input
+ok 7 - history retains Claude event metadata and message usage without sending input
+  ---
+  duration_ms: 0.137458
+  type: 'test'
+  ...
+# Subtest: history retains cumulative saved cost-state and mode without reinterpreting them
+ok 8 - history retains cumulative saved cost-state and mode without reinterpreting them
+  ---
+  duration_ms: 0.168167
+  type: 'test'
+  ...
+1..8
+# tests 8
+# suites 0
+# pass 8
+# fail 0
+# cancelled 0
+# skipped 0
+# todo 0
+# duration_ms 182.870959

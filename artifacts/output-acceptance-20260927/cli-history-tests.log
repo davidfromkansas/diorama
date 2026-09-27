@@ -1,0 +1,25 @@
+[0/1] Planning build
+Building for debugging...
+[0/8] Write sources
+[1/8] Write swift-version--58304C5D6DBC2206.txt
+[3/6] Emitting module DioramaCoreTests
+[4/6] Compiling DioramaCoreTests LiveOutputAcceptanceTests.swift
+[4/6] Write Objects.LinkFileList
+[5/6] Linking DioramaPackageTests
+Build complete! (4.05s)
+Test Suite 'Selected tests' started at 2026-09-27 11:37:18.947.
+Test Suite 'DioramaPackageTests.xctest' started at 2026-09-27 11:37:18.949.
+Test Suite 'DioramaPackageTests.xctest' passed at 2026-09-27 11:37:18.949.
+	 Executed 0 tests, with 0 failures (0 unexpected) in 0.000 (0.000) seconds
+Test Suite 'Selected tests' passed at 2026-09-27 11:37:18.949.
+	 Executed 0 tests, with 0 failures (0 unexpected) in 0.000 (0.002) seconds
+◇ Test run started.
+↳ Testing Library Version: 1743
+↳ Target Platform: arm64e-apple-macos14.0
+◇ Suite LiveOutputAcceptanceTests started.
+◇ Test claudeThreeTurnsRetainToolsFilesAndSessionMetrics() started.
+✔ Test claudeThreeTurnsRetainToolsFilesAndSessionMetrics() passed after 5.925 seconds.
+◇ Test codexThreeTurnsRetainNativeCommandsAndFiles() started.
+✔ Test codexThreeTurnsRetainNativeCommandsAndFiles() passed after 5.464 seconds.
+✔ Suite LiveOutputAcceptanceTests passed after 11.389 seconds.
+✔ Test run with 2 tests in 1 suite passed after 11.389 seconds.

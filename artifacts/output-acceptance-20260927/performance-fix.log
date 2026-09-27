@@ -1,0 +1,60 @@
+Building for debugging...
+[0/7] Write sources
+[1/7] Write swift-version--58304C5D6DBC2206.txt
+[3/9] Emitting module DioramaCore
+[4/9] Compiling DioramaCore TranscriptSource.swift
+[5/22] Compiling DioramaCore DioramaConversation.swift
+[6/22] Compiling DioramaCore SessionLibrary.swift
+[7/22] Compiling DioramaCore ProviderSwitch.swift
+[8/22] Compiling DioramaCore CapabilityLibrary.swift
+[9/22] Compiling DioramaCore OutgoingMessage.swift
+[10/22] Compiling DioramaCore ClaudeRuntime.swift
+[11/22] Compiling DioramaCore Presentation.swift
+[12/22] Compiling DioramaCore ClaudeNormalizer.swift
+[13/22] Compiling DioramaCore WorkflowFeatures.swift
+[14/22] Compiling DioramaCore CodexTranscriptNormalizer.swift
+[15/22] Compiling DioramaCore ExternalObservation.swift
+[16/22] Compiling DioramaCore ExecutionController.swift
+[17/22] Compiling DioramaCore AppServerHistory.swift
+[18/30] Emitting module DioramaReporter
+[18/30] Write Objects.LinkFileList
+[19/30] Linking DioramaReporter
+[20/30] Applying DioramaReporter
+[22/30] Compiling DioramaCoreTests LiveOutputAcceptanceTests.swift
+[23/30] Compiling DioramaCoreTests DeepProviderOutputsTests.swift
+[24/30] Emitting module DioramaCoreTests
+[25/30] Emitting module DioramaApp
+[26/30] Compiling DioramaApp DioramaApp.swift
+[27/30] Compiling DioramaApp CodexEntryView.swift
+[27/32] Write Objects.LinkFileList
+[28/32] Linking Diorama
+[29/32] Applying Diorama
+[31/33] Emitting module DioramaRenderingTests
+[31/33] Write Objects.LinkFileList
+[32/33] Linking DioramaPackageTests
+Build complete! (11.39s)
+Test Suite 'Selected tests' started at 2026-09-27 11:45:54.601.
+Test Suite 'DioramaPackageTests.xctest' started at 2026-09-27 11:45:54.602.
+Test Suite 'DioramaPackageTests.xctest' passed at 2026-09-27 11:45:54.602.
+	 Executed 0 tests, with 0 failures (0 unexpected) in 0.000 (0.000) seconds
+Test Suite 'Selected tests' passed at 2026-09-27 11:45:54.602.
+	 Executed 0 tests, with 0 failures (0 unexpected) in 0.000 (0.001) seconds
+◇ Test run started.
+↳ Testing Library Version: 1743
+↳ Target Platform: arm64e-apple-macos14.0
+◇ Suite SourceRecordTests started.
+◇ Test passiveObserverRetainsLoadableSourceAcrossAppends(_:) started.
+◇ Test case passing 1 argument provider → .codex to passiveObserverRetainsLoadableSourceAcrossAppends(_:) started.
+◇ Test case passing 1 argument provider → .claude to passiveObserverRetainsLoadableSourceAcrossAppends(_:) started.
+✔ Test passiveObserverRetainsLoadableSourceAcrossAppends(_:) with 2 test cases passed after 0.006 seconds.
+◇ Test loadsMoreAndRejectsReplacedSource() started.
+✔ Test loadsMoreAndRejectsReplacedSource() passed after 0.001 seconds.
+◇ Test oldEntryDecodesWithoutNewProviderPayloads() started.
+✔ Test oldEntryDecodesWithoutNewProviderPayloads() passed after 0.001 seconds.
+✔ Suite SourceRecordTests passed after 0.007 seconds.
+◇ Suite ExternalObservationTests started.
+◇ Test largeHistoryAppendLatencyAndStableEntries() started.
+VIEWER_LONG_HISTORY append_max_ms=364.7819757461548
+✔ Test largeHistoryAppendLatencyAndStableEntries() passed after 2.512 seconds.
+✔ Suite ExternalObservationTests passed after 2.512 seconds.
+✔ Test run with 4 tests in 2 suites passed after 2.520 seconds.

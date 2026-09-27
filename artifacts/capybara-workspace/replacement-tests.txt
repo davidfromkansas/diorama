@@ -1,0 +1,63 @@
+Building for debugging...
+[0/6] Write swift-version--58304C5D6DBC2206.txt
+Build complete! (0.09s)
+Test Suite 'Selected tests' started at 2026-09-27 23:26:16.855.
+Test Suite 'DioramaPackageTests.xctest' started at 2026-09-27 23:26:16.856.
+Test Suite 'DioramaPackageTests.xctest' passed at 2026-09-27 23:26:16.856.
+	 Executed 0 tests, with 0 failures (0 unexpected) in 0.000 (0.000) seconds
+Test Suite 'Selected tests' passed at 2026-09-27 23:26:16.856.
+	 Executed 0 tests, with 0 failures (0 unexpected) in 0.000 (0.001) seconds
+◇ Test run started.
+↳ Testing Library Version: 1743
+↳ Target Platform: arm64e-apple-macos14.0
+◇ Suite WorkspaceAgentTests started.
+◇ Test draftAndExecutionPhases() started.
+✔ Test draftAndExecutionPhases() passed after 0.001 seconds.
+◇ Test freshnessAndUnknownStatusesNeverInventLiveWork() started.
+✔ Test freshnessAndUnknownStatusesNeverInventLiveWork() passed after 0.001 seconds.
+◇ Test resumedMainCanWorkWithoutAnimatingOldSubagentHistory() started.
+✔ Test resumedMainCanWorkWithoutAnimatingOldSubagentHistory() passed after 0.001 seconds.
+◇ Test ownershipProviderSegmentsAndBrokenParentage() started.
+✔ Test ownershipProviderSegmentsAndBrokenParentage() passed after 0.001 seconds.
+◇ Test rosterRetainsCompletedAgentsAndStopsMissingLiveOnes() started.
+✔ Test rosterRetainsCompletedAgentsAndStopsMissingLiveOnes() passed after 0.001 seconds.
+◇ Test providerEventsCreateUpdateAndFinishOneAgent() started.
+✔ Test providerEventsCreateUpdateAndFinishOneAgent() passed after 0.001 seconds.
+◇ Test conversationEventsDriveWorkspaceWithoutStartingWork() started.
+✔ Test conversationEventsDriveWorkspaceWithoutStartingWork() passed after 0.004 seconds.
+◇ Test selectionDetailsRenderAndUpdatesKeepTheNativeScene() started.
+✔ Test selectionDetailsRenderAndUpdatesKeepTheNativeScene() passed after 0.610 seconds.
+◇ Test nodesStayStableAndMotionStopsForFinishedHiddenAndReducedMotion() started.
+✔ Test nodesStayStableAndMotionStopsForFinishedHiddenAndReducedMotion() passed after 0.029 seconds.
+◇ Test growingTeamPreservesDesksAndCameraUntilResetAndCanHitTest() started.
+✔ Test growingTeamPreservesDesksAndCameraUntilResetAndCanHitTest() passed after 0.142 seconds.
+◇ Test renderAvatarFixtures() started.
+✔ Test renderAvatarFixtures() passed after 0.306 seconds.
+✔ Suite WorkspaceAgentTests passed after 1.096 seconds.
+◇ Suite WorkspaceCapybaraTests started.
+◇ Test nativeRigLoadsAndInstancesHaveIndependentBones() started.
+✔ Test nativeRigLoadsAndInstancesHaveIndependentBones() passed after 0.003 seconds.
+◇ Test routingAvoidsFurnitureAndRejectsBlockedTargets() started.
+✔ Test routingAvoidsFurnitureAndRejectsBlockedTargets() passed after 0.003 seconds.
+◇ Test nativeMovementArrivesWithoutCrossingFurniture() started.
+✔ Test nativeMovementArrivesWithoutCrossingFurniture() passed after 0.694 seconds.
+◇ Test labCanSuspendAndRestoreTheWorkspaceCamera() started.
+✔ Test labCanSuspendAndRestoreTheWorkspaceCamera() passed after 0.018 seconds.
+◇ Test renderMovementInsideWorkspace() started.
+✔ Test renderMovementInsideWorkspace() passed after 0.369 seconds.
+✔ Suite WorkspaceCapybaraTests passed after 1.089 seconds.
+◇ Suite WorkspaceMotionTests started.
+◇ Test attentionLabelsUseOnlyTheOwnersExplicitState() started.
+✔ Test attentionLabelsUseOnlyTheOwnersExplicitState() passed after 0.005 seconds.
+◇ Test repeatedUpdatesDoNotReplayAndInterruptionRemovesOldGestures() started.
+✔ Test repeatedUpdatesDoNotReplayAndInterruptionRemovesOldGestures() passed after 1.788 seconds.
+◇ Test terminalSnapshotsHistoryAndViewReentryStayStill() started.
+✔ Test terminalSnapshotsHistoryAndViewReentryStayStill() passed after 0.831 seconds.
+◇ Test rigMovesTheFaceWithTheHeadAndSupportsMissingAnchors() started.
+✔ Test rigMovesTheFaceWithTheHeadAndSupportsMissingAnchors() passed after 0.005 seconds.
+◇ Test renderLiveGestureFrames() started.
+✔ Test renderLiveGestureFrames() passed after 0.085 seconds.
+◇ Test renderStaticStatusPoses() started.
+✔ Test renderStaticStatusPoses() passed after 0.152 seconds.
+✔ Suite WorkspaceMotionTests passed after 2.868 seconds.
+✔ Test run with 22 tests in 3 suites passed after 5.053 seconds.

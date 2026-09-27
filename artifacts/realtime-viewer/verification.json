@@ -1,0 +1,281 @@
+{
+  "date": "2026-09-26",
+  "scope": "Read-only external viewing; source-client prompts run separately",
+  "cli_runs": {
+    "codex": [
+      {
+        "turn": 1,
+        "source_output_events": 16,
+        "event_types": {
+          "thread.started": 1,
+          "turn.started": 1,
+          "item.completed": 8,
+          "item.started": 5,
+          "turn.completed": 1
+        },
+        "completed": true
+      },
+      {
+        "turn": 2,
+        "source_output_events": 19,
+        "event_types": {
+          "thread.started": 1,
+          "turn.started": 1,
+          "item.completed": 11,
+          "item.started": 5,
+          "turn.completed": 1
+        },
+        "completed": true
+      },
+      {
+        "turn": 3,
+        "source_output_events": 21,
+        "event_types": {
+          "thread.started": 1,
+          "turn.started": 1,
+          "item.completed": 13,
+          "item.started": 5,
+          "turn.completed": 1
+        },
+        "completed": true
+      }
+    ],
+    "claude": [
+      {
+        "turn": 1,
+        "source_output_events": 26,
+        "event_types": {
+          "system": 11,
+          "assistant": 8,
+          "rate_limit_event": 1,
+          "user": 5,
+          "result": 1
+        },
+        "completed": true
+      },
+      {
+        "turn": 2,
+        "source_output_events": 25,
+        "event_types": {
+          "system": 11,
+          "assistant": 7,
+          "rate_limit_event": 1,
+          "user": 5,
+          "result": 1
+        },
+        "completed": true
+      },
+      {
+        "turn": 3,
+        "source_output_events": 22,
+        "event_types": {
+          "system": 9,
+          "assistant": 6,
+          "rate_limit_event": 1,
+          "user": 5,
+          "result": 1
+        },
+        "completed": true
+      }
+    ]
+  },
+  "desktop": {
+    "claude": {
+      "three_turn_markers_present": true,
+      "transcript_records": 163,
+      "subagent_files": 1,
+      "native_working_state_verified": true,
+      "native_subagent_done_verified": true
+    },
+    "codex": {
+      "status": "Not verified",
+      "reason": "Computer tool rejects access to com.openai.codex for safety reasons; no bypass attempted."
+    }
+  },
+  "Claude_version": "2.9939.2",
+  "ChatGPT_version": "26.917.62051",
+  "claude_desktop_observer_latency": {
+    "duration_seconds": 90,
+    "evidence_to_model": {
+      "count": 20,
+      "maximum_ms": 73.25184345245361,
+      "p95_ms": 73.25184345245361
+    },
+    "execution_requests": 0,
+    "notifications": 21,
+    "origin": "claudeDesktop",
+    "pixel_latency_measured": false,
+    "provider": "Claude Code",
+    "source_client_visible_time_measured": false,
+    "source_timestamp_to_model": {
+      "count": 20,
+      "maximum_ms": 2822.4329948425293,
+      "p95_ms": 2822.4329948425293
+    }
+  },
+  "codex_cli_observer_latency": {
+    "duration_seconds": 90,
+    "evidence_to_model": {
+      "count": 35,
+      "maximum_ms": 111.34302616119385,
+      "p95_ms": 111.34302616119385
+    },
+    "execution_requests": 0,
+    "notifications": 1,
+    "origin": "unknown",
+    "pixel_latency_measured": false,
+    "provider": "Codex",
+    "source_client_visible_time_measured": false,
+    "source_timestamp_to_model": {
+      "count": 35,
+      "maximum_ms": 58651.740074157715,
+      "p95_ms": 53952.73995399475
+    }
+  },
+  "codex_cli_realtime_result": "Degraded by provider: 35 entries persisted in one notification; source timestamp delay reached 58.7 seconds.",
+  "claude_cli_observer_latency": {
+    "duration_seconds": 90,
+    "evidence_to_model": {
+      "count": 37,
+      "maximum_ms": 32.17661380767822,
+      "p95_ms": 30.98165988922119
+    },
+    "execution_requests": 0,
+    "notifications": 30,
+    "origin": "unknown",
+    "pixel_latency_measured": false,
+    "provider": "Claude Code",
+    "source_client_visible_time_measured": false,
+    "source_timestamp_to_model": {
+      "count": 37,
+      "maximum_ms": 742.151141166687,
+      "p95_ms": 726.3480424880981
+    }
+  },
+  "swift_tests": {
+    "passed": 310,
+    "suites": 80
+  },
+  "claude_helper_tests": {
+    "passed": 5
+  },
+  "packaging": {
+    "path": "dist/Diorama-Realtime.app",
+    "codesign": "Passed after follow-up",
+    "bundled_usdz_count": 3,
+    "final_native_launch": "Passed: cancellation-fix build launched from /tmp/diorama-viewer-v5/Diorama.app; selected history restored and screenshot captured",
+    "prior_packaged_native_inspection": true,
+    "followup_app": "dist/Diorama-Realtime.app"
+  },
+  "claude_followup_2026_09_26": {
+    "desktop": {
+      "samples": 51,
+      "notifications": 42,
+      "timings": {
+        "source_timestamp_to_model_ms": {
+          "count": 51,
+          "p95": 2125.3631114959717,
+          "max": 2340.596914291382
+        },
+        "observer_received_at_to_model_ms": {
+          "count": 51,
+          "p95": 54.946184158325195,
+          "max": 67.02399253845215
+        },
+        "first_readable_after_to_model_ms": {
+          "count": 51,
+          "p95": 99.15399551391602,
+          "max": 108.88791084289551
+        },
+        "first_readable_by_to_model_ms": {
+          "count": 51,
+          "p95": 60.58788299560547,
+          "max": 77.25095748901367
+        }
+      },
+      "execution_requests": 0,
+      "visible_latency": "Not verified",
+      "three_turns_completed": true
+    },
+    "cli": {
+      "samples": 51,
+      "notifications": 48,
+      "timings": {
+        "source_timestamp_to_model_ms": {
+          "count": 51,
+          "p95": 868.7760829925537,
+          "max": 48396.98910713196
+        },
+        "observer_received_at_to_model_ms": {
+          "count": 51,
+          "p95": 28.754234313964844,
+          "max": 31.029939651489258
+        },
+        "first_readable_after_to_model_ms": {
+          "count": 51,
+          "p95": 56.19502067565918,
+          "max": 101.09400749206543
+        },
+        "first_readable_by_to_model_ms": {
+          "count": 51,
+          "p95": 25.47001838684082,
+          "max": 71.98190689086914
+        }
+      },
+      "execution_requests": 0,
+      "visible_latency": "Not verified",
+      "three_turns_completed": true
+    }
+  },
+  "followup_fixes": [
+    "Retain bounded parent/subagent activity cursors across separate reads",
+    "Recognize transcript AskUserQuestion input state and matched result resolution",
+    "Prefer specific input request over generic permission notification; clear unscoped requests on explicit endings",
+    "Track last successful synchronization independently of failed reads",
+    "Scan only newly received history-response bytes; reuse read buffer"
+  ],
+  "worktree_followup": {
+    "provider": "Claude Code CLI",
+    "local_project_association": "Passed",
+    "targeted_discovery": "Passed",
+    "history_without_observer_hook_reads": "Passed",
+    "tool_failure_and_completion_without_hooks": "Passed",
+    "execution_requests": 0,
+    "native_worktree_ui": "Not verified"
+  },
+  "native_followup": {
+    "standalone_app_launch": "Passed",
+    "desktop_three_turn_history": "Passed",
+    "source_answer_and_viewer_completion": "Passed",
+    "pixel_timing": "Not verified: stale handles and ScreenCaptureKit failure prevented reliable paired captures",
+    "cancellation": "Not verified: source harness blocked the bounded foreground sleep before execution"
+  },
+  "followup_swift_tests": {
+    "passed": 317,
+    "suites": 80
+  },
+  "followup_helper_tests": {
+    "passed": 5
+  },
+  "three_priorities_followup": {
+    "date": "2026-09-26",
+    "paired_pixel_timing": "Not verified: viewer capture recovered after obsolete copies closed; Claude Desktop input still failed with noWindowsAvailable",
+    "cli_real_cancellation": "Passed at observer level without hooks",
+    "cli_source_restart_recovery": "Passed at observer level without hooks",
+    "cli_pending_approval": "Passed with hooks; unavailable in transcript-only evidence",
+    "cli_source_only_one_time_grant_and_completion": "Passed at observer level",
+    "desktop_live_interruptions_and_recovery": "Not verified: native input did not take effect",
+    "timed_foreground_and_app_restart_during_work": "Not verified",
+    "fix": "Recognize exact Claude interruption sentinels and stop external scene animation",
+    "swift_tests": {
+      "passed": 321,
+      "suites": 80
+    },
+    "helper_tests": {
+      "passed": 5
+    },
+    "live_probe_checks_passed": 4,
+    "pixel_latency_measured": false,
+    "package": "Passed: build, deep/strict signature, three USDZ assets, standalone launch and restored-history screenshot"
+  }
+}

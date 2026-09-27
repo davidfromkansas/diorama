@@ -1,0 +1,21 @@
+{
+  "duration_seconds" : 300,
+  "evidence_to_model" : {
+
+  },
+  "execution_requests" : 0,
+  "notifications" : 0,
+  "observer_reads_hooks" : false,
+  "origin" : "claudeDesktop",
+  "pixel_latency_measured" : false,
+  "provider" : "Claude Code",
+  "readability_measurement" : "Independent 20ms sampling; intervals bound complete-entry readability. File mtime aggregate is a proxy, not first-evidence timing.",
+  "samples" : [
+
+  ],
+  "screen_measurement" : "visible_at\/source_visible_at require separately correlated screenshot or recording evidence; null is unmeasured.",
+  "source_client_visible_time_measured" : false,
+  "source_timestamp_to_model" : {
+
+  }
+}

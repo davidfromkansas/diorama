@@ -1,0 +1,116 @@
+{
+  "session_id": "b16c39aa-00a7-435e-bc44-965397658638",
+  "started_at": 1790431842.034784,
+  "sigint_at": 1790431849.445389,
+  "exit_code": 0,
+  "events": [
+    {
+      "received_at": 1790431844.149853,
+      "type": "system",
+      "subtype": "hook_started",
+      "tools": []
+    },
+    {
+      "received_at": 1790431844.149869,
+      "type": "system",
+      "subtype": "hook_started",
+      "tools": []
+    },
+    {
+      "received_at": 1790431844.149921,
+      "type": "system",
+      "subtype": "hook_started",
+      "tools": []
+    },
+    {
+      "received_at": 1790431844.1499362,
+      "type": "system",
+      "subtype": "hook_started",
+      "tools": []
+    },
+    {
+      "received_at": 1790431844.1651998,
+      "type": "system",
+      "subtype": "hook_response",
+      "tools": []
+    },
+    {
+      "received_at": 1790431844.165555,
+      "type": "system",
+      "subtype": "hook_response",
+      "tools": []
+    },
+    {
+      "received_at": 1790431844.1655638,
+      "type": "system",
+      "subtype": "hook_response",
+      "tools": []
+    },
+    {
+      "received_at": 1790431844.1655848,
+      "type": "system",
+      "subtype": "hook_response",
+      "tools": []
+    },
+    {
+      "received_at": 1790431846.2105339,
+      "type": "system",
+      "subtype": "init",
+      "tools": []
+    },
+    {
+      "received_at": 1790431848.631501,
+      "type": "assistant",
+      "subtype": null,
+      "tools": []
+    },
+    {
+      "received_at": 1790431849.445388,
+      "type": "assistant",
+      "subtype": null,
+      "tools": [
+        "Bash"
+      ]
+    },
+    {
+      "received_at": 1790431849.445937,
+      "type": "rate_limit_event",
+      "subtype": null,
+      "tools": []
+    },
+    {
+      "received_at": 1790431849.46401,
+      "type": "user",
+      "subtype": null,
+      "tools": []
+    },
+    {
+      "received_at": 1790431849.464015,
+      "type": "user",
+      "subtype": null,
+      "tools": []
+    },
+    {
+      "received_at": 1790431849.466798,
+      "type": "result",
+      "subtype": "error_during_execution",
+      "tools": []
+    }
+  ],
+  "ended_at": 1790431850.4511528,
+  "date": "2026-09-26",
+  "client": "Claude Code CLI 2.1.282",
+  "scope": "Owned source CLI interrupted with SIGINT; Diorama observes read-only",
+  "cancellation_observer_without_hooks": "Passed",
+  "source_cli_restart_and_recovery": "Passed",
+  "scene_regression": "Passed",
+  "pixel_latency_measured": false,
+  "approval": {
+    "session_id": "e527bf7f-0c61-4d81-a4a2-df8f415d68e0",
+    "pending_with_hooks": "Passed",
+    "pending_without_hooks": "Working; transcript does not expose pending Bash permission",
+    "one_time_grant_in_source_cli": "Passed",
+    "completion_and_attention_cleared": "Passed",
+    "persistent_permission_grant": false
+  }
+}
