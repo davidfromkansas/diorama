@@ -1,0 +1,15 @@
+{
+  "date": "2026-09-28",
+  "provider": "Claude Code Desktop",
+  "session_id": "e0cd3e9c-06e9-4c87-a734-e75964447741",
+  "completed_turns": 3,
+  "read_calls": 18,
+  "write_calls": 3,
+  "correlated_results": 21,
+  "passive_output_acceptance": "Passed",
+  "hook_reads": false,
+  "source_record_loading": "Passed",
+  "terminal_state": "finished",
+  "pixel_latency_measured": false,
+  "timing_attempt": "Not verified: finite probe expired before source submission"
+}

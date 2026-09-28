@@ -1,0 +1,11 @@
+[0/1] Planning build
+Building for debugging...
+[0/5] Write swift-version--58304C5D6DBC2206.txt
+Build complete! (1.54s)
+/Users/david_lietjauw/Developer/Diorama/dist/Diorama.app/Contents/MacOS/DioramaReporter: replacing existing signature
+
+added 102 packages in 768ms
+/Users/david_lietjauw/Developer/Diorama/dist/Diorama.app/Contents/Resources/ClaudeHelper/node: replacing existing signature
+v22.19.0
+/Users/david_lietjauw/Developer/Diorama/dist/Diorama.app: replacing existing signature
+/Users/david_lietjauw/Developer/Diorama/dist/Diorama.app

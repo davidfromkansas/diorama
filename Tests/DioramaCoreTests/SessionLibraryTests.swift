@@ -68,7 +68,7 @@ struct SessionLibraryTests {
         #expect(result.state == "Last turn finished")
         #expect(result.entries.count == 6)
         #expect(!result.entries.contains { $0.text.contains("PRIVATE") })
-        #expect(result.entries.contains { $0.kind == "Tool result" && $0.text == "hi" })
+        #expect(result.entries.contains { $0.tool?.type == "functionCallOutput" && $0.tool?.output == "hi" })
     }
 
     @Test func partialWriteAndRefresh() throws {

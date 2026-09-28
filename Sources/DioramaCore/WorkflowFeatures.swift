@@ -32,6 +32,7 @@ extension ExecutionController {
         guard connected else { throw AppServerFailure(error ?? "Codex connection unavailable") }
     }
     func requireIdle(_ id: String, allowProviderSwitch: Bool = false) throws {
+        try requireControllable(id)
         guard (allowProviderSwitch || !providerSwitches.contains(id)), !retiredProviderSessions.contains(id), let task = tasks[id], task.attached, task.parentID == nil, !task.phase.active, !task.steering, !task.steeringUncertain,
               !requests.values.contains(where: { $0.threadID == id && $0.isBlocking }) else { throw AppServerFailure("Wait for this task to be idle and resolve required requests first") }
     }

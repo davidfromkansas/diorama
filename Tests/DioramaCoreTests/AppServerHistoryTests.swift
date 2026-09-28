@@ -181,6 +181,26 @@ struct AppServerHistoryTests {
             Issue.record("Closed/restarted fixture cannot answer this request")
         } catch { #expect(!error.localizedDescription.isEmpty) }
     }
+    @Test func largeHistoryFrameDoesNotRepeatedlyRescanBufferedBytes() async throws {
+        let fixture = SessionLibraryTests()
+        let root = try fixture.directory(); defer { try? FileManager.default.removeItem(at: root) }
+        let executable = root.appendingPathComponent("large-server")
+        let script = """
+        #!/bin/sh
+        IFS= read -r initialize
+        printf '{"id":1,"result":{}}\\n'
+        IFS= read -r initialized
+        IFS= read -r request
+        printf '{"id":2,"result":{"padding":"'
+        head -c 4194304 /dev/zero | tr '\\000' x
+        printf '"}}\\n'
+        """
+        try script.write(to: executable, atomically: true, encoding: .utf8)
+        try FileManager.default.setAttributes([.posixPermissions: 0o700], ofItemAtPath: executable.path)
+        let connection = AppServerConnection(executable: executable, timeout: 3)
+        let response = try await connection.request("thread/read", parameters: data(["threadId": "fixture"]))
+        #expect(response.count > 4 * 1024 * 1024)
+    }
     @Test func missingRecentReplyFallsBackEvenWhenOtherItemsExist() async throws {
         let fixture = SessionLibraryTests()
         let root = try fixture.directory(); defer { try? FileManager.default.removeItem(at: root) }

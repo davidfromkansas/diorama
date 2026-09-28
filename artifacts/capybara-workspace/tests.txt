@@ -1,0 +1,54 @@
+Building for debugging...
+[0/7] Write sources
+[1/7] Write swift-version--58304C5D6DBC2206.txt
+[3/5] Emitting module DioramaRenderingTests
+[4/5] Compiling DioramaRenderingTests WorkspaceCapybaraTests.swift
+[4/6] Write Objects.LinkFileList
+[5/6] Linking DioramaPackageTests
+Build complete! (2.03s)
+Test Suite 'Selected tests' started at 2026-09-27 23:17:11.328.
+Test Suite 'DioramaPackageTests.xctest' started at 2026-09-27 23:17:11.329.
+Test Suite 'DioramaPackageTests.xctest' passed at 2026-09-27 23:17:11.329.
+	 Executed 0 tests, with 0 failures (0 unexpected) in 0.000 (0.000) seconds
+Test Suite 'Selected tests' passed at 2026-09-27 23:17:11.329.
+	 Executed 0 tests, with 0 failures (0 unexpected) in 0.000 (0.001) seconds
+◇ Test run started.
+↳ Testing Library Version: 1743
+↳ Target Platform: arm64e-apple-macos14.0
+◇ Suite WorkspaceCapybaraTests started.
+◇ Suite WorkspaceSceneTests started.
+◇ Suite WorkspaceMotionTests started.
+◇ Test labCanSuspendAndRestoreTheWorkspaceCamera() started.
+◇ Test nativeMovementArrivesWithoutCrossingFurniture() started.
+◇ Test nativeRigLoadsAndInstancesHaveIndependentBones() started.
+◇ Test renderMovementInsideWorkspace() started.
+◇ Test orbitKeepsWorldVerticalUprightAndResetRestoresOrientation() started.
+◇ Test routingAvoidsFurnitureAndRejectsBlockedTargets() started.
+◇ Test sceneHasFiniteGroundAndBoundedCamera() started.
+◇ Test sceneRendersAtSupportedSizes() started.
+◇ Test terminalSnapshotsHistoryAndViewReentryStayStill() started.
+◇ Test attentionLabelsUseOnlyTheOwnersExplicitState() started.
+◇ Test rigMovesTheFaceWithTheHeadAndSupportsMissingAnchors() started.
+◇ Test navigationResetsSavedTabsButExplicitActionsStillWin() started.
+◇ Test repeatedUpdatesDoNotReplayAndInterruptionRemovesOldGestures() started.
+◇ Test renderLiveGestureFrames() started.
+◇ Test renderStaticStatusPoses() started.
+✔ Test labCanSuspendAndRestoreTheWorkspaceCamera() passed after 0.521 seconds.
+✔ Test nativeRigLoadsAndInstancesHaveIndependentBones() passed after 0.929 seconds.
+✔ Test attentionLabelsUseOnlyTheOwnersExplicitState() passed after 0.929 seconds.
+✔ Test orbitKeepsWorldVerticalUprightAndResetRestoresOrientation() passed after 0.929 seconds.
+✔ Test sceneRendersAtSupportedSizes() passed after 0.929 seconds.
+✔ Test renderLiveGestureFrames() passed after 0.929 seconds.
+✔ Test routingAvoidsFurnitureAndRejectsBlockedTargets() passed after 0.929 seconds.
+✔ Test sceneHasFiniteGroundAndBoundedCamera() passed after 0.988 seconds.
+✔ Test rigMovesTheFaceWithTheHeadAndSupportsMissingAnchors() passed after 0.988 seconds.
+✔ Test renderStaticStatusPoses() passed after 0.988 seconds.
+✔ Test navigationResetsSavedTabsButExplicitActionsStillWin() passed after 0.988 seconds.
+✔ Suite WorkspaceSceneTests passed after 0.988 seconds.
+✔ Test terminalSnapshotsHistoryAndViewReentryStayStill() passed after 1.215 seconds.
+✔ Test renderMovementInsideWorkspace() passed after 1.400 seconds.
+✔ Test nativeMovementArrivesWithoutCrossingFurniture() passed after 1.911 seconds.
+✔ Suite WorkspaceCapybaraTests passed after 1.911 seconds.
+✔ Test repeatedUpdatesDoNotReplayAndInterruptionRemovesOldGestures() passed after 2.131 seconds.
+✔ Suite WorkspaceMotionTests passed after 2.132 seconds.
+✔ Test run with 15 tests in 3 suites passed after 2.132 seconds.

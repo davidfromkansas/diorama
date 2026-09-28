@@ -35,23 +35,33 @@ public struct SessionRow: Identifiable, Sendable {
 public enum SessionPresentation {
     public static func rows(_ sessions: [Session], showInternal: Bool) -> [SessionRow] {
         let visible = sessions.filter { showInternal || $0.classification != .internalReview }
+        // Index once instead of scanning the entire library for every parent and every row.
+        let byProvider = Dictionary(grouping: visible.filter { $0.classification != .internalReview }, by: \.provider)
+            .mapValues { Dictionary(grouping: $0, by: \.sessionID) }
         var parents: [String: String] = [:]
+        var children: [String: [Session]] = [:]
         for child in visible where child.classification == .subagent {
-            if let parent = visible.first(where: {
-                $0.id != child.id && $0.provider == child.provider && $0.sessionID == child.parentID && $0.classification != .internalReview
-                && ($0.classification != .subagent || $0.sessionID != child.sessionID)
-            }) { parents[child.id] = parent.id }
+            guard let parentID = child.parentID,
+                  let parent = byProvider[child.provider]?[parentID]?.first(where: {
+                      $0.id != child.id && ($0.classification != .subagent || $0.sessionID != child.sessionID)
+                  }) else { continue }
+            parents[child.id] = parent.id
+            children[parent.id, default: []].append(child)
         }
         var result: [SessionRow] = []
+        result.reserveCapacity(visible.count)
         var visited: Set<String> = []
-        func append(_ session: Session, depth: Int) {
-            guard visited.insert(session.id).inserted else { return }
-            result.append(SessionRow(session: session, depth: depth, parentUnavailable: session.classification == .subagent && depth == 0))
-            for child in visible where parents[child.id] == session.id { append(child, depth: depth + 1) }
+        func append(_ session: Session) {
+            var stack: [(Session, Int)] = [(session, 0)]
+            while let (current, depth) = stack.popLast() {
+                guard visited.insert(current.id).inserted else { continue }
+                result.append(SessionRow(session: current, depth: depth, parentUnavailable: current.classification == .subagent && depth == 0))
+                for child in (children[current.id] ?? []).reversed() { stack.append((child, depth + 1)) }
+            }
         }
-        for session in visible where parents[session.id] == nil { append(session, depth: 0) }
-        // Broken/cyclic relationships must never hide records.
-        for session in visible where !visited.contains(session.id) { append(session, depth: 0) }
+        for session in visible where parents[session.id] == nil { append(session) }
+        // Broken/cyclic relationships must never hide records, even in very deep trees.
+        for session in visible where !visited.contains(session.id) { append(session) }
         return result
     }
 

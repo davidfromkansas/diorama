@@ -5,7 +5,7 @@ Build 0.5.0 (41) adds provider-neutral review for project sessions with recorded
 - Changes opens a resizable panel beside the conversation at widths of 1000pt or greater, and replaces the conversation below that width with a Conversation return action.
 - Session changes compares against the recorded starting commit. Uncommitted changes compares against HEAD. Manual and agent edits are both included.
 - Local snapshots use Git only; selected-file diffs are loaded separately. Polling occurs every two seconds while the panel is visible and active, plus focus and execution-phase changes.
-- GitHub PR discovery uses branch, head repository owner/name, and host. Results come from `gh` JSON, not model calls. Ambiguous matches expose a chooser. Verified links and timestamps persist in the workspace record.
+- GitHub PR discovery uses branch, head repository owner/name, and host. Results come from GitHub’s REST API using Diorama’s account, not model calls. Ambiguous matches expose a chooser. Verified links and timestamps persist in the workspace record.
 - CI refreshes every 60 seconds while its view is active. Failures retain the last known result. Local revisions not included in published CI are explicitly identified.
 - Fix with agent fetches bounded failure output where available and appends an editable prompt to the existing draft. It does not submit, interrupt, or switch provider.
 - Project PRs aggregate linked workspaces, including retained links for cleaned worktrees. Legacy repository-wide caches are not read.
@@ -27,4 +27,4 @@ Native production-panel fixture was inspected through computer use at wide and 4
 
 ## Limits
 
-Read-only review: no stage, revert, commit, publish, automatic fix, or merge controls. Sessions without recorded worktrees retain their existing review experience. Diff previews are capped at 512 KB; command output is bounded and commands time out after 60 seconds. GitHub discovery considers up to 100 matching historical PRs per branch. Links are not fetched while the app is closed.
+Owned GitHub-connected sessions offer Create PR or Update PR with a file-level preview. Claude Desktop observations remain view-only. There are no force-push, discard, or in-app merge controls. Sessions without recorded worktrees retain their existing review experience. Diff previews are capped at 512 KB; command output is bounded and commands time out after 60 seconds. GitHub discovery considers up to 100 matching historical PRs per branch. Links are not fetched while the app is closed.

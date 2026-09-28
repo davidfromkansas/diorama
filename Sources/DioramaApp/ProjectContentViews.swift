@@ -13,19 +13,19 @@ struct ProjectContextView: View {
         ScrollView {
             VStack(alignment: .leading, spacing: 24) {
                 Text("Shared context for every new session").font(.title2.bold())
-                Text("New sessions inherit the latest repository baseline, these instructions, and references. Existing sessions keep the context they started with.")
+                Text("New sessions use the local starting branch you choose, these instructions, and references. Existing sessions keep the context they started with.")
                     .foregroundStyle(.secondary)
                 GroupBox {
                     VStack(alignment: .leading, spacing: 10) {
                         HStack {
                             Label("Repository", systemImage: "folder").font(.headline)
                             Spacer()
-                            Button(refreshing ? "Refreshing…" : "Refresh base") { refresh() }.disabled(refreshing)
+                            Button(refreshing ? "Refreshing…" : "Fetch from remote") { refresh() }.disabled(refreshing)
                         }
                         Text(project.folder).textSelection(.enabled)
-                        TextField("Base branch", text: Binding(get: { project.base }, set: { value in projects.update(projectID) { $0.base = value } }))
+                        TextField("Remote comparison base", text: Binding(get: { project.base }, set: { value in projects.update(projectID) { $0.base = value } }))
                         if let date = project.fetchedAt { Text("Last fetched \(date.formatted())").font(.caption).foregroundStyle(.secondary) }
-                        else { Text("The base is fetched when a new session starts.").font(.caption).foregroundStyle(.secondary) }
+                        else { Text("New sessions start from local commits. Fetch explicitly to update remote information.").font(.caption).foregroundStyle(.secondary) }
                     }.padding(8).frame(maxWidth: .infinity, alignment: .leading)
                 }
                 VStack(alignment: .leading, spacing: 8) {
@@ -59,7 +59,7 @@ struct ProjectContextView: View {
         }
         .task(id: project.base + project.context.references.joined()) {
             let refs = project.context.references.filter { !$0.hasPrefix("http://") && !$0.hasPrefix("https://") }
-            if let paths = try? await ProjectGit.files(folder: project.folder, revision: project.base) {
+            if let paths = try? await (project.isGitBacked ? ProjectGit.files(folder: project.folder, revision: project.base) : ProjectFolder.files(project.folder)) {
                 if !Task.isCancelled { missing = Set(refs).subtracting(paths) }
             }
         }
@@ -92,6 +92,8 @@ struct ProjectFilesView: View {
     let projectID: String
     @Bindable var projects: ProjectModel
     @Bindable var library: LibraryModel
+    var inspectorOnly = false
+    var openDocument: ((WorkspaceDocument) -> Void)? = nil
     @State private var location = "base"
     @State private var query = ""
     @State private var files: [String] = []
@@ -108,30 +110,60 @@ struct ProjectFilesView: View {
     private var folder: String { work?.folder ?? project.folder }
     var body: some View {
         VStack(spacing: 0) {
-            HStack {
-                Picker("Files from", selection: $location) {
-                    Text("Project base · " + project.base).tag("base")
-                    ForEach(project.workspaces.filter { !$0.cleaned }) { work in Text(work.branch).tag(work.id) }
-                }.frame(maxWidth: 400)
-                Toggle("Show ignored", isOn: $showIgnored).disabled(location == "base")
-                Spacer()
-                Button("Refresh") { Task { await load() } }.disabled(loading)
-            }.padding(16)
+            ViewThatFits(in: .horizontal) {
+                fileControls
+                VStack(alignment: .leading, spacing: 8) { locationPicker; fileOptions }
+            }.padding(12)
             if let error { Text(error).foregroundStyle(.orange).padding(.horizontal, 16).textSelection(.enabled) }
+            if inspectorOnly { fileList } else {
             HSplitView {
-                VStack {
-                    TextField("Find a file", text: $query).textFieldStyle(.roundedBorder).padding(12)
-                    if loading { ProgressView().controlSize(.small) }
-                    List(selection: $selection) {
-                        if query.isEmpty {
-                            ProjectFileRows(nodes: tree, expanded: Binding(get: { project.expandedFolders }, set: { value in projects.update(projectID) { $0.expandedFolders = value } }))
-                        } else {
-                            ForEach(files.filter { $0.localizedCaseInsensitiveContains(query) }, id: \.self) { file in
-                                Label(file, systemImage: "doc").font(.callout).help(file).tag(file)
-                            }
-                        }
-                    }
-                }.frame(minWidth: 200, idealWidth: 280, maxWidth: 420)
+                fileList.frame(minWidth: 200, idealWidth: 280, maxWidth: 420)
+                filePreview
+            }
+            }
+        }
+        .onAppear {
+            if let saved = project.fileLocation { location = saved }
+            else if let selected = project.selectedSession, let work = project.workspaces.first(where: { library.sessions.first(where: { $0.id == selected })?.sessionID == $0.threadID && !$0.cleaned }) { location = work.id }
+        }
+        .onChange(of: location) { projects.update(projectID) { $0.fileLocation = location; $0.fileSelection = nil } }
+        .onChange(of: selection) {
+            if let selection {
+                projects.update(projectID) { $0.fileSelection = selection }
+                if inspectorOnly { openDocument?(WorkspaceDocument(folder: folder, path: selection, revision: revision)) }
+            }
+        }
+        .task(id: location + String(showIgnored)) { await load() }
+        .task(id: selection) { await loadPreview() }
+    }
+    private var locationPicker: some View {
+                Picker("Files from", selection: $location) {
+                    Text(project.isGitBacked ? "Project base · " + project.base : "Working folder").tag("base")
+                    ForEach(project.workspaces.filter { !$0.cleaned }) { work in Text(work.branch).tag(work.id) }
+                }.labelsHidden().frame(maxWidth: .infinity)
+    }
+    private var fileOptions: some View {
+        HStack {
+            Toggle("Show ignored", isOn: $showIgnored).disabled(location == "base")
+            Spacer()
+            Button { Task { await load() } } label: { Image(systemName: "arrow.clockwise") }.help("Refresh files").disabled(loading)
+        }.controlSize(.small)
+    }
+    private var fileControls: some View { HStack { locationPicker; fileOptions } }
+    private var fileList: some View {
+        VStack {
+            TextField("Find a file", text: $query).textFieldStyle(.roundedBorder).padding(12)
+            if loading { ProgressView().controlSize(.small) }
+            List(selection: $selection) {
+                if query.isEmpty {
+                    ProjectFileRows(nodes: tree, expanded: Binding(get: { project.expandedFolders }, set: { value in projects.update(projectID) { $0.expandedFolders = value } }))
+                } else {
+                    ForEach(files.filter { $0.localizedCaseInsensitiveContains(query) }, id: \.self) { file in Label(file, systemImage: "doc").font(.callout).help(file).tag(file) }
+                }
+            }.scrollContentBackground(.hidden)
+        }
+    }
+    private var filePreview: some View {
                 VStack(alignment: .leading) {
                     if let selection {
                         HStack {
@@ -141,7 +173,7 @@ struct ProjectFilesView: View {
                                 if !$0.context.references.contains(selection) { $0.context.references.append(selection); $0.context.revision = UUID().uuidString }
                             }}
                             Button(project.selectedSession == nil ? "Attach to new session" : "Attach to session") { attach(selection) }
-                            if location != "base" {
+                            if location != "base" || !project.isGitBacked {
                                 Button("Open externally") { NSWorkspace.shared.open(URL(fileURLWithPath: folder).appendingPathComponent(selection)) }
                             }
                         }.padding(14)
@@ -149,16 +181,8 @@ struct ProjectFilesView: View {
                         else { ScrollView([.horizontal, .vertical]) { Text(preview).font(.system(.body, design: .monospaced)).textSelection(.enabled).padding(16) } }
                     } else { ContentUnavailableView("Choose a file", systemImage: "doc.text.magnifyingglass") }
                 }.frame(minWidth: 360, maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
-            }
-        }
-        .onAppear {
-            if let saved = project.fileLocation { location = saved }
-            else if let selected = project.selectedSession, let work = project.workspaces.first(where: { "Codex:" + ($0.threadID ?? "") == selected && !$0.cleaned }) { location = work.id }
-        }
-        .onChange(of: location) { projects.update(projectID) { $0.fileLocation = location; $0.fileSelection = nil } }
-        .onChange(of: selection) { if let selection { projects.update(projectID) { $0.fileSelection = selection } } }
-        .task(id: location + String(showIgnored)) { await load() }
-        .task(id: selection) {
+    }
+    private func loadPreview() async {
             preview = ""; image = nil
             guard let selection, files.contains(selection) else { return }
             do {
@@ -179,14 +203,13 @@ struct ProjectFilesView: View {
                     preview = error.localizedDescription
                 }
             }
-        }
     }
     private func load() async {
         loading = true; error = nil; selection = nil; files = []; preview = ""; revision = nil
         defer { loading = false }
         do {
-            let resolved = location == "base" ? try await ProjectCommand.git(project.folder, ["rev-parse", "--verify", project.base + "^{commit}"]) : nil
-            let result = try await ProjectGit.files(folder: folder, revision: resolved, showIgnored: showIgnored)
+            let resolved = project.isGitBacked && location == "base" ? try await ProjectCommand.git(project.folder, ["rev-parse", "--verify", project.base + "^{commit}"]) : nil
+            let result = project.isGitBacked ? try await ProjectGit.files(folder: folder, revision: resolved, showIgnored: showIgnored) : try await ProjectFolder.files(folder)
             guard !Task.isCancelled else { return }
             revision = resolved; files = result; tree = ProjectFileNode.tree(result)
             if let saved = project.fileSelection, result.contains(saved) { selection = saved }

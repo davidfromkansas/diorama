@@ -3,6 +3,40 @@ import Testing
 @testable import DioramaCore
 
 struct ProjectTests {
+    @Test func plainFolderOpensAndListsWithoutChangingFiles() async throws {
+        let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        defer { try? FileManager.default.removeItem(at: root) }
+        try FileManager.default.createDirectory(at: root.appendingPathComponent("docs"), withIntermediateDirectories: true)
+        let file = root.appendingPathComponent("docs/readme.txt")
+        let data = Data("Existing project".utf8)
+        try data.write(to: file)
+        try FileManager.default.createSymbolicLink(atPath: root.appendingPathComponent("outside").path, withDestinationPath: "/")
+        let before = try FileManager.default.contentsOfDirectory(atPath: root.path).sorted()
+        let project = try await ProjectFolder.open(root.path)
+        #expect(!project.isGitBacked)
+        #expect(project.commonDirectory.isEmpty)
+        #expect(project.folderIdentity == root.resolvingSymlinksInPath().path)
+        let files = try await ProjectFolder.files(project.folder)
+        #expect(files == ["docs/readme.txt"])
+        #expect(try await ProjectGit.preview(folder: project.folder, path: "docs/readme.txt") == "Existing project")
+        #expect(try Data(contentsOf: file) == data)
+        #expect(try FileManager.default.contentsOfDirectory(atPath: root.path).sorted() == before)
+        await #expect(throws: (any Error).self) { try await ProjectFolder.open(file.path) }
+    }
+
+    @Test func openingGitFolderKeepsRepositoryDiscovery() async throws {
+        let root = try await repository(); defer { try? FileManager.default.removeItem(at: root) }
+        let expected = try await ProjectGit.discover(root.path)
+        let actual = try await ProjectFolder.open(root.path)
+        #expect(actual.isGitBacked)
+        #expect(actual.commonDirectory == expected.commonDirectory)
+        #expect(actual.base == expected.base)
+        // A corrupt .git must remain an error, rather than silently becoming a plain folder.
+        let broken = root.appendingPathComponent("broken")
+        try FileManager.default.createDirectory(at: broken, withIntermediateDirectories: true)
+        try Data("gitdir: /missing/diorama-test-repository".utf8).write(to: broken.appendingPathComponent(".git"))
+        await #expect(throws: (any Error).self) { try await ProjectFolder.open(broken.path) }
+    }
     func repository() async throws -> URL {
         let root = FileManager.default.temporaryDirectory.appendingPathComponent("diorama-project-test-" + UUID().uuidString)
         try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
@@ -37,7 +71,7 @@ struct ProjectTests {
         #expect(!FileManager.default.fileExists(atPath: second.folder))
         #expect(try await ProjectCommand.git(root.path, ["rev-parse", "--verify", second.branch]) == second.baseCommit)
     }
-    @Test func latestRemoteAndExplicitOfflineFallback() async throws {
+    @Test func localStartupDoesNotFetchRemote() async throws {
         let remote = try await repository(); defer { try? FileManager.default.removeItem(at: remote) }
         let local = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
         defer { try? FileManager.default.removeItem(at: local) }
@@ -46,12 +80,9 @@ struct ProjectTests {
         try Data("new remote".utf8).write(to: remote.appendingPathComponent("sample.txt"))
         _ = try await ProjectCommand.git(remote.path, ["commit", "-am", "Update"])
         let work = try await ProjectGit.createWorkspace(project: project, id: "fresh", root: local.appendingPathComponent("trees"))
-        #expect(try await ProjectGit.preview(folder: work.folder, path: "sample.txt") == "new remote")
+        #expect(try await ProjectGit.preview(folder: work.folder, path: "sample.txt") == "original")
         #expect(try await ProjectGit.preview(folder: local.path, path: "sample.txt") == "original")
         _ = try await ProjectCommand.git(local.path, ["remote", "set-url", "origin", "/nonexistent/diorama-test-remote"])
-        await #expect(throws: (any Error).self) {
-            try await ProjectGit.createWorkspace(project: project, id: "offline", root: local.appendingPathComponent("trees"))
-        }
         let cached = try await ProjectGit.createWorkspace(project: project, id: "offline", useCached: true, root: local.appendingPathComponent("trees"))
         #expect(cached.baseCommit == work.baseCommit)
     }
@@ -62,6 +93,7 @@ struct ProjectTests {
         var p = DioramaProject(name: "Example", folder: "/example", commonDirectory: "/example/.git", base: "origin/main", remote: "example")
         p.draft = "Do not lose this"; p.context.references = ["docs/spec.md", "https://example.com"]
         p.pendingWorkspace = "recovery"
+        p.draftStart = SessionStartOptions(folder: "/example", reference: "main", createWorktree: false)
         try ProjectStorage.save([p], to: file)
         #expect(try ProjectStorage.load(from: file) == [p])
         try Data("invalid json".utf8).write(to: file)

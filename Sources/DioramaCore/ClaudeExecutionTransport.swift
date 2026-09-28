@@ -86,8 +86,7 @@ public actor ClaudeExecutionTransport: ExecutionTransport {
         return goal.wire
     }
     public static func binary() -> URL? {
-        let home = FileManager.default.homeDirectoryForCurrentUser
-        return [home.appendingPathComponent(".local/bin/claude"), URL(fileURLWithPath: "/opt/homebrew/bin/claude"), URL(fileURLWithPath: "/usr/local/bin/claude")].first { FileManager.default.isExecutableFile(atPath: $0.path) }
+        AgentExecutable.resolve("claude")
     }
     /// A GUI launch can inherit PWD from the process that opened Diorama.
     /// Claude consults it during startup, independently of Process.currentDirectoryURL.
@@ -194,6 +193,7 @@ public actor ClaudeExecutionTransport: ExecutionTransport {
     public func request(_ method: String, _ p: WireValue) async throws -> WireValue {
         switch method {
         case "collaborationMode/list": return .object(["data": .array([.object(["mode": .string("default")]), .object(["mode": .string("plan")])])])
+        case "diorama/capabilities": return try await control(["subtype": .string("capability_discovery")])
         case "model/list": return .object(["data": .array(Self.modelRows(catalog))])
         case "thread/start", "thread/resume":
             return .object(["thread": .object(["id": .string(sessionID)]), "cwd": .string(folder), "model": .string(model), "approvalPolicy": .string(permissionMode)])

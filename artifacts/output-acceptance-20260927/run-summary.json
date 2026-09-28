@@ -1,0 +1,98 @@
+{
+  "date": "2026-09-27",
+  "clients": {
+    "claude_cli": "2.1.283",
+    "codex_cli": "0.153.4"
+  },
+  "claude_cli": {
+    "session_id": "1959d376-3df4-4b46-9f0b-a06662e5ffea",
+    "turns": 3,
+    "source_event_counts": [
+      264,
+      252,
+      246
+    ],
+    "observer_updates": 125,
+    "notifications": 45,
+    "execution_requests": 0,
+    "file_mtime_to_model_ms": {
+      "p95": 50.409793853759766,
+      "maximum": 68.62831115722656
+    },
+    "source_timestamp_to_model_ms": {
+      "p95": 662.3028516769409,
+      "maximum": 696.2990760803223
+    },
+    "pixel_latency_measured": false,
+    "evidence_note": "Aggregates captured from tool results before temporary files disappeared. Per-event timing file is no longer available; do not claim pixel acceptance."
+  },
+  "codex_cli": {
+    "session_id": "01a0e0c9-5c56-7170-bd47-9354b279c47e",
+    "completed_turns_confirmed_from_saved_evidence": 3,
+    "saved_history_acceptance": "Passed",
+    "first_timing_attempt": "Failed: test driver left stdin open; corrected with DEVNULL",
+    "rerun_timing": "Not verified: temporary report unavailable after environment interruption",
+    "pixel_latency_measured": false
+  },
+  "claude_desktop": {
+    "session_id": "e0cd3e9c-06e9-4c87-a734-e75964447741",
+    "title": "Disposable Diorama Desktop verification",
+    "completed_tool_turns_confirmed": 1,
+    "gate": "Not verified",
+    "blockers": [
+      "Login recovered after user sign-in; temporary working folder disappeared and was restored",
+      "Claude source window subsequently stuck on loading placeholders; remaining tool turns not completed"
+    ],
+    "latest_probe": {
+      "duration_seconds": 300,
+      "updates": 0,
+      "classification": "Not verified: source inactive during login/folder recovery"
+    }
+  },
+  "codex_desktop": {
+    "gate": "Not verified",
+    "blocker": "Source-app automated access restricted; user-operated test not completed"
+  },
+  "mounted_conversation_fixture": {
+    "updates": 30,
+    "evidence_to_layout_ms": {
+      "p95": 65,
+      "maximum": 71
+    },
+    "pixel_latency_measured": false,
+    "final_full_rerun_layout_ms": {
+      "p95": 58,
+      "maximum": 58
+    }
+  },
+  "initial_serial_full_suite": {
+    "tests": 354,
+    "suites": 89,
+    "result": "Passed"
+  },
+  "high_cpu_investigation": {
+    "old_standalone_sample": "Main thread in SwiftUI layout; approximately 100% CPU",
+    "combined_build_spot_check": "3.9% CPU after selecting bounded Claude conversation",
+    "classification": "Unresolved: spot CPU values are not a controlled performance pass"
+  },
+  "regression_failure": {
+    "test": "largeHistoryAppendLatencyAndStableEntries",
+    "before_max_ms": 530.54,
+    "fix": "Replace per-byte locale-aware SHA-256 hexadecimal formatting with direct UTF-8 hexadecimal encoding",
+    "targeted_after_max_ms": 364.782,
+    "threshold_ms": 500,
+    "result": "Targeted and full regressions passed",
+    "full_rerun_max_ms": 380.865
+  },
+  "final_swift_suite": {
+    "tests": 359,
+    "suites": 90,
+    "result": "Passed",
+    "parallel": false
+  },
+  "package": {
+    "path": "dist/Diorama.app",
+    "build": "Passed",
+    "native_final_binary_smoke": "Passed: rebuilt dist process, saved Desktop Write card and expandable source record inspected in native pixels"
+  }
+}

@@ -117,20 +117,47 @@ struct HookConnections: View {
     @Bindable var model: LibraryModel
     @State private var setup: Provider?
     @State private var removing = false
+    @State private var desktopSetup = false
     @State private var original: Data?
     @State private var preview = Data()
+    @State private var previewText = ""
     @State private var message = ""
     @State private var versions: [String: String] = [:]
     private func profile(_ provider: Provider) -> HookCapability {
         .profile(provider: provider, version: versions[provider.rawValue] ?? "Unknown")
     }
-    private func prepare(_ provider: Provider, remove: Bool) {
+    private func prepare(_ provider: Provider, remove: Bool, desktop: Bool = false) {
         do {
             let config = HookConfiguration(provider: provider)
             let existing = try config.original()
-            preview = try config.preview(original: existing, events: profile(provider).events, remove: remove)
+            let capability = desktop ? HookCapability.desktopProfile(version: ClaudeDesktopHistory.installedVersion ?? "Not installed") : profile(provider)
+            preview = try config.preview(original: existing, events: capability.events, remove: remove)
+            previewText = try config.displayPreview(preview)
+            desktopSetup = desktop
             original = existing; removing = remove; setup = provider
         } catch { message = error.localizedDescription }
+    }
+    private var desktopConnection: some View {
+        let version = ClaudeDesktopHistory.installedVersion ?? "Not installed"
+        let capability = HookCapability.desktopProfile(version: version)
+        let sessions = model.sessions.filter { $0.origin == .claudeDesktop }
+        let installed = HookConfiguration(provider: .claude).installed()
+        return VStack(alignment: .leading, spacing: 4) {
+            Text("Claude Code Desktop · " + version).font(.headline)
+            Text("\(sessions.count) session records · \(sessions.filter { $0.url != nil }.count) with readable history · view-only").font(.caption)
+            Text(installed ? "Reporter configured · delivery depends on workspace trust" : "Activity reporting not configured · readable history still refreshes").font(.caption)
+            if let last = sessions.compactMap(\.lastObservedHook).max() {
+                Text("Last Desktop session hook: " + last.formatted()).font(.caption)
+            } else {
+                Text("No Desktop session hook observed yet").font(.caption)
+            }
+            Text(capability.explanation).font(.caption).foregroundStyle(.secondary)
+            Text("Chat, Cowork, cloud and SSH sessions are not connected.").font(.caption).foregroundStyle(.secondary)
+            HStack {
+                Button("Enable Desktop activity reporting…") { prepare(.claude, remove: false, desktop: true) }.disabled(!capability.canInstall)
+                if installed { Button("Remove shared Claude reporter hooks…") { prepare(.claude, remove: true, desktop: true) } }
+            }.font(.caption)
+        }
     }
     var body: some View {
         VStack(alignment: .leading, spacing: 10) {
@@ -151,6 +178,8 @@ struct HookConnections: View {
                     }.font(.caption)
                 }
             }
+            Divider()
+            desktopConnection
             HStack {
                 Button("Clear activity history") {
                     do { try HookStore.clear(); Task { await model.refresh() } }
@@ -164,10 +193,10 @@ struct HookConnections: View {
         .sheet(isPresented: Binding(get: { setup != nil }, set: { if !$0 { setup = nil } })) {
             if let provider = setup {
                 VStack(alignment: .leading, spacing: 12) {
-                    Text(removing ? "Remove Diorama hooks" : "Enable local activity reporting").font(.title2)
+                    Text(removing ? "Remove Diorama hooks" : desktopSetup ? "Connect Claude Code Desktop reporting" : "Enable local activity reporting").font(.title2)
                     Text(HookConfiguration(provider: provider).configURL.path).font(.caption).textSelection(.enabled)
-                    Text("Changes below preserve other settings and create a backup. Filenames, command previews, and errors may contain sensitive information. Records stay on this Mac. Review hook trust in the source client and restart it; Diorama does not bypass trust or handle approvals.").font(.callout)
-                    ScrollView { Text(verbatim: String(decoding: preview, as: UTF8.self)).font(.system(.caption, design: .monospaced)).textSelection(.enabled).frame(maxWidth: .infinity, alignment: .leading) }
+                    Text("Only Diorama hook entries are shown below. Applying preserves other settings and creates a backup. Filenames, command previews, and errors may contain sensitive information. Records stay on this Mac. Claude session paths are retained separately for discovery. Claude hooks are shared by CLI and Desktop; removing them affects both. Review hook trust in the source client and restart it; Diorama does not bypass trust or handle approvals.").font(.callout)
+                    ScrollView { Text(verbatim: previewText).font(.system(.caption, design: .monospaced)).textSelection(.enabled).frame(maxWidth: .infinity, alignment: .leading) }
                     HStack {
                         Button("Cancel") { setup = nil }
                         Spacer()

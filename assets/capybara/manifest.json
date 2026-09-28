@@ -1,0 +1,422 @@
+{
+  "triangles": 26070,
+  "vertices": 13656,
+  "bones": 23,
+  "morphs": [
+    "neutral",
+    "smile",
+    "big_smile",
+    "blink_left",
+    "blink_right",
+    "blink_both",
+    "sad",
+    "surprised",
+    "angry",
+    "talk_open",
+    "talk_small",
+    "content"
+  ],
+  "clips": [
+    {
+      "name": "idle",
+      "duration": 4,
+      "loop": true
+    },
+    {
+      "name": "walk",
+      "duration": 1.2,
+      "loop": true
+    },
+    {
+      "name": "run",
+      "duration": 0.8,
+      "loop": true
+    },
+    {
+      "name": "sit_down",
+      "duration": 1.4,
+      "loop": false
+    },
+    {
+      "name": "sit_idle",
+      "duration": 4,
+      "loop": true
+    },
+    {
+      "name": "stand_up",
+      "duration": 1.4,
+      "loop": false
+    },
+    {
+      "name": "wave",
+      "duration": 2.4,
+      "loop": false
+    },
+    {
+      "name": "point",
+      "duration": 2.4,
+      "loop": false
+    },
+    {
+      "name": "think",
+      "duration": 4,
+      "loop": true
+    },
+    {
+      "name": "talk",
+      "duration": 3,
+      "loop": true
+    },
+    {
+      "name": "type_at_computer",
+      "duration": 2,
+      "loop": true
+    },
+    {
+      "name": "read",
+      "duration": 4,
+      "loop": true
+    },
+    {
+      "name": "pick_up_object",
+      "duration": 2,
+      "loop": false
+    },
+    {
+      "name": "carry_object",
+      "duration": 1.2,
+      "loop": true
+    },
+    {
+      "name": "put_down_object",
+      "duration": 2,
+      "loop": false
+    },
+    {
+      "name": "jump",
+      "duration": 1.4,
+      "loop": false
+    },
+    {
+      "name": "celebrate",
+      "duration": 2.6,
+      "loop": false
+    },
+    {
+      "name": "sleep",
+      "duration": 5,
+      "loop": true
+    }
+  ],
+  "skeleton": {
+    "root": {
+      "head": [
+        0,
+        0,
+        0
+      ],
+      "tail": [
+        0,
+        0,
+        0.08
+      ],
+      "parent": null
+    },
+    "pelvis": {
+      "head": [
+        0,
+        0.018,
+        0.31
+      ],
+      "tail": [
+        0,
+        0.018,
+        0.4
+      ],
+      "parent": "root"
+    },
+    "spine": {
+      "head": [
+        0,
+        0.018,
+        0.4
+      ],
+      "tail": [
+        0,
+        0.006,
+        0.52
+      ],
+      "parent": "pelvis"
+    },
+    "chest": {
+      "head": [
+        0,
+        0.006,
+        0.52
+      ],
+      "tail": [
+        0,
+        0,
+        0.64
+      ],
+      "parent": "spine"
+    },
+    "neck": {
+      "head": [
+        0,
+        0,
+        0.64
+      ],
+      "tail": [
+        0,
+        0,
+        0.71
+      ],
+      "parent": "chest"
+    },
+    "head": {
+      "head": [
+        0,
+        0,
+        0.71
+      ],
+      "tail": [
+        0,
+        0,
+        0.89
+      ],
+      "parent": "neck"
+    },
+    "shoulder.R": {
+      "head": [
+        0,
+        0,
+        0.6
+      ],
+      "tail": [
+        -0.135,
+        0,
+        0.606
+      ],
+      "parent": "chest"
+    },
+    "upper_arm.R": {
+      "head": [
+        -0.135,
+        0,
+        0.606
+      ],
+      "tail": [
+        -0.255,
+        0,
+        0.606
+      ],
+      "parent": "shoulder.R"
+    },
+    "lower_arm.R": {
+      "head": [
+        -0.255,
+        0,
+        0.606
+      ],
+      "tail": [
+        -0.329,
+        0,
+        0.606
+      ],
+      "parent": "upper_arm.R"
+    },
+    "hand.R": {
+      "head": [
+        -0.329,
+        0,
+        0.606
+      ],
+      "tail": [
+        -0.393,
+        0,
+        0.606
+      ],
+      "parent": "lower_arm.R"
+    },
+    "upper_leg.R": {
+      "head": [
+        -0.112,
+        0.018,
+        0.31
+      ],
+      "tail": [
+        -0.112,
+        0.003,
+        0.172
+      ],
+      "parent": "pelvis"
+    },
+    "lower_leg.R": {
+      "head": [
+        -0.112,
+        0.003,
+        0.172
+      ],
+      "tail": [
+        -0.112,
+        0.006,
+        0.05
+      ],
+      "parent": "upper_leg.R"
+    },
+    "foot.R": {
+      "head": [
+        -0.112,
+        0.006,
+        0.05
+      ],
+      "tail": [
+        -0.112,
+        -0.085,
+        0.028
+      ],
+      "parent": "lower_leg.R"
+    },
+    "ear.R": {
+      "head": [
+        -0.14,
+        0.012,
+        0.923
+      ],
+      "tail": [
+        -0.141,
+        0.012,
+        0.993
+      ],
+      "parent": "head"
+    },
+    "shoulder.L": {
+      "head": [
+        0,
+        0,
+        0.6
+      ],
+      "tail": [
+        0.135,
+        0,
+        0.606
+      ],
+      "parent": "chest"
+    },
+    "upper_arm.L": {
+      "head": [
+        0.135,
+        0,
+        0.606
+      ],
+      "tail": [
+        0.255,
+        0,
+        0.606
+      ],
+      "parent": "shoulder.L"
+    },
+    "lower_arm.L": {
+      "head": [
+        0.255,
+        0,
+        0.606
+      ],
+      "tail": [
+        0.329,
+        0,
+        0.606
+      ],
+      "parent": "upper_arm.L"
+    },
+    "hand.L": {
+      "head": [
+        0.329,
+        0,
+        0.606
+      ],
+      "tail": [
+        0.393,
+        0,
+        0.606
+      ],
+      "parent": "lower_arm.L"
+    },
+    "upper_leg.L": {
+      "head": [
+        0.112,
+        0.018,
+        0.31
+      ],
+      "tail": [
+        0.112,
+        0.003,
+        0.172
+      ],
+      "parent": "pelvis"
+    },
+    "lower_leg.L": {
+      "head": [
+        0.112,
+        0.003,
+        0.172
+      ],
+      "tail": [
+        0.112,
+        0.006,
+        0.05
+      ],
+      "parent": "upper_leg.L"
+    },
+    "foot.L": {
+      "head": [
+        0.112,
+        0.006,
+        0.05
+      ],
+      "tail": [
+        0.112,
+        -0.085,
+        0.028
+      ],
+      "parent": "lower_leg.L"
+    },
+    "ear.L": {
+      "head": [
+        0.14,
+        0.012,
+        0.923
+      ],
+      "tail": [
+        0.141,
+        0.012,
+        0.993
+      ],
+      "parent": "head"
+    },
+    "tail": {
+      "head": [
+        0,
+        0.145,
+        0.256
+      ],
+      "tail": [
+        0,
+        0.198,
+        0.259
+      ],
+      "parent": "pelvis"
+    }
+  },
+  "materials": [
+    "Fur_Body_D9A772",
+    "Fur_Muzzle_Paws_7B5A3C",
+    "Ear_Inner",
+    "Eyes_111111",
+    "Nose_And_Smile",
+    "Mouth_Interior",
+    "Tongue",
+    "Cheeks_F4B7A7"
+  ]
+}

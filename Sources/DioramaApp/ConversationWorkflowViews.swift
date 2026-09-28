@@ -126,29 +126,33 @@ struct RichToolResultView: View {
     var progress: String?
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
-            HStack { Label(result.title, systemImage: result.type == "fileChange" ? "doc.text" : "terminal").lineLimit(2); Spacer(); Text(result.status).font(.caption).foregroundStyle(.secondary) }
+            HStack { if result.type == "mcpToolCall" { ConnectorMark(server: result.item["server"].string) }; Label(result.title, systemImage: result.type == "fileChange" ? "doc.text" : result.type == "webSearch" ? "magnifyingglass" : "terminal").lineLimit(2); Spacer(); Text(result.status).font(.caption).foregroundStyle(.secondary) }
+            if result.type == "webSearch" { CodexSearchView(item: result.item) }
+            if result.requestsInput { Text("Respond in Codex").foregroundStyle(.orange) }
+            if !result.planSteps.isEmpty {
+                Text("Reported plan update").font(.caption).foregroundStyle(.secondary)
+                ForEach(Array(result.planSteps.enumerated()), id: \.offset) { _, step in
+                    Label((step["step"].string ?? "Step") + " · " + (step["status"].string ?? "Reported"), systemImage: step["status"].string == "completed" ? "checkmark.circle" : "circle")
+                }
+            }
             if let progress { Text(progress).font(.caption).foregroundStyle(.secondary) }
             if result.item["exitCode"] != .null || result.item["durationMs"] != .null {
                 Text("Exit: \(result.item["exitCode"].scalarText) · \(result.item["durationMs"].scalarText) ms").font(.caption.monospaced()).foregroundStyle(.secondary)
             }
-            if result.type == "imageGeneration" {
-                if let reference = TranscriptImage(itemType: "imageView", path: result.item["savedPath"].string) { ToolImagePreview(reference: reference) }
-                else if let encoded = result.item["result"].string { EncodedToolImage(encoded: encoded) }
+            if !result.outputs.isEmpty { ConversationOutputCards(outputs: result.outputs) }
+            if result.item["arguments"] != .null {
+                DisclosureGroup("Inputs") { TranscriptContent(text: CodexOutputEvidence.safeDetails(result.item["arguments"]).pretty, literal: true).textSelection(.enabled) }
             }
-            ForEach(Array(result.item["result"]["content"].array.enumerated()), id: \.offset) { _, block in
-                if block["type"].string == "image", let encoded = block["data"].string { EncodedToolImage(encoded: encoded) }
-            }
-            ForEach(result.item["results"].array, id: \.pretty) { source in
+            if result.item["error"] != .null { Text(CodexOutputEvidence.safeDetails(result.item["error"]).pretty).foregroundStyle(.orange) }
+            if let failure = result.item["failure"].string { Text(failure).foregroundStyle(.orange) }
+            ForEach(result.type == "webSearch" ? [] : result.item["results"].array, id: \.pretty) { source in
                 if let s = source["url"].string, let url = URL(string: s), ["http", "https"].contains(url.scheme ?? "") { Link(source["title"].string ?? s, destination: url) }
             }
             if !result.output.isEmpty { DisclosureGroup("Output") { TranscriptContent(text: result.output, literal: result.type == "commandExecution").textSelection(.enabled) } }
             ForEach(result.item["changes"].array, id: \.pretty) { change in
-                DisclosureGroup(change["path"].string ?? "Changed file") { Text(change["diff"].string ?? change.pretty).font(.caption.monospaced()).textSelection(.enabled) }
+                DisclosureGroup(change["path"].string ?? "Changed file") { Text(change["diff"].string ?? "No historical diff was supplied by the source.").font(.caption.monospaced()).textSelection(.enabled) }
             }
-            ForEach(result.resources, id: \.pretty) { resource in
-                if let s = resource["uri"].string, let url = URL(string: s), ["http", "https"].contains(url.scheme ?? "") { Link(resource["title"].string ?? resource["name"].string ?? s, destination: url) }
-            }
-            if let query = result.item["query"].string ?? result.item["action"]["query"].string { Text(query).font(.caption).foregroundStyle(.secondary) }
+            if result.type != "webSearch", let query = result.item["query"].string ?? result.item["action"]["query"].string { Text(query).font(.caption).foregroundStyle(.secondary) }
             ForEach(result.workers, id: \.self) { worker in
                 if let selectWorker { Button("Open agent · " + String(worker.prefix(12))) { selectWorker(worker) } }
                 else { Text("Agent · " + worker).font(.caption).textSelection(.enabled) }
@@ -216,7 +220,7 @@ extension LibraryModel {
             if !sessions.contains(where: { $0.id == session.id }) { sessions.append(session) }
             archiveFilter = "All"; query = ""; provider = "All"; activityFilter = "All"
             if !folderOrder.contains(session.project) { folderOrder.append(session.project) }
-            selectedFolderID = session.project; selectedID = session.id
+            selectedFolderID = session.project; openInWorkspace(session)
             Task { await readSelected() }
         } catch { workflowError = error.localizedDescription }
     }

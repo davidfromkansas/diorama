@@ -95,7 +95,6 @@ private struct TaskBookmark: Codable {
 public final class ExecutionController {
     public internal(set) var tasks: [String: ExecutedTask] = [:]
     public private(set) var recordedActivity: [String: SessionActivitySnapshot] = [:]
-    private var activityImports: Set<String> = []
     private var activityMembership: [String: [ActivitySessionIdentity]] = [:]
     public func registerActivityConversation(_ members: [ActivitySessionIdentity]) {
         for member in members {
@@ -200,6 +199,18 @@ public final class ExecutionController {
         connected = false
         await connect()
     }
+    /// Read the router's cached catalog while independent provider checks complete.
+    public func onboardingSnapshot() async -> WireValue {
+        let info = await connectionInfo()
+        guard info["codex"].bool || info["claude"].bool else { return info }
+        if let reply = try? await transport.request("model/list", .object([:])) {
+            models = reply["data"].array.compactMap { m in
+                guard let id = m["model"].string else { return nil }
+                return ExecutionModel(id: id, name: m["displayName"].string ?? id, efforts: m["supportedReasoningEfforts"].array.compactMap { $0["reasoningEffort"].string }, defaultEffort: m["defaultReasoningEffort"].string ?? "", isDefault: m["isDefault"].bool)
+            }
+        }
+        return info
+    }
     public func connectionInfo() async -> WireValue {
         (try? await transport.request("diorama/connections", .object([:]))) ?? .null
     }
@@ -232,8 +243,18 @@ public final class ExecutionController {
         task.sandbox = reply["sandbox"]
         task.settings = "Model: \(task.model)\nWorking folder: \(task.folder)\nApproval policy: \(reply["approvalPolicy"].pretty)\nReviewer: \(reply["approvalsReviewer"].pretty)\nPermissions: \(reply["activePermissionProfile"].pretty)\nSandbox: \(reply["sandbox"].pretty)"
     }
+    public private(set) var observedDesktopSessionIDs: Set<String> = []
+    public func observeDesktopSessions(_ sessions: [Session]) {
+        observedDesktopSessionIDs.formUnion(sessions.filter(\.observationOnly).map(\.sessionID))
+    }
+    func requireControllable(_ id: String) throws {
+        guard !observedDesktopSessionIDs.contains(id) else {
+            throw AppServerFailure("View-only Claude Code Desktop conversation. Continue it in Claude Desktop.")
+        }
+    }
     /// A user Send may acquire a released conversation, but never replay uncertain work.
     public func send(in session: Session, prompt: String, model: String = "", effort: String = "", attachments: [ConversationAttachment] = [], approvalReview: ApprovalReviewChoice = .inherit, mode: String? = nil, capabilities: [CapabilityInput] = []) async throws {
+        if session.observationOnly { throw AppServerFailure(Self.resumeUnavailableReason(session)!) }
         _ = try ConversationAttachment.input(prompt: prompt, attachments: attachments)
         if let task = tasks[session.sessionID], task.phase == .disconnected, task.requiresReconciliation {
             throw AppServerFailure("Delivery is uncertain. Check conversation history and reconnect before sending again.")
@@ -245,6 +266,7 @@ public final class ExecutionController {
     }
 
     public func send(id: String, prompt: String, model: String = "", effort: String = "", attachments: [ConversationAttachment] = [], approvalReview: ApprovalReviewChoice = .inherit, mode: String? = nil, capabilities: [CapabilityInput] = []) async throws {
+        try requireControllable(id)
         guard !retiredProviderSessions.contains(id), !providerSwitches.contains(id) else { throw AppServerFailure("This provider session is historical or switching") }
         guard connected, !stopping, !workflowBusy.contains(id), var task = tasks[id], task.attached, task.parentID == nil, !task.phase.active, !task.steering, !task.steeringUncertain,
               !requests.values.contains(where: { $0.threadID == id && $0.isBlocking }) else { throw AppServerFailure("This task is not ready for a new turn") }
@@ -259,6 +281,12 @@ public final class ExecutionController {
         if !model.isEmpty, (model.hasPrefix("claude/") != (task.provider == .claude)) { throw ExecutionRPCRejection("Changing providers requires a new linked session.") }
         if !model.isEmpty, !models.contains(where: { $0.id == model }) { throw AppServerFailure("Model unavailable") }
         if !effort.isEmpty, !models.contains(where: { $0.id == selected && $0.efforts.contains(effort) }) { throw AppServerFailure("Reasoning effort unavailable for this model") }
+        try await GitHubCheckoutLocks.shared.beginAgentSubmission(task.folder)
+        guard let current = tasks[id], current.attached, !current.phase.active, current.phase == task.phase,
+              !current.steering, !current.steeringUncertain else {
+            await GitHubCheckoutLocks.shared.endAgentSubmission(task.folder)
+            throw AppServerFailure("This task is not ready for a new turn")
+        }
         if let canvas {
             do {
                 let identity = conversationCanvasIdentity[id] ?? (task.provider, id)
@@ -273,6 +301,7 @@ public final class ExecutionController {
         task.work = ExecutionWork(); task.reviewNotice = nil
         task.phase = .submitting; task.requiresReconciliation = true; task.error = nil; task.transcript.source = "Live agent"
         tasks[id] = task
+        await GitHubCheckoutLocks.shared.endAgentSubmission(task.folder)
         var params: [String: WireValue] = ["threadId": .string(id), "input": .array(input)]
         if !selected.isEmpty { params["model"] = .string(selected) }
         if !effort.isEmpty { params["effort"] = .string(effort) }
@@ -329,6 +358,7 @@ public final class ExecutionController {
     }
     /// Never converts a stale correction into a new turn or retries uncertain delivery.
     public func steer(id: String, expectedTurnID: String, prompt: String, attachments: [ConversationAttachment] = []) async throws {
+        try requireControllable(id)
         guard canSteer(id: id), tasks[id]?.turnID == expectedTurnID else { throw AppServerFailure("The active turn changed. Your correction was not sent; review it before sending a new turn.") }
         let input = try ConversationAttachment.input(prompt: prompt, attachments: attachments)
         tasks[id]?.steering = true
@@ -348,6 +378,7 @@ public final class ExecutionController {
     }
 
     public static func resumeUnavailableReason(_ session: Session) -> String? {
+        if session.observationOnly { return "View-only Claude Code Desktop conversation. Continue it in Claude Desktop." }
         if session.archived { return "This conversation is archived. Restore it in its original client before continuing here." }
         if session.classification == .internalReview || session.classification == .subagent || session.parentID != nil {
             return "Internal reviews and subagents cannot be resumed as conversations."
@@ -357,6 +388,7 @@ public final class ExecutionController {
     /// User-initiated acquisition only. Read first; never send, archive, fork or remove locks.
     public func resumeImported(_ session: Session) async throws {
         let id = session.sessionID
+        try requireControllable(id)
         guard !retiredProviderSessions.contains(id) else { throw AppServerFailure("This native session is historical. Continue in the Diorama conversation.") }
         guard !stopping, !resuming.contains(id) else { throw AppServerFailure("Resume is already pending") }
         if let reason = Self.resumeUnavailableReason(session) { throw AppServerFailure(reason) }
@@ -418,6 +450,7 @@ public final class ExecutionController {
     }
 
     public func interrupt(id: String) async throws {
+        try requireControllable(id)
         queueAutoStart.remove(id)
         if tasks[id]?.workflow.goal["status"].string == "active" { try await setGoal(id: id, status: "paused") }
         guard connected, let task = tasks[id], task.attached, let turn = task.turnID else { throw AppServerFailure("No confirmed active turn to interrupt") }
@@ -426,6 +459,7 @@ public final class ExecutionController {
     }
     public func answer(id: String, result: WireValue) async throws {
         guard connected, let request = requests[id], !request.responding, tasks[request.threadID]?.attached == true else { throw AppServerFailure("This request is no longer actionable") }
+        try requireControllable(request.threadID)
         if request.method == "item/commandExecution/requestApproval" || request.method == "item/fileChange/requestApproval" {
             guard request.approvalDecisions.contains(where: { $0.value == result["decision"] }) else { throw AppServerFailure("Decision is not offered by the provider") }
         } else if request.isInput {
@@ -730,10 +764,14 @@ public final class ExecutionController {
         if let task = tasks[id], task.provider == provider { return task.structuredActivity }
         return recordedActivity[provider.rawValue + ":" + id] ?? .init()
     }
+    public func observeActivity(_ session: Session, snapshot: SessionActivitySnapshot) {
+        guard tasks[session.sessionID]?.attached != true else { return }
+        recordedActivity[session.provider.rawValue + ":" + session.sessionID] = snapshot
+    }
+
     public func importActivity(_ session: Session, transcript: Transcript) async {
         let key = session.provider.rawValue + ":" + session.sessionID
-        guard !activityImports.contains(key), tasks[session.sessionID]?.attached != true else { return }
-        activityImports.insert(key)
+        guard tasks[session.sessionID]?.attached != true else { return }
         var snapshot = activityDirectory.map { SessionActivityStore.read(directory: $0, provider: session.provider, id: session.sessionID) } ?? .init()
         if snapshot.records.isEmpty { snapshot = await SessionActivityHistory.read(session) }
         // App Server saved-history plans and collaboration items retain their native type.

@@ -19,18 +19,37 @@ public struct Session: Identifiable, Hashable, Sendable {
     public var classification: SessionClassification = .unknown
     public var classificationEvidence: String = "No recognized session metadata"
     public var historySource = "Local transcript"
+    public var origin: SessionOrigin = .unknown
+    public var desktopSessionID: String? = nil
+    public var lastObservedHook: Date? = nil
+    public func retainingDiscoveryMetadata(from known: Session) -> Session {
+        var updated = Session(id: id, provider: provider, url: url, sessionID: sessionID,
+            title: known.title.hasPrefix("Untitled conversation") ? title : known.title, project: project,
+            modified: modified, bytes: bytes, archived: known.archived, parentID: parentID ?? known.parentID,
+            classification: known.classification == .unknown ? classification : known.classification,
+            classificationEvidence: known.classification == .unknown ? classificationEvidence : known.classificationEvidence)
+        updated.origin = known.origin
+        updated.historySource = known.historySource
+        return updated
+    }
+
+    public var observationOnly: Bool { origin == .claudeDesktop }
+    public var sourceLabel: String { provider == .claude ? origin.label : provider.rawValue }
     public var projectName: String { project.isEmpty ? "Unknown project" : URL(fileURLWithPath: project).lastPathComponent }
 }
 
 public struct Entry: Identifiable, Equatable, Sendable, Codable {
     public let id: String
     public let kind: String
-    public let text: String
+    public var text: String
     public let timestamp: String?
     public var image: TranscriptImage? = nil
     public var tool: ToolResult? = nil
     public var turnID: String? = nil
     public var providerItemID: String? = nil
+    public var claude: ClaudePresentation? = nil
+    public var codex: CodexPresentation? = nil
+    public var sourceRecords: [TranscriptSource]? = nil
 }
 
 public struct WorkingFolder: Identifiable, Sendable {
@@ -67,6 +86,7 @@ public struct Transcript: Equatable, Sendable {
     public var error: String?
     public var source = "Local transcript"
     public var notice: String?
+    public var unrecognizedTypes: [String: Int] = [:]
     public init() {}
 }
 
@@ -102,7 +122,11 @@ public actor SessionLibrary {
         let session: Session?
     }
     private var cache: [URL: Cached] = [:]
-    public init(roots: [StorageRoot] = StorageRoot.defaults()) { self.roots = roots }
+    private let desktop: ClaudeDesktopHistory?
+    public init(roots: [StorageRoot]? = nil, desktop: ClaudeDesktopHistory? = nil) {
+        self.roots = roots ?? StorageRoot.defaults()
+        self.desktop = desktop ?? (roots == nil ? ClaudeDesktopHistory() : nil)
+    }
 
     public func scan() -> LibrarySnapshot {
         let fm = FileManager.default
@@ -159,12 +183,22 @@ public actor SessionLibrary {
         }
         cache = cache.filter { visited.contains($0.key) }
         if unrecognized > 0 { notices.append("\(unrecognized) files have no recognized session metadata in their first 512 KiB.") }
+        if let desktop {
+            let merged = desktop.merging(Array(sessions.values))
+            return LibrarySnapshot(sessions: merged.sessions, notices: notices + merged.notices)
+        }
         return LibrarySnapshot(sessions: sessions.values.sorted { $0.modified > $1.modified }, notices: notices)
     }
 
     public func transcript(for session: Session, limit: Int = 300) -> Transcript {
-        guard let url = session.url else { var result = Transcript(); result.error = "No local transcript available"; return result }
-        return Self.readTranscript(url: url, provider: session.provider, limit: limit)
+        guard let url = session.url else {
+            var result = Transcript(); result.source = session.historySource
+            result.error = session.observationOnly ? "Desktop session discovered, but its local transcript is unavailable. Resume it in Claude Desktop and refresh Diorama." : "No local transcript available"
+            return result
+        }
+        var transcript = Self.readTranscript(url: url, provider: session.provider, limit: limit)
+        if session.observationOnly { transcript.source = session.historySource }
+        return transcript
     }
 
     public static func readTranscript(url: URL, provider: Provider, limit: Int = 300) -> Transcript {
@@ -174,107 +208,45 @@ public actor SessionLibrary {
             defer { try? handle.close() }
             let size = try handle.seekToEnd()
             // Bound memory. Larger histories can be opened in their source client.
-            let start = size > 16 * 1024 * 1024 ? size - 16 * 1024 * 1024 : 0
+            var start = size > 16 * 1024 * 1024 ? size - 16 * 1024 * 1024 : 0
             try handle.seek(toOffset: start)
             var data = try handle.read(upToCount: 16 * 1024 * 1024) ?? Data()
-            if start > 0, let newline = data.firstIndex(of: 10) { data = Data(data.suffix(from: data.index(after: newline))) }
-            result.earlierContentOmitted = start > 0
-            var entries: [Entry] = []
-            var uuids: Set<String> = []
-            let lines = completeLines(data)
-            // Newer Codex rollouts contain authoritative UI items as well as
-            // model response records. Prefer those explicit identities per turn,
-            // so local fallback can reconcile with the live App Server stream.
-            var structuredMessages: [String: Set<String>] = [:]
-            if provider == .codex {
-                for line in lines {
-                    guard let record = object(line), record["type"] as? String == "event_msg",
-                          let payload = record["payload"] as? [String: Any], payload["type"] as? String == "item_completed",
-                          let turn = payload["turn_id"] as? String, let item = payload["item"] as? [String: Any],
-                          item["id"] is String, let type = item["type"] as? String,
-                          ["UserMessage", "AgentMessage", "Plan"].contains(type) else { continue }
-                    structuredMessages[turn, default: []].insert(type)
-                }
+            if start > 0, let newline = data.firstIndex(of: 10) {
+                start += UInt64(newline + 1)
+                data = Data(data.suffix(from: data.index(after: newline)))
             }
-            var currentTurn: String?
-            var currentItem: String?
-            for (index, line) in lines.enumerated() {
-                if Task.isCancelled { break }
-                guard let record = object(line) else { result.malformed += 1; continue }
-                if provider == .claude, let uuid = record["uuid"] as? String {
-                    if !uuids.insert(uuid).inserted { continue }
-                }
-                let timestamp = record["timestamp"] as? String
-                func append(_ kind: String, _ body: String) {
-                    guard !body.isEmpty else { return }
-                    entries.append(Entry(id: "\(start)-\(index)-\(entries.count)", kind: kind, text: body, timestamp: timestamp, turnID: currentTurn, providerItemID: currentItem))
-                }
-                if provider == .codex {
-                    guard let payload = record["payload"] as? [String: Any] else { continue }
-                    let type = payload["type"] as? String ?? ""
-                    currentItem = nil
-                    if let turn = payload["turn_id"] as? String { currentTurn = turn }
-                    if record["type"] as? String == "event_msg" {
-                        if type == "item_completed", let item = payload["item"] as? [String: Any], let nativeID = item["id"] as? String {
-                            currentItem = nativeID
-                            let text = item["text"] as? String ?? (item["content"] as? [[String: Any]] ?? []).compactMap { $0["text"] as? String }.joined(separator: "\n")
-                            switch item["type"] as? String {
-                            case "UserMessage":
-                                for part in MessageContent.split(text, provider: .codex) { append(part.context ? "System context" : "You", part.text) }
-                            case "AgentMessage": append("Assistant", text)
-                            case "Plan": append("Proposed plan", text)
-                            default: break
-                            }
-                            currentItem = nil
-                        }
-                        let states = ["task_started": "Working", "task_complete": "Last turn finished", "turn_aborted": "Interrupted"]
-                        if let state = states[type] { result.state = state; append("Event", state) }
-                    } else if record["type"] as? String == "response_item" {
-                        currentItem = payload["id"] as? String
-                        switch type {
-                        case "message":
-                            let role = payload["role"] as? String ?? ""
-                            if role == "user" {
-                                let parts = MessageContent.split(content(payload["content"]), provider: .codex)
-                                // Context-only environment records are not user UI items.
-                                if !(structuredMessages[currentTurn ?? ""]?.contains("UserMessage") == true && parts.contains(where: { !$0.context })) {
-                                    for part in parts { append(part.context ? "System context" : "You", part.text) }
-                                }
-                            } else if role == "assistant", structuredMessages[currentTurn ?? ""]?.contains("AgentMessage") != true { append("Assistant", content(payload["content"])) }
-                            else if role == "system" || role == "developer" { append("System context", content(payload["content"])) }
-                        case "function_call", "custom_tool_call":
-                            append("Tool call", (payload["name"] as? String ?? "Tool") + "\n" + content(payload["arguments"] ?? payload["input"]))
-                        case "function_call_output", "custom_tool_call_output": append("Tool result", content(payload["output"]))
-                        default: break // Do not surface reasoning/encrypted records.
-                        }
-                    }
-                } else {
-                    guard let role = record["type"] as? String, ["user", "assistant"].contains(role), let message = record["message"] as? [String: Any] else { continue }
-                    let kind = record["isMeta"] as? Bool == true ? "System context" : (role == "user" ? "You" : "Assistant")
-                    if let text = message["content"] as? String {
-                        for part in MessageContent.split(kind == "Assistant" ? text.replacingOccurrences(of: #"(?m)^DIORAMA_GOAL_[A-Fa-f0-9-]{36}:(?:COMPLETE|CONTINUE|BLOCKED)[ \t]*$"#, with: "", options: .regularExpression) : text, provider: .claude) { append(part.context ? "System context" : kind, part.text) }
-                    }
-                    for block in message["content"] as? [[String: Any]] ?? [] {
-                        switch block["type"] as? String {
-                        case "text":
-                            let text = block["text"] as? String ?? ""
-                            for part in MessageContent.split(kind == "Assistant" ? text.replacingOccurrences(of: #"(?m)^DIORAMA_GOAL_[A-Fa-f0-9-]{36}:(?:COMPLETE|CONTINUE|BLOCKED)[ \t]*$"#, with: "", options: .regularExpression) : text, provider: .claude) { append(part.context ? "System context" : kind, part.text) }
-                        case "tool_use":
-                            if block["name"] as? String == "ExitPlanMode", let args = block["input"] as? [String: Any], let plan = args["plan"] as? String { append("Proposed plan", plan) }
-                            else { append("Tool call", (block["name"] as? String ?? "Tool") + "\n" + content(block["input"])) }
-                        case "tool_result": append("Tool result", content(block["content"]))
-                        default: break
-                        }
-                    }
-                }
-            }
-            if entries.count > limit { result.earlierContentOmitted = true }
-            result.entries = Array(entries.suffix(max(1, limit)))
+            return parseTranscript(data: data, provider: provider, limit: limit, start: start, scope: url.path)
         } catch { result.error = error.localizedDescription }
         return result
     }
 
-    private static func metadata(data: Data, url: URL, root: StorageRoot, modified: Date, size: Int) -> Session? {
+    static func parseTranscript(data: Data, provider: Provider, limit: Int, start: UInt64 = 0, scope: String = "", sourcePath: String? = nil) -> Transcript {
+        switch provider {
+        case .claude: ClaudeNormalizer.parse(data, scope: scope, start: start, limit: limit, sourcePath: sourcePath)
+        case .codex: CodexTranscriptNormalizer.parse(data, scope: scope, start: start, limit: limit, sourcePath: sourcePath)
+        }
+    }
+
+    /// Targeted metadata inspection for file notifications, independent of a full scan.
+    @concurrent public static func changedSessions(paths: [String]) async -> [Session] {
+        var found: [Session] = []
+        for path in paths.prefix(256) where path.hasSuffix(".jsonl") {
+            let url = URL(fileURLWithPath: path).resolvingSymlinksInPath()
+            guard let root = StorageRoot.defaults().first(where: { url.path.hasPrefix($0.url.resolvingSymlinksInPath().path + "/") }),
+                  let attributes = try? url.resourceValues(forKeys: [.fileSizeKey, .contentModificationDateKey, .isRegularFileKey]),
+                  attributes.isRegularFile == true,
+                  let handle = try? FileHandle(forReadingFrom: url) else { continue }
+            defer { try? handle.close() }
+            if let data = try? handle.read(upToCount: 512 * 1024),
+               let session = metadata(data: data, url: url, root: root,
+                  modified: attributes.contentModificationDate ?? .distantPast, size: attributes.fileSize ?? 0) {
+                found.append(session)
+            }
+        }
+        return found
+    }
+
+    static func metadata(data: Data, url: URL, root: StorageRoot, modified: Date, size: Int) -> Session? {
         var sid: String?
         var project = ""
         var preview = ""
@@ -336,7 +308,7 @@ public actor SessionLibrary {
         return String(trimmed.replacingOccurrences(of: "\n", with: " ").prefix(100))
     }
 
-    private static func completeLines(_ data: Data) -> [Data.SubSequence] {
+    static func completeLines(_ data: Data) -> [Data.SubSequence] {
         guard let last = data.lastIndex(of: 10) else { return [] }
         return data.prefix(through: last).split(separator: 10, omittingEmptySubsequences: true)
     }

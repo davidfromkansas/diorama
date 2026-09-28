@@ -14,6 +14,15 @@ public struct ProjectContext: Codable, Equatable, Sendable {
     }
 }
 
+public struct SessionStartOptions: Codable, Equatable, Sendable {
+    public var folder: String
+    public var reference: String
+    public var createWorktree: Bool
+    public init(folder: String, reference: String, createWorktree: Bool = true) {
+        self.folder = folder; self.reference = reference; self.createWorktree = createWorktree
+    }
+}
+
 public struct ProjectWorkspace: Codable, Identifiable, Equatable, Sendable {
     public var id: String
     public var folder: String
@@ -23,6 +32,8 @@ public struct ProjectWorkspace: Codable, Identifiable, Equatable, Sendable {
     public var linkedFrom: String?
     public var threadID: String?
     public var pullRequest: LinkedPullRequest?
+    public var direct: Bool?
+    public var isManagedWorktree: Bool { direct != true }
     public var creationUncertain = false
     public var deliveryAttempted = false
     public var archived = false
@@ -38,6 +49,8 @@ public struct DioramaProject: Codable, Identifiable, Equatable, Sendable {
     public var name: String
     public var folder: String
     public var commonDirectory: String
+    public var isGitBacked: Bool { !commonDirectory.isEmpty }
+    public var folderIdentity: String { URL(fileURLWithPath: folder).standardizedFileURL.resolvingSymlinksInPath().path }
     public var base: String
     public var remote: String?
     public var fetchedAt: Date?
@@ -55,6 +68,7 @@ public struct DioramaProject: Codable, Identifiable, Equatable, Sendable {
     public var draftGoal: Bool?
     public var linkedFrom: String?
     public var linkedBase: String?
+    public var draftStart: SessionStartOptions?
     public var pendingWorkspace: String?
     public init(name: String, folder: String, commonDirectory: String, base: String, remote: String?) {
         self.name = name; self.folder = folder; self.commonDirectory = commonDirectory; self.base = base; self.remote = remote
@@ -79,7 +93,7 @@ public enum ProjectCommand {
     public static func run(_ executable: String, _ arguments: [String], folder: String? = nil) async throws -> String {
         String(decoding: try await data(executable, arguments, folder: folder), as: UTF8.self).trimmingCharacters(in: .whitespacesAndNewlines)
     }
-    public static func data(_ executable: String, _ arguments: [String], folder: String? = nil) async throws -> Data {
+    public static func data(_ executable: String, _ arguments: [String], folder: String? = nil, environmentOverrides: [String: String] = [:], timeout: TimeInterval = 60) async throws -> Data {
         let temporary = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
         FileManager.default.createFile(atPath: temporary.path, contents: nil)
         let output = try FileHandle(forWritingTo: temporary)
@@ -96,6 +110,7 @@ public enum ProjectCommand {
         var environment = ProcessInfo.processInfo.environment
         environment["GIT_OPTIONAL_LOCKS"] = "0"; environment["GIT_TERMINAL_PROMPT"] = "0"; environment["GH_PROMPT_DISABLED"] = "1"
         environment["PATH"] = "/usr/bin:/bin:/usr/sbin:/sbin:/opt/homebrew/bin:/usr/local/bin:" + FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent(".local/bin").path
+        for (key, value) in environmentOverrides { environment[key] = value }
         process.environment = environment
         process.standardOutput = output; process.standardError = errorOutput
         process.standardInput = FileHandle.nullDevice
@@ -103,7 +118,7 @@ public enum ProjectCommand {
         let started = Date()
         do {
             while process.isRunning {
-                if Date().timeIntervalSince(started) > 60 { throw AppServerFailure("Command timed out. Try refreshing again.") }
+                if Date().timeIntervalSince(started) > timeout { throw AppServerFailure("Command timed out. Try refreshing again.") }
                 if try output.offset() > 4 * 1024 * 1024 || errorOutput.offset() > 4 * 1024 * 1024 {
                     throw AppServerFailure("Command output is too large to preview. Open this file externally.")
                 }
@@ -136,7 +151,99 @@ public enum ProjectCommand {
     }
 }
 
+/// Opening a folder is passive; Git discovery remains strict for execution paths.
+public enum ProjectFolder {
+    public static func open(_ path: String) async throws -> DioramaProject {
+        let url = URL(fileURLWithPath: path).standardizedFileURL.resolvingSymlinksInPath()
+        let values = try url.resourceValues(forKeys: [.isDirectoryKey, .isReadableKey])
+        guard values.isDirectory == true, values.isReadable == true else {
+            throw AppServerFailure("Choose a readable project folder.")
+        }
+        do { return try await ProjectGit.discover(url.path) }
+        catch {
+            try Task.checkCancellation()
+            // A broken or inaccessible repository is not a plain folder.
+            var ancestor = url
+            while true {
+                if FileManager.default.fileExists(atPath: ancestor.appendingPathComponent(".git").path) { throw error }
+                let parent = ancestor.deletingLastPathComponent()
+                if parent.path == ancestor.path { break }
+                ancestor = parent
+            }
+            return DioramaProject(name: url.lastPathComponent, folder: url.path, commonDirectory: "", base: "", remote: nil)
+        }
+    }
+
+    public static func files(_ folder: String) async throws -> [String] {
+        try await Task.detached { try listFiles(folder) }.value
+    }
+
+    private static func listFiles(_ folder: String) throws -> [String] {
+        let root = URL(fileURLWithPath: folder).standardizedFileURL.resolvingSymlinksInPath()
+        var failure: (any Error)?
+        guard let enumerator = FileManager.default.enumerator(at: root, includingPropertiesForKeys: [.isRegularFileKey, .isSymbolicLinkKey], options: [.skipsHiddenFiles], errorHandler: { _, error in failure = error; return false }) else {
+            throw AppServerFailure("This folder could not be read.")
+        }
+        var result: [String] = []
+        var count = 0
+        for case let url as URL in enumerator {
+            count += 1
+            guard count <= 20_000 else { throw AppServerFailure("This folder is too large to list. Open it in Finder to browse all files.") }
+            let values = try url.resourceValues(forKeys: [.isRegularFileKey, .isSymbolicLinkKey])
+            // Directory enumeration does not follow symbolic links.
+            if values.isSymbolicLink == true { continue }
+            if values.isRegularFile == true {
+                let path = url.standardizedFileURL.resolvingSymlinksInPath().path
+                guard path.hasPrefix(root.path + "/") else { continue }
+                result.append(String(path.dropFirst(root.path.count + 1)))
+            }
+        }
+        if let failure { throw failure }
+        return result.sorted()
+    }
+}
+
 public enum ProjectGit {
+    public static func localBranches(_ folder: String) async throws -> [String] {
+        _ = try await ProjectCommand.git(folder, ["rev-parse", "--verify", "HEAD^{commit}"])
+        return try await ProjectCommand.git(folder, ["for-each-ref", "--format=%(refname:short)", "refs/heads"]).split(separator: "\n").map(String.init)
+    }
+    public static func currentBranch(_ folder: String) async -> String {
+        (try? await ProjectCommand.git(folder, ["symbolic-ref", "--short", "HEAD"])) ?? "HEAD"
+    }
+    public static func defaultLocalReference(_ folder: String) async throws -> String {
+        let branches = try await localBranches(folder)
+        if branches.contains("main") { return "main" }
+        if branches.contains("master") { return "master" }
+        return await currentBranch(folder)
+    }
+    public static func prepareLocal(project: DioramaProject, id: String, options: SessionStartOptions,
+                                    switchConfirmed: Bool = false, activeFolders: Set<String> = []) async throws -> ProjectWorkspace {
+        let found = try await discover(options.folder)
+        var source = project
+        source.folder = options.folder; source.commonDirectory = found.commonDirectory
+        if options.createWorktree {
+            return try await createWorkspace(project: source, id: id, base: options.reference)
+        }
+        let current = await currentBranch(options.folder)
+        if current != options.reference {
+            guard switchConfirmed else { throw AppServerFailure("Confirm switching the project's branch before starting.") }
+            let canonical = URL(fileURLWithPath: options.folder).resolvingSymlinksInPath().path
+            guard !activeFolders.contains(where: { URL(fileURLWithPath: $0).resolvingSymlinksInPath().path == canonical }) else {
+                throw AppServerFailure("Another active session uses this folder. Create a worktree instead.")
+            }
+            guard try await ProjectCommand.git(options.folder, ["status", "--porcelain", "--untracked-files=all"]).isEmpty else {
+                throw AppServerFailure("This folder has uncommitted changes. Keep its current branch or create a worktree.")
+            }
+            let branches = try await localBranches(options.folder)
+            guard branches.contains(options.reference) else { throw AppServerFailure("Choose an existing local branch.") }
+            _ = try await ProjectCommand.git(options.folder, ["switch", "--", options.reference])
+        }
+        let commit = try await ProjectCommand.git(options.folder, ["rev-parse", "--verify", "HEAD^{commit}"])
+        var workspace = ProjectWorkspace(id: id, folder: options.folder, branch: options.reference, baseCommit: commit, context: project.context)
+        workspace.direct = true
+        return workspace
+    }
     public static func discover(_ path: String) async throws -> DioramaProject {
         let root = try await ProjectCommand.git(path, ["rev-parse", "--show-toplevel"])
         let common = try await ProjectCommand.git(root, ["rev-parse", "--path-format=absolute", "--git-common-dir"])
@@ -150,8 +257,8 @@ public enum ProjectGit {
     private static func fetchBase(_ project: DioramaProject, reference: String) async throws {
         let remotes = try await ProjectCommand.git(project.folder, ["remote"]).split(separator: "\n").map(String.init)
         if let remote = remotes.sorted(by: { $0.count > $1.count }).first(where: { reference.hasPrefix($0 + "/") }) {
-            _ = try await ProjectCommand.git(project.folder, ["fetch", "--", remote])
-        } else if project.remote != nil { _ = try await ProjectCommand.git(project.folder, ["fetch", "origin"]) }
+            _ = try await GitHubGit.remote(project.folder, name: remote, arguments: ["fetch", "--", remote])
+        } else if project.remote != nil { _ = try await GitHubGit.remote(project.folder, arguments: ["fetch", "origin"]) }
     }
     public static func refresh(_ project: DioramaProject) async throws -> String {
         try await fetchBase(project, reference: project.base)
@@ -168,19 +275,21 @@ public enum ProjectGit {
             let commit = try await ProjectCommand.git(folder, ["rev-parse", "HEAD"])
             return ProjectWorkspace(id: id, folder: folder, branch: branch, baseCommit: commit, context: project.context)
         }
-        let reference = base ?? project.base
-        if !useCached { try await fetchBase(project, reference: reference) }
+        let reference: String
+        if let base, !base.isEmpty { reference = base }
+        else { reference = try await defaultLocalReference(project.folder) }
         guard !reference.hasPrefix("-") else { throw AppServerFailure("Choose a valid base branch.") }
         let commit = try await ProjectCommand.git(project.folder, ["rev-parse", "--verify", reference + "^{commit}"])
         try FileManager.default.createDirectory(at: URL(fileURLWithPath: folder).deletingLastPathComponent(), withIntermediateDirectories: true)
         _ = try await ProjectCommand.git(project.folder, ["worktree", "add", "-b", branch, folder, commit])
         return ProjectWorkspace(id: id, folder: folder, branch: branch, baseCommit: commit, context: project.context)
     }
-    public static func initialize(_ path: String) async throws -> DioramaProject {
+    public static func initialize(_ path: String, githubIdentity: GitHubIdentity? = nil) async throws -> DioramaProject {
         guard !FileManager.default.fileExists(atPath: path) else { throw AppServerFailure("Choose a new folder name. Existing folders are never overwritten.") }
         try FileManager.default.createDirectory(atPath: path, withIntermediateDirectories: true)
         _ = try await ProjectCommand.git(path, ["init", "-b", "main"])
-        _ = try await ProjectCommand.git(path, ["commit", "--allow-empty", "-m", "Initialize project"])
+        let identityArguments = githubIdentity.map { ["-c", "user.name=" + $0.login, "-c", "user.email=\($0.id)+\($0.login)@users.noreply.github.com"] } ?? []
+        _ = try await ProjectCommand.git(path, identityArguments + ["commit", "--allow-empty", "-m", "Initialize project"])
         return try await discover(path)
     }
     public static func files(folder: String, revision: String? = nil, showIgnored: Bool = false) async throws -> [String] {
@@ -208,6 +317,7 @@ public enum ProjectGit {
         return target
     }
     public static func cleanup(project: DioramaProject, workspace: ProjectWorkspace) async throws {
+        guard workspace.isManagedWorktree else { throw AppServerFailure("Direct session folders cannot be removed as worktrees.") }
         let changes = try await ProjectCommand.git(workspace.folder, ["status", "--porcelain", "--untracked-files=all", "--ignored"])
         guard changes.isEmpty else { throw AppServerFailure("This worktree contains modified, untracked, or ignored files. Preserve them before cleanup.") }
         let branch = try await ProjectCommand.git(workspace.folder, ["branch", "--show-current"])

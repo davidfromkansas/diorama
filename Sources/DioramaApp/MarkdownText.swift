@@ -97,8 +97,16 @@ func isStructuredRecord(_ text: String) -> Bool {
 }
 
 /// Compact titles use the readable text, without block layout or active links in list rows.
+private let sidebarTitleCache: NSCache<NSString, NSString> = {
+    let cache = NSCache<NSString, NSString>()
+    cache.countLimit = 1024; cache.totalCostLimit = 2 * 1024 * 1024
+    return cache
+}()
 func markdownTitle(_ source: String) -> String {
     // App Server can derive a title from all text inputs, including canvas context.
     let visible = source.components(separatedBy: "<diorama_").first ?? source
-    return MarkdownContent(visible).renderPlainText().trimmingCharacters(in: .whitespacesAndNewlines)
+    if let cached = sidebarTitleCache.object(forKey: visible as NSString) { return cached as String }
+    let title = MarkdownContent(visible).renderPlainText().trimmingCharacters(in: .whitespacesAndNewlines)
+    sidebarTitleCache.setObject(title as NSString, forKey: visible as NSString, cost: visible.utf8.count + title.utf8.count)
+    return title
 }

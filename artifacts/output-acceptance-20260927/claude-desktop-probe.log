@@ -1,0 +1,27 @@
+[0/1] Planning build
+Building for debugging...
+[0/7] Write sources
+[1/7] Write swift-version--58304C5D6DBC2206.txt
+[3/5] Compiling DioramaRenderingTests LiveExternalViewerProbe.swift
+[4/5] Emitting module DioramaRenderingTests
+[4/6] Write Objects.LinkFileList
+[5/6] Linking DioramaPackageTests
+Build complete! (3.51s)
+Test Suite 'Selected tests' started at 2026-09-27 11:38:19.265.
+Test Suite 'DioramaPackageTests.xctest' started at 2026-09-27 11:38:19.266.
+Test Suite 'DioramaPackageTests.xctest' passed at 2026-09-27 11:38:19.266.
+	 Executed 0 tests, with 0 failures (0 unexpected) in 0.000 (0.000) seconds
+Test Suite 'Selected tests' passed at 2026-09-27 11:38:19.266.
+	 Executed 0 tests, with 0 failures (0 unexpected) in 0.000 (0.001) seconds
+◇ Test run started.
+↳ Testing Library Version: 1743
+↳ Target Platform: arm64e-apple-macos14.0
+◇ Suite LiveExternalViewerProbe started.
+◇ Test measuresDesignatedExternalSession() started.
+VIEWER_LIVE_PROBE_READY provider=Claude Code origin=claudeDesktop
+VIEWER_LIVE_PROBE_RESULT {"duration_seconds":300,"evidence_to_model":{},"execution_requests":0,"notifications":0,"observer_reads_hooks":false,"origin":"claudeDesktop","pixel_latency_measured":false,"provider":"Claude Code","readability_measurement":"Independent 20ms sampling; intervals bound complete-entry readability. File mtime aggregate is a proxy, not first-evidence timing.","samples":[],"screen_measurement":"visible_at\/source_visible_at require separately correlated screenshot or recording evidence; null is unmeasured.","source_client_visible_time_measured":false,"source_timestamp_to_model":{}}
+✘ Test measuresDesignatedExternalSession() recorded an issue at LiveExternalViewerProbe.swift:162:9: Expectation failed: !((evidenceToModel → []).isEmpty → true → true)
+↳ Send a bounded prompt in the designated source client while the probe is running
+✘ Test measuresDesignatedExternalSession() failed after 305.348 seconds with 1 issue.
+✘ Suite LiveExternalViewerProbe failed after 305.349 seconds with 1 issue.
+✘ Test run with 1 test in 1 suite failed after 305.349 seconds with 1 issue.

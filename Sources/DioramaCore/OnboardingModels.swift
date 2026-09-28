@@ -14,3 +14,16 @@ public enum OnboardingModels {
         return nil
     }
 }
+
+public enum AgentConnectionState: String, Sendable {
+    case checking, connected, missing, signedOut, unavailable
+    public static func resolve(installed: Bool, connected: Bool, checking: Bool, error: String?) -> Self {
+        if connected { return .connected }
+        if checking { return .checking }
+        if !installed { return .missing }
+        guard let error else { return .signedOut }
+        let value = error.lowercased()
+        if value.contains("not logged in") || value.contains("please run /login") || value.contains("login expired") { return .signedOut }
+        return .unavailable
+    }
+}

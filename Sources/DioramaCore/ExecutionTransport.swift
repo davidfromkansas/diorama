@@ -60,6 +60,7 @@ public actor CodexExecutionTransport: ExecutionTransport {
     private var output: FileHandle?
     private var buffer = Data()
     private var scannedBytes = 0
+    private var pumpMadeProgress = false
     private var reader: Task<Void, Never>?
     private var serial = 0
     private var ready = false
@@ -76,13 +77,16 @@ public actor CodexExecutionTransport: ExecutionTransport {
         if let process, process.isRunning { process.terminate() }
         eventSink.finish()
     }
+    private var selectedBinary: URL?
     public func connect() async throws {
-        if ready, process?.isRunning == true { return }
+        let selected = executable ?? AgentExecutable.resolve("codex")
+        if ready, process?.isRunning == true, selected == selectedBinary { return }
+        if ready, selected != selectedBinary { fail("Codex installation changed") }
         guard process == nil else { throw AppServerFailure("Execution connection is initializing or unavailable") }
         let home = FileManager.default.homeDirectoryForCurrentUser
-        let candidates = [home.appendingPathComponent(".local/bin/codex"), URL(fileURLWithPath: "/opt/homebrew/bin/codex"), URL(fileURLWithPath: "/usr/local/bin/codex")]
-        guard let binary = executable ?? candidates.first(where: { FileManager.default.isExecutableFile(atPath: $0.path) }) else { throw AppServerFailure("Install Codex CLI before running tasks") }
+        guard let binary = executable ?? AgentExecutable.resolve("codex") else { throw AppServerFailure("Install Codex CLI before running tasks") }
         let child = Process(), stdin = Pipe(), stdout = Pipe()
+        selectedBinary = binary
         child.executableURL = binary
         child.arguments = Self.launchArguments
         child.standardInput = stdin; child.standardOutput = stdout; child.standardError = FileHandle.nullDevice
@@ -95,7 +99,8 @@ public actor CodexExecutionTransport: ExecutionTransport {
         reader = Task { [weak self] in
             while !Task.isCancelled {
                 guard await self?.pump() == true else { return }
-                do { try await Task.sleep(for: .milliseconds(25)) } catch { return }
+                let delay = await self?.readDelay() ?? .milliseconds(25)
+                do { try await Task.sleep(for: delay) } catch { return }
             }
         }
         do {
@@ -137,7 +142,9 @@ public actor CodexExecutionTransport: ExecutionTransport {
         var bytes = try JSONEncoder().encode(message); bytes.append(10)
         try input.write(contentsOf: bytes)
     }
+    private func readDelay() -> Duration { pumpMadeProgress ? .milliseconds(1) : .milliseconds(25) }
     private func pump() -> Bool {
+        pumpMadeProgress = false
         guard let output else { return false }
         // Drain ready chunks in bounded batches instead of throttling every 64 KiB.
         for _ in 0..<32 {
@@ -147,8 +154,10 @@ public actor CodexExecutionTransport: ExecutionTransport {
             let count = Darwin.read(output.fileDescriptor, &bytes, bytes.count)
             if count == 0 { fail("Execution server disconnected. Task outcome must be reconciled."); return false }
             if count < 0 { if errno != EAGAIN && errno != EINTR { fail("Execution pipe read failed"); return false }; return true }
+            pumpMadeProgress = true
             buffer.append(contentsOf: bytes.prefix(count))
-            while let end = buffer[buffer.index(buffer.startIndex, offsetBy: scannedBytes)...].firstIndex(of: 10) {
+            while let offset = buffer.newlineOffset(startingAt: scannedBytes) {
+                let end = buffer.index(buffer.startIndex, offsetBy: offset)
                 guard buffer.distance(from: buffer.startIndex, to: end) <= 64 * 1024 * 1024 else { fail("Execution event exceeded 64 MiB"); return false }
                 scannedBytes = 0
                 let line = Data(buffer.prefix(upTo: end)); buffer.removeSubrange(...end)
@@ -180,4 +189,17 @@ public actor CodexExecutionTransport: ExecutionTransport {
         eventSink.yield(.object(["method": .string("diorama/disconnected"), "params": .object(["reason": .string(reason)])]))
     }
     public func shutdown() { fail("Execution connection closed") }
+}
+
+// Data's generic collection scan is expensive for multi-megabyte protocol frames in debug builds.
+// Scan only bytes added since the previous read, without allocating a subsequence.
+extension Data {
+    func newlineOffset(startingAt offset: Int = 0) -> Int? {
+        guard offset < count else { return nil }
+        return withUnsafeBytes { bytes in
+            guard let base = bytes.baseAddress,
+                  let found = memchr(base.advanced(by: offset), 10, bytes.count - offset) else { return nil }
+            return base.distance(to: found)
+        }
+    }
 }

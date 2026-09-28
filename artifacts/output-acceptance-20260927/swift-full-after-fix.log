@@ -1,0 +1,899 @@
+Building for debugging...
+[0/6] Write swift-version--58304C5D6DBC2206.txt
+Build complete! (0.09s)
+Test Suite 'All tests' started at 2026-09-27 11:46:05.530.
+Test Suite 'All tests' passed at 2026-09-27 11:46:05.531.
+	 Executed 0 tests, with 0 failures (0 unexpected) in 0.000 (0.001) seconds
+◇ Test run started.
+↳ Testing Library Version: 1743
+↳ Target Platform: arm64e-apple-macos14.0
+◇ Suite ActivityTests started.
+◇ Test duplicatesLateEventsAndResumedTurns() started.
+✔ Test duplicatesLateEventsAndResumedTurns() passed after 0.001 seconds.
+◇ Test priorTurnCompletionCannotFinishResumedWork() started.
+✔ Test priorTurnCompletionCannotFinishResumedWork() passed after 0.001 seconds.
+◇ Test attentionNeedsCorrelatedResolutionAndNoCrossAgentCompletion() started.
+✔ Test attentionNeedsCorrelatedResolutionAndNoCrossAgentCompletion() passed after 0.001 seconds.
+◇ Test conflictsAndUnmatchedToolsRemainUncertain() started.
+✔ Test conflictsAndUnmatchedToolsRemainUncertain() passed after 0.001 seconds.
+◇ Test reporterAllowlistsAndLimitsSensitiveFields() started.
+✔ Test reporterAllowlistsAndLimitsSensitiveFields() passed after 0.001 seconds.
+◇ Test hookSemanticsDontInventCompletionOrBlocking() started.
+✔ Test hookSemanticsDontInventCompletionOrBlocking() passed after 0.001 seconds.
+◇ Test incrementalMultipleSessionsPartialWritesReplacementAndReconnect() started.
+✔ Test incrementalMultipleSessionsPartialWritesReplacementAndReconnect() passed after 0.008 seconds.
+◇ Test longRunningStateSurvivesTailAndEventLimits() started.
+✔ Test longRunningStateSurvivesTailAndEventLimits() passed after 0.120 seconds.
+◇ Test configMergeRemoveBackupAndConcurrentEdit() started.
+✔ Test configMergeRemoveBackupAndConcurrentEdit() passed after 0.002 seconds.
+◇ Test unknownVersionsCannotInstallAndMalformedSettingsAreNotOverwritten() started.
+✔ Test unknownVersionsCannotInstallAndMalformedSettingsAreNotOverwritten() passed after 0.001 seconds.
+◇ Test hookRetentionAndClearDoNotTouchOtherFiles() started.
+✔ Test hookRetentionAndClearDoNotTouchOtherFiles() passed after 0.001 seconds.
+✔ Suite ActivityTests passed after 0.135 seconds.
+◇ Suite AppServerHistoryTests started.
+◇ Test boundedItemPaginationLoadsOlderMessagesWithoutWholeThreadRead() started.
+✔ Test boundedItemPaginationLoadsOlderMessagesWithoutWholeThreadRead() passed after 0.001 seconds.
+◇ Test boundedPageReportsOlderContentWithoutFetchingIt() started.
+✔ Test boundedPageReportsOlderContentWithoutFetchingIt() passed after 0.001 seconds.
+◇ Test currentProtocolItemsDoNotForceHistoryFallback() started.
+✔ Test currentProtocolItemsDoNotForceHistoryFallback() passed after 0.001 seconds.
+◇ Test imageViewKeepsStructuredReferenceAndRawDetails() started.
+✔ Test imageViewKeepsStructuredReferenceAndRawDetails() passed after 0.001 seconds.
+◇ Test classificationAndIdentityDoNotDependOnFilesOrTitles() started.
+✔ Test classificationAndIdentityDoNotDependOnFilesOrTitles() passed after 0.001 seconds.
+◇ Test fullPaginationIncludesArchivesAndAllSources() started.
+✔ Test fullPaginationIncludesArchivesAndAllSources() passed after 0.001 seconds.
+◇ Test repeatedCursorFailsWithoutHidingLocalRecords() started.
+✔ Test repeatedCursorFailsWithoutHidingLocalRecords() passed after 0.001 seconds.
+◇ Test structuredHistoryPreservesMarkdownContextToolsAndExcludesReasoning() started.
+✔ Test structuredHistoryPreservesMarkdownContextToolsAndExcludesReasoning() passed after 0.001 seconds.
+◇ Test emptyTurnTriggersFileFallbackAndPreservesLastGoodRead() started.
+✔ Test emptyTurnTriggersFileFallbackAndPreservesLastGoodRead() passed after 0.001 seconds.
+◇ Test unavailableServerKeepsClaudeAndCodexAndSourceBytes() started.
+✔ Test unavailableServerKeepsClaudeAndCodexAndSourceBytes() passed after 0.001 seconds.
+◇ Test historyTransportRejectsExecutionWithoutLaunching() started.
+✔ Test historyTransportRejectsExecutionWithoutLaunching() passed after 0.001 seconds.
+◇ Test fragmentedPipeResponseAndDisconnectAreBounded() started.
+✔ Test fragmentedPipeResponseAndDisconnectAreBounded() passed after 0.463 seconds.
+◇ Test largeHistoryFrameDoesNotRepeatedlyRescanBufferedBytes() started.
+✔ Test largeHistoryFrameDoesNotRepeatedlyRescanBufferedBytes() passed after 0.382 seconds.
+◇ Test missingRecentReplyFallsBackEvenWhenOtherItemsExist() started.
+✔ Test missingRecentReplyFallsBackEvenWhenOtherItemsExist() passed after 0.001 seconds.
+➜ Test designatedLiveHistoryAndDiscovery() skipped.
+✔ Suite AppServerHistoryTests passed after 0.850 seconds.
+◇ Suite AttachmentTests started.
+◇ Test imageOnlyUsesOfficialLocalImage() started.
+✔ Test imageOnlyUsesOfficialLocalImage() passed after 0.001 seconds.
+◇ Test filesAreQuotedReferencesAndRevalidated() started.
+✔ Test filesAreQuotedReferencesAndRevalidated() passed after 0.001 seconds.
+◇ Test rejectsInvalidAttachmentsAndEmptyInput() started.
+✔ Test rejectsInvalidAttachmentsAndEmptyInput() passed after 0.001 seconds.
+✔ Suite AttachmentTests passed after 0.003 seconds.
+◇ Suite CapabilityLibraryTests started.
+◇ Test codexPreservesSuccessfulSectionsAndDoesNotMutatePicker() started.
+✔ Test codexPreservesSuccessfulSectionsAndDoesNotMutatePicker() passed after 0.005 seconds.
+◇ Test unboundClaudeDoesNotContactOrStartRuntime() started.
+✔ Test unboundClaudeDoesNotContactOrStartRuntime() passed after 0.010 seconds.
+◇ Test localClaudeRespectsProjectScopeAndDisabledPlugins() started.
+✔ Test localClaudeRespectsProjectScopeAndDisabledPlugins() passed after 0.002 seconds.
+◇ Test runtimeDoesNotTurnBuiltinsOrAmbiguousNamesIntoVerifiedSkills() started.
+✔ Test runtimeDoesNotTurnBuiltinsOrAmbiguousNamesIntoVerifiedSkills() passed after 0.001 seconds.
+◇ Test codexConfigurationRequiresEvidenceAndLinksDeclaredApps() started.
+✔ Test codexConfigurationRequiresEvidenceAndLinksDeclaredApps() passed after 0.002 seconds.
+◇ Test stableIdentityNormalizationAndFreshness() started.
+✔ Test stableIdentityNormalizationAndFreshness() passed after 0.001 seconds.
+✔ Suite CapabilityLibraryTests passed after 0.021 seconds.
+◇ Suite ClaudeDesktopHistoryTests started.
+◇ Test discoversOlderHistoryWithoutHooksAndKeepsIdentityAndWorktree() started.
+✔ Test discoversOlderHistoryWithoutHooksAndKeepsIdentityAndWorktree() passed after 0.001 seconds.
+◇ Test missingAndMismatchedTranscriptsStayUnavailable() started.
+✔ Test missingAndMismatchedTranscriptsStayUnavailable() passed after 0.001 seconds.
+◇ Test liveAppendPartialWriteAndDeletedTranscript() started.
+✔ Test liveAppendPartialWriteAndDeletedTranscript() passed after 0.001 seconds.
+◇ Test registrySurvivesActivityClearingAndRejectsEscapesAndWrongIdentity() started.
+✔ Test registrySurvivesActivityClearingAndRejectsEscapesAndWrongIdentity() passed after 0.001 seconds.
+◇ Test unsupportedRemoteAndMalformedMetadata() started.
+✔ Test unsupportedRemoteAndMalformedMetadata() passed after 0.001 seconds.
+◇ Test hookConfigurationIsSharedIdempotentAndVersionIndependent() started.
+✔ Test hookConfigurationIsSharedIdempotentAndVersionIndependent() passed after 0.001 seconds.
+◇ Test desktopExecutionIsRejectedBeforeTransportEvenForJournaledIDs() started.
+✔ Test desktopExecutionIsRejectedBeforeTransportEvenForJournaledIDs() passed after 0.001 seconds.
+◇ Test symlinkOutsideTranscriptRootsIsRejected() started.
+✔ Test symlinkOutsideTranscriptRootsIsRejected() passed after 0.001 seconds.
+◇ Test newestMetadataWinsWithoutDuplicatingCLIAndKeepsArchiveState() started.
+✔ Test newestMetadataWinsWithoutDuplicatingCLIAndKeepsArchiveState() passed after 0.001 seconds.
+➜ Test localDiscoveryProbe() skipped.
+✔ Suite ClaudeDesktopHistoryTests passed after 0.008 seconds.
+◇ Suite ClaudeExecutionTests started.
+◇ Test subscriptionGateDoesNotTreatLoggedInAsSubscription() started.
+✔ Test subscriptionGateDoesNotTreatLoggedInAsSubscription() passed after 0.001 seconds.
+◇ Test currentSubscriptionCatalogIsRecognizedWithoutTokenSource() started.
+✔ Test currentSubscriptionCatalogIsRecognizedWithoutTokenSource() passed after 0.001 seconds.
+◇ Test unsupportedEffortIsNotAdvertised() started.
+✔ Test unsupportedEffortIsNotAdvertised() passed after 0.001 seconds.
+◇ Test rejectsUnknownAttachmentInsteadOfSendingItAsText() started.
+✔ Test rejectsUnknownAttachmentInsteadOfSendingItAsText() passed after 0.001 seconds.
+◇ Test processStreamsApprovalsStopAndContinues() started.
+✔ Test processStreamsApprovalsStopAndContinues() passed after 0.599 seconds.
+◇ Test apiBillingIsRejectedBeforeAnyPrompt() started.
+✔ Test apiBillingIsRejectedBeforeAnyPrompt() passed after 0.341 seconds.
+◇ Test queuedMessagesSurviveProcessRestartWithoutAutoSending() started.
+✔ Test queuedMessagesSurviveProcessRestartWithoutAutoSending() passed after 0.364 seconds.
+◇ Test claudeSteeringInterruptsAndStartsReplacement() started.
+✔ Test claudeSteeringInterruptsAndStartsReplacement() passed after 0.471 seconds.
+◇ Test goalContinuesAndCompletesThenSurvivesRestart() started.
+✔ Test goalContinuesAndCompletesThenSurvivesRestart() passed after 0.527 seconds.
+◇ Test activeGoalRecoveredFromDiskStaysPausedWithoutSending() started.
+✔ Test activeGoalRecoveredFromDiskStaysPausedWithoutSending() passed after 0.338 seconds.
+◇ Test queuedClaudeCorrectionIsRemovedOnceAfterReplacement() started.
+✔ Test queuedClaudeCorrectionIsRemovedOnceAfterReplacement() passed after 0.422 seconds.
+◇ Test blockedFirstGoalResponseNeverRestartsItself() started.
+✔ Test blockedFirstGoalResponseNeverRestartsItself() passed after 0.409 seconds.
+✔ Suite ClaudeExecutionTests passed after 3.476 seconds.
+◇ Suite ClaudeGoalTests started.
+◇ Test nativeModelControlMetadataIsContext() started.
+✔ Test nativeModelControlMetadataIsContext() passed after 0.001 seconds.
+◇ Test generatedGoalInstructionsAreCollapsedInHistory() started.
+✔ Test generatedGoalInstructionsAreCollapsedInHistory() passed after 0.001 seconds.
+◇ Test onlyExplicitFinalStatusContinues() started.
+✔ Test onlyExplicitFinalStatusContinues() passed after 0.001 seconds.
+◇ Test limitsAndInterruptionsStopContinuation() started.
+✔ Test limitsAndInterruptionsStopContinuation() passed after 0.001 seconds.
+◇ Test pauseIsNotOverriddenByContinue() started.
+✔ Test pauseIsNotOverriddenByContinue() passed after 0.001 seconds.
+✔ Suite ClaudeGoalTests passed after 0.001 seconds.
+◇ Suite ClaudeLaunchEnvironmentTests started.
+◇ Test childUsesActualWorktreeInsteadOfInheritedGUIWorkingDirectory() started.
+✔ Test childUsesActualWorktreeInsteadOfInheritedGUIWorkingDirectory() passed after 0.001 seconds.
+◇ Test directoryCorrectionPreservesSubscriptionCredentialFiltering() started.
+✔ Test directoryCorrectionPreservesSubscriptionCredentialFiltering() passed after 0.001 seconds.
+✔ Suite ClaudeLaunchEnvironmentTests passed after 0.001 seconds.
+◇ Suite ClaudeOutputsTests started.
+➜ Test readsRealArtifactTestTranscript() skipped.
+◇ Test correlatedArtifactGuidanceKeepsIdentityAndDoesNotBecomeArtifact() started.
+✔ Test correlatedArtifactGuidanceKeepsIdentityAndDoesNotBecomeArtifact() passed after 0.001 seconds.
+◇ Test filesRequireSuccessfulStructuredToolEvidence() started.
+✔ Test filesRequireSuccessfulStructuredToolEvidence() passed after 0.001 seconds.
+◇ Test desktopArtifactWithoutActionUsesExplicitFilePath() started.
+✔ Test desktopArtifactWithoutActionUsesExplicitFilePath() passed after 0.001 seconds.
+◇ Test mixedContentAndOrphanResultsNeverExposeReasoningOrBase64() started.
+✔ Test mixedContentAndOrphanResultsNeverExposeReasoningOrBase64() passed after 0.001 seconds.
+◇ Test ownershipInterleavingAndUnknownDiagnostics() started.
+✔ Test ownershipInterleavingAndUnknownDiagnostics() passed after 0.001 seconds.
+◇ Test previewEmbedsOnlyBoundedCompanions() started.
+✔ Test previewEmbedsOnlyBoundedCompanions() passed after 0.001 seconds.
+✔ Suite ClaudeOutputsTests passed after 0.002 seconds.
+◇ Suite ClaudeSubscriptionLiveProbe started.
+➜ Test subscriptionCompletesRealTurn() skipped.
+✔ Suite ClaudeSubscriptionLiveProbe passed after 0.001 seconds.
+◇ Suite ClaudeWorkflowLiveProbe started.
+➜ Test subscriptionSteeringAndGoal() skipped.
+✔ Suite ClaudeWorkflowLiveProbe passed after 0.001 seconds.
+◇ Suite CodexOutputsTests started.
+➜ Test designatedLiveCLIOutputCanBePreviewed() skipped.
+◇ Test persistedCapitalizedTextBlocksRemainReadable() started.
+✔ Test persistedCapitalizedTextBlocksRemainReadable() passed after 0.001 seconds.
+◇ Test sourceErrorsAndPlanInputsRemainExplicit() started.
+✔ Test sourceErrorsAndPlanInputsRemainExplicit() passed after 0.001 seconds.
+◇ Test nativeItemsExposeFilesCommandsAndDeduplicateMCP() started.
+✔ Test nativeItemsExposeFilesCommandsAndDeduplicateMCP() passed after 0.001 seconds.
+◇ Test callResultsUpdateSameCardWithoutLosingIdentity() started.
+✔ Test callResultsUpdateSameCardWithoutLosingIdentity() passed after 0.001 seconds.
+◇ Test sourceUpdatesAndTurnScopesRemainSeparate() started.
+✔ Test sourceUpdatesAndTurnScopesRemainSeparate() passed after 0.001 seconds.
+◇ Test unsupportedItemsPreserveAppServerHistoryAndStableRows() started.
+✔ Test unsupportedItemsPreserveAppServerHistoryAndStableRows() passed after 0.001 seconds.
+◇ Test dynamicMixedOutputsAndReasoningRedaction() started.
+✔ Test dynamicMixedOutputsAndReasoningRedaction() passed after 0.001 seconds.
+◇ Test embeddedResourcesPreviewOnlyOnRequestAndFailedChangesHaveNoOutput() started.
+✔ Test embeddedResourcesPreviewOnlyOnRequestAndFailedChangesHaveNoOutput() passed after 0.001 seconds.
+◇ Test inlineImageDataURIsAndOutputListsStayBounded() started.
+✔ Test inlineImageDataURIsAndOutputListsStayBounded() passed after 0.001 seconds.
+◇ Test fallbackIDsUseByteOffsetsAndIgnoreIncompleteLines() started.
+✔ Test fallbackIDsUseByteOffsetsAndIgnoreIncompleteLines() passed after 0.001 seconds.
+✔ Suite CodexOutputsTests passed after 0.002 seconds.
+◇ Suite ComposerQueueLiveProbe started.
+➜ Test queuedMessageCanSteer() skipped.
+✔ Suite ComposerQueueLiveProbe passed after 0.001 seconds.
+◇ Suite ContinuousTranscriptTests started.
+◇ Test localCodexFallbackUsesProviderItemsWithoutDuplicateMessages() started.
+✔ Test localCodexFallbackUsesProviderItemsWithoutDuplicateMessages() passed after 0.001 seconds.
+◇ Test overlaysStreamingWithoutDuplicatingSavedItems() started.
+✔ Test overlaysStreamingWithoutDuplicatingSavedItems() passed after 0.001 seconds.
+◇ Test splitUserContextAndRepeatedMessagesArePreserved() started.
+✔ Test splitUserContextAndRepeatedMessagesArePreserved() passed after 0.001 seconds.
+◇ Test delayedEarlierLiveTurnStaysBeforeLaterSavedTurn() started.
+✔ Test delayedEarlierLiveTurnStaysBeforeLaterSavedTurn() passed after 0.001 seconds.
+✔ Suite ContinuousTranscriptTests passed after 0.001 seconds.
+◇ Suite ConversationCanvasTests started.
+◇ Test stableLocationIsolatesProvidersAndConversationsAndPreservesEdits() started.
+✔ Test stableLocationIsolatesProvidersAndConversationsAndPreservesEdits() passed after 0.001 seconds.
+◇ Test incompleteOversizedAndEscapingFilesAreRejected() started.
+✔ Test incompleteOversizedAndEscapingFilesAreRejected() passed after 0.002 seconds.
+◇ Test canvasInstructionsAreSeparatedFromTheUserMessage() started.
+✔ Test canvasInstructionsAreSeparatedFromTheUserMessage() passed after 0.001 seconds.
+✔ Suite ConversationCanvasTests passed after 0.004 seconds.
+◇ Suite DeepCodexOutputTests started.
+◇ Test dottedSearchAndUsageRemainInspectable() started.
+✔ Test dottedSearchAndUsageRemainInspectable() passed after 0.001 seconds.
+◇ Test nativeMessagesDoNotEraseDistinctAssistantOutput() started.
+✔ Test nativeMessagesDoNotEraseDistinctAssistantOutput() passed after 0.001 seconds.
+◇ Test nativeHistoryNormalizesSearchAndCapitalizedUserText() started.
+✔ Test nativeHistoryNormalizesSearchAndCapitalizedUserText() passed after 0.001 seconds.
+✔ Suite DeepCodexOutputTests passed after 0.001 seconds.
+◇ Suite DeepClaudeOutputTests started.
+◇ Test savedSessionUsageAndModeKeepNativeSemantics() started.
+✔ Test savedSessionUsageAndModeKeepNativeSemantics() passed after 0.001 seconds.
+◇ Test preservesProviderSpecificMetricsProgressAndAttachments() started.
+✔ Test preservesProviderSpecificMetricsProgressAndAttachments() passed after 0.001 seconds.
+◇ Test requestResultResolvesInsteadOfRemainingWaiting() started.
+✔ Test requestResultResolvesInsteadOfRemainingWaiting() passed after 0.001 seconds.
+✔ Suite DeepClaudeOutputTests passed after 0.001 seconds.
+◇ Suite SourceRecordTests started.
+◇ Test passiveObserverRetainsLoadableSourceAcrossAppends(_:) started.
+◇ Test case passing 1 argument provider → .codex to passiveObserverRetainsLoadableSourceAcrossAppends(_:) started.
+◇ Test case passing 1 argument provider → .claude to passiveObserverRetainsLoadableSourceAcrossAppends(_:) started.
+✔ Test passiveObserverRetainsLoadableSourceAcrossAppends(_:) with 2 test cases passed after 0.002 seconds.
+◇ Test loadsMoreAndRejectsReplacedSource() started.
+✔ Test loadsMoreAndRejectsReplacedSource() passed after 0.001 seconds.
+◇ Test oldEntryDecodesWithoutNewProviderPayloads() started.
+✔ Test oldEntryDecodesWithoutNewProviderPayloads() passed after 0.001 seconds.
+✔ Suite SourceRecordTests passed after 0.003 seconds.
+◇ Suite NativeCodexActivityTests started.
+◇ Test nativeOutcomesWinAndTurnsSurviveIncrementalChunks() started.
+✔ Test nativeOutcomesWinAndTurnsSurviveIncrementalChunks() passed after 0.001 seconds.
+✔ Suite NativeCodexActivityTests passed after 0.001 seconds.
+◇ Suite DesignatedActivityProbe started.
+➜ Test readsDesignatedIndependentSession() skipped.
+✔ Suite DesignatedActivityProbe passed after 0.001 seconds.
+◇ Suite DesktopExitResumeProbe started.
+➜ Test continueAfterDesktopExit() skipped.
+✔ Suite DesktopExitResumeProbe passed after 0.001 seconds.
+◇ Suite ExecutionLiveProbe started.
+➜ Test realExecutionLifecycle() skipped.
+✔ Suite ExecutionLiveProbe passed after 0.001 seconds.
+◇ Suite ExecutionPipeTests started.
+◇ Test largeResponseAndReadOnlyTimeoutAreHandled() started.
+✔ Test largeResponseAndReadOnlyTimeoutAreHandled() passed after 5.399 seconds.
+✔ Suite ExecutionPipeTests passed after 5.399 seconds.
+◇ Suite ExecutionPresentationTests started.
+◇ Test scalarFormsValidateTypesAndLimits() started.
+✔ Test scalarFormsValidateTypesAndLimits() passed after 0.001 seconds.
+◇ Test titledAndLegacyEnumsKeepWireValues() started.
+✔ Test titledAndLegacyEnumsKeepWireValues() passed after 0.001 seconds.
+◇ Test invalidFormatsAndUnknownConstraintsFailClosed() started.
+✔ Test invalidFormatsAndUnknownConstraintsFailClosed() passed after 0.001 seconds.
+◇ Test unsupportedFormCanStillBeDeclinedOrCancelled() started.
+✔ Test unsupportedFormCanStillBeDeclinedOrCancelled() passed after 0.001 seconds.
+◇ Test diffIncludesDeletionBinaryAndMultipleFiles() started.
+✔ Test diffIncludesDeletionBinaryAndMultipleFiles() passed after 0.001 seconds.
+✔ Suite ExecutionPresentationTests passed after 0.002 seconds.
+◇ Suite ExecutionTests started.
+◇ Test steerIsTurnBoundAndDoesNotStartAnotherTurn() started.
+✔ Test steerIsTurnBoundAndDoesNotStartAnotherTurn() passed after 0.001 seconds.
+◇ Test completionBeforeSteerReplyDoesNotResurrectTurn() started.
+✔ Test completionBeforeSteerReplyDoesNotResurrectTurn() passed after 0.001 seconds.
+◇ Test rejectedSteerIsDistinctFromUncertainDelivery() started.
+✔ Test rejectedSteerIsDistinctFromUncertainDelivery() passed after 0.001 seconds.
+◇ Test plansAndDiffsStayWithTheirTurnAndDoNotInventCompletion() started.
+✔ Test plansAndDiffsStayWithTheirTurnAndDoNotInventCompletion() passed after 0.001 seconds.
+◇ Test optionalQuestionsContinueAndBlockingRequestsResolveIndependently() started.
+✔ Test optionalQuestionsContinueAndBlockingRequestsResolveIndependently() passed after 0.001 seconds.
+◇ Test structuredApprovalCannotBroadenOfferedRule() started.
+✔ Test structuredApprovalCannotBroadenOfferedRule() passed after 0.001 seconds.
+◇ Test connectorFormWithoutTurnIsActionableWithoutPausingTask() started.
+✔ Test connectorFormWithoutTurnIsActionableWithoutPausingTask() passed after 0.001 seconds.
+◇ Test unavailableCanvasDoesNotBlockTheUserTask() started.
+✔ Test unavailableCanvasDoesNotBlockTheUserTask() passed after 0.001 seconds.
+◇ Test htmlViewInstructionsAreIncludedOnEveryTurnWithoutChangingUserText() started.
+✔ Test htmlViewInstructionsAreIncludedOnEveryTurnWithoutChangingUserText() passed after 0.002 seconds.
+◇ Test liveImageViewUpdatesOneEntryAndRetainsPreview() started.
+✔ Test liveImageViewUpdatesOneEntryAndRetainsPreview() passed after 0.001 seconds.
+◇ Test importedResumePreservesIdentityAndWaitsForExplicitSend() started.
+✔ Test importedResumePreservesIdentityAndWaitsForExplicitSend() passed after 0.001 seconds.
+◇ Test sendAcquiresConversationAndSubmitsExactlyOnce() started.
+✔ Test sendAcquiresConversationAndSubmitsExactlyOnce() passed after 0.001 seconds.
+◇ Test writerRetrySendsOnlyAfterSuccessfulAcquisition() started.
+✔ Test writerRetrySendsOnlyAfterSuccessfulAcquisition() passed after 0.001 seconds.
+◇ Test attachmentOnlyRetryPreservesOfficialInput() started.
+✔ Test attachmentOnlyRetryPreservesOfficialInput() passed after 0.001 seconds.
+◇ Test inheritsProviderReviewAndOnlyOverridesOnExplicitSend() started.
+✔ Test inheritsProviderReviewAndOnlyOverridesOnExplicitSend() passed after 0.001 seconds.
+◇ Test uncertainSendCannotBeAutomaticallyResumedAndResent() started.
+✔ Test uncertainSendCannotBeAutomaticallyResumedAndResent() passed after 0.001 seconds.
+◇ Test writerConflictLeavesImportsReadableAndAllowsExplicitRetry() started.
+✔ Test writerConflictLeavesImportsReadableAndAllowsExplicitRetry() passed after 0.001 seconds.
+◇ Test importedResumeRejectsReviewsArchivesAndAutomaticWork() started.
+✔ Test importedResumeRejectsReviewsArchivesAndAutomaticWork() passed after 0.001 seconds.
+◇ Test idleTaskWithTerminalRequiresConfirmationAndConfirmedTermination() started.
+✔ Test idleTaskWithTerminalRequiresConfirmationAndConfirmedTermination() passed after 0.001 seconds.
+◇ Test modelCatalogPreparationAndDuplicateSubmission() started.
+✔ Test modelCatalogPreparationAndDuplicateSubmission() passed after 0.001 seconds.
+◇ Test streamingFinalReplacementAndLateEvents() started.
+✔ Test streamingFinalReplacementAndLateEvents() passed after 0.001 seconds.
+◇ Test approvalRequiresExplicitAvailableDecisionAndResolution() started.
+✔ Test approvalRequiresExplicitAvailableDecisionAndResolution() passed after 0.001 seconds.
+◇ Test questionsAndUnsupportedToolsNeverExecuteClientCode() started.
+✔ Test questionsAndUnsupportedToolsNeverExecuteClientCode() passed after 0.001 seconds.
+◇ Test importedHandoffBlockedAndAmbiguousSubmissionNotRetried() started.
+✔ Test importedHandoffBlockedAndAmbiguousSubmissionNotRetried() passed after 0.001 seconds.
+◇ Test simultaneousTasksAndWorkerRemainIndependent() started.
+✔ Test simultaneousTasksAndWorkerRemainIndependent() passed after 0.001 seconds.
+◇ Test shutdownWaitsForCompletionAndJournalNeverRestarts() started.
+✔ Test shutdownWaitsForCompletionAndJournalNeverRestarts() passed after 0.106 seconds.
+◇ Test projectContextUsesOfficialThreadInstructionsAndKeepsMessageClean() started.
+✔ Test projectContextUsesOfficialThreadInstructionsAndKeepsMessageClean() passed after 0.001 seconds.
+✔ Suite ExecutionTests passed after 0.124 seconds.
+◇ Suite ExternalObservationTests started.
+◇ Test appendPartialReplacementAndMissingFilePreserveHistory() started.
+✔ Test appendPartialReplacementAndMissingFilePreserveHistory() passed after 0.004 seconds.
+◇ Test freshnessUsesSourceTimeAndExpiresWithoutNewReads() started.
+✔ Test freshnessUsesSourceTimeAndExpiresWithoutNewReads() passed after 0.001 seconds.
+◇ Test delayedOldTurnToolCannotReviveFinishedCurrentTurn() started.
+✔ Test delayedOldTurnToolCannotReviveFinishedCurrentTurn() passed after 0.001 seconds.
+◇ Test structuredActivityRefreshesAfterFirstRead() started.
+✔ Test structuredActivityRefreshesAfterFirstRead() passed after 0.002 seconds.
+◇ Test parentLifecycleSurvivesChildReadsAndLargeQuietTail() started.
+✔ Test parentLifecycleSurvivesChildReadsAndLargeQuietTail() passed after 0.083 seconds.
+◇ Test largeHistoryAppendLatencyAndStableEntries() started.
+VIEWER_LONG_HISTORY append_max_ms=380.86509704589844
+✔ Test largeHistoryAppendLatencyAndStableEntries() passed after 2.517 seconds.
+◇ Test claudeQuestionAndAnswerWorkWithoutHooks() started.
+✔ Test claudeQuestionAndAnswerWorkWithoutHooks() passed after 0.002 seconds.
+◇ Test claudeCancellationStopsWorkingAndNextTurnRecovers() started.
+✔ Test claudeCancellationStopsWorkingAndNextTurnRecovers() passed after 0.003 seconds.
+✔ Suite ExternalObservationTests passed after 2.615 seconds.
+◇ Suite GitHubAccountTests started.
+◇ Test loginSavesOnlyDioramaTokenAndDisconnectRemovesIt() started.
+✔ Test loginSavesOnlyDioramaTokenAndDisconnectRemovesIt() passed after 1.012 seconds.
+◇ Test apiFailuresAreRecoverable(_:) started.
+◇ Test case passing 1 argument status → 401 to apiFailuresAreRecoverable(_:) started.
+◇ Test case passing 1 argument status → 403 to apiFailuresAreRecoverable(_:) started.
+◇ Test case passing 1 argument status → 404 to apiFailuresAreRecoverable(_:) started.
+◇ Test case passing 1 argument status → 429 to apiFailuresAreRecoverable(_:) started.
+◇ Test case passing 1 argument status → 422 to apiFailuresAreRecoverable(_:) started.
+◇ Test case passing 1 argument status → 503 to apiFailuresAreRecoverable(_:) started.
+✔ Test apiFailuresAreRecoverable(_:) with 6 test cases passed after 0.001 seconds.
+◇ Test denialExpirationAndCancellationDoNotSaveTokens() started.
+✔ Test denialExpirationAndCancellationDoNotSaveTokens() passed after 1.012 seconds.
+◇ Test refreshIsSharedAcrossConcurrentRequests() started.
+✔ Test refreshIsSharedAcrossConcurrentRequests() passed after 0.054 seconds.
+◇ Test disconnectDuringResponseDoesNotReportSuccess() started.
+✔ Test disconnectDuringResponseDoesNotReportSuccess() passed after 0.106 seconds.
+✔ Suite GitHubAccountTests passed after 2.187 seconds.
+◇ Suite GitHubWorkflowTests started.
+◇ Test newPublishedProjectsUsePrivateGitHubAuthor() started.
+✔ Test newPublishedProjectsUsePrivateGitHubAuthor() passed after 0.488 seconds.
+◇ Test selectedCommitPreservesOtherStagedContent() started.
+✔ Test selectedCommitPreservesOtherStagedContent() passed after 0.930 seconds.
+◇ Test staleSelectedTreeBlocksCommit() started.
+✔ Test staleSelectedTreeBlocksCommit() passed after 1.258 seconds.
+◇ Test selectedDeletionAndRename() started.
+✔ Test selectedDeletionAndRename() passed after 0.764 seconds.
+◇ Test malformedAndUntrustedDestinations() started.
+✔ Test malformedAndUntrustedDestinations() passed after 0.001 seconds.
+◇ Test mergedPRSurvivesDeletedHeadRepository() started.
+✔ Test mergedPRSurvivesDeletedHeadRepository() passed after 0.001 seconds.
+◇ Test locksCanonicalizeFolderAndRelease() started.
+✔ Test locksCanonicalizeFolderAndRelease() passed after 0.276 seconds.
+✔ Suite GitHubWorkflowTests passed after 3.719 seconds.
+◇ Suite ImportedResumeLiveProbe started.
+➜ Test nativeImportedResume() skipped.
+✔ Suite ImportedResumeLiveProbe passed after 0.001 seconds.
+◇ Suite IntegrationDiscoveryLiveProbe started.
+➜ Test readOnlyDiscoveryAndWarmReopen() skipped.
+✔ Suite IntegrationDiscoveryLiveProbe passed after 0.001 seconds.
+◇ Suite LiveHookEvidenceTests started.
+◇ Test realClaudeToolFailuresAndWorkerIdentityRemainExplicit() started.
+✔ Test realClaudeToolFailuresAndWorkerIdentityRemainExplicit() passed after 0.001 seconds.
+◇ Test realClaudePermissionCannotBeResolvedWithoutCorrelation() started.
+✔ Test realClaudePermissionCannotBeResolvedWithoutCorrelation() passed after 0.001 seconds.
+◇ Test observedQuestionMetadataAndIdleNotificationAreRecognized() started.
+✔ Test observedQuestionMetadataAndIdleNotificationAreRecognized() passed after 0.001 seconds.
+◇ Test realCodexApprovalResolvesOnlyWithRecordedTurnCompletion() started.
+✔ Test realCodexApprovalResolvesOnlyWithRecordedTurnCompletion() passed after 0.001 seconds.
+✔ Suite LiveHookEvidenceTests passed after 0.002 seconds.
+◇ Suite LiveOutputAcceptanceTests started.
+➜ Test claudeThreeTurnsRetainToolsFilesAndSessionMetrics() skipped.
+➜ Test codexThreeTurnsRetainNativeCommandsAndFiles() skipped.
+✔ Suite LiveOutputAcceptanceTests passed after 0.001 seconds.
+◇ Suite LocalSessionStartTests started.
+◇ Test defaultsAndDetachedHead() started.
+✔ Test defaultsAndDetachedHead() passed after 0.979 seconds.
+◇ Test directPreservesEditsAndRejectsCleanupAndUnsafeSwitch() started.
+✔ Test directPreservesEditsAndRejectsCleanupAndUnsafeSwitch() passed after 2.677 seconds.
+◇ Test emptyRepositoryAndMissingBranchAreRejected() started.
+✔ Test emptyRepositoryAndMissingBranchAreRejected() passed after 0.705 seconds.
+➜ Test taipeiStartsWithoutRemoteAccess() skipped.
+◇ Test oldWorkspaceDecodesAsManaged() started.
+✔ Test oldWorkspaceDecodesAsManaged() passed after 0.001 seconds.
+✔ Suite LocalSessionStartTests passed after 4.363 seconds.
+◇ Suite OnboardingConnectionTests started.
+◇ Test failuresAreNotAllSignOut() started.
+✔ Test failuresAreNotAllSignOut() passed after 0.001 seconds.
+◇ Test failedOpenAICatalogPreservesClaude() started.
+✔ Test failedOpenAICatalogPreservesClaude() passed after 0.001 seconds.
+◇ Test failedClaudePreservesOpenAI() started.
+✔ Test failedClaudePreservesOpenAI() passed after 0.001 seconds.
+◇ Test slowProviderDoesNotHideReadyProvider() started.
+✔ Test slowProviderDoesNotHideReadyProvider() passed after 0.200 seconds.
+◇ Test missingExplicitToolDoesNotSilentlyUseAnotherInstallation() started.
+✔ Test missingExplicitToolDoesNotSilentlyUseAnotherInstallation() passed after 0.002 seconds.
+◇ Test rejectsWrongExecutable() started.
+✔ Test rejectsWrongExecutable() passed after 0.052 seconds.
+✔ Suite OnboardingConnectionTests passed after 0.256 seconds.
+◇ Suite OnboardingModelsTests started.
+◇ Test firstRunMatrix() started.
+✔ Test firstRunMatrix() passed after 0.001 seconds.
+◇ Test unavailableDefaultsCannotFinishOrUseStaleCatalog() started.
+✔ Test unavailableDefaultsCannotFinishOrUseStaleCatalog() passed after 0.001 seconds.
+✔ Suite OnboardingModelsTests passed after 0.001 seconds.
+◇ Suite OutgoingMessageTests started.
+◇ Test bubbleAppearsBeforeAcknowledgementAndOnlyNewEchoMatches() started.
+✔ Test bubbleAppearsBeforeAcknowledgementAndOnlyNewEchoMatches() passed after 0.001 seconds.
+◇ Test attachmentsAndDeliveryStateSurvivePersistence() started.
+✔ Test attachmentsAndDeliveryStateSurvivePersistence() passed after 0.001 seconds.
+✔ Suite OutgoingMessageTests passed after 0.001 seconds.
+◇ Suite PermissionPresentationTests started.
+◇ Test codexFileApprovalUsesOnlyMatchingItem() started.
+✔ Test codexFileApprovalUsesOnlyMatchingItem() passed after 0.001 seconds.
+◇ Test structuredClaudeReadPreservesExactPath() started.
+✔ Test structuredClaudeReadPreservesExactPath() passed after 0.001 seconds.
+◇ Test complexCommandsAreNeverParaphrasedAsSafe() started.
+✔ Test complexCommandsAreNeverParaphrasedAsSafe() passed after 0.001 seconds.
+◇ Test unknownToolAndTurnGrantKeepHonestScope() started.
+✔ Test unknownToolAndTurnGrantKeepHonestScope() passed after 0.001 seconds.
+✔ Suite PermissionPresentationTests passed after 0.001 seconds.
+◇ Suite PermissionPresetTests started.
+◇ Test presetsAndUnknownSettings() started.
+✔ Test presetsAndUnknownSettings() passed after 0.001 seconds.
+✔ Suite PermissionPresetTests passed after 0.001 seconds.
+◇ Suite PersonaClaudeLiveProbe started.
+➜ Test routedPlanningTurn() skipped.
+✔ Suite PersonaClaudeLiveProbe passed after 0.001 seconds.
+◇ Suite PresentationTests started.
+◇ Test claudeBlockAndStringHistoryHideGoalStatus() started.
+✔ Test claudeBlockAndStringHistoryHideGoalStatus() passed after 0.001 seconds.
+◇ Test claudeCanvasInstructionsStaySeparateFromUserText() started.
+✔ Test claudeCanvasInstructionsStaySeparateFromUserText() passed after 0.001 seconds.
+◇ Test nestingVisibilityCountsAndSelection() started.
+✔ Test nestingVisibilityCountsAndSelection() passed after 0.001 seconds.
+◇ Test noFalseParentLinksOrDroppedCycles() started.
+✔ Test noFalseParentLinksOrDroppedCycles() passed after 0.001 seconds.
+◇ Test contextSplittingPreservesSurroundingUserTextAndExamples() started.
+✔ Test contextSplittingPreservesSurroundingUserTextAndExamples() passed after 0.001 seconds.
+◇ Test metadataOverridesReviewLookingTitlesAndStatesStayLocal() started.
+✔ Test metadataOverridesReviewLookingTitlesAndStatesStayLocal() passed after 0.002 seconds.
+◇ Test largeDeepHierarchyPreservesOrderWithoutQuadraticScansOrRecursion() started.
+10,000-node session hierarchy: 0.029049042 seconds
+✔ Test largeDeepHierarchyPreservesOrderWithoutQuadraticScansOrRecursion() passed after 0.047 seconds.
+✔ Suite PresentationTests passed after 0.054 seconds.
+◇ Suite ProjectLiveProbe started.
+➜ Test worktreeAndContextReachRealAppServer() skipped.
+✔ Suite ProjectLiveProbe passed after 0.001 seconds.
+◇ Suite ProjectTests started.
+◇ Test plainFolderOpensAndListsWithoutChangingFiles() started.
+✔ Test plainFolderOpensAndListsWithoutChangingFiles() passed after 0.052 seconds.
+◇ Test openingGitFolderKeepsRepositoryDiscovery() started.
+✔ Test openingGitFolderKeepsRepositoryDiscovery() passed after 0.867 seconds.
+◇ Test isolatedWorktreesContextAndRetry() started.
+✔ Test isolatedWorktreesContextAndRetry() passed after 1.796 seconds.
+◇ Test localStartupDoesNotFetchRemote() started.
+✔ Test localStartupDoesNotFetchRemote() passed after 1.150 seconds.
+◇ Test projectStoragePreservesDraftAndContext() started.
+✔ Test projectStoragePreservesDraftAndContext() passed after 0.001 seconds.
+◇ Test projectDraftModesSurviveStorageAndLegacyFiles() started.
+✔ Test projectDraftModesSurviveStorageAndLegacyFiles() passed after 0.001 seconds.
+◇ Test cleanupProtectsUnmergedAndIgnoredFiles() started.
+✔ Test cleanupProtectsUnmergedAndIgnoredFiles() passed after 0.977 seconds.
+◇ Test ignoredFilesPreventCleanupEvenWhenGitStatusIsClean() started.
+✔ Test ignoredFilesPreventCleanupEvenWhenGitStatusIsClean() passed after 1.089 seconds.
+◇ Test attachmentsKeepExactBaseContentsAndOccupiedFoldersArePreserved() started.
+✔ Test attachmentsKeepExactBaseContentsAndOccupiedFoldersArePreserved() passed after 0.872 seconds.
+✔ Suite ProjectTests passed after 6.809 seconds.
+◇ Suite ProviderSwitchTests started.
+◇ Test preservesFolderAndNeverStartsWorkDuringPreparation() started.
+✔ Test preservesFolderAndNeverStartsWorkDuringPreparation() passed after 0.001 seconds.
+◇ Test activeTurnAndUnavailableProviderDoNotSwitch() started.
+✔ Test activeTurnAndUnavailableProviderDoNotSwitch() passed after 0.001 seconds.
+◇ Test carriedQueueReconcilesWithoutAutostart() started.
+✔ Test carriedQueueReconcilesWithoutAutostart() passed after 0.001 seconds.
+◇ Test conversationIdentityAndHistoryRoundTrip() started.
+✔ Test conversationIdentityAndHistoryRoundTrip() passed after 0.001 seconds.
+✔ Suite ProviderSwitchTests passed after 0.001 seconds.
+◇ Suite SessionActivityTests started.
+◇ Test claudeTasksAgentsAndDeduplication() started.
+✔ Test claudeTasksAgentsAndDeduplication() passed after 0.001 seconds.
+◇ Test proposalsRemainDistinctFromExecutionAndFinalReplacesDraft() started.
+✔ Test proposalsRemainDistinctFromExecutionAndFinalReplacesDraft() passed after 0.001 seconds.
+◇ Test revisedChecklistAndTurnCompletionDoNotInventCompletion() started.
+✔ Test revisedChecklistAndTurnCompletionDoNotInventCompletion() passed after 0.001 seconds.
+◇ Test reasoningAndUnknownEventsAreNotExposed() started.
+✔ Test reasoningAndUnknownEventsAreNotExposed() passed after 0.001 seconds.
+◇ Test journalRestoresLastKnownAndKeepsBaselineWhenTruncated() started.
+✔ Test journalRestoresLastKnownAndKeepsBaselineWhenTruncated() passed after 0.001 seconds.
+✔ Suite SessionActivityTests passed after 0.002 seconds.
+◇ Suite ActivityInspectionTests started.
+◇ Test descendantDiscoveryUsesExplicitEdgesAndExcludesUnrelatedTasks() started.
+✔ Test descendantDiscoveryUsesExplicitEdgesAndExcludesUnrelatedTasks() passed after 0.001 seconds.
+◇ Test turnOnlyPlansRouteToTheUniqueTaskAndNeverGuess() started.
+✔ Test turnOnlyPlansRouteToTheUniqueTaskAndNeverGuess() passed after 0.001 seconds.
+◇ Test childInspectionNeverResumesOrExecutes() started.
+✔ Test childInspectionNeverResumesOrExecutes() passed after 0.001 seconds.
+✔ Suite ActivityInspectionTests passed after 0.001 seconds.
+◇ Suite ConversationActivityBudgetTests started.
+◇ Test sharedCountAndByteBudgetPreservesProviderBaselines() started.
+✔ Test sharedCountAndByteBudgetPreservesProviderBaselines() passed after 0.001 seconds.
+◇ Test storeEnforcesConversationBudgetAcrossRestartAndProviders() started.
+✔ Test storeEnforcesConversationBudgetAcrossRestartAndProviders() passed after 0.426 seconds.
+✔ Suite ConversationActivityBudgetTests passed after 0.426 seconds.
+◇ Suite SessionChangesTests started.
+◇ Test generatedCanvasDoesNotPolluteReviewButTrackedCanvasRemainsVisible() started.
+✔ Test generatedCanvasDoesNotPolluteReviewButTrackedCanvasRemainsVisible() passed after 1.528 seconds.
+◇ Test scopesAndIsolation() started.
+✔ Test scopesAndIsolation() passed after 3.338 seconds.
+◇ Test renameParsingAndRepositoryIdentity() started.
+✔ Test renameParsingAndRepositoryIdentity() passed after 0.001 seconds.
+◇ Test associationChecksAndCompatibility() started.
+✔ Test associationChecksAndCompatibility() passed after 0.001 seconds.
+◇ Test discoveryFiltersForksAndDeduplicates() started.
+✔ Test discoveryFiltersForksAndDeduplicates() passed after 2.238 seconds.
+◇ Test deletionLargeFileConflictAndExternalDiffDisabled() started.
+✔ Test deletionLargeFileConflictAndExternalDiffDisabled() passed after 1.914 seconds.
+✔ Suite SessionChangesTests passed after 9.021 seconds.
+◇ Suite SessionLibraryTests started.
+◇ Test groupingUsesFullWorkingPathAcrossProviders() started.
+✔ Test groupingUsesFullWorkingPathAcrossProviders() passed after 0.001 seconds.
+◇ Test discoveryDeduplicationAndDeletion() started.
+✔ Test discoveryDeduplicationAndDeletion() passed after 0.001 seconds.
+◇ Test transcriptFiltersHiddenContentAndReadsToolResults() started.
+✔ Test transcriptFiltersHiddenContentAndReadsToolResults() passed after 0.001 seconds.
+◇ Test partialWriteAndRefresh() started.
+✔ Test partialWriteAndRefresh() passed after 0.001 seconds.
+◇ Test claudeSubagentAndNoInventedStatus() started.
+✔ Test claudeSubagentAndNoInventedStatus() passed after 0.001 seconds.
+◇ Test boundedHistoryMissingSourcesAndSourceUnchanged() started.
+✔ Test boundedHistoryMissingSourcesAndSourceUnchanged() passed after 0.001 seconds.
+✔ Suite SessionLibraryTests passed after 0.005 seconds.
+◇ Suite StructuredActivityLiveProbe started.
+➜ Test claudeSDKActivity() skipped.
+➜ Test codexActivity() skipped.
+✔ Suite StructuredActivityLiveProbe passed after 0.001 seconds.
+◇ Suite WorkflowLiveProbe started.
+➜ Test liveWorkflowAcceptance() skipped.
+✔ Suite WorkflowLiveProbe passed after 0.001 seconds.
+◇ Suite WorkflowReentrancyTests started.
+◇ Test goalRefreshPreservesTaskChangesReceivedWhileAwaitingReply() started.
+✔ Test goalRefreshPreservesTaskChangesReceivedWhileAwaitingReply() passed after 0.001 seconds.
+◇ Test goalRefreshDoesNotRestoreTaskRemovedWhileAwaitingReply() started.
+✔ Test goalRefreshDoesNotRestoreTaskRemovedWhileAwaitingReply() passed after 0.001 seconds.
+✔ Suite WorkflowReentrancyTests passed after 0.001 seconds.
+◇ Suite WorkflowTests started.
+◇ Test explicitGoalRecoveryPausesBeforeResumeAndDoesNotSend() started.
+✔ Test explicitGoalRecoveryPausesBeforeResumeAndDoesNotSend() passed after 0.001 seconds.
+◇ Test pickerReusesRecentResultsAndRefreshBypassesCache() started.
+✔ Test pickerReusesRecentResultsAndRefreshBypassesCache() passed after 0.001 seconds.
+◇ Test slowSkillsDoNotBlockOtherSectionsOrDuplicateOpening() started.
+✔ Test slowSkillsDoNotBlockOtherSectionsOrDuplicateOpening() passed after 0.001 seconds.
+◇ Test lateContextResultsCannotReplaceNewContext() started.
+✔ Test lateContextResultsCannotReplaceNewContext() passed after 0.001 seconds.
+◇ Test directoryLoadsOnePageAtATimeAndMergesInstalledApps() started.
+✔ Test directoryLoadsOnePageAtATimeAndMergesInstalledApps() passed after 0.001 seconds.
+◇ Test installedAppsRemainUsableWhenFullCatalogFails() started.
+✔ Test installedAppsRemainUsableWhenFullCatalogFails() passed after 0.001 seconds.
+◇ Test stoppingPausesAnActiveGoalBeforeInterruptingTurn() started.
+✔ Test stoppingPausesAnActiveGoalBeforeInterruptingTurn() passed after 0.001 seconds.
+◇ Test commandOutputDeltasUpdateTheRichCard() started.
+✔ Test commandOutputDeltasUpdateTheRichCard() passed after 0.001 seconds.
+◇ Test goalAndUsageEventsRemainDistinctFromTurnCompletion() started.
+✔ Test goalAndUsageEventsRemainDistinctFromTurnCompletion() passed after 0.001 seconds.
+◇ Test planModeUsesAdvertisedModeAndTypedCapabilities() started.
+✔ Test planModeUsesAdvertisedModeAndTypedCapabilities() passed after 0.001 seconds.
+◇ Test invalidCapabilitiesCannotBeSpoofedAndOpeningPickerDoesNotLogin() started.
+✔ Test invalidCapabilitiesCannotBeSpoofedAndOpeningPickerDoesNotLogin() passed after 0.001 seconds.
+◇ Test forkDefersGoalContinuationAndDoesNotStartATurn() started.
+✔ Test forkDefersGoalContinuationAndDoesNotStartATurn() passed after 0.001 seconds.
+◇ Test reviewScopesAreExplicitAndBlockDuplicateTurns() started.
+✔ Test reviewScopesAreExplicitAndBlockDuplicateTurns() passed after 0.001 seconds.
+◇ Test queueRunsOnlyAfterSuccessfulCompletionAndDoesNotSteer() started.
+✔ Test queueRunsOnlyAfterSuccessfulCompletionAndDoesNotSteer() passed after 0.001 seconds.
+◇ Test interruptedTurnsDoNotDrainQueueAndUncertainAddsCannotRepeat() started.
+✔ Test interruptedTurnsDoNotDrainQueueAndUncertainAddsCannotRepeat() passed after 0.001 seconds.
+◇ Test queuedSteeringAcknowledgesBeforeDeletingAndPreservesInput() started.
+✔ Test queuedSteeringAcknowledgesBeforeDeletingAndPreservesInput() passed after 0.001 seconds.
+◇ Test uncertainSteeringAndRemovalNeverAutoStartQueuedCopy() started.
+✔ Test uncertainSteeringAndRemovalNeverAutoStartQueuedCopy() passed after 0.001 seconds.
+◇ Test pendingQueueSteeringSurvivesAppRestart() started.
+✔ Test pendingQueueSteeringSurvivesAppRestart() passed after 0.001 seconds.
+◇ Test goalSendHasOneTurnAndPlanCannotActivateGoal() started.
+✔ Test goalSendHasOneTurnAndPlanCannotActivateGoal() passed after 0.001 seconds.
+◇ Test searchUsesCorrectQueryScopeAndFetchesTheMatchingTurn() started.
+✔ Test searchUsesCorrectQueryScopeAndFetchesTheMatchingTurn() passed after 0.001 seconds.
+◇ Test renameAndArchiveUseOfficialMethodsWithoutPinMetadata() started.
+✔ Test renameAndArchiveUseOfficialMethodsWithoutPinMetadata() passed after 0.001 seconds.
+◇ Test richResultsRetainStructuredMetadataAndExcludeReasoning() started.
+✔ Test richResultsRetainStructuredMetadataAndExcludeReasoning() passed after 0.001 seconds.
+✔ Suite WorkflowTests passed after 0.008 seconds.
+◇ Suite ActivityViewTests started.
+◇ Test filtersCountsSelectionAndInboxIgnoreReviews() started.
+✔ Test filtersCountsSelectionAndInboxIgnoreReviews() passed after 0.030 seconds.
+◇ Test activityBadgeRendering() started.
+✔ Test activityBadgeRendering() passed after 0.051 seconds.
+◇ Test watcherSeesNewSessionFile() started.
+✔ Test watcherSeesNewSessionFile() passed after 0.104 seconds.
+✔ Suite ActivityViewTests passed after 0.186 seconds.
+◇ Suite AgentSettingsTests started.
+◇ Test settingsAndCombinedPickerRenderBothProviders() started.
+✔ Test settingsAndCombinedPickerRenderBothProviders() passed after 0.123 seconds.
+✔ Suite AgentSettingsTests passed after 0.123 seconds.
+◇ Suite CanvasActivityTests started.
+◇ Test observedActivityExpiresAndNeverOverridesMissingEvidence() started.
+✔ Test observedActivityExpiresAndNeverOverridesMissingEvidence() passed after 0.003 seconds.
+◇ Test onlyUnfinishedCallsInAttachedCurrentTurnAreLive() started.
+✔ Test onlyUnfinishedCallsInAttachedCurrentTurnAreLive() passed after 0.001 seconds.
+✔ Suite CanvasActivityTests passed after 0.004 seconds.
+◇ Suite CapabilityLibraryRenderingTests started.
+◇ Test blenderAssetsLoadAndSceneHitTargetsStaySeparate() started.
+✔ Test blenderAssetsLoadAndSceneHitTargetsStaySeparate() passed after 0.218 seconds.
+◇ Test cacheAndLateContextResponses() started.
+✔ Test cacheAndLateContextResponses() passed after 0.001 seconds.
+◇ Test catalogueRendersAtNarrowAndWideSizes() started.
+✔ Test catalogueRendersAtNarrowAndWideSizes() passed after 0.334 seconds.
+✔ Suite CapabilityLibraryRenderingTests passed after 0.554 seconds.
+◇ Suite ClaudeDesktopObservationTests started.
+◇ Test importedSelectionSurvivesDiscoveryReconciliation() started.
+✔ Test importedSelectionSurvivesDiscoveryReconciliation() passed after 0.022 seconds.
+◇ Test importedDesktopViewRendersWithoutComposer() started.
+✔ Test importedDesktopViewRendersWithoutComposer() passed after 0.027 seconds.
+✔ Suite ClaudeDesktopObservationTests passed after 0.050 seconds.
+◇ Suite ClaudeLivePresentationTests started.
+➜ Test realPlanningTurnSurvivesNativePresentationAndTeardown() skipped.
+✔ Suite ClaudeLivePresentationTests passed after 0.001 seconds.
+◇ Suite ClaudeOutputRenderingTests started.
+◇ Test cardsRenderAtNarrowAndWideSizes() started.
+✔ Test cardsRenderAtNarrowAndWideSizes() passed after 0.044 seconds.
+✔ Suite ClaudeOutputRenderingTests passed after 0.044 seconds.
+◇ Suite ClaudePresentationLifetimeTests started.
+◇ Test nativeClaudePresentationSurvivesActivityUpdatesAndTeardown() started.
+✔ Test nativeClaudePresentationSurvivesActivityUpdatesAndTeardown() passed after 1.352 seconds.
+✔ Suite ClaudePresentationLifetimeTests passed after 1.352 seconds.
+◇ Suite ClipboardImageTests started.
+◇ Test pngAndTIFFPersistAfterClipboardChanges() started.
+✔ Test pngAndTIFFPersistAfterClipboardChanges() passed after 0.006 seconds.
+◇ Test textAndFinderCopiesAreNotImageAttachments() started.
+✔ Test textAndFinderCopiesAreNotImageAttachments() passed after 0.001 seconds.
+◇ Test nativePasteActionAcceptsImageOnlyClipboard() started.
+✔ Test nativePasteActionAcceptsImageOnlyClipboard() passed after 0.001 seconds.
+◇ Test disabledComposerDoesNotPasteImages() started.
+✔ Test disabledComposerDoesNotPasteImages() passed after 0.001 seconds.
+✔ Suite ClipboardImageTests passed after 0.007 seconds.
+◇ Suite CodexOutputRenderingTests started.
+◇ Test richCardsRenderAtNarrowAndWideSizes() started.
+✔ Test richCardsRenderAtNarrowAndWideSizes() passed after 0.052 seconds.
+✔ Suite CodexOutputRenderingTests passed after 0.052 seconds.
+◇ Suite ComposerDraftModeTests started.
+◇ Test editingDraftPreservesExplicitPlanModeAndLegacyDraftDecodes() started.
+✔ Test editingDraftPreservesExplicitPlanModeAndLegacyDraftDecodes() passed after 0.022 seconds.
+✔ Suite ComposerDraftModeTests passed after 0.022 seconds.
+◇ Suite ComposerKeyboardTests started.
+◇ Test returnSendsButShiftReturnAndCompositionDoNot() started.
+✔ Test returnSendsButShiftReturnAndCompositionDoNot() passed after 0.016 seconds.
+◇ Test bubbleRendersWithTrailingTail() started.
+✔ Test bubbleRendersWithTrailingTail() passed after 0.002 seconds.
+✔ Suite ComposerKeyboardTests passed after 0.018 seconds.
+◇ Suite ComposerToolbarLayoutTests started.
+◇ Test resizingPreservesNativeControlIdentityAndAvoidsOverlap() started.
+✔ Test resizingPreservesNativeControlIdentityAndAvoidsOverlap() passed after 0.425 seconds.
+✔ Suite ComposerToolbarLayoutTests passed after 0.425 seconds.
+◇ Suite ConversationLayoutPerformanceTests started.
+◇ Test startingAndStreamingKeepsProjectConversationResponsive() started.
+Conversation transition worst layout: 0.109031042 seconds
+✔ Test startingAndStreamingKeepsProjectConversationResponsive() passed after 1.234 seconds.
+✔ Suite ConversationLayoutPerformanceTests passed after 1.235 seconds.
+◇ Suite ConversationOrganizationTests started.
+◇ Test newlyCreatedTaskUsesTheSameNormalizedFolderAsTheSidebar() started.
+✔ Test newlyCreatedTaskUsesTheSameNormalizedFolderAsTheSidebar() passed after 0.034 seconds.
+◇ Test pinSurvivesModelRecreationAndCanBeRemoved() started.
+✔ Test pinSurvivesModelRecreationAndCanBeRemoved() passed after 0.064 seconds.
+✔ Suite ConversationOrganizationTests passed after 0.099 seconds.
+◇ Suite ConversationPreviewTests started.
+◇ Test renderConversation() started.
+✔ Test renderConversation() passed after 0.118 seconds.
+◇ Test renderActiveComposer() started.
+✔ Test renderActiveComposer() passed after 0.068 seconds.
+✔ Suite ConversationPreviewTests passed after 0.186 seconds.
+◇ Suite ConversationSwitchTests started.
+◇ Test roundTripPreservesConversationWorktreeAndPR() started.
+✔ Test roundTripPreservesConversationWorktreeAndPR() passed after 0.025 seconds.
+◇ Test failedSwitchPreservesSelectionDraftAndSource() started.
+✔ Test failedSwitchPreservesSelectionDraftAndSource() passed after 0.022 seconds.
+✔ Suite ConversationSwitchTests passed after 0.048 seconds.
+◇ Suite DeepProviderRenderingTests started.
+◇ Test independentProviderCardsRender() started.
+✔ Test independentProviderCardsRender() passed after 0.128 seconds.
+✔ Suite DeepProviderRenderingTests passed after 0.128 seconds.
+◇ Suite DevelopmentReloadTests started.
+◇ Test watchesInputsWithoutRebuildingOnGeneratedOutput() started.
+✔ Test watchesInputsWithoutRebuildingOnGeneratedOutput() passed after 0.003 seconds.
+◇ Test reloadDefersActiveUncertainAndQueuedWork() started.
+✔ Test reloadDefersActiveUncertainAndQueuedWork() passed after 0.001 seconds.
+✔ Suite DevelopmentReloadTests passed after 0.003 seconds.
+◇ Suite ExecutionPriorityViewsTests started.
+◇ Test renderPrioritiesInLightAndDark() started.
+✔ Test renderPrioritiesInLightAndDark() passed after 0.416 seconds.
+◇ Test renderConnectorForm() started.
+✔ Test renderConnectorForm() passed after 0.036 seconds.
+✔ Suite ExecutionPriorityViewsTests passed after 0.452 seconds.
+◇ Suite ExternalViewerTests started.
+◇ Test externalSceneWorksWithoutAttachmentAndExpires() started.
+✔ Test externalSceneWorksWithoutAttachmentAndExpires() passed after 0.084 seconds.
+◇ Test watcherDeliversThirtyAppendsWithoutPolling() started.
+EXTERNAL_VIEWER_FIXTURE updates=30 evidence_to_model_p95_ms=61 max_ms=61
+✔ Test watcherDeliversThirtyAppendsWithoutPolling() passed after 1.510 seconds.
+◇ Test thirtyAppendsWithMountedRichConversationMeetLayoutBudget() started.
+MOUNTED_VIEWER_FIXTURE updates=30 evidence_to_layout_p95_ms=58 max_ms=58 pixel_latency_measured=false
+✔ Test thirtyAppendsWithMountedRichConversationMeetLayoutBudget() passed after 1.619 seconds.
+◇ Test claudeCancellationStopsExternalSceneImmediately() started.
+✔ Test claudeCancellationStopsExternalSceneImmediately() passed after 0.068 seconds.
+◇ Test claudeChildSharingSessionIDAppearsAndFinishes() started.
+✔ Test claudeChildSharingSessionIDAppearsAndFinishes() passed after 0.097 seconds.
+◇ Test switchedSelectionAndMissingSourceKeepCorrectHistory() started.
+✔ Test switchedSelectionAndMissingSourceKeepCorrectHistory() passed after 0.062 seconds.
+◇ Test pauseReconcilesMissedBurstWithoutDuplicates() started.
+✔ Test pauseReconcilesMissedBurstWithoutDuplicates() passed after 0.135 seconds.
+◇ Test twentySubagentsDoNotDelayParentUpdatesOrMoveDesks() started.
+✔ Test twentySubagentsDoNotDelayParentUpdatesOrMoveDesks() passed after 0.071 seconds.
+✔ Suite ExternalViewerTests passed after 3.650 seconds.
+◇ Suite HTMLCanvasViewTests started.
+◇ Test nativeTabWatchesAtomicEditsAndRetainsLastCompletePage() started.
+✔ Test nativeTabWatchesAtomicEditsAndRetainsLastCompletePage() passed after 2.131 seconds.
+◇ Test contextualLoadersFollowCallsAndOnlyRevealChangedSections() started.
+✔ Test contextualLoadersFollowCallsAndOnlyRevealChangedSections() passed after 0.497 seconds.
+◇ Test sandboxRendersAndUpdatesWithoutNativeOrParentAccess() started.
+✔ Test sandboxRendersAndUpdatesWithoutNativeOrParentAccess() passed after 1.533 seconds.
+✔ Suite HTMLCanvasViewTests passed after 4.162 seconds.
+◇ Suite LiveExternalViewerProbe started.
+➜ Test observesRealApprovalWithoutResolvingIt() skipped.
+➜ Test observesRealCancellationOrRecoveryWithoutHooks() skipped.
+➜ Test observesDesignatedWorktreeWithoutHooks() skipped.
+➜ Test measuresDesignatedExternalSession() skipped.
+✔ Suite LiveExternalViewerProbe passed after 0.001 seconds.
+◇ Suite MarkdownRenderingTests started.
+◇ Test titleRemovesMarkdownSyntax() started.
+✔ Test titleRemovesMarkdownSyntax() passed after 0.001 seconds.
+◇ Test structuredPayloadsStayLiteral() started.
+✔ Test structuredPayloadsStayLiteral() passed after 0.001 seconds.
+◇ Test renderMarkdownFixture() started.
+✔ Test renderMarkdownFixture() passed after 0.038 seconds.
+✔ Suite MarkdownRenderingTests passed after 0.038 seconds.
+◇ Suite OptimisticConversationTests started.
+◇ Test pendingMessageIsVisibleWithoutConnectionOrLoadedHistory() started.
+✔ Test pendingMessageIsVisibleWithoutConnectionOrLoadedHistory() passed after 0.022 seconds.
+◇ Test echoReplacesLocalBubbleAndAssistantStaysAfterIt() started.
+✔ Test echoReplacesLocalBubbleAndAssistantStaysAfterIt() passed after 0.021 seconds.
+✔ Suite OptimisticConversationTests passed after 0.044 seconds.
+◇ Suite PermissionReviewTests started.
+◇ Test fullSessionPermissionRemainsWithinViewport() started.
+✔ Test fullSessionPermissionRemainsWithinViewport() passed after 0.056 seconds.
+◇ Test cardFitsNarrowWindowWithoutClippingDecisions() started.
+✔ Test cardFitsNarrowWindowWithoutClippingDecisions() passed after 0.031 seconds.
+✔ Suite PermissionReviewTests passed after 0.088 seconds.
+◇ Suite PermissionsMenuTests started.
+◇ Test renderMenu() started.
+✔ Test renderMenu() passed after 0.011 seconds.
+✔ Suite PermissionsMenuTests passed after 0.011 seconds.
+◇ Suite ProjectViewsTests started.
+◇ Test plainFolderDetailRendersWithoutGitControls() started.
+✔ Test plainFolderDetailRendersWithoutGitControls() passed after 0.128 seconds.
+◇ Test plainProjectsPersistSeparatelyAndAssociateExternalSessions() started.
+✔ Test plainProjectsPersistSeparatelyAndAssociateExternalSessions() passed after 0.203 seconds.
+◇ Test contextViewIsReadableInBothAppearances() started.
+✔ Test contextViewIsReadableInBothAppearances() passed after 0.111 seconds.
+◇ Test explicitProjectsDeduplicateAndRetainNavigation() started.
+✔ Test explicitProjectsDeduplicateAndRetainNavigation() passed after 0.001 seconds.
+◇ Test localPreparationRetriesRetainLocationAndDraft() started.
+✔ Test localPreparationRetriesRetainLocationAndDraft() passed after 1.028 seconds.
+◇ Test newConversationControlsRenderAtNarrowWidth() started.
+✔ Test newConversationControlsRenderAtNarrowWidth() passed after 0.086 seconds.
+✔ Suite ProjectViewsTests passed after 1.560 seconds.
+◇ Suite SessionReviewApprovalLayoutTests started.
+◇ Test approvalComposerFitsInsideRealReviewContainer() started.
+✔ Test approvalComposerFitsInsideRealReviewContainer() passed after 0.493 seconds.
+✔ Suite SessionReviewApprovalLayoutTests passed after 0.494 seconds.
+◇ Suite SessionReviewRenderingTests started.
+◇ Test lineNumbersAndStableReviewState() started.
+✔ Test lineNumbersAndStableReviewState() passed after 0.018 seconds.
+◇ Test rendersNativeReviewAtNarrowAndWideWidths() started.
+✔ Test rendersNativeReviewAtNarrowAndWideWidths() passed after 0.959 seconds.
+✔ Suite SessionReviewRenderingTests passed after 0.978 seconds.
+◇ Suite StructuredActivityRenderingTests started.
+◇ Test panelsRenderAtNarrowWidthAndPreserveDraft() started.
+✔ Test panelsRenderAtNarrowWidthAndPreserveDraft() passed after 0.090 seconds.
+✔ Suite StructuredActivityRenderingTests passed after 0.090 seconds.
+◇ Suite ToolImagePreviewTests started.
+◇ Test thumbnailIsBoundedAndUnreadableFilesFallBack() started.
+✔ Test thumbnailIsBoundedAndUnreadableFilesFallBack() passed after 0.086 seconds.
+◇ Test renderInlineImageAtConversationWidths() started.
+✔ Test renderInlineImageAtConversationWidths() passed after 0.031 seconds.
+✔ Suite ToolImagePreviewTests passed after 0.118 seconds.
+◇ Suite WorkflowRenderingTests started.
+◇ Test renderGoalsModesQueueUsageAndRichTools() started.
+✔ Test renderGoalsModesQueueUsageAndRichTools() passed after 0.409 seconds.
+✔ Suite WorkflowRenderingTests passed after 0.409 seconds.
+◇ Suite WorkspaceAgentTests started.
+◇ Test draftAndExecutionPhases() started.
+✔ Test draftAndExecutionPhases() passed after 0.001 seconds.
+◇ Test freshnessAndUnknownStatusesNeverInventLiveWork() started.
+✔ Test freshnessAndUnknownStatusesNeverInventLiveWork() passed after 0.001 seconds.
+◇ Test resumedMainCanWorkWithoutAnimatingOldSubagentHistory() started.
+✔ Test resumedMainCanWorkWithoutAnimatingOldSubagentHistory() passed after 0.001 seconds.
+◇ Test ownershipProviderSegmentsAndBrokenParentage() started.
+✔ Test ownershipProviderSegmentsAndBrokenParentage() passed after 0.001 seconds.
+◇ Test rosterRetainsCompletedAgentsAndStopsMissingLiveOnes() started.
+✔ Test rosterRetainsCompletedAgentsAndStopsMissingLiveOnes() passed after 0.001 seconds.
+◇ Test providerEventsCreateUpdateAndFinishOneAgent() started.
+✔ Test providerEventsCreateUpdateAndFinishOneAgent() passed after 0.001 seconds.
+◇ Test conversationEventsDriveWorkspaceWithoutStartingWork() started.
+✔ Test conversationEventsDriveWorkspaceWithoutStartingWork() passed after 0.001 seconds.
+◇ Test selectionDetailsRenderAndUpdatesKeepTheNativeScene() started.
+✔ Test selectionDetailsRenderAndUpdatesKeepTheNativeScene() passed after 0.337 seconds.
+◇ Test nodesStayStableAndMotionStopsForFinishedHiddenAndReducedMotion() started.
+✔ Test nodesStayStableAndMotionStopsForFinishedHiddenAndReducedMotion() passed after 0.041 seconds.
+◇ Test growingTeamPreservesDesksAndCameraUntilResetAndCanHitTest() started.
+✔ Test growingTeamPreservesDesksAndCameraUntilResetAndCanHitTest() passed after 0.100 seconds.
+◇ Test renderAvatarFixtures() started.
+✔ Test renderAvatarFixtures() passed after 0.248 seconds.
+✔ Suite WorkspaceAgentTests passed after 0.731 seconds.
+◇ Suite WorkspaceMotionTests started.
+◇ Test attentionLabelsUseOnlyTheOwnersExplicitState() started.
+✔ Test attentionLabelsUseOnlyTheOwnersExplicitState() passed after 0.001 seconds.
+◇ Test repeatedUpdatesDoNotReplayAndInterruptionRemovesOldGestures() started.
+✔ Test repeatedUpdatesDoNotReplayAndInterruptionRemovesOldGestures() passed after 1.782 seconds.
+◇ Test terminalSnapshotsHistoryAndViewReentryStayStill() started.
+✔ Test terminalSnapshotsHistoryAndViewReentryStayStill() passed after 0.837 seconds.
+◇ Test rigMovesTheFaceWithTheHeadAndSupportsMissingAnchors() started.
+✔ Test rigMovesTheFaceWithTheHeadAndSupportsMissingAnchors() passed after 0.008 seconds.
+◇ Test renderLiveGestureFrames() started.
+✔ Test renderLiveGestureFrames() passed after 0.094 seconds.
+◇ Test renderStaticStatusPoses() started.
+✔ Test renderStaticStatusPoses() passed after 0.126 seconds.
+✔ Suite WorkspaceMotionTests passed after 2.851 seconds.
+◇ Suite WorkspaceNavigationTests started.
+◇ Test layoutAndDocumentsRestoreWithoutConflatingWorktrees() started.
+✔ Test layoutAndDocumentsRestoreWithoutConflatingWorktrees() passed after 0.001 seconds.
+◇ Test historyBranchesAndDoesNotDuplicateCurrentDestination() started.
+✔ Test historyBranchesAndDoesNotDuplicateCurrentDestination() passed after 0.001 seconds.
+◇ Test switchingPreservesDraftsWorkspacesAndContext() started.
+✔ Test switchingPreservesDraftsWorkspacesAndContext() passed after 0.022 seconds.
+◇ Test shellRendersAtSupportedWidthsWithApprovalAndLongTitles() started.
+✔ Test shellRendersAtSupportedWidthsWithApprovalAndLongTitles() passed after 1.021 seconds.
+◇ Test documentTabsKeepTheComposerAndDraftMounted() started.
+✔ Test documentTabsKeepTheComposerAndDraftMounted() passed after 0.396 seconds.
+◇ Test emptyLoadingAndUnavailableViewsRender() started.
+✔ Test emptyLoadingAndUnavailableViewsRender() passed after 0.579 seconds.
+✔ Suite WorkspaceNavigationTests passed after 2.022 seconds.
+◇ Suite WorkspacePerformanceTests started.
+◇ Test disclosureDoesNotInvalidatePaneObserversOrWriteDuringTheClick() started.
+100 disclosure mutations: 0.0001105 seconds; unrelated pane invalidations: 0
+✔ Test disclosureDoesNotInvalidatePaneObserversOrWriteDuringTheClick() passed after 0.212 seconds.
+◇ Test projectMembershipCacheTracksLibraryAssociationAndWorktreeChanges() started.
+✔ Test projectMembershipCacheTracksLibraryAssociationAndWorktreeChanges() passed after 0.038 seconds.
+◇ Test cachedProjectLookupDoesNotRescanLargeLibrary() started.
+100 cached membership lookups across 20,000 sessions: 0.000372542 seconds
+✔ Test cachedProjectLookupDoesNotRescanLargeLibrary() passed after 0.096 seconds.
+◇ Test projectDisclosureUpdatesNativeLayoutWithinOneInteractionBudget() started.
+20 native disclosure layouts with 20,000 imported sessions: median 0.0023565 seconds, worst 0.003925083 seconds
+✔ Test projectDisclosureUpdatesNativeLayoutWithinOneInteractionBudget() passed after 0.467 seconds.
+✔ Suite WorkspacePerformanceTests passed after 0.814 seconds.
+◇ Suite WorkspaceSceneTests started.
+◇ Test sceneHasFiniteGroundAndBoundedCamera() started.
+✔ Test sceneHasFiniteGroundAndBoundedCamera() passed after 0.029 seconds.
+◇ Test orbitKeepsWorldVerticalUprightAndResetRestoresOrientation() started.
+✔ Test orbitKeepsWorldVerticalUprightAndResetRestoresOrientation() passed after 0.036 seconds.
+◇ Test navigationResetsSavedTabsButExplicitActionsStillWin() started.
+✔ Test navigationResetsSavedTabsButExplicitActionsStillWin() passed after 0.025 seconds.
+◇ Test sceneRendersAtSupportedSizes() started.
+✔ Test sceneRendersAtSupportedSizes() passed after 0.078 seconds.
+✔ Suite WorkspaceSceneTests passed after 0.169 seconds.
+✔ Test run with 359 tests in 90 suites passed after 62.756 seconds.

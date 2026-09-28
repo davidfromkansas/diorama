@@ -9,6 +9,27 @@ open dist/Diorama.app
 
 Requires macOS 14 or later. This local build targets Apple Silicon and is ad-hoc signed; it is not notarized for public distribution. Building requires Xcode with Swift 6.2 or later (tested with Swift 6.3.1). The native app does not depend on Python or a web server. Codex execution uses the locally configured Codex account.
 
+### Claude Code Desktop observation
+
+Local conversations from Claude Desktop’s **Code tab** are discovered through Desktop metadata and matched to local Claude transcripts. Older readable history and selected conversation updates appear automatically; Desktop imports are view-only. Connections includes a separate Desktop reporter setup and hook-delivery status. Chat, Cowork, cloud and SSH sessions are excluded. See [setup, storage details and verification limits](docs/CLAUDE_DESKTOP_OBSERVATION.md).
+
+### Local development auto-reload
+
+The development bundle watches app sources, package definitions, and Claude helper sources. Changes trigger a debounced debug build; after a successful build, Diorama waits for its tasks, queued work, approvals, and background terminals to finish before relaunching. Build failures leave the current app running. Drafts and navigation use their existing persistence.
+
+Enable this when packaging a local development bundle (quit Diorama first):
+
+```sh
+DIORAMA_BUILD_CONFIGURATION=debug DIORAMA_DEVELOPMENT_ROOT="$PWD" zsh build-macos.sh
+open dist/Diorama.app
+```
+
+Use **File → Automatically reload source changes** to pause or resume. Logs are in `.local/development/build.log` and `.local/development/reload.log`. Watching runs while the app is open; startup also checks for newer source files. Ordinary release builds omit the watcher configuration.
+
+To try the scene, open a project or conversation and select **Workspace**. Click a robot or use **Agents** for details. Send a task from **Conversation** to see its status change; reported subagents appear at additional desks. Drag to orbit, scroll to zoom, and use **Reset View** to fit the team.
+
+**Open project** also accepts existing folders without Git. These show **No Git detected** and support external conversations, agent viewing, and local file browsing. Git-dependent actions are unavailable; opening a folder does not initialize Git or change its files. Automatic detection of Git added later is not included.
+
 ### Acceptance-tested update (0.3.19)
 
 Build 22 fixes asynchronous file pickers, normalized-folder selection for new tasks, and canvas instructions leaking into displayed titles. The final suite passes 120 tests; real execution, approvals, resume, goals, queue, search, skills, fork and review paths were exercised. See [the acceptance report](docs/ACCEPTANCE_RESULTS.md) for native UI results and remaining live-provider gaps.
@@ -49,7 +70,7 @@ On launch, Diorama lists Codex conversations through a local `codex app-server -
 
 Codex must be installed at `~/.local/bin/codex`, `/opt/homebrew/bin/codex`, or `/usr/local/bin/codex`. Sources remain `~/.codex/sessions`, `~/.codex/archived_sessions`, and `~/.claude/projects`; `CODEX_HOME` and `CLAUDE_CONFIG_DIR` override these roots when supplied to the app process. Finder-launched apps typically do not inherit shell configuration.
 
-The library reconciles every 15 seconds and responds to directory changes; selected history refreshes every two seconds. Search covers title, working directory, and session ID. Provider filters, manual refresh, pause observation, optional source-file reveal, and a connections panel are included. There is no lunar-base/3D scene yet.
+The library reconciles every 15 seconds and responds to directory changes; selected history refreshes every two seconds. Search covers title, working directory, and session ID. Provider filters, manual refresh, pause observation, optional source-file reveal, and a connections panel are included. Workspace displays an orthographic 3D floor with live agent workstations.
 
 Codex history uses `thread/read` without resume or event subscription. The transport allows only initialization, listing, and reading; it never starts model turns, answers approvals, or executes client tools. The App Server process may maintain its own runtime metadata; Diorama does not change provider settings or source transcripts. Missing CLI, connection failure, unknown history items, empty turns, or a missing latest recorded assistant reply cause an explicitly labeled local-file fallback. If both sources fail, the last successfully read selected history remains visible with a warning. App Server runtime status is never interpreted as global activity.
 

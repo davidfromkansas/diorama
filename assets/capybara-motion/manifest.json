@@ -1,0 +1,57 @@
+{
+  "sourceSHA256": "15756a7fd49fbec04e61643e0efe7be81014eff4fc280a941f3f7c9ed1de8ae0",
+  "height": 1,
+  "forward": "+Z",
+  "up": "+Y",
+  "bones": [
+    "root",
+    "pelvis",
+    "spine",
+    "chest",
+    "neck",
+    "head",
+    "ear.L",
+    "ear.R",
+    "shoulder.L",
+    "upper_arm.L",
+    "lower_arm.L",
+    "hand.L",
+    "shoulder.R",
+    "upper_arm.R",
+    "lower_arm.R",
+    "hand.R",
+    "upper_leg.L",
+    "lower_leg.L",
+    "foot.L",
+    "toe.L",
+    "upper_leg.R",
+    "lower_leg.R",
+    "foot.R",
+    "toe.R",
+    "tail"
+  ],
+  "clips": [
+    {
+      "name": "idle",
+      "duration": 4,
+      "loop": true,
+      "nominalSpeed": 0
+    },
+    {
+      "name": "walk",
+      "duration": 1.2,
+      "loop": true,
+      "nominalSpeed": 0.15456989247311828
+    },
+    {
+      "name": "run",
+      "duration": 0.7,
+      "loop": true,
+      "nominalSpeed": 0.6462585034013606
+    }
+  ],
+  "triangles": 142240,
+  "sourceHeight": 1.9003369808197021,
+  "sourceFloor": -0.9505980014801025,
+  "scope": "P0 foundation"
+}

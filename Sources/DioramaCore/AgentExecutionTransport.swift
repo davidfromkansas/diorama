@@ -5,13 +5,19 @@ public actor AgentExecutionTransport: ExecutionTransport {
     public nonisolated let events: AsyncStream<WireValue>
     private let sink: AsyncStream<WireValue>.Continuation
     private let codex: any ExecutionTransport
+    private let claudeProbe: (@Sendable () async throws -> [WireValue])?
     private var claude: [String: ClaudeExecutionTransport] = [:]
     private var readers: [Task<Void, Never>] = []
     private var requestOwners: [String: String] = [:]
     private var codexConnected = false
+    private var codexError: String?
+    private var codexCatalog: [WireValue] = []
+    private var checkingCodex = false
+    private var checkingClaude = false
     private var catalog: [WireValue] = []
     private var claudeError: String?
-    public init(codex: any ExecutionTransport = CodexExecutionTransport()) {
+    public init(codex: any ExecutionTransport = CodexExecutionTransport(), claudeProbe: (@Sendable () async throws -> [WireValue])? = nil) {
+        self.claudeProbe = claudeProbe
         self.codex = codex; (events, sink) = AsyncStream.makeStream(of: WireValue.self)
     }
     deinit { for reader in readers { reader.cancel() }; sink.finish() }
@@ -21,11 +27,33 @@ public actor AgentExecutionTransport: ExecutionTransport {
                 for await e in codex.events { await self?.forward(e, owner: nil) }
             })
         }
-        do { try await codex.connect(); let account = try await codex.request("account/read", .object(["refreshToken": .bool(false)])); codexConnected = account["account"] != .null } catch { codexConnected = false }
-        await refreshClaude()
+        async let c: Void = refreshCodex()
+        async let a: Void = refreshClaude()
+        _ = await (c, a)
+    }
+    private func refreshCodex() async {
+        checkingCodex = true; defer { checkingCodex = false }
+        do {
+            try await codex.connect()
+            let account = try await codex.request("account/read", .object(["refreshToken": .bool(false)]))
+            guard account["account"] != .null else { codexConnected = false; codexCatalog = []; codexError = nil; return }
+            var rows: [WireValue] = []; var cursor: WireValue = .null; var seen = Set<String>()
+            repeat {
+                let reply = try await codex.request("model/list", .object(["limit": .number(100), "cursor": cursor]))
+                rows += reply["data"].array; cursor = reply["nextCursor"]
+                if let value = cursor.string, !seen.insert(value).inserted { throw AppServerFailure("Model pagination repeated") }
+            } while cursor.string != nil
+            codexCatalog = rows; codexConnected = true; codexError = nil
+        } catch { codexConnected = false; codexCatalog = []; codexError = error.localizedDescription }
     }
     private func refreshClaude() async {
-        guard ClaudeExecutionTransport.binary() != nil else { claudeError = "Install Claude Code to connect your subscription."; return }
+        checkingClaude = true; defer { checkingClaude = false }
+        if let claudeProbe {
+            do { catalog = try await claudeProbe(); claudeError = nil }
+            catch { catalog = []; claudeError = error.localizedDescription }
+            return
+        }
+        guard ClaudeExecutionTransport.binary() != nil else { catalog = []; claudeError = "Install Claude Code to connect your subscription."; return }
         let probe = ClaudeExecutionTransport(folder: FileManager.default.homeDirectoryForCurrentUser.path)
         do {
             try await probe.connect()
@@ -54,22 +82,19 @@ public actor AgentExecutionTransport: ExecutionTransport {
     public func request(_ method: String, _ params: WireValue) async throws -> WireValue {
         var p = params.object
         if method == "diorama/connections" {
-            return .object(["codex": .bool(codexConnected), "claude": .bool(!catalog.isEmpty), "claudeError": claudeError.map(WireValue.string) ?? .null])
+            return .object(["codex": .bool(codexConnected), "claude": .bool(!catalog.isEmpty), "claudeError": claudeError.map(WireValue.string) ?? .null, "codexError": codexError.map(WireValue.string) ?? .null, "codexChecking": .bool(checkingCodex), "claudeChecking": .bool(checkingClaude)])
         }
         if method == "model/list" {
-            var rows = catalog
-            if codexConnected {
-                var cursor: WireValue = .null; var seen = Set<String>()
-                repeat {
-                    let response = try await codex.request(method, .object(["limit": .number(100), "cursor": cursor]))
-                    rows.insert(contentsOf: response["data"].array, at: 0); cursor = response["nextCursor"]
-                    if let token = cursor.string, !seen.insert(token).inserted { throw AppServerFailure("Model pagination repeated") }
-                } while cursor.string != nil
-            }
-            return .object(["data": .array(rows)])
+            return .object(["data": .array((codexConnected ? codexCatalog : []) + catalog)])
         }
         if method == "collaborationMode/list", !codexConnected { return .object(["data": .array([.object(["mode": .string("default")]), .object(["mode": .string("plan")])])]) }
         let id = params["threadId"].string ?? ""
+        if method == "diorama/capabilities" {
+            guard params["dioramaProvider"].string == Provider.claude.rawValue, let transport = claude[id] else {
+                return .object([:]) // Local metadata only. Never attach or resume to browse.
+            }
+            return try await transport.request(method, params)
+        }
         if method == "thread/start", params["model"].string?.hasPrefix("claude/") == true {
             guard !catalog.isEmpty else { throw ExecutionRPCRejection(claudeError ?? "Connect Claude in Settings") }
             let newID = UUID().uuidString.lowercased()

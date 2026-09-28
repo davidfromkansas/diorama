@@ -1,0 +1,74 @@
+TAP version 13
+# (node:69979) [MODULE_TYPELESS_PACKAGE_JSON] Warning: Module type of file:///Users/david_lietjauw/Developer/Diorama/assets/capybara/viewer/vendor/three.module.js is not specified and it doesn't parse as CommonJS.
+# Reparsing as ES module because module syntax was detected. This incurs a performance overhead.
+# To eliminate this warning, add "type": "module" to /Users/david_lietjauw/Developer/Diorama/assets/capybara/package.json.
+# (Use `node --trace-warnings ...` to show where the warning was created)
+# Subtest: walk arrives behind starting orientation at 30 fps
+ok 1 - walk arrives behind starting orientation at 30 fps
+  ---
+  duration_ms: 5.538792
+  type: 'test'
+  ...
+# Subtest: walk arrives behind starting orientation at 60 fps
+ok 2 - walk arrives behind starting orientation at 60 fps
+  ---
+  duration_ms: 2.768375
+  type: 'test'
+  ...
+# Subtest: walk arrives behind starting orientation at 120 fps
+ok 3 - walk arrives behind starting orientation at 120 fps
+  ---
+  duration_ms: 3.995958
+  type: 'test'
+  ...
+# Subtest: run arrives behind starting orientation at 30 fps
+ok 4 - run arrives behind starting orientation at 30 fps
+  ---
+  duration_ms: 1.37675
+  type: 'test'
+  ...
+# Subtest: run arrives behind starting orientation at 60 fps
+ok 5 - run arrives behind starting orientation at 60 fps
+  ---
+  duration_ms: 1.36825
+  type: 'test'
+  ...
+# Subtest: run arrives behind starting orientation at 120 fps
+ok 6 - run arrives behind starting orientation at 120 fps
+  ---
+  duration_ms: 2.280542
+  type: 'test'
+  ...
+# Subtest: stop decelerates and interrupted turns retarget continuously
+ok 7 - stop decelerates and interrupted turns retarget continuously
+  ---
+  duration_ms: 0.698833
+  type: 'test'
+  ...
+# Subtest: path completes, invalid commands preserve current path
+ok 8 - path completes, invalid commands preserve current path
+  ---
+  duration_ms: 1.585125
+  type: 'test'
+  ...
+# Subtest: pause and delayed frames stay finite; missing clips fail visibly
+ok 9 - pause and delayed frames stay finite; missing clips fail visibly
+  ---
+  duration_ms: 0.339584
+  type: 'test'
+  ...
+# Subtest: walk/run changes preserve gait phase and decelerate smoothly
+ok 10 - walk/run changes preserve gait phase and decelerate smoothly
+  ---
+  duration_ms: 0.986209
+  type: 'test'
+  ...
+1..10
+# tests 10
+# suites 0
+# pass 10
+# fail 0
+# cancelled 0
+# skipped 0
+# todo 0
+# duration_ms 79.735917

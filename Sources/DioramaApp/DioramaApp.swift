@@ -3,14 +3,16 @@ import Observation
 import DioramaCore
 
 enum ConversationViewMode: String, CaseIterable {
-    case conversation = "Conversation", activity = "Activity", html = "HTML view"
+    case workspace = "Workspace", conversation = "Conversation", activity = "Activity", html = "HTML view"
 }
 
 @Observable
 final class LibraryModel {
     let library = ImportedSessionLibrary()
+    let localDiscovery = SessionLibrary()
     let projects: ProjectModel
     let reviews = SessionReviewStore()
+    let navigation: WorkspaceNavigation
     var activityPanels: [String: ActivityPanelState] = [:]
     let conversations: DioramaConversationModel
     func appendReviewDraft(_ session: String, text: String) {
@@ -48,8 +50,12 @@ final class LibraryModel {
         }
         persistOutgoing()
     }
+    var developmentReload: DevelopmentReload?
     let execution: ExecutionController
-    init(execution: ExecutionController? = nil, projects: ProjectModel? = nil, conversations: DioramaConversationModel? = nil) {
+    let observationHookDirectory: URL?
+    init(execution: ExecutionController? = nil, projects: ProjectModel? = nil, conversations: DioramaConversationModel? = nil, navigation: WorkspaceNavigation? = nil, observationHookDirectory: URL? = HookStore.directory) {
+        self.observationHookDirectory = observationHookDirectory
+        self.navigation = navigation ?? WorkspaceNavigation()
         self.execution = execution ?? ExecutionController(transport: AgentExecutionTransport(), journal: ExecutionController.defaultJournal, canvas: ConversationCanvas())
         self.projects = projects ?? ProjectModel()
         self.conversations = conversations ?? DioramaConversationModel()
@@ -58,7 +64,7 @@ final class LibraryModel {
     var showNewTask = false
     var projectNavigation = false
     var showingLiveTurn: Bool {
-        guard let id = selected?.sessionID, let task = execution.tasks[id] else { return false }
+        guard selected?.observationOnly != true, let id = selected?.sessionID, let task = execution.tasks[id] else { return false }
         return task.attached && !task.transcript.entries.isEmpty
     }
     var displayedTranscript: Transcript {
@@ -106,13 +112,15 @@ final class LibraryModel {
         query = ""; provider = "All"; activityFilter = "All"
         selectedFolderID = execution.tasks[id].flatMap { WorkingFolder.group([$0.session]).first?.id }
         selectedID = conversations.record(id)?.id ?? execution.tasks[id]?.session.id
-        viewMode = .conversation
+        viewMode = .workspace
         if projectNavigation, let project = projects.projects.first(where: { $0.workspaces.contains(where: { $0.threadID == id }) }) {
             projects.selectedID = project.id
+            navigation.tabs[project.id + ":" + (selectedID ?? "draft")] = .workspace
             projects.update(project.id) { $0.selectedSession = selectedID; $0.section = "Sessions" }
         }
     }
-    var sessions: [Session] = []
+    var sessions: [Session] = [] { didSet { sessionsRevision &+= 1 } }
+    private(set) var sessionsRevision: UInt64 = 0
     var notices: [String] = []
     var selectedID: String?
     var selectedFolderID: String?
@@ -131,7 +139,17 @@ final class LibraryModel {
     var transcriptSessionID: String?
     var entryLimit = 300
     var showConnections = false
-    var paused = false
+    var paused = false {
+        didSet {
+            if paused { watcher = nil; updateTask?.cancel(); updateTask = nil }
+            else { beginWatching(); Task { await readSelected() } }
+        }
+    }
+    let externalObserver = ExternalSessionObserver()
+    var observations: [String: ExternalObservationSnapshot] = [:]
+    var observationClock = Date()
+    private var readingSelection = false
+    private var selectionReadRequested = false
     let activityLibrary = ActivityLibrary()
     var activity: [String: ActivitySummary] = [:]
     var activityFilter = "All"
@@ -139,7 +157,8 @@ final class LibraryModel {
     var watcher: DirectoryWatcher?
     var updateTask: Task<Void, Never>?
     var rescanRequested = false
-    var viewMode: ConversationViewMode = .conversation
+    private var changedObservationPaths: Set<String> = []
+    var viewMode: ConversationViewMode = .workspace
     var folderOrder: [String] = []
     func summary(_ session: Session) -> ActivitySummary {
         if let task = execution.tasks[session.sessionID], task.attached, !task.activity.isEmpty {
@@ -175,27 +194,47 @@ final class LibraryModel {
         // Watch transcripts, not Codex's runtime database/logs: our reader must not
         // trigger another discovery pass through its own App Server housekeeping.
         // A missing root still watches its parent so first-time sessions appear.
-        let roots = StorageRoot.defaults().map {
-            FileManager.default.fileExists(atPath: $0.url.path) ? $0.url.path : $0.url.deletingLastPathComponent().path
+        let roots = (StorageRoot.defaults().map(\.url) + [ClaudeDesktopPaths.defaults.metadata]).map {
+            FileManager.default.fileExists(atPath: $0.path) ? $0.path : $0.deletingLastPathComponent().path
         }
         try? FileManager.default.createDirectory(at: HookStore.base, withIntermediateDirectories: true, attributes: [.posixPermissions: 0o700])
-        watcher = DirectoryWatcher(paths: roots + [HookStore.base.path]) { [weak self] in
+        watcher = DirectoryWatcher(paths: roots + [HookStore.base.path], changed: { [weak self] paths in
             guard let self, !self.paused else { return }
-            self.updateTask?.cancel()
+            self.changedObservationPaths.formUnion(paths.prefix(max(0, 256 - self.changedObservationPaths.count)))
+            guard self.updateTask == nil else { return }
             self.updateTask = Task { [weak self] in
-                do { try await Task.sleep(for: .milliseconds(500)) } catch { return }
+                do { try await Task.sleep(for: .milliseconds(50)) } catch { return }
                 guard let self else { return }
-                self.updateTask = nil
-                await self.refresh(); await self.readSelected()
+                defer { if !Task.isCancelled { self.updateTask = nil } }
+                repeat {
+                let paths = Array(self.changedObservationPaths)
+                self.changedObservationPaths.removeAll()
+                async let changed = SessionLibrary.changedSessions(paths: paths)
+                await self.readSelected()
+                let incomingSessions = await changed
+                guard !self.paused, !Task.isCancelled else { return }
+                for incoming in incomingSessions {
+                    if let index = self.sessions.firstIndex(where: { $0.id == incoming.id }) {
+                        // Full reconciliation owns Desktop classification and richer API metadata.
+                        self.sessions[index] = incoming.retainingDiscoveryMetadata(from: self.sessions[index])
+                    } else { self.sessions.append(incoming) }
+                }
+                // The periodic pass reconciles metadata-only changes and archives.
+                if paths.contains(where: { $0.hasSuffix(".json") }) { Task { await self.refresh() } }
+                if !paths.isEmpty { await self.readSelected() }
+                } while !self.changedObservationPaths.isEmpty && !self.paused && !Task.isCancelled
             }
-        }
+        })
     }
     func openAttention(_ session: Session) {
         query = ""; provider = "All"; activityFilter = "All"
         selectedFolderID = WorkingFolder.group([session]).first?.id; selectedID = session.id
-        viewMode = execution.tasks[session.sessionID]?.attached != true ? .activity : .conversation; showInbox = false
-        if projectNavigation, let project = projects.projects.first(where: { projects.sessions($0, library: self).contains(where: { $0.id == session.id }) }) {
-            projects.selectedID = project.id; projects.update(project.id) { $0.selectedSession = session.id; $0.section = "Sessions" }
+        let attentionMode: ConversationViewMode = execution.tasks[session.sessionID]?.attached != true ? .activity : .conversation
+        showInbox = false
+        openInWorkspace(session)
+        viewMode = attentionMode
+        if let project = projects.selected {
+            navigation.tabs[project.id + ":" + session.id] = viewMode == .activity ? .activity : .conversation
         }
     }
     var showInternal = UserDefaults.standard.bool(forKey: "showInternalSessions") {
@@ -227,29 +266,104 @@ final class LibraryModel {
     func refresh() async {
         guard !isScanning else { rescanRequested = true; return }
         isScanning = true
-        let snapshot = await library.scan()
+        let scanStarted = Date()
+        async let richDiscovery = library.scan()
+        let local = await localDiscovery.scan()
+        if !Task.isCancelled && !paused {
+            execution.observeDesktopSessions(local.sessions)
+            var indices = Dictionary(uniqueKeysWithValues: sessions.enumerated().map { ($0.element.id, $0.offset) })
+            for incoming in local.sessions {
+                if let index = indices[incoming.id] {
+                    if incoming.modified > sessions[index].modified { sessions[index] = incoming.retainingDiscoveryMetadata(from: sessions[index]) }
+                } else {
+                    indices[incoming.id] = sessions.count; sessions.append(incoming)
+                }
+            }
+            scannedAt = Date()
+            reconcileSelection()
+        }
+        let snapshot = await richDiscovery
         let activitySnapshot = await activityLibrary.scan(snapshot.sessions)
         if !Task.isCancelled && !paused {
             // Keep existing row order stable as files change; append newly discovered sessions.
             var incoming = Dictionary(uniqueKeysWithValues: snapshot.sessions.map { ($0.id, $0) })
+            for session in sessions where session.modified > scanStarted { incoming[session.id] = session }
             for task in execution.tasks.values where incoming[task.session.id] == nil { incoming[task.session.id] = task.session }
             let existing = Set(sessions.map(\.id))
             sessions = sessions.compactMap { incoming[$0.id] } + snapshot.sessions.filter { !existing.contains($0.id) }
             syncOwnedSessions()
             for folder in WorkingFolder.group(sessions) where !folderOrder.contains(folder.id) { folderOrder.append(folder.id) }
-            activity = activitySnapshot; notices = snapshot.notices; scannedAt = Date()
+            execution.observeDesktopSessions(snapshot.sessions)
+            activity = activitySnapshot
+            for (id, observation) in observations where observation.synchronizedAt > scanStarted { activity[id] = observation.activity }
+            notices = snapshot.notices; scannedAt = Date()
             reconcileSelection()
         }
         isScanning = false
         if rescanRequested && !paused { rescanRequested = false; await refresh() }
     }
     func readSelected() async {
-        guard let session = selected else { transcript = Transcript(); transcriptSessionID = nil; return }
-        let result = await library.transcript(for: session, limit: entryLimit)
-        guard !Task.isCancelled, selectedID == session.id else { return }
-        if transcript != result || transcriptSessionID != session.id { transcript = result; transcriptSessionID = session.id }
-        await execution.importActivity(session, transcript: result)
+        guard !paused else { return }
+        guard !readingSelection else { selectionReadRequested = true; return }
+        readingSelection = true
+        repeat {
+            selectionReadRequested = false
+            await readCurrentSelection()
+        } while selectionReadRequested && !paused && !Task.isCancelled
+        readingSelection = false
     }
+
+    private func readCurrentSelection() async {
+        guard let session = selected else { transcript = Transcript(); transcriptSessionID = nil; return }
+        observationClock = Date()
+        if session.url != nil && execution.tasks[session.sessionID]?.attached != true {
+            var observation = await externalObserver.read(session, limit: entryLimit, hookDirectory: observationHookDirectory)
+            var parents = Set([session.sessionID])
+            var descendants: [Session] = []
+            var seen = Set([session.id])
+            for _ in 0..<8 {
+                let next = sessions.filter { $0.provider == session.provider && $0.parentID.map(parents.contains) == true && !seen.contains($0.id) }
+                guard !next.isEmpty else { break }
+                descendants += next; parents.formUnion(next.map(\.sessionID)); seen.formUnion(next.map(\.id))
+            }
+            // Publish the selected conversation before child I/O, then return all
+            // child observations in one actor hop rather than twenty UI round trips.
+            guard !paused, selectedID == session.id, !Task.isCancelled else { return }
+            if observation.error == nil,
+               transcript != observation.transcript || transcriptSessionID != session.id {
+                transcript = observation.transcript; transcriptSessionID = session.id
+            }
+            let observedChildren = await externalObserver.readChildren(Array(descendants.prefix(20)), hookDirectory: observationHookDirectory)
+            for child in descendants.prefix(20) {
+                if let childObservation = observedChildren[child.id] {
+                    observation.structured.apply(childObservation.agentRecord(child, parent: session))
+                }
+            }
+            guard !paused, !Task.isCancelled, selectedID == session.id else { return }
+            var updatedObservations = observations.merging(observedChildren) { _, latest in latest }
+            updatedObservations[session.id] = observation
+            if updatedObservations.count > 24 {
+                let retained = Set(descendants.prefix(20).map(\.id) + [session.id])
+                updatedObservations = updatedObservations.filter { retained.contains($0.key) }
+            }
+            observations = updatedObservations
+            activity[session.id] = observation.activity
+            if observation.error == nil {
+                if transcript != observation.transcript || transcriptSessionID != session.id {
+                    transcript = observation.transcript; transcriptSessionID = session.id
+                }
+            } else if transcriptSessionID != session.id {
+                transcript = observation.transcript; transcript.error = observation.error; transcriptSessionID = session.id
+            }
+            execution.observeActivity(session, snapshot: observation.structured)
+        } else {
+            let result = await library.transcript(for: session, limit: entryLimit)
+            guard !paused, !Task.isCancelled, selectedID == session.id else { return }
+            if transcript != result || transcriptSessionID != session.id { transcript = result; transcriptSessionID = session.id }
+            await execution.importActivity(session, transcript: result)
+        }
+    }
+
 }
 
 @main
@@ -259,19 +373,41 @@ struct DioramaApp: App {
     @NSApplicationDelegateAdaptor(DioramaApplicationDelegate.self) private var delegate
     var body: some Scene {
         WindowGroup("Diorama") {
+            if CommandLine.arguments.contains("--capybara-lab") || Bundle.main.object(forInfoDictionaryKey: "DioramaMovementLab") as? Bool == true {
+                WorkspaceSceneView(startInMovementLab: true)
+                    .frame(minWidth: 760, minHeight: 600).preferredColorScheme(.dark)
+            } else {
             ProjectsRootView(library: model)
-                .onAppear { delegate.execution = model.execution; model.syncOwnedSessions() }
+                .onAppear {
+                    delegate.execution = model.execution
+                    if model.developmentReload == nil { model.developmentReload = DevelopmentReload.configured(library: model) }
+                    delegate.developmentReload = model.developmentReload
+                    model.syncOwnedSessions()
+                }
                 .sheet(isPresented: Binding(get: { !onboarded }, set: { if !$0 { onboarded = true } })) {
                     AgentSettingsView(controller: model.execution, onboarding: true, finish: { onboarded = true })
                 }
                 .frame(minWidth: 760, minHeight: 600)
                 .preferredColorScheme(.dark)
+            }
         }
-        .defaultSize(width: 1250, height: 820)
+        .defaultSize(width: 1320, height: 850)
+        .windowStyle(.hiddenTitleBar)
         .commands {
             CommandGroup(after: .newItem) {
                 Button("New session") { model.showNewTask = true }.keyboardShortcut("n")
                 Button("Refresh sessions") { Task { await model.refresh() } }.keyboardShortcut("r")
+                if let reload = model.developmentReload {
+                    Toggle("Automatically reload source changes", isOn: Binding(get: { reload.enabled }, set: { reload.setEnabled($0) }))
+                    Text(reload.status)
+                }
+                Button("Toggle sidebar") { model.navigation.layout.sidebarVisible.toggle() }.keyboardShortcut("b")
+                Button("Toggle inspector") { model.navigation.layout.inspectorVisible.toggle() }.keyboardShortcut("b", modifiers: [.command, .option])
+                Button("Find session") { model.navigation.searchPresented = true }.keyboardShortcut("k")
+                Button("Focus composer") { model.focusWorkspaceComposer() }.keyboardShortcut("l")
+                Button("Back") { if let route = model.navigation.back() { model.navigate(route, record: false) } }.keyboardShortcut("[")
+                Button("Forward") { if let route = model.navigation.forward() { model.navigate(route, record: false) } }.keyboardShortcut("]")
+                Button("Home") { model.navigate(.home) }.keyboardShortcut("h", modifiers: [.command, .shift])
                 ForEach(Array(["Sessions", "Pull Requests", "Files", "Context"].enumerated()), id: \.offset) { index, section in
                     Button(section) { if let id = model.projects.selectedID { model.projects.update(id) { $0.section = section } } }
                         .keyboardShortcut(KeyEquivalent(Character(String(index + 1))))
@@ -344,7 +480,7 @@ struct LibraryView: View {
                             VStack(alignment: .leading, spacing: 6) {
                                 Text((model.pinned.contains(session.id) ? "📌 " : "") + markdownTitle(session.title)).font(.system(size: 13, weight: .medium)).lineLimit(2)
                                 HStack {
-                                    Text(session.provider.rawValue)
+                                    Text(session.sourceLabel)
                                     Text(row.label)
                                     if session.archived { Text("Archived") }
                                 }.font(.caption2).foregroundStyle(.secondary)
@@ -427,6 +563,7 @@ struct SessionView: View {
     @Bindable var model: LibraryModel
     var hasLocalReview = false
     var activityAction: ((String) -> Void)?
+    var shellContent = false
     private var activityState: ActivityPanelState { model.activityState(session) }
     private func openActivity(_ section: String) {
         activityState.section = section
@@ -463,8 +600,8 @@ struct SessionView: View {
             VStack(alignment: .leading, spacing: 10) {
                 HStack(alignment: .top, spacing: 12) {
                     VStack(alignment: .leading, spacing: 5) {
-                        Text(markdownTitle(session.title)).font(.system(size: 16, weight: .semibold)).lineLimit(2).textSelection(.enabled)
-                        Text("\(session.provider.rawValue) · Last reported: \(model.summary(session).state.rawValue) · \(model.health)")
+                        if !shellContent { Text(markdownTitle(session.title)).font(.system(size: 16, weight: .medium)).lineLimit(2).textSelection(.enabled) }
+                        Text("\(session.sourceLabel) · Last reported: \(model.summary(session).state.rawValue) · \(model.health)")
                             .font(.caption).foregroundStyle(.secondary)
                     }
                     Spacer(minLength: 0)
@@ -484,103 +621,135 @@ struct SessionView: View {
                                 Text("Session ID: " + session.sessionID)
                                 if let parent = session.parentID { Text("Recorded parent: " + parent) }
                                 Text("Discovery: " + session.historySource)
+                                if let observation = model.observations[session.id] {
+                                    if let source = observation.sourceModifiedAt { Text("Last source change: " + source.formatted()) }
+                                    Text("Last observer read: " + observation.synchronizedAt.formatted())
+                                    Text("Last successful synchronization: " + (observation.lastSuccessfulSynchronization?.formatted() ?? "Not yet synchronized"))
+                                }
                                 Text("\(model.displayedTranscript.source) · \(model.displayedTranscript.malformed) unrecognized records")
-                                Text("Recorded status may be stale. Unified Claude Desktop is not connected.").foregroundStyle(.secondary)
+                                Text("Recorded status may be stale. Claude Code Desktop conversations are view-only.").foregroundStyle(.secondary)
                                 if let url = session.url { Button("Reveal transcript") { NSWorkspace.shared.activateFileViewerSelecting([url]) } }
                             }.font(.caption).textSelection(.enabled).padding(20).frame(width: 380)
                         }
                 }
-            }.padding(.horizontal, 24).padding(.vertical, 16)
-            if model.projectNavigation {
+            }.buttonStyle(.borderless).padding(.horizontal, 20).padding(.vertical, shellContent ? 8 : 12)
+            if session.provider == .codex && model.execution.tasks[session.sessionID]?.attached != true {
+                Label("Observing saved transcript · Codex may buffer updates until later in the turn. Hooks can improve activity coverage.", systemImage: "clock.badge.exclamationmark")
+                    .font(.caption).foregroundStyle(.secondary).padding(.horizontal, 20).padding(.bottom, 8)
+            }
+            if let error = model.observations[session.id]?.error {
                 HStack {
+                    Label("Observation unavailable: " + error, systemImage: "exclamationmark.triangle")
                     Spacer()
-                    Picker("Conversation view", selection: $model.viewMode) {
-                        ForEach(ConversationViewMode.allCases, id: \.self) { mode in Text(mode.rawValue).tag(mode) }
-                    }.pickerStyle(.menu).labelsHidden().fixedSize()
-                }.padding(.horizontal, 24).padding(.bottom, 8)
-            } else {
-            Picker("View", selection: $model.viewMode) {
-                ForEach(ConversationViewMode.allCases, id: \.self) { mode in Text(mode.rawValue).tag(mode) }
-            }.pickerStyle(.segmented).padding(.horizontal, 26).padding(.bottom, 12)
+                    Button("Retry") { Task { await model.readSelected() } }.disabled(model.paused)
+                }.font(.caption).foregroundStyle(.orange).padding(12)
             }
-            if let task = model.execution.tasks[session.sessionID], task.attached {
-                let snapshot = model.activitySnapshot(session)
-                HStack {
-                    if !snapshot.steps.isEmpty { Button("Steps · \(snapshot.steps.filter { $0.status == "completed" }.count) of \(snapshot.steps.count) completed") { openActivity("Steps") } }
-                    if !snapshot.agents.isEmpty { Button("Agents · " + snapshot.agentSummary) { openActivity("Agents") } }
-                }.font(.callout).padding(.horizontal, 24).padding(.bottom, 10)
-                if !hasLocalReview && !task.work.diff.isEmpty {
-                    Button("Changes · \(task.work.files.count) files · +\(task.work.files.reduce(0) { $0 + $1.additions }) −\(task.work.files.reduce(0) { $0 + $1.deletions })") { showChanges.toggle() }
-                        .padding(.horizontal, 24).padding(.bottom, 10)
-                }
+            if !shellContent {
+                HStack(spacing: 0) {
+                    ForEach(ConversationViewMode.allCases, id: \.self) { mode in
+                        WorkspaceTabButton(title: mode.rawValue, selected: model.viewMode == mode) { model.viewMode = mode }
+                    }
+                }.padding(.horizontal, 12)
             }
-            Divider()
-            if model.viewMode == .html {
-                HTMLCanvasView(session: session, livePhase: model.execution.tasks[session.sessionID]?.attached == true ? model.execution.tasks[session.sessionID]?.phase : nil, activities: CanvasActivity.current(model.execution.tasks[session.sessionID]), observedSummary: model.summary(session))
-                    .id(session.id)
-            } else if model.viewMode == .activity {
-                SessionActivityPanel(session: session, library: model, state: activityState, close: { model.viewMode = .conversation })
-            } else if model.transcriptSessionID != session.id && !model.showingLiveTurn && !model.outgoing.values.contains(where: { $0.sessionID == session.sessionID }) {
-                ProgressView("Reading transcript…").frame(maxWidth: .infinity, maxHeight: .infinity)
-            } else if let error = model.displayedTranscript.error {
-                ContentUnavailableView("Transcript unavailable", systemImage: "exclamationmark.triangle", description: Text(error))
-            } else {
-                ScrollView {
-                    LazyVStack(alignment: .leading, spacing: 18) {
-                        if let notice = model.displayedTranscript.notice { Text(notice).font(.caption).foregroundStyle(.orange).textSelection(.enabled) }
-                        if model.displayedTranscript.earlierContentOmitted {
-                            HStack {
-                                Text("Showing the latest \(model.displayedTranscript.entries.count) entries.").font(.caption).foregroundStyle(.secondary)
-                                Spacer()
-                                if model.entryLimit < 5000 {
-                                    Button("Load more") { model.entryLimit = min(5000, model.entryLimit + 500); Task { await model.readSelected() } }
-                                }
-                            }
+            WorkspacePaneStack {
+                VStack(spacing: 0) {
+                    if let task = model.execution.tasks[session.sessionID], task.attached {
+                        let snapshot = model.activitySnapshot(session)
+                        HStack {
+                            if !snapshot.steps.isEmpty { Button("Steps · \(snapshot.steps.filter { $0.status == "completed" }.count) of \(snapshot.steps.count) completed") { openActivity("Steps") } }
+                            if !snapshot.agents.isEmpty { Button("Agents · " + snapshot.agentSummary) { openActivity("Agents") } }
+                        }.font(.callout).padding(.horizontal, 24).padding(.bottom, 10)
+                        if !hasLocalReview && !task.work.diff.isEmpty {
+                            Button("Changes · \(task.work.files.count) files · +\(task.work.files.reduce(0) { $0 + $1.additions }) −\(task.work.files.reduce(0) { $0 + $1.deletions })") { showChanges.toggle() }
+                                .padding(.horizontal, 24).padding(.bottom, 10)
                         }
-                        if model.displayedTranscript.entries.isEmpty { Text(model.execution.tasks[session.sessionID]?.phase.active == true ? "Your conversation will appear here." : "No messages yet.").foregroundStyle(.secondary) }
-                        ForEach(model.displayedTranscript.entries) { entry in
-                            VStack(alignment: .trailing, spacing: 6) {
-                            if entry.kind == "Provider switch" {
-                                DisclosureGroup(entry.text.components(separatedBy: "\n").first ?? "Model switched") {
-                                    Text(entry.text.components(separatedBy: "\n").dropFirst(2).joined(separator: "\n")).font(.caption).textSelection(.enabled)
-                                }.font(.caption).foregroundStyle(.secondary).padding(.vertical, 12)
-                            } else {
-                            EntryView(entry: entry, viewPlan: { activityState.selectedPlan = model.activitySnapshot(session).plans.first(where: { $0.nativeID == entry.providerItemID || $0.detail == entry.text })?.id; openActivity("Plan") }, selectWorker: { model.openWorker($0) }, progress: model.execution.tasks[session.sessionID]?.toolProgress[entry.tool?.item["id"].string ?? ""])
-                                .contextMenu {
-                                    if let turn = entry.turnID, session.provider == .codex {
-                                        Button("Fork through this turn") { model.forkConversation(session, through: turn) }.disabled(model.execution.tasks[session.sessionID]?.phase.active == true)
-                                    }
+                    }
+                    Divider()
+                    if model.viewMode == .html {
+                        HTMLCanvasView(session: session, livePhase: model.execution.tasks[session.sessionID]?.attached == true ? model.execution.tasks[session.sessionID]?.phase : nil, activities: CanvasActivity.current(model.execution.tasks[session.sessionID]), observedSummary: model.summary(session))
+                            .id(session.id)
+                    } else if model.viewMode == .activity {
+                        SessionActivityPanel(session: session, library: model, state: activityState, close: { model.viewMode = .conversation })
+                    } else if model.transcriptSessionID != session.id && !model.showingLiveTurn && !model.outgoing.values.contains(where: { $0.sessionID == session.sessionID }) {
+                        ProgressView("Reading transcript…").frame(maxWidth: .infinity, maxHeight: .infinity)
+                    } else if let error = model.displayedTranscript.error {
+                        ContentUnavailableView("Transcript unavailable", systemImage: "exclamationmark.triangle", description: Text(error))
+                    } else {
+                        ScrollView {
+                            LazyVStack(alignment: .leading, spacing: 18) {
+                                if let notice = model.displayedTranscript.notice { Text(notice).font(.caption).foregroundStyle(.orange).textSelection(.enabled) }
+                                if !model.displayedTranscript.unrecognizedTypes.isEmpty {
+                                    DisclosureGroup("Some source record types are not displayed") {
+                                        ForEach(model.displayedTranscript.unrecognizedTypes.keys.sorted(), id: \.self) { type in
+                                            Text("\(type): \(model.displayedTranscript.unrecognizedTypes[type] ?? 0)").font(.caption.monospaced())
+                                        }
+                                    }.font(.caption).foregroundStyle(.secondary)
                                 }
-                            }
-                            if let message = model.outgoing[entry.id] {
-                                if message.state == .failed || message.state == .uncertain {
+                                if model.displayedTranscript.earlierContentOmitted {
                                     HStack {
-                                        Text(message.state == .failed ? "Not sent" : "Delivery unconfirmed · check history before resending").font(.caption).foregroundStyle(.secondary)
-                                        if message.state == .failed, let retry = model.retryOutgoing[entry.id] { Button("Retry", action: retry).buttonStyle(.borderless) }
+                                        Text("Showing the latest \(model.displayedTranscript.entries.count) entries.").font(.caption).foregroundStyle(.secondary)
+                                        Spacer()
+                                        if model.entryLimit < 5000 {
+                                            Button("Load more") { model.entryLimit = min(5000, model.entryLimit + 500); Task { await model.readSelected() } }
+                                        }
                                     }
-                                    if let error = message.error { DisclosureGroup("Details") { Text(error).font(.caption).textSelection(.enabled) } }
                                 }
-                            }
-                            }
+                                if model.displayedTranscript.entries.isEmpty { Text(model.execution.tasks[session.sessionID]?.phase.active == true ? "Your conversation will appear here." : "No messages yet.").foregroundStyle(.secondary) }
+                                ForEach(model.displayedTranscript.entries) { entry in
+                                    VStack(alignment: .trailing, spacing: 6) {
+                                    if entry.kind == "Provider switch" {
+                                        DisclosureGroup(entry.text.components(separatedBy: "\n").first ?? "Model switched") {
+                                            Text(entry.text.components(separatedBy: "\n").dropFirst(2).joined(separator: "\n")).font(.caption).textSelection(.enabled)
+                                        }.font(.caption).foregroundStyle(.secondary).padding(.vertical, 12)
+                                    } else {
+                                    EntryView(entry: entry, viewPlan: { activityState.selectedPlan = model.activitySnapshot(session).plans.first(where: { $0.nativeID == entry.providerItemID || $0.detail == entry.text })?.id; openActivity("Plan") }, selectWorker: { model.openWorker($0) }, progress: model.execution.tasks[session.sessionID]?.toolProgress[entry.tool?.item["id"].string ?? ""])
+                                        .contextMenu {
+                                            if let turn = entry.turnID, session.provider == .codex {
+                                                Button("Fork through this turn") { model.forkConversation(session, through: turn) }.disabled(model.execution.tasks[session.sessionID]?.phase.active == true)
+                                            }
+                                        }
+                                    }
+                                    if let message = model.outgoing[entry.id] {
+                                        if message.state == .failed || message.state == .uncertain {
+                                            HStack {
+                                                Text(message.state == .failed ? "Not sent" : "Delivery unconfirmed · check history before resending").font(.caption).foregroundStyle(.secondary)
+                                                if message.state == .failed, let retry = model.retryOutgoing[entry.id] { Button("Retry", action: retry).buttonStyle(.borderless) }
+                                            }
+                                            if let error = message.error { DisclosureGroup("Details") { Text(error).font(.caption).textSelection(.enabled) } }
+                                        }
+                                    }
+                                    }
+                                }
+                            }.scrollTargetLayout().padding(24).frame(maxWidth: 800, alignment: .leading).frame(maxWidth: .infinity)
+                        }.frame(minHeight: 0, maxHeight: .infinity).layoutPriority(-1).defaultScrollAnchor(.bottom)
+                        .onChange(of: model.execution.tasks[session.sessionID]?.transcript) { model.reconcileOutgoing(session.sessionID) }
+                        .scrollPosition(id: $transcriptScrollID, anchor: .top)
+                        .onAppear { transcriptScrollID = model.scrollPositions[session.id] }
+                        .onChange(of: model.scrollPositions[session.id]) { _, value in
+                            if transcriptScrollID != value { transcriptScrollID = value }
                         }
-                    }.scrollTargetLayout().padding(24).frame(maxWidth: 800, alignment: .leading).frame(maxWidth: .infinity)
-                }.frame(minHeight: 0, maxHeight: .infinity).layoutPriority(-1).defaultScrollAnchor(.bottom)
-                .onChange(of: model.execution.tasks[session.sessionID]?.transcript) { model.reconcileOutgoing(session.sessionID) }
-                .scrollPosition(id: $transcriptScrollID, anchor: .top)
-                .onAppear { transcriptScrollID = model.scrollPositions[session.id] }
-                .task(id: transcriptScrollID) {
-                    // Scroll layout writes must not synchronously invalidate the shared library.
-                    guard let position = transcriptScrollID else { return }
-                    do { try await Task.sleep(for: .milliseconds(350)) } catch { return }
-                    guard model.scrollPositions[session.id] != position else { return }
-                    model.scrollPositions[session.id] = position
-                    UserDefaults.standard.set(model.scrollPositions, forKey: "conversationScrollPositions")
+                        .task(id: transcriptScrollID) {
+                            // Scroll layout writes must not synchronously invalidate the shared library.
+                            guard let position = transcriptScrollID else { return }
+                            do { try await Task.sleep(for: .milliseconds(350)) } catch { return }
+                            guard model.scrollPositions[session.id] != position else { return }
+                            model.scrollPositions[session.id] = position
+                            UserDefaults.standard.set(model.scrollPositions, forKey: "conversationScrollPositions")
+                        }
+                    }
+                    Divider()
+                    ExecutionControls(library: model, session: session).id(session.id)
+                        .frame(maxWidth: 800).frame(maxWidth: .infinity)
+                }
+                .opacity(model.viewMode == .workspace ? 0 : 1)
+                .allowsHitTesting(model.viewMode != .workspace)
+                .accessibilityHidden(model.viewMode == .workspace)
+                if model.viewMode == .workspace {
+                    WorkspaceSessionScene(library: model, session: session,
+                        openConversation: { model.viewMode = .conversation },
+                        openActivity: { model.viewMode = .activity }).id(session.id)
                 }
             }
-            Divider()
-            ExecutionControls(library: model, session: session).id(session.id)
-                .frame(maxWidth: 800).frame(maxWidth: .infinity)
-
         }
         .sheet(isPresented: $showFind) { ConversationSearchView(model: model, threadID: session.sessionID) }
         .onChange(of: session.id) { showChanges = false }
@@ -602,7 +771,11 @@ struct EntryView: View {
                 if let image = entry.image {
                     ToolImagePreview(reference: image)
                 }
-                if entry.kind == "Proposed plan" {
+                if let presentation = entry.claude {
+                    ClaudeEntryView(entry: entry, presentation: presentation)
+                } else if let presentation = entry.codex {
+                    CodexEntryView(entry: entry, presentation: presentation, selectWorker: selectWorker, progress: progress)
+                } else if entry.kind == "Proposed plan" {
                     VStack(alignment: .leading, spacing: 10) {
                         Label("Proposed plan", systemImage: "doc.text").font(.headline)
                         Text(entry.text).lineLimit(3).foregroundStyle(.secondary)
@@ -624,9 +797,12 @@ struct EntryView: View {
                     if !isUser { Text("Assistant").font(.caption.weight(.medium)).foregroundStyle(.secondary) }
                     TranscriptContent(text: entry.text)
                 }
+                if let records = entry.sourceRecords, !records.isEmpty, entry.category != .context {
+                    SourceRecordDetails(records: records)
+                }
             }
             .padding(isUser ? 16 : 4)
-            .background(isUser ? Color(red: 0.0, green: 0.36, blue: 0.82) : Color.clear, in: UserMessageBubble())
+            .background(isUser ? DioramaStyle.raised : Color.clear, in: RoundedRectangle(cornerRadius: 8))
             .environment(\.colorScheme, isUser ? .dark : colorScheme)
             .help(entry.timestamp ?? entry.kind)
             if isUser == false { Spacer(minLength: 0) }
@@ -658,8 +834,8 @@ struct ConnectionsView: View {
                 }
             }
             Divider()
-            Text("Unified Claude Desktop: not connected").font(.headline)
-            Text("Claude Code history can be read locally. We have not verified a supported feed for the unified Claude desktop experience.").font(.callout).foregroundStyle(.secondary)
+            Text("Claude Chat / Cowork: not connected").font(.headline)
+            Text("Local Claude Code Desktop history is observed through session metadata and transcripts. Chat, Cowork, cloud and SSH sessions are outside this integration.").font(.callout).foregroundStyle(.secondary)
             if !model.notices.isEmpty {
                 ScrollView { Text(model.notices.joined(separator: "\n")).font(.caption).textSelection(.enabled).frame(maxWidth: .infinity, alignment: .leading) }.frame(maxHeight: 130)
             }

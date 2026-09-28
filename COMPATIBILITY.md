@@ -370,3 +370,7 @@ Build 0.5.0 (39) inserts a local user bubble and clears the composer before asyn
 ### Bubble tail and Enter to send — 2026-09-21T19:20:29.262499+08:00
 
 Build 0.5.0 (40) gives user bubbles a curved lower-right tail. The conversation composer sends on Enter or keypad Enter with nonempty text or attachments, retains Command+Enter, and preserves Shift+Enter and input-method marked text handling. Editors with no send callback retain normal newline behavior. 180 tests in 46 suites passed, including native keyboard events; tail rendering was visually inspected. Artifact: /tmp/diorama-bubble-keyboard/Diorama.app.
+
+## Claude Code Desktop observation — September 25, 2026
+
+The local **Code tab** now has a dedicated metadata adapter and read-only transcript integration; this supersedes earlier blanket Desktop exclusions only for local Code history. Metadata from Desktop 2.7032.0 links `cliSessionId` to existing Claude transcript identities. Chat/Cowork remain excluded. Reporter discovery and shared-hook setup are implemented; full live Desktop delivery and restart acceptance are not implied by passing fixture tests. See [the observation report](docs/CLAUDE_DESKTOP_OBSERVATION.md) for the exact validation status.

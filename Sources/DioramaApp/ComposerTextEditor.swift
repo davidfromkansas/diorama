@@ -30,6 +30,16 @@ enum ClipboardImageStore {
 }
 
 final class ComposerNSTextView: NSTextView {
+    static func focusVisible() {
+        func editor(in view: NSView) -> ComposerNSTextView? {
+            guard !view.isHiddenOrHasHiddenAncestor else { return nil }
+            if let editor = view as? ComposerNSTextView { return editor }
+            for child in view.subviews { if let match = editor(in: child) { return match } }
+            return nil
+        }
+        if let window = NSApp.keyWindow, let content = window.contentView, let text = editor(in: content) { window.makeFirstResponder(text) }
+    }
+
     var clipboard: () -> NSPasteboard = { .general }
     var pasteImage: (NSPasteboard) -> Bool = { _ in false }
     var sendMessage: (() -> Void)?

@@ -1,0 +1,127 @@
+name: Release Diorama for macOS
+
+on:
+  push:
+    tags: ['v*']
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: diorama-macos-release
+  cancel-in-progress: false
+
+jobs:
+  release:
+    name: Test, sign, notarize, and publish
+    runs-on: macos-15
+    timeout-minutes: 60
+    env:
+      RELEASE_REPOSITORY: davidfromkansas/diorama-releases
+      DEVELOPER_DIR: /Applications/Xcode_26.2.app/Contents/Developer
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22.19.0'
+          cache: npm
+          cache-dependency-path: helpers/claude/package-lock.json
+      - name: Validate version and release target
+        id: version
+        shell: bash
+        env:
+          GH_TOKEN: ${{ secrets.RELEASES_GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+          : "${GH_TOKEN:?Missing RELEASES_GITHUB_TOKEN}"
+          test "$GITHUB_REPOSITORY" = davidfromkansas/diorama
+          test "$(uname -m)" = arm64
+          swift --version
+          version=$(sed -n 's/.*CFBundleShortVersionString<\/key><string>\([^<]*\).*/\1/p' build-macos.sh)
+          build=$(sed -n 's/.*CFBundleVersion<\/key><string>\([^<]*\).*/\1/p' build-macos.sh)
+          [[ "$version" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ && "$build" =~ ^[0-9]+$ ]]
+          tag="v$version"
+          # Manual retries must also point at an existing immutable release tag.
+          test "$(git rev-parse "$tag^{commit}")" = "$GITHUB_SHA"
+          if [[ "$GITHUB_REF_TYPE" == tag ]]; then test "$GITHUB_REF_NAME" = "$tag"; fi
+          # List successfully before checking absence: network errors must not mean "no release".
+          gh api --paginate "repos/$RELEASE_REPOSITORY/releases?per_page=100" --jq '.[].tag_name' > "$RUNNER_TEMP/release-tags"
+          if grep -Fxq "$tag" "$RUNNER_TEMP/release-tags"; then
+            echo '::error::A release already exists for this version; do not overwrite its assets.'
+            exit 1
+          fi
+          echo "tag=$tag" >> "$GITHUB_OUTPUT"
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+          echo "build=$build" >> "$GITHUB_OUTPUT"
+      - name: Check required credentials
+        env:
+          MAC_CSC_LINK: ${{ secrets.MAC_CSC_LINK }}
+          MAC_CSC_KEY_PASSWORD: ${{ secrets.MAC_CSC_KEY_PASSWORD }}
+          APPLE_API_KEY_BASE64: ${{ secrets.APPLE_API_KEY_BASE64 }}
+          APPLE_API_KEY_ID: ${{ secrets.APPLE_API_KEY_ID }}
+          APPLE_API_ISSUER: ${{ secrets.APPLE_API_ISSUER }}
+        run: |
+          set -euo pipefail
+          for name in MAC_CSC_LINK MAC_CSC_KEY_PASSWORD APPLE_API_KEY_BASE64 APPLE_API_KEY_ID APPLE_API_ISSUER; do
+            if [[ -z "${!name}" ]]; then echo "::error::Missing GitHub secret: $name"; exit 1; fi
+          done
+      - name: Run Swift regression tests
+        run: |
+          set -o pipefail
+          # Native UI suites share AppKit/WebKit process state; avoid CI contention.
+          swift test --no-parallel --scratch-path "$RUNNER_TEMP/diorama-build" 2>&1 | tee "$RUNNER_TEMP/swift-tests.log"
+      - name: Run Claude helper tests
+        run: |
+          set -o pipefail
+          npm ci --prefix helpers/claude --ignore-scripts --omit=optional --no-audit --no-fund
+          npm test --prefix helpers/claude 2>&1 | tee "$RUNNER_TEMP/helper-tests.log"
+      - name: Build app
+        env:
+          DIORAMA_BUILD_PATH: ${{ runner.temp }}/diorama-build
+          DIORAMA_APP_PATH: ${{ runner.temp }}/output/Diorama.app
+        run: |
+          set -o pipefail
+          zsh build-macos.sh 2>&1 | tee "$RUNNER_TEMP/build.log"
+      - name: Configure temporary signing Keychain
+        env:
+          MAC_CSC_LINK: ${{ secrets.MAC_CSC_LINK }}
+          MAC_CSC_KEY_PASSWORD: ${{ secrets.MAC_CSC_KEY_PASSWORD }}
+          APPLE_API_KEY_BASE64: ${{ secrets.APPLE_API_KEY_BASE64 }}
+          APPLE_API_KEY_ID: ${{ secrets.APPLE_API_KEY_ID }}
+          APPLE_API_ISSUER: ${{ secrets.APPLE_API_ISSUER }}
+        run: bash scripts/setup-release-keychain.sh
+      - name: Sign, notarize, and package
+        env:
+          DIORAMA_REQUIRE_NOTARIZATION: '1'
+        run: |
+          set -o pipefail
+          bash scripts/package-release.sh "$RUNNER_TEMP/output/Diorama.app" "$RUNNER_TEMP/output" 2>&1 | tee "$RUNNER_TEMP/package.log"
+      - name: Verify packaged installer
+        run: bash scripts/verify-release.sh "$RUNNER_TEMP/output/Diorama-${{ steps.version.outputs.version }}-${{ steps.version.outputs.build }}-arm64.dmg"
+      - name: Publish verified download
+        env:
+          GH_TOKEN: ${{ secrets.RELEASES_GITHUB_TOKEN }}
+          RELEASE_TAG: ${{ steps.version.outputs.tag }}
+          RELEASE_VERSION: ${{ steps.version.outputs.version }}
+          RELEASE_BUILD: ${{ steps.version.outputs.build }}
+        run: bash scripts/publish-release.sh
+      - name: Remove temporary credentials
+        if: always()
+        run: |
+          security delete-keychain "$RUNNER_TEMP/diorama-signing.keychain-db" 2>/dev/null || true
+          rm -f "$RUNNER_TEMP/diorama-signing.p12" "$RUNNER_TEMP/diorama-notary.p8"
+      - name: Preserve verification logs
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: release-verification
+          path: |
+            ${{ runner.temp }}/swift-tests.log
+            ${{ runner.temp }}/helper-tests.log
+            ${{ runner.temp }}/build.log
+            ${{ runner.temp }}/package.log
+          if-no-files-found: ignore
