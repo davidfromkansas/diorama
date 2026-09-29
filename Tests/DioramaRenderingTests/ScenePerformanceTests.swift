@@ -1,5 +1,6 @@
 import AppKit
 import SceneKit
+import Metal
 import Testing
 @testable import DioramaApp
 @testable import DioramaCore
@@ -82,6 +83,15 @@ import Testing
         #expect(cache.agents(id:"s",title:"Title",sources:[source])[1].freshness == .lastKnown)
         #expect(cache.rebuilds == 2)
     }
+    @Test func gpuProbeCompletesWhenMetalIsUnavailable() async {
+        let probe = SceneGPUProbe(device: nil)
+        var completed = false
+        probe.sample(scene: SCNScene(), camera: SCNNode(), size: CGSize(width: 1, height: 1), samples: 1) {
+            #expect($0 == nil)
+            completed = true
+        }
+        #expect(completed)
+    }
     @Test func gpuProbeReportsCommandBufferExecutionTime() async {
         let scene = SCNScene()
         let camera = SCNNode(); camera.camera = SCNCamera(); camera.position.z = 5
@@ -96,6 +106,10 @@ import Testing
                 continuation.resume(returning:$0)
             }
         }
-        #expect(seconds != nil && seconds! > 0)
+        if MTLCreateSystemDefaultDevice() == nil {
+            #expect(seconds == nil)
+        } else {
+            #expect(seconds != nil && seconds! > 0)
+        }
     }
 }

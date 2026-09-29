@@ -8,9 +8,16 @@ import Metal
 /// This probe owns its Metal command buffer and reads actual GPU start/end timestamps.
 final class SceneGPUProbe {
     private var pending = false
+    private let device: (any MTLDevice)?
+    init(device: (any MTLDevice)? = MTLCreateSystemDefaultDevice()) {
+        self.device = device
+    }
     func sample(scene: SCNScene, camera: SCNNode, size: CGSize, samples: Int,
                 completion: @escaping @MainActor (Double?) -> Void) {
-        guard !pending, let device = MTLCreateSystemDefaultDevice(), let queue = device.makeCommandQueue() else { return }
+        guard !pending, let device, let queue = device.makeCommandQueue() else {
+            completion(nil)
+            return
+        }
         pending = true
         let job = Job(scene: scene, camera: camera, device: device, queue: queue,
                       width: max(1,Int(size.width)), height: max(1,Int(size.height)), samples: samples)
