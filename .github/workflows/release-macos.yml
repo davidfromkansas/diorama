@@ -74,7 +74,8 @@ jobs:
         run: |
           set -o pipefail
           # Native UI suites share AppKit/WebKit process state; avoid CI contention.
-          swift test --no-parallel --scratch-path "$RUNNER_TEMP/diorama-build" 2>&1 | tee "$RUNNER_TEMP/swift-tests.log"
+          # Optimize timing-sensitive tests; a PTY streams each test result even on a stall.
+          script -q /dev/null swift test -c release --no-parallel --scratch-path "$RUNNER_TEMP/diorama-build" 2>&1 | tee "$RUNNER_TEMP/swift-tests.log"
       - name: Run Claude helper tests
         run: |
           set -o pipefail
