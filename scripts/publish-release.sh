@@ -56,7 +56,7 @@ fi
 if [[ "$create_tag" == 1 ]]; then
   gh api --method POST "repos/$RELEASE_REPOSITORY/git/refs" -f "ref=refs/tags/$RELEASE_TAG" -f "sha=$public_sha" --silent
 fi
-gh release create "$RELEASE_TAG" "$RUNNER_TEMP/output/$image" "$RUNNER_TEMP/output/$image.sha256" --repo "$RELEASE_REPOSITORY" --verify-tag --draft "${release_flags[@]}" --title "Diorama $RELEASE_VERSION ($RELEASE_BUILD)" --notes-file "$notes" --target "$public_sha"
+gh release create "$RELEASE_TAG" "$RUNNER_TEMP/output/$image" "$RUNNER_TEMP/output/$image.sha256" --repo "$RELEASE_REPOSITORY" --verify-tag --draft ${release_flags[@]+"${release_flags[@]}"} --title "Diorama $RELEASE_VERSION ($RELEASE_BUILD)" --notes-file "$notes" --target "$public_sha"
 gh release view "$RELEASE_TAG" --repo "$RELEASE_REPOSITORY" --json tagName,isDraft,assets
 test "$(gh api "repos/$RELEASE_REPOSITORY/git/ref/tags/$RELEASE_TAG" --jq .object.sha)" = "$public_sha"
 # Verify the uploaded draft before making it public.
