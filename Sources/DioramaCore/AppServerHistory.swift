@@ -59,6 +59,8 @@ public actor AppServerConnection: AppServerReading {
         child.currentDirectoryURL = home
         try child.run()
         process = child; input = stdin.fileHandleForWriting; output = stdout.fileHandleForReading
+        // A disconnected history process must throw EPIPE, never terminate the GUI.
+        _ = fcntl(stdin.fileHandleForWriting.fileDescriptor, F_SETNOSIGPIPE, 1)
         // Reading only after poll keeps initialization, EOF and hung servers bounded.
         let flags = fcntl(stdout.fileHandleForReading.fileDescriptor, F_GETFL)
         _ = fcntl(stdout.fileHandleForReading.fileDescriptor, F_SETFL, flags | O_NONBLOCK)
