@@ -13,6 +13,9 @@ final class LibraryModel {
     let projects: ProjectModel
     let reviews = SessionReviewStore()
     let navigation: WorkspaceNavigation
+    let spatial = SpatialWorkspaceState()
+    @ObservationIgnored let workspaceProjectionCache = WorkspaceProjectionCache()
+    var portfolio = PortfolioStore()
     var activityPanels: [String: ActivityPanelState] = [:]
     let conversations: DioramaConversationModel
     func appendReviewDraft(_ session: String, text: String) {
@@ -212,6 +215,7 @@ final class LibraryModel {
                 async let changed = SessionLibrary.changedSessions(paths: paths)
                 await self.readSelected()
                 let incomingSessions = await changed
+                self.portfolio.register(incomingSessions)
                 guard !self.paused, !Task.isCancelled else { return }
                 for incoming in incomingSessions {
                     if let index = self.sessions.firstIndex(where: { $0.id == incoming.id }) {
@@ -269,6 +273,7 @@ final class LibraryModel {
         let scanStarted = Date()
         async let richDiscovery = library.scan()
         let local = await localDiscovery.scan()
+        portfolio.register(local.sessions)
         if !Task.isCancelled && !paused {
             execution.observeDesktopSessions(local.sessions)
             var indices = Dictionary(uniqueKeysWithValues: sessions.enumerated().map { ($0.element.id, $0.offset) })
@@ -283,6 +288,7 @@ final class LibraryModel {
             reconcileSelection()
         }
         let snapshot = await richDiscovery
+        portfolio.register(snapshot.sessions)
         let activitySnapshot = await activityLibrary.scan(snapshot.sessions)
         if !Task.isCancelled && !paused {
             // Keep existing row order stable as files change; append newly discovered sessions.
@@ -373,7 +379,9 @@ struct DioramaApp: App {
     @NSApplicationDelegateAdaptor(DioramaApplicationDelegate.self) private var delegate
     var body: some Scene {
         WindowGroup("Diorama") {
-            if CommandLine.arguments.contains("--capybara-lab") || Bundle.main.object(forInfoDictionaryKey: "DioramaMovementLab") as? Bool == true {
+            if CommandLine.arguments.contains("--scene-benchmark") || Bundle.main.object(forInfoDictionaryKey: "DioramaSceneBenchmark") as? Bool == true {
+                SceneBenchmarkView()
+            } else if CommandLine.arguments.contains("--capybara-lab") || Bundle.main.object(forInfoDictionaryKey: "DioramaMovementLab") as? Bool == true {
                 WorkspaceSceneView(startInMovementLab: true)
                     .frame(minWidth: 760, minHeight: 600).preferredColorScheme(.dark)
             } else {
@@ -564,6 +572,8 @@ struct SessionView: View {
     var hasLocalReview = false
     var activityAction: ((String) -> Void)?
     var shellContent = false
+    var embeddedWorkScreen = false
+    private var effectiveMode: ConversationViewMode { embeddedWorkScreen ? .conversation : model.viewMode }
     private var activityState: ActivityPanelState { model.activityState(session) }
     private func openActivity(_ section: String) {
         activityState.section = section
@@ -647,7 +657,7 @@ struct SessionView: View {
             if !shellContent {
                 HStack(spacing: 0) {
                     ForEach(ConversationViewMode.allCases, id: \.self) { mode in
-                        WorkspaceTabButton(title: mode.rawValue, selected: model.viewMode == mode) { model.viewMode = mode }
+                        WorkspaceTabButton(title: mode.rawValue, selected: effectiveMode == mode) { model.viewMode = mode }
                     }
                 }.padding(.horizontal, 12)
             }
@@ -665,10 +675,10 @@ struct SessionView: View {
                         }
                     }
                     Divider()
-                    if model.viewMode == .html {
+                    if effectiveMode == .html {
                         HTMLCanvasView(session: session, livePhase: model.execution.tasks[session.sessionID]?.attached == true ? model.execution.tasks[session.sessionID]?.phase : nil, activities: CanvasActivity.current(model.execution.tasks[session.sessionID]), observedSummary: model.summary(session))
                             .id(session.id)
-                    } else if model.viewMode == .activity {
+                    } else if effectiveMode == .activity {
                         SessionActivityPanel(session: session, library: model, state: activityState, close: { model.viewMode = .conversation })
                     } else if model.transcriptSessionID != session.id && !model.showingLiveTurn && !model.outgoing.values.contains(where: { $0.sessionID == session.sessionID }) {
                         ProgressView("Reading transcript…").frame(maxWidth: .infinity, maxHeight: .infinity)
@@ -741,10 +751,10 @@ struct SessionView: View {
                     ExecutionControls(library: model, session: session).id(session.id)
                         .frame(maxWidth: 800).frame(maxWidth: .infinity)
                 }
-                .opacity(model.viewMode == .workspace ? 0 : 1)
-                .allowsHitTesting(model.viewMode != .workspace)
-                .accessibilityHidden(model.viewMode == .workspace)
-                if model.viewMode == .workspace {
+                .opacity(effectiveMode == .workspace ? 0 : 1)
+                .allowsHitTesting(effectiveMode != .workspace)
+                .accessibilityHidden(effectiveMode == .workspace)
+                if effectiveMode == .workspace {
                     WorkspaceSessionScene(library: model, session: session,
                         openConversation: { model.viewMode = .conversation },
                         openActivity: { model.viewMode = .activity }).id(session.id)

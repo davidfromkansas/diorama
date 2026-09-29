@@ -42,17 +42,28 @@ Download **$image**, open it, and drag **Diorama** into **Applications**. No Git
 
 Choose the DMG installer. GitHub's automatic source archives contain only this repository's documentation.
 EOF_NOTES
+changelog="docs/releases/$RELEASE_VERSION.md"
+if [[ -f "$changelog" ]]; then
+  printf '\n' >> "$notes"
+  cat "$changelog" >> "$notes"
+fi
+release_flags=()
+latest_flag=--latest
+if [[ "${RELEASE_PRERELEASE:-false}" == true ]]; then
+  release_flags=(--prerelease)
+  latest_flag=--latest=false
+fi
 if [[ "$create_tag" == 1 ]]; then
   gh api --method POST "repos/$RELEASE_REPOSITORY/git/refs" -f "ref=refs/tags/$RELEASE_TAG" -f "sha=$public_sha" --silent
 fi
-gh release create "$RELEASE_TAG" "$RUNNER_TEMP/output/$image" "$RUNNER_TEMP/output/$image.sha256" --repo "$RELEASE_REPOSITORY" --verify-tag --draft --title "Diorama $RELEASE_VERSION ($RELEASE_BUILD)" --notes-file "$notes" --target "$public_sha"
+gh release create "$RELEASE_TAG" "$RUNNER_TEMP/output/$image" "$RUNNER_TEMP/output/$image.sha256" --repo "$RELEASE_REPOSITORY" --verify-tag --draft ${release_flags[@]+"${release_flags[@]}"} --title "Diorama $RELEASE_VERSION ($RELEASE_BUILD)" --notes-file "$notes" --target "$public_sha"
 gh release view "$RELEASE_TAG" --repo "$RELEASE_REPOSITORY" --json tagName,isDraft,assets
 test "$(gh api "repos/$RELEASE_REPOSITORY/git/ref/tags/$RELEASE_TAG" --jq .object.sha)" = "$public_sha"
 # Verify the uploaded draft before making it public.
 gh release download "$RELEASE_TAG" --repo "$RELEASE_REPOSITORY" --pattern "$image*" --dir "$RUNNER_TEMP/draft-download"
 (cd "$RUNNER_TEMP/draft-download" && shasum -a 256 -c "$image.sha256")
 cmp "$RUNNER_TEMP/output/$image" "$RUNNER_TEMP/draft-download/$image"
-gh release edit "$RELEASE_TAG" --repo "$RELEASE_REPOSITORY" --draft=false --latest
+gh release edit "$RELEASE_TAG" --repo "$RELEASE_REPOSITORY" --draft=false "$latest_flag"
 # Verify public availability without sending the publishing token.
 mkdir -p "$RUNNER_TEMP/public-download"
 for asset in "$image" "$image.sha256"; do

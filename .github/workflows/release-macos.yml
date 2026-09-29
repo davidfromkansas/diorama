@@ -19,6 +19,7 @@ jobs:
     timeout-minutes: 60
     env:
       RELEASE_REPOSITORY: davidfromkansas/diorama-releases
+      RELEASE_PRERELEASE: 'true'
       DEVELOPER_DIR: /Applications/Xcode_26.2.app/Contents/Developer
     steps:
       - uses: actions/checkout@v4

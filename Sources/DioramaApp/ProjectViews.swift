@@ -105,6 +105,7 @@ struct ProjectsRootView: View {
     @Bindable var projects: ProjectModel
     init(library: LibraryModel) { self.library = library; self.projects = library.projects }
     @State private var addMode: String?
+    @Environment(\.scenePhase) private var scenePhase
     var body: some View {
         WorkspaceShell(library: library) { addActions }
         .sheet(isPresented: Binding(get: { addMode != nil }, set: { if !$0 { addMode = nil } })) {
@@ -113,7 +114,7 @@ struct ProjectsRootView: View {
                     HStack { Text("New Session").font(.title2.bold()); Spacer(); Button("Cancel") { addMode = nil } }
                     Text("Choose a project for this session.").foregroundStyle(.secondary)
                     ForEach(projects.projects) { project in
-                        Button(project.name) { library.navigate(.project(project.id, nil)); addMode = nil }
+                        Button(project.name) { library.navigate(.project(project.id, nil)); library.focusWorkspaceComposer(); addMode = nil }
                     }
                     Divider()
                     addActions
@@ -143,7 +144,7 @@ struct ProjectsRootView: View {
         .onChange(of: library.showNewTask) {
             if library.showNewTask {
                 library.showNewTask = false
-                if let id = projects.selected?.id { library.navigate(.project(id, nil)) }
+                if let id = projects.selected?.id { library.navigate(.project(id, nil)); library.focusWorkspaceComposer() }
                 else { library.navigation.searchPresented = false; addMode = "Choose Project" }
                 library.selectedID = nil
             }
@@ -156,6 +157,13 @@ struct ProjectsRootView: View {
             while !Task.isCancelled {
                 if !library.paused { await library.readSelected() }
                 do { try await Task.sleep(for: .seconds(2)) } catch { return }
+            }
+        }
+        .task(id: scenePhase) {
+            guard scenePhase == .active else { return }
+            while !Task.isCancelled {
+                await library.portfolio.refresh(library)
+                do { try await Task.sleep(for: .seconds(1)) } catch { return }
             }
         }
         .task {
@@ -359,7 +367,7 @@ struct ProjectDetailView: View {
                     Divider()
                     Button("Remove from Diorama") { projects.projects.removeAll { $0.id == projectID }; projects.selectedID = nil; projects.save() }.disabled(projects.busy.contains(projectID))
                 } label: { Image(systemName: "ellipsis") }.menuStyle(.borderlessButton).fixedSize()
-                Button("New Session") { library.navigate(.project(projectID, nil)) }
+                Button("New Session") { library.navigate(.project(projectID, nil)); library.focusWorkspaceComposer() }
                     .disabled(projects.busy.contains(projectID) || !project.isGitBacked)
                     .help(project.isGitBacked ? "Start a new session" : "Starting sessions in Diorama requires Git. External sessions remain viewable.")
             }.buttonStyle(.borderless).padding(.horizontal, 16).frame(height: 38).background(DioramaStyle.sidebar)

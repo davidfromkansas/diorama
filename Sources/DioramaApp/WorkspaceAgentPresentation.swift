@@ -119,7 +119,8 @@ struct WorkspaceActivitySource {
 enum WorkspaceAgentPresentation {
     static func agents(title: String, sources: [WorkspaceActivitySource]) -> [WorkspaceAgent] {
         guard let current = sources.last else { return [.ready] }
-        let task = current.task
+        // Fresh external evidence can supersede a detached task's saved lifecycle.
+        let task = current.task?.attached == true || current.observation == nil ? current.task : nil
         // Active turns also set requiresReconciliation; only disconnection is uncertain.
         let uncertain = task?.phase == .disconnected
         let phase = task?.phase.rawValue ?? current.fallbackStatus
@@ -135,7 +136,7 @@ enum WorkspaceAgentPresentation {
             action: mainStatus == .working ? action(mainAction) ?? "Working on the conversation" : phase,
             status: mainStatus, reportedStatus: phase,
             freshness: uncertain ? .unverified : current.hasLiveExecution ? .live : current.externalFreshness,
-            attentionReason: WorkspaceAttentionReason(reported: phase))]
+            observedAt: task?.activity.last(where: { $0.state != nil })?.time ?? current.observation?.activity.latestState?.time, attentionReason: WorkspaceAttentionReason(reported: phase))]
         var seen: Set<String> = []
         for source in sources {
             let records = source.snapshot.records.filter { $0.kind == "agent" }
@@ -165,7 +166,7 @@ enum WorkspaceAgentPresentation {
                     freshness: verified ? .live : (!source.paused && source.observation?.error == nil && source.observation != nil && record.recordedAt.map { source.now.timeIntervalSince($0) >= -2 && source.now.timeIntervalSince($0) < 30 } == true ? .recentlyObserved : .lastKnown),
                     parentID: parent.map(identity),
                     parentName: parent?.title ?? (record.parentID == nil || record.parentID == source.sessionID ? "Main agent" : "Unresolved parent"),
-                    activityRecordID: record.id, observedAt: record.recordedAt ?? record.observedAt,
+                    activityRecordID: record.id, observedAt: record.recordedAt ?? (verified ? record.observedAt : nil),
                     attentionReason: WorkspaceAttentionReason(reported: record.status)))
             }
         }
@@ -197,12 +198,77 @@ extension LibraryModel {
         let sources = segments.compactMap { segment -> WorkspaceActivitySource? in
             guard let provider = Provider(rawValue: segment.provider) else { return nil }
             let task = execution.tasks[segment.nativeID]
-            return WorkspaceActivitySource(provider: provider, sessionID: segment.nativeID,
-                snapshot: execution.activitySnapshot(provider: provider, id: segment.nativeID),
-                task: task?.provider == provider ? task : nil, fallbackStatus: summary(session).state.rawValue,
-                observation: observations[provider.rawValue + ":" + segment.nativeID] ?? (segment.nativeID == session.sessionID ? observations[session.id] : nil),
-                now: observationClock, paused: paused)
+            let selectedObservation = observations[provider.rawValue + ":" + segment.nativeID] ?? (segment.nativeID == session.sessionID ? observations[session.id] : nil)
+            let background = portfolio.observation(for: provider, nativeID: segment.nativeID)
+            let observation = [selectedObservation, background].compactMap { $0 }.max { $0.synchronizedAt < $1.synchronizedAt }
+            var snapshot = execution.activitySnapshot(provider: provider, id: segment.nativeID)
+            for child in portfolio.childRecords(provider: provider, nativeID: segment.nativeID) {
+                if let index = snapshot.records.firstIndex(where: { $0.kind == "agent" && $0.nativeID == child.nativeID }) {
+                    let previous = snapshot.records[index]
+                    if (child.recordedAt ?? .distantPast) > (previous.recordedAt ?? .distantPast) {
+                        var latest = child
+                        latest.id = previous.id
+                        snapshot.apply(latest)
+                    }
+                } else { snapshot.apply(child) }
+            }
+            return WorkspaceActivitySource(provider: provider, sessionID: segment.nativeID, snapshot: snapshot,
+                task: task?.provider == provider ? task : nil, fallbackStatus: observation?.activity.state.rawValue ?? summary(session).state.rawValue,
+                observation: observation, now: observationClock, paused: paused)
         }
-        return WorkspaceAgentPresentation.agents(title: session.title, sources: sources)
+        return workspaceProjectionCache.agents(id: session.id, title: session.title, sources: sources)
+    }
+}
+
+/// Values that can change the agent projection. Freshness is a derived state, so its
+/// boundary invalidates the cache without tying every entry to a wall-clock tick.
+struct WorkspaceProjectionSource: Equatable {
+    let provider: Provider
+    let sessionID: String
+    let snapshot: SessionActivitySnapshot
+    let phase: String
+    let attached: Bool
+    let turnID: String?
+    let prompt: String?
+    let eventTime: Date?
+    let observationState: String?
+    let observationTime: Date?
+    let freshness: WorkspaceAgentFreshness
+    let fallback: String
+    let liveStartedAt: Date?
+    let recentChildren: Set<String>
+    init(_ source: WorkspaceActivitySource) {
+        provider = source.provider; sessionID = source.sessionID; snapshot = source.snapshot
+        phase = source.task?.phase.rawValue ?? source.fallbackStatus
+        attached = source.hasLiveExecution; turnID = source.task?.turnID
+        prompt = source.task?.transcript.entries.last(where: { $0.kind == "You" })?.text
+        eventTime = source.task?.activity.last(where: { $0.state != nil })?.time
+        observationState = source.observation?.activity.state.rawValue
+        observationTime = source.observation?.activity.latestState?.time
+        freshness = source.externalFreshness
+        fallback = source.fallbackStatus
+        liveStartedAt = source.task?.liveStartedAt
+        recentChildren = Set(source.snapshot.records.filter { record in
+            record.kind == "agent" && !source.paused && source.observation != nil && source.observation?.error == nil
+                && record.recordedAt.map { source.now.timeIntervalSince($0) >= -2 && source.now.timeIntervalSince($0) < 30 } == true
+        }.map(\.id))
+    }
+}
+
+final class WorkspaceProjectionCache {
+    struct Entry {
+        var title: String
+        var sources: [WorkspaceProjectionSource]
+        var agents: [WorkspaceAgent]
+    }
+    var entries: [String: Entry] = [:]
+    private(set) var rebuilds = 0
+    func agents(id: String, title: String, sources: [WorkspaceActivitySource]) -> [WorkspaceAgent] {
+        let keys = sources.map(WorkspaceProjectionSource.init)
+        if let cached = entries[id], cached.title == title, cached.sources == keys { return cached.agents }
+        rebuilds += 1
+        let agents = WorkspaceAgentPresentation.agents(title: title, sources: sources)
+        entries[id] = Entry(title: title, sources: keys, agents: agents)
+        return agents
     }
 }

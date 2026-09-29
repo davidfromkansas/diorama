@@ -1,0 +1,40 @@
+newmtl SEAT-FRAME
+Kd 0.13 0.15 0.15
+Ks 0.1 0.1 0.1
+Ns 30
+
+newmtl SEAT-CHASSIS
+Kd 0.13 0.15 0.15
+Ks 0.1 0.1 0.1
+Ns 30
+
+newmtl SEAT-ARMPAD
+Kd 0.13 0.15 0.15
+Ks 0.1 0.1 0.1
+Ns 30
+
+newmtl SEAT-BASE
+Kd 0.13 0.15 0.15
+Ks 0.1 0.1 0.1
+Ns 30
+
+newmtl SEAT-SHAFT
+Kd 0.13 0.15 0.15
+Ks 0.1 0.1 0.1
+Ns 30
+
+newmtl SEAT-CASTER
+Kd 0.08 0.09 0.09
+Ks 0.1 0.1 0.1
+Ns 30
+
+newmtl SEAT-FABRIC
+Kd 0.2 0.23 0.22
+Ks 0.1 0.1 0.1
+Ns 30
+
+newmtl SEAT-FABRICBACK
+Kd 0.2 0.23 0.22
+Ks 0.1 0.1 0.1
+Ns 30
+

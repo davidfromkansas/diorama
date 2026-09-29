@@ -154,6 +154,13 @@ extension LibraryModel {
     func navigate(_ destination: WorkspaceDestination, record: Bool = true) {
         if record { navigation.visit(destination) }
         viewMode = .workspace
+        spatial.notice = nil
+        spatial.page = 0
+        switch destination {
+        case .home: spatial.focus = .portfolio
+        case .project(let id, let session): spatial.focus = session.map { .team(project: id, conversation: $0) } ?? .project(id)
+        case .imported(let session): spatial.focus = session.map { .team(project: nil, conversation: $0) } ?? .portfolio
+        }
         switch destination {
         case .home: projects.selectedID = nil; selectedID = nil
         case .imported(let session):
