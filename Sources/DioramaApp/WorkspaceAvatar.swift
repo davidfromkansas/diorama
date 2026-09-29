@@ -40,10 +40,10 @@ struct WorkspaceAvatar {
 }
 
 enum WorkspaceAvatarFactory {
-    static func capybara() -> WorkspaceAvatar {
+    static func capybara(height: Float = 2.5, asset: WorkspaceCapybaraAsset? = nil) -> WorkspaceAvatar {
         do {
-            let instance = try WorkspaceCapybaraAsset.shared.get().makeInstance()
-            instance.root.simdScale = SIMD3(repeating: 2.5)
+            let instance = try (asset ?? WorkspaceCapybaraAsset.shared.get()).makeInstance()
+            instance.root.simdScale = SIMD3(repeating: height)
             instance.apply(instance.pose("idle", time: 0))
             // Seat the short legs on the existing chair; keep shins and paws hanging naturally.
             for side in ["L", "R"] {

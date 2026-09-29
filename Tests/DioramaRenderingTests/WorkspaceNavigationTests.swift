@@ -80,6 +80,8 @@ extension WorkspaceNavigationTests {
         projects.projects = [project]; projects.selectedID = project.id
         let model = LibraryModel(execution: controller, projects: projects, navigation: WorkspaceNavigation(defaults: defaults()))
         model.sessions = [task.session]; model.selectedID = task.session.id; model.transcriptSessionID = task.session.id; model.projectNavigation = true; model.paused = true
+        let agent = try #require(model.spatialWorld(showArchived: false).projects.first?.teams.first?.agents.first)
+        model.spatial.focus = .agent(project: project.id, conversation: task.session.id, agent: agent.id, expanded: true)
         for width in [760.0, 1100.0, 1440.0] {
             let view = WorkspaceShell(library: model) { Text("Open project") }.environment(\.colorScheme, .dark)
             let host = NSHostingView(rootView: view)

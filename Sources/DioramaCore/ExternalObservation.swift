@@ -11,6 +11,13 @@ public struct ExternalObservationSnapshot: Sendable {
     public var error: String?
     public var lastSuccessfulSynchronization: Date? = nil
 
+    public init(sessionID: String, transcript: Transcript, activity: ActivitySummary, structured: SessionActivitySnapshot,
+                sourceModifiedAt: Date?, synchronizedAt: Date, error: String?, lastSuccessfulSynchronization: Date? = nil) {
+        self.sessionID = sessionID; self.transcript = transcript; self.activity = activity; self.structured = structured
+        self.sourceModifiedAt = sourceModifiedAt; self.synchronizedAt = synchronizedAt; self.error = error
+        self.lastSuccessfulSynchronization = lastSuccessfulSynchronization
+    }
+
     public func agentRecord(_ child: Session, parent: Session) -> SessionActivityRecord {
         let last = activity.latestState
         return SessionActivityRecord(id: parent.id + ":observed-agent:" + child.id,

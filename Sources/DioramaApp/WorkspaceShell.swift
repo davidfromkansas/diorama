@@ -29,15 +29,22 @@ struct WorkspaceShell<AddActions: View>: View {
                         if library.isScanning { ProgressView().controlSize(.mini) }
                         Button { navigation.layout.inspectorVisible.toggle() } label: { Image(systemName: "sidebar.right") }.help("Toggle inspector (⌘⌥B)").disabled(library.projects.selected == nil && library.selected == nil)
                     }.buttonStyle(.plain).foregroundStyle(.secondary).padding(.horizontal, 16).frame(height: 32).background(DioramaStyle.sidebar)
-                    if let project = library.projects.selected {
-                        ProjectDetailView(projectID: project.id, projects: library.projects, library: library).id(project.id)
-                            .environment(\.workspaceWide, WorkspaceNavigation.inlineInspector(width: geometry.size.width))
-                            .environment(\.workspaceContentWidth, geometry.size.width - (navigation.layout.sidebarVisible ? navigation.layout.sidebarWidth + 1 : 0))
-                    } else if library.projects.selectedID == "imported", let session = library.selected {
-                        WorkspaceImportedSession(session: session, library: library)
-                            .environment(\.workspaceWide, WorkspaceNavigation.inlineInspector(width: geometry.size.width))
-                    } else {
-                        WorkspaceHome(library: library, imported: library.projects.selectedID == "imported")
+                    ZStack {
+                        SpatialWorkspaceView(library: library, visible: spatialVisible)
+                            .opacity(spatialVisible ? 1 : 0)
+                            .allowsHitTesting(spatialVisible).accessibilityHidden(!spatialVisible)
+                        if !spatialVisible {
+                            if let project = library.projects.selected {
+                                ProjectDetailView(projectID: project.id, projects: library.projects, library: library).id(project.id)
+                                    .environment(\.workspaceWide, WorkspaceNavigation.inlineInspector(width: geometry.size.width))
+                                    .environment(\.workspaceContentWidth, geometry.size.width - (navigation.layout.sidebarVisible ? navigation.layout.sidebarWidth + 1 : 0))
+                            } else if library.projects.selectedID == "imported", let session = library.selected {
+                                WorkspaceImportedSession(session: session, library: library)
+                                    .environment(\.workspaceWide, WorkspaceNavigation.inlineInspector(width: geometry.size.width))
+                            } else {
+                                WorkspaceHome(library: library, imported: library.projects.selectedID == "imported")
+                            }
+                        }
                     }
                 }.frame(maxWidth: .infinity, maxHeight: .infinity)
             }.background(DioramaStyle.canvas).tint(DioramaStyle.accent)
@@ -49,11 +56,30 @@ struct WorkspaceShell<AddActions: View>: View {
             }.frame(width: 720, height: 550)
         }
         .onReceive(NotificationCenter.default.publisher(for: NSApplication.willTerminateNotification)) { _ in navigation.flushPersistence() }
-        .onChange(of: library.workspaceDestination) { navigation.visit(library.workspaceDestination) }
+         .onChange(of: library.workspaceDestination) {
+            let destination = library.workspaceDestination
+            navigation.visit(destination)
+            let expected: SpatialFocus
+            switch destination {
+            case .home: expected = .portfolio
+            case .project(let project, let session): expected = session.map { .team(project: project, conversation: $0) } ?? .project(project)
+            case .imported(let session): expected = session.map { .team(project: nil, conversation: $0) } ?? .portfolio
+            }
+            if expected.projectID != library.spatial.focus.projectID || expected.conversationID != library.spatial.focus.conversationID {
+                library.spatial.focus = expected; library.spatial.page = 0
+            }
+        }
         .onAppear {
             if navigation.hadSavedLayout { library.navigate(navigation.layout.destination, record: false) }
             else { navigation.visit(library.workspaceDestination) }
         }
+    }
+    private var spatialVisible: Bool {
+        if let project = library.projects.selected {
+            return (navigation.tabs[project.id + ":" + (project.selectedSession ?? "draft")] ?? .workspace) == .workspace
+        }
+        if library.projects.selectedID == "imported" { return library.selected != nil && library.viewMode == .workspace }
+        return true
     }
     private var sidebar: some View {
         VStack(alignment: .leading, spacing: 0) {
@@ -107,10 +133,10 @@ struct WorkspaceProjectGroup: View {
                     if navigation.layout.collapsedProjects.contains(project.id) { navigation.layout.collapsedProjects.remove(project.id) }
                     else { navigation.layout.collapsedProjects.insert(project.id) }
                 } label: { Image(systemName: navigation.layout.collapsedProjects.contains(project.id) ? "chevron.right" : "chevron.down").font(.system(size: 9)).frame(width: 22, height: 30).contentShape(Rectangle()) }.help("Expand or collapse \(project.name)")
-                Button { library.navigate(.project(project.id, project.selectedSession)) } label: {
+                Button { library.navigate(.project(project.id, nil)) } label: {
                     Label(project.name, systemImage: "folder").fontWeight(.medium).lineLimit(1).frame(maxWidth: .infinity, alignment: .leading)
                 }.help(project.folder)
-                Button { library.navigate(.project(project.id, nil)) } label: { Image(systemName: "plus").foregroundStyle(.secondary) }.help("New session in \(project.name)")
+                Button { library.navigate(.project(project.id, nil)); library.focusWorkspaceComposer() } label: { Image(systemName: "plus").foregroundStyle(.secondary) }.help("New session in \(project.name)")
             }.buttonStyle(.plain).padding(.horizontal, 8).frame(height: 34)
             if !navigation.layout.collapsedProjects.contains(project.id) {
                 ForEach(SessionPresentation.rows(orderedSessions, showInternal: library.showInternal)) { row in

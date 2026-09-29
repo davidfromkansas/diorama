@@ -1,0 +1,36 @@
+{
+  "units": "metres",
+  "up": "Y",
+  "sources": {
+    "AeronESD": {
+      "dwgSHA256": "75bc5c754063b0affa16f8700c9609959e2fcc11fd2ec9971ace48f19c662337",
+      "vertices": 18058,
+      "triangles": 33632,
+      "minimum": [
+        -0.3475261,
+        6.35e-05,
+        -0.3956524
+      ],
+      "maximum": [
+        0.3475262,
+        1.0182669,
+        0.3058811
+      ]
+    },
+    "NeviC": {
+      "dwgSHA256": "9ba0541e8470306b7aec2a8b2e66d04758b5fa505fc54af582bed5ee754d8876",
+      "vertices": 2120,
+      "triangles": 4056,
+      "minimum": [
+        -0.735235,
+        0.0,
+        0.0
+      ],
+      "maximum": [
+        0.734917,
+        0.725252,
+        0.733552
+      ]
+    }
+  }
+}
