@@ -9,7 +9,8 @@ import Testing
     private func model(_ root: URL) -> LibraryModel {
         LibraryModel(execution: ExecutionController(transport: PassiveViewerTransport()),
             projects: ProjectModel(storageURL: root.appendingPathComponent("projects.json")),
-            conversations: DioramaConversationModel(file: root.appendingPathComponent("conversations.json")))
+            conversations: DioramaConversationModel(file: root.appendingPathComponent("conversations.json")),
+            observationHookDirectory: nil)
     }
     private func session(_ url: URL, id: String = "external") -> Session {
         Session(id: "Codex:" + id, provider: .codex, url: url, sessionID: id,
