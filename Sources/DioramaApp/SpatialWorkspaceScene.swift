@@ -486,8 +486,11 @@ final class SpatialSceneView: SCNView {
         let offset = focus?.expanded == true && bounds.width >= 850 ? pose.scale * 0.70 * Double(bounds.width / bounds.height) : 0
         let cx = pose.x + offset * cos(pose.yaw) - sin(pose.yaw) * forwardGround
         let cz = pose.z - offset * sin(pose.yaw) - cos(pose.yaw) * forwardGround
-        let ex = abs(cos(pose.yaw)) * halfX + abs(sin(pose.yaw)) * halfY / sin(pose.elevation) + 5
-        let ez = abs(sin(pose.yaw)) * halfX + abs(cos(pose.yaw)) * halfY / sin(pose.elevation) + 5
+        let yawCos: Double = abs(cos(pose.yaw))
+        let yawSin: Double = abs(sin(pose.yaw))
+        let groundHalfY: Double = halfY / sin(pose.elevation)
+        let ex: Double = yawCos * halfX + yawSin * groundHalfY + 5.0
+        let ez: Double = yawSin * halfX + yawCos * groundHalfY + 5.0
         if ScenePerformance.disabled("MEADOW") { meadow.root.isHidden = true; return }
         meadow.updateVisibility(bounds: MeadowBounds(minX: cx-ex, maxX: cx+ex, minZ: cz-ez, maxZ: cz+ez), centre: SIMD2(pose.x, pose.z))
     }
