@@ -166,6 +166,8 @@ public enum ProjectFolder {
             var ancestor = url
             while true {
                 if FileManager.default.fileExists(atPath: ancestor.appendingPathComponent(".git").path) { throw error }
+                // Stop at the filesystem root independently of URL parent behavior.
+                if ancestor.path == "/" || ancestor.path.isEmpty { break }
                 let parent = ancestor.deletingLastPathComponent()
                 if parent.path == ancestor.path { break }
                 ancestor = parent
