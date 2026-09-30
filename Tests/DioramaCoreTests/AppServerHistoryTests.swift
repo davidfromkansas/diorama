@@ -162,6 +162,7 @@ struct AppServerHistoryTests {
         let fixture = SessionLibraryTests()
         let root = try fixture.directory(); defer { try? FileManager.default.removeItem(at: root) }
         let executable = root.appendingPathComponent("server")
+        let disconnected = root.appendingPathComponent("disconnected")
         let script = """
         #!/bin/sh
         IFS= read -r initialize
@@ -170,12 +171,19 @@ struct AppServerHistoryTests {
         IFS= read -r request
         printf '{"id":2,"res'
         printf 'ult":{"thread":{"id":"test","turns":[]}}}\\n'
+        exec 0<&-
+        touch "\(disconnected.path)"
+        sleep 2
         """
         try script.write(to: executable, atomically: true, encoding: .utf8)
         try FileManager.default.setAttributes([.posixPermissions: 0o700], ofItemAtPath: executable.path)
         let connection = AppServerConnection(executable: executable, timeout: 2)
         let response = try await connection.request("thread/read", parameters: data(["threadId": "test"]))
         #expect(String(decoding: response, as: UTF8.self).contains("test"))
+        for _ in 0..<100 where !FileManager.default.fileExists(atPath: disconnected.path) {
+            try await Task.sleep(for: .milliseconds(10))
+        }
+        #expect(FileManager.default.fileExists(atPath: disconnected.path))
         do {
             _ = try await connection.request("thread/read", parameters: data(["threadId": "test"]))
             Issue.record("Closed/restarted fixture cannot answer this request")

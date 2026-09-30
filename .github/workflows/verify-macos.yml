@@ -1,0 +1,43 @@
+name: Verify Diorama for macOS
+
+on:
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: diorama-verify-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  verify:
+    runs-on: macos-15
+    timeout-minutes: 20
+    env:
+      DEVELOPER_DIR: /Applications/Xcode_26.2.app/Contents/Developer
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22.19.0'
+          cache: npm
+          cache-dependency-path: helpers/claude/package-lock.json
+      - name: Run optimized Swift regression tests
+        run: |
+          set -o pipefail
+          script -q /dev/null swift test -c release --no-parallel --scratch-path "$RUNNER_TEMP/diorama-build" 2>&1 | tee "$RUNNER_TEMP/swift-tests.log"
+      - name: Run Claude helper tests
+        run: |
+          npm ci --prefix helpers/claude --ignore-scripts --omit=optional --no-audit --no-fund
+          npm test --prefix helpers/claude
+      - name: Preserve test logs
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: macos-verification
+          path: ${{ runner.temp }}/swift-tests.log
+          if-no-files-found: ignore
