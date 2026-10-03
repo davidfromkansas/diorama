@@ -69,6 +69,7 @@ struct ComposerTextEditor: NSViewRepresentable {
     @Binding var attachments: [ConversationAttachment]
     @Binding var error: String?
     let disabled: Bool
+    var measuredHeight: Binding<CGFloat>? = nil
     var send: (() -> Void)? = nil
 
     func makeCoordinator() -> Coordinator { Coordinator(self) }
@@ -92,6 +93,14 @@ struct ComposerTextEditor: NSViewRepresentable {
         context.coordinator.parent = self
         guard let editor = scroll.documentView as? ComposerNSTextView else { return }
         configure(editor, context: context)
+        if let measuredHeight {
+            DispatchQueue.main.async { [weak editor] in
+                guard let editor, let layout = editor.layoutManager, let container = editor.textContainer else { return }
+                layout.ensureLayout(for: container)
+                let height = min(128, max(28, ceil(layout.usedRect(for: container).height + 8)))
+                if measuredHeight.wrappedValue != height { measuredHeight.wrappedValue = height }
+            }
+        }
     }
     private func configure(_ editor: ComposerNSTextView, context: Context) {
         if editor.string != text { editor.string = text }

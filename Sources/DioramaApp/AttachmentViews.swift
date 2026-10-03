@@ -18,19 +18,23 @@ struct AttachmentPicker: View {
     var showsButton = true
     var showsAttachments = true
     var iconOnly = false
+    var menuRow = false
     var showIntegrations: (() -> Void)? = nil
     @State private var error: String?
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
             if showsButton { HStack {
-                if let showIntegrations {
+                if menuRow {
+                    Button(action: chooseFiles) { ComposerOptionLabel(title: "Add attachment", icon: "paperclip") }.pointingHand()
+                        .buttonStyle(HoverButtonStyle(inset: 0)).disabled(disabled)
+                } else if let showIntegrations {
                     Menu {
-                        Button("Files…", systemImage: "paperclip", action: chooseFiles)
+                        Button("Files…", systemImage: "paperclip", action: chooseFiles).pointingHand()
                         Divider()
-                        Button("Skills & connectors…", systemImage: "square.stack.3d.up", action: showIntegrations)
+                        Button("Skills & connectors…", systemImage: "square.stack.3d.up", action: showIntegrations).pointingHand()
                     } label: {
                         Image(systemName: "plus").font(.system(size: 20)).frame(width: 30, height: 30)
-                    }
+                    }.pointingHand()
                     .menuStyle(.borderlessButton).menuIndicator(.hidden).fixedSize()
                     .accessibilityLabel("Add attachments, skills, or connectors")
                     .help("Add files, skills, or connectors").disabled(disabled)
@@ -38,7 +42,7 @@ struct AttachmentPicker: View {
                     Button(action: chooseFiles) {
                         if iconOnly { Image(systemName: "plus").font(.system(size: 20)).frame(width: 30, height: 30) }
                         else { Label("Attach files", systemImage: "paperclip") }
-                    }
+                    }.pointingHand()
                     .accessibilityLabel("Attach files")
                     .buttonStyle(.borderless).disabled(disabled)
                     .help("Attach images or local file references. You can also drop files into the message box.")
@@ -55,7 +59,7 @@ struct AttachmentPicker: View {
                                     Text(attachment.name).lineLimit(1)
                                     Text(attachment.kind == .image ? "Image" : "Local file reference").font(.caption2).foregroundStyle(.secondary)
                                 }
-                                Button { attachments.removeAll { $0.id == attachment.id } } label: { Image(systemName: "xmark.circle.fill") }
+                                Button { attachments.removeAll { $0.id == attachment.id } } label: { Image(systemName: "xmark.circle.fill") }.pointingHand()
                                     .buttonStyle(.plain).disabled(disabled).accessibilityLabel("Remove \(attachment.name)")
                             }.font(.caption).padding(8).background(.quaternary, in: RoundedRectangle(cornerRadius: 8)).help(attachment.url.path)
                         }
@@ -98,7 +102,7 @@ struct AttachmentDropTarget: ViewModifier {
                 catch { self.error = error.localizedDescription; return false }
             } isTargeted: { targeted = $0 }
             .alert("Couldn’t attach files", isPresented: Binding(get: { error != nil }, set: { if !$0 { error = nil } })) {
-                Button("OK") { error = nil }
+                Button("OK") { error = nil }.pointingHand()
             } message: { Text(error ?? "") }
     }
 }

@@ -12,7 +12,7 @@ let package = Package(
         .target(name: "DioramaCore"),
         .executableTarget(name: "DioramaReporter", dependencies: ["DioramaCore"]),
         .executableTarget(name: "DioramaApp", dependencies: ["DioramaCore", .product(name: "MarkdownUI", package: "swift-markdown-ui")],
-                          resources: [.copy("Resources/Library"), .copy("Resources/ConnectorBrand"), .copy("Resources/Capybara"), .copy("Resources/OfficeFurniture")],
+                          resources: [.copy("Resources/Library"), .copy("Resources/ConnectorBrand"), .copy("Resources/AgentStatus"), .copy("Resources/Capybara"), .copy("Resources/OfficeFurniture")],
                           swiftSettings: [.defaultIsolation(MainActor.self)]),
         .testTarget(name: "DioramaCoreTests", dependencies: ["DioramaCore"]),
         .testTarget(name: "DioramaRenderingTests", dependencies: ["DioramaApp"])

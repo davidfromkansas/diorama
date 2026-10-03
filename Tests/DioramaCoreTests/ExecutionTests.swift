@@ -42,7 +42,7 @@ private actor ExecutionStub: ExecutionTransport {
         case "thread/goal/get": return .object(["goal": activeGoal ? .object(["status": .string("active")]) : .null])
         case "thread/resume":
             if let resumeFailure { throw AppServerFailure(resumeFailure) }
-            return .object(["thread": .object(["id": p["threadId"], "status": .object(["type": .string("idle")])]), "model": .string("fixture"), "approvalsReviewer": .string("auto_review")])
+            return .object(["thread": .object(["id": p["threadId"], "status": .object(["type": .string("idle")])]), "model": .string("fixture"), "approvalsReviewer": p["approvalsReviewer"] == .null ? .string("auto_review") : p["approvalsReviewer"], "approvalPolicy": .string("on-request"), "sandbox": .object(["type": .string("workspaceWrite"), "networkAccess": .bool(false)])])
         case "thread/backgroundTerminals/list": return .object(["data": .array(terminalRunning ? [.object(["processId": .string("fixture-terminal")])] : [])])
         case "thread/backgroundTerminals/terminate": terminalRunning = false; return .object([:])
         default: return .object([:])
@@ -157,33 +157,33 @@ private actor ExecutionStub: ExecutionTransport {
         try await c.answer(id: key, result: .object(["action": .string("accept"), "content": .object(["count": .number(2)])]))
         #expect(await stub.responses.last?.1["content"]["count"] == .number(2))
     }
-    @Test func unavailableCanvasDoesNotBlockTheUserTask() async throws {
+    @Test func sendingDoesNotDependOnCanvasStorage() async throws {
         let root = try ConversationCanvasTests().directory()
         let stub = ExecutionStub()
-        let controller = ExecutionController(transport: stub, canvas: ConversationCanvas())
+        let controller = ExecutionController(transport: stub)
         await controller.connect()
         let id = try await controller.prepare(folder: root.path, title: "Task", model: "fixture")
         try FileManager.default.removeItem(at: root)
         try await controller.send(id: id, prompt: "Continue")
         #expect(await stub.parameters["turn/start"]?["input"].array.count == 1)
-        #expect(controller.tasks[id]?.canvasNotice != nil)
     }
-    @Test func htmlViewInstructionsAreIncludedOnEveryTurnWithoutChangingUserText() async throws {
+    @Test func ordinaryTurnsSendOnlyUserInputWithoutCreatingCanvas() async throws {
         let root = try ConversationCanvasTests().directory()
         defer { try? FileManager.default.removeItem(at: root) }
         let stub = ExecutionStub()
-        let controller = ExecutionController(transport: stub, canvas: ConversationCanvas())
+        let controller = ExecutionController(transport: stub)
         await controller.connect()
         let id = try await controller.prepare(folder: root.path, title: "Canvas task", model: "fixture")
         for prompt in ["First request", "Next request"] {
             try await controller.send(id: id, prompt: prompt)
             let input = await stub.parameters["turn/start"]?["input"].array ?? []
             #expect(input.first?["text"].string == prompt)
-            #expect(input.last?["text"].string?.contains("<diorama_html_view>") == true)
+            #expect(input.count == 1)
+            #expect(!input.contains { $0["text"].string?.contains("<diorama_html_view>") == true })
             await controller.receive(completion(id, "turn-" + id))
         }
         let url = try ConversationCanvas().location(folder: root.path, provider: .codex, sessionID: id)
-        #expect(FileManager.default.fileExists(atPath: url.path))
+        #expect(!FileManager.default.fileExists(atPath: url.path))
     }
     @Test func liveImageViewUpdatesOneEntryAndRetainsPreview() async throws {
         let (controller, _, id) = try await setup()
@@ -260,11 +260,21 @@ private actor ExecutionStub: ExecutionTransport {
         #expect(sent?["input"].array.first?["text"].string?.contains(url.lastPathComponent) == true)
         #expect(await stub.calls.filter { $0 == "turn/start" }.count == 1)
     }
+    @Test func codingTurnsApplyExplicitWorkspacePermissionBeforePrompt() async throws {
+        let (controller, stub, id) = try await setup()
+        controller.tasks[id]?.sandbox = .object(["type": .string("readOnly")])
+        try await controller.send(id: id, prompt: "Implement", approvalReview: .autoReview)
+        let prepared = await stub.parameters["thread/resume"]
+        #expect(prepared?["sandbox"] == .string("workspace-write"))
+        #expect(prepared?["approvalsReviewer"] == .string("auto_review"))
+        #expect(await stub.parameters["turn/start"]?["sandboxPolicy"] == .null)
+        #expect(controller.tasks[id]?.sandbox["type"] == .string("workspaceWrite"))
+    }
     @Test func inheritsProviderReviewAndOnlyOverridesOnExplicitSend() async throws {
         let stub = ExecutionStub(); let c = ExecutionController(transport: stub)
         await c.connect()
         let id = try await c.prepare(folder: "/tmp", title: "Defaults", model: "")
-        #expect(await stub.parameters["thread/start"]?["approvalsReviewer"] == .null)
+        #expect(await stub.parameters["thread/start"]?["approvalsReviewer"] == .string("auto_review"))
         #expect(c.tasks[id]?.approvalReviewer == "auto_review")
         try await c.send(id: id, prompt: "Keep settings")
         #expect(await stub.parameters["turn/start"]?["approvalsReviewer"] == .null)
@@ -272,13 +282,13 @@ private actor ExecutionStub: ExecutionTransport {
         #expect(await stub.parameters["thread/resume"]?["approvalsReviewer"] == .null)
         #expect(c.tasks["imported"]?.approvalReviewer == "auto_review")
         try await c.send(id: "imported", prompt: "Manual review", approvalReview: .user)
-        #expect(await stub.parameters["turn/start"]?["approvalsReviewer"].string == "user")
-        #expect(await stub.parameters["turn/start"]?["sandboxPolicy"]["type"].string == "workspaceWrite")
-        #expect(await stub.parameters["turn/start"]?["approvalPolicy"].string == "on-request")
+        #expect(await stub.parameters["thread/resume"]?["approvalsReviewer"].string == "user")
+        #expect(await stub.parameters["thread/resume"]?["sandbox"] == .null)
+        #expect(await stub.parameters["thread/resume"]?["approvalPolicy"].string == "on-request")
         #expect(c.tasks["imported"]?.approvalReviewer == "user")
         let other = try await c.prepare(folder: "/tmp", title: "Auto", model: "")
         try await c.send(id: other, prompt: "Auto review", approvalReview: .autoReview)
-        #expect(await stub.parameters["turn/start"]?["approvalsReviewer"].string == "auto_review")
+        #expect(await stub.parameters["thread/resume"]?["approvalsReviewer"].string == "auto_review")
         #expect(c.tasks[id]?.approvalReviewer == "auto_review")
     }
     @Test func uncertainSendCannotBeAutomaticallyResumedAndResent() async throws {

@@ -3,6 +3,20 @@ import Testing
 @testable import DioramaCore
 
 struct LocalSessionStartTests {
+    @Test func creationPickerUsesCachedRemoteRefsAndDefaultBranch() async throws {
+        let root = try await ProjectTests().repository()
+        defer { try? FileManager.default.removeItem(at: root) }
+        #expect(try await ProjectGit.defaultStartReference(root.path) == "main")
+        _ = try await ProjectCommand.git(root.path, ["update-ref", "refs/remotes/origin/develop", "HEAD"])
+        _ = try await ProjectCommand.git(root.path, ["symbolic-ref", "refs/remotes/origin/HEAD", "refs/remotes/origin/develop"])
+        #expect(try await ProjectGit.defaultStartReference(root.path) == "origin/develop")
+        _ = try await ProjectCommand.git(root.path, ["update-ref", "refs/remotes/origin/main", "HEAD"])
+        #expect(try await ProjectGit.defaultStartReference(root.path) == "origin/main")
+        let choices = try await ProjectGit.startBranches(root.path)
+        #expect(choices.contains("main") && choices.contains("origin/main") && choices.contains("origin/develop"))
+        #expect(!choices.contains("origin/HEAD"))
+        #expect(try await ProjectGit.localBranches(root.path) == ["main"])
+    }
     @Test func defaultsAndDetachedHead() async throws {
         let root = try await ProjectTests().repository()
         defer { try? FileManager.default.removeItem(at: root) }

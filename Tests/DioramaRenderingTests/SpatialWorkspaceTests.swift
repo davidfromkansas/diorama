@@ -73,6 +73,23 @@ import Testing
         #expect(execution.tasks.isEmpty)
     }
 
+    @Test func workScreenPreservesOfficeCameraOnOpenAndClose() {
+        let view = SpatialSceneView()
+        let snapshot = world()
+        view.apply(world: snapshot, focus: .project("p"), active: false, reducedMotion: true, reset: 0)
+        let custom = SpatialCameraPose(x: 3, y: 1, z: 5, scale: 9, yaw: 0.3, elevation: 0.5)
+        view.move(to: custom, animated: false)
+        let cameraPosition = view.pointOfView!.position
+        let selected = agent()
+        view.apply(world: snapshot, focus: .agent(project: "p", conversation: selected.conversationID, agent: selected.id, expanded: true), active: false, reducedMotion: true, reset: 0)
+        #expect(view.pose == custom)
+        #expect(view.pointOfView!.position.x == cameraPosition.x)
+        #expect(view.pointOfView!.position.z == cameraPosition.z)
+        view.apply(world: snapshot, focus: .project("p"), active: false, reducedMotion: true, reset: 0)
+        #expect(view.pose == custom)
+        view.tearDown()
+    }
+
     @Test func interruptedCameraTravelStartsFromRenderedPose() {
         let view = SpatialSceneView()
         view.move(to: SpatialCameraPose(x: 50, scale: 6), animated: true, at: 100)

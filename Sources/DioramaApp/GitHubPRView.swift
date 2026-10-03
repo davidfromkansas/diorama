@@ -26,7 +26,7 @@ struct GitHubPRView: View {
                     Text(preview?.repository.full_name ?? "Review the code you’ll share on GitHub").font(.callout).foregroundStyle(.secondary)
                 }
                 Spacer()
-                Button("GitHub account…") { showAccount = true }.disabled(busy)
+                Button("GitHub account…") { showAccount = true }.pointingHand().disabled(busy)
             }
             if let preview {
                 HStack {
@@ -34,12 +34,12 @@ struct GitHubPRView: View {
                     Image(systemName: "arrow.right").foregroundStyle(.secondary)
                     TextField("Destination branch", text: $base).textFieldStyle(.roundedBorder).frame(maxWidth: 190)
                         .disabled(submitted || preview.existing != nil)
-                    Button("Refresh preview") { Task { await load() } }.disabled(busy || submitted)
+                    Button("Refresh preview") { Task { await load() } }.pointingHand().disabled(busy || submitted)
                 }.font(.callout)
                 if preview.createsBranch { Text("A new branch will keep these changes separate from \(preview.snapshot.branch).").font(.caption).foregroundStyle(.secondary) }
-                DisclosureGroup("Commits to share") {
+                DisclosureGroup {
                     ScrollView { Text(preview.commits.isEmpty ? "No additional commits yet." : preview.commits).font(.system(.caption, design: .monospaced)).textSelection(.enabled).frame(maxWidth: .infinity, alignment: .leading) }.frame(maxHeight: 100)
-                }
+                } label: { Text("Commits to share").disclosurePointingHand() }
                 if preview.pendingTitle != nil { Text("A previous submission is unfinished. Retry resumes its saved commit, branch, and PR details.").font(.callout).foregroundStyle(.secondary) }
                 if !preview.snapshot.files.isEmpty && preview.pendingTitle == nil {
                     Text("Include files").font(.headline)
@@ -48,13 +48,13 @@ struct GitHubPRView: View {
                             HStack(alignment: .top) {
                                 Toggle(file.path, isOn: Binding(get: { selected.contains(file.path) }, set: { value in
                                     if value { selected.insert(file.path) } else { selected.remove(file.path) }
-                                })).labelsHidden().accessibilityLabel("Include " + file.path).disabled(submitted)
+                                })).pointingHand().labelsHidden().accessibilityLabel("Include " + file.path).disabled(submitted)
                                 Button { focusedFile = file.path } label: {
                                     VStack(alignment: .leading, spacing: 3) {
                                         Text(file.path).lineLimit(2).help(file.path)
                                         Text(file.status).font(.caption).foregroundStyle(.secondary)
                                     }.frame(maxWidth: .infinity, alignment: .leading).contentShape(Rectangle())
-                                }.buttonStyle(.plain)
+                                }.pointingHand().buttonStyle(.plain)
                             }.padding(.vertical, 3)
                         }.frame(minWidth: 180, idealWidth: 220)
                         DiffTextView(patch: patch).frame(minWidth: 240)
@@ -69,20 +69,20 @@ struct GitHubPRView: View {
             if let error { Text(error).font(.callout).foregroundStyle(.orange).textSelection(.enabled) }
             if active { Text("Wait for active work in this checkout to finish.").font(.callout).foregroundStyle(.secondary) }
             HStack {
-                Button("Close") { dismiss() }.keyboardShortcut(.cancelAction).disabled(busy)
+                Button("Close") { dismiss() }.pointingHand().keyboardShortcut(.cancelAction).disabled(busy)
                 if submitted {
                     Button("Refresh changed files") {
                         Task {
                             do { try await GitHubPRSubmission.shared.refreshUncommittedPreparation(folder: workspace.folder); submitted = false; await load() }
                             catch { self.error = error.localizedDescription }
                         }
-                    }.disabled(busy)
+                    }.pointingHand().disabled(busy)
                 }
                 Spacer()
                 if busy { ProgressView().controlSize(.small) }
-                if preview == nil { Button("Load preview") { Task { await load() } }.disabled(busy || active) }
+                if preview == nil { Button("Load preview") { Task { await load() } }.pointingHand().disabled(busy || active) }
                 else {
-                    Button(submitted ? "Retry submission" : preview?.existing == nil ? "Create PR" : "Update PR") { Task { await submit() } }
+                    Button(submitted ? "Retry submission" : preview?.existing == nil ? "Create PR" : "Update PR") { Task { await submit() } }.pointingHand()
                         .buttonStyle(.borderedProminent).disabled(busy || active || title.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || base != preview?.base)
                 }
             }
@@ -97,7 +97,7 @@ struct GitHubPRView: View {
         .sheet(isPresented: $showAccount) {
             VStack(alignment: .leading, spacing: 20) {
                 GitHubSettingsView()
-                HStack { Spacer(); Button("Done") { showAccount = false } }
+                HStack { Spacer(); Button("Done") { showAccount = false }.pointingHand() }
             }.padding(24).frame(width: 620)
         }
     }

@@ -17,17 +17,17 @@ struct GitHubSettingsView: View {
                     Text(identity.map { "Connected as @" + $0.login } ?? status).font(.caption).textSelection(.enabled)
                 }
                 Spacer()
-                if !onboarding || identity == nil { Button(identity == nil ? "Connect GitHub" : "Reconnect") { connect() }.disabled(loginTask != nil || checking) }
-                if !onboarding { Button("Check connection") { Task { await check() } }.disabled(checking || loginTask != nil)
+                if !onboarding || identity == nil { Button(identity == nil ? "Connect GitHub" : "Reconnect") { connect() }.pointingHand().disabled(loginTask != nil || checking) }
+                if !onboarding { Button("Check connection") { Task { await check() } }.pointingHand().disabled(checking || loginTask != nil)
                 Button("Disconnect") {
                     loginTask?.cancel(); loginTask = nil; code = nil
                     Task { do { try await GitHubAccount.shared.disconnect(); identity = nil; status = "Not connected" } catch { status = error.localizedDescription } }
-                } }
+                }.pointingHand() }
             }
             if let code {
                 Text("Enter this code on GitHub: \(code.user_code)").font(.headline).textSelection(.enabled)
                 Text("Waiting for authorization in your browser…").font(.caption)
-                Link("Open GitHub", destination: URL(string: "https://github.com/login/device")!)
+                Link("Open GitHub", destination: URL(string: "https://github.com/login/device")!).pointingHand()
             }
             if loginTask != nil { ProgressView("Waiting for GitHub…").controlSize(.small) }
             Text("Connecting does not publish local projects. Disconnecting affects only Diorama on this Mac.").font(.caption).foregroundStyle(.secondary)
@@ -38,9 +38,9 @@ struct GitHubSettingsView: View {
                         _ = try? GitHubCredentials.loadRecord(allowInteraction: true)
                         await check()
                     }
-                }.disabled(checking || loginTask != nil)
+                }.pointingHand().disabled(checking || loginTask != nil)
             }
-            Link("Manage Diorama authorization on GitHub", destination: URL(string: "https://github.com/settings/applications")!).font(.caption)
+            Link("Manage Diorama authorization on GitHub", destination: URL(string: "https://github.com/settings/applications")!).pointingHand().font(.caption)
         }.task { await check() }
         .onChange(of: identity?.login) { _, value in connectionChanged?(value != nil) }.onDisappear { loginTask?.cancel() }
     }

@@ -8,28 +8,56 @@ struct ApprovalReviewPicker: View {
     var sandbox: WireValue = .null
     var iconOnly = false
     var claude = false
+    var isNew = false
+    var supportsAutoMode: Bool? = nil
+    var unavailable: [ApprovalReviewChoice: String] = [:]
+    var stale = false
+    var unconfirmed = false
+    var notice: String? = nil
     @State private var showing = false
+    @FocusState private var popoverFocused: Bool
+    @State private var proposedBoundaryChange: ApprovalReviewChoice?
     private var effective: ApprovalReviewChoice? {
-        if claude { return policy.string == "bypassPermissions" ? .fullAccess : policy.string == "auto" ? .autoReview : policy.string == "default" || policy.string == "manual" ? .user : nil }
-        return ApprovalReviewChoice.reported(reviewer: reviewer, policy: policy, sandbox: sandbox)
+        if claude { return .claude(policy.string) }
+        if sandbox["type"].string == "workspaceWrite", policy.string == "on-request" {
+            return reviewer == "auto_review" ? .autoReview : reviewer == "user" ? .user : nil
+        }
+        return .reported(reviewer: reviewer, policy: policy, sandbox: sandbox)
     }
-    private var displayed: ApprovalReviewChoice? { selection == .inherit ? effective : selection }
+    private var displayed: ApprovalReviewChoice? { selection != .inherit ? selection : effective ?? (isNew ? .autoReview : nil) }
+    private var label: String {
+        if unconfirmed && selection == .inherit { return "Permissions unconfirmed" }
+        let title = displayed.map { claude && $0 == .fullAccess ? "Bypass permissions" : $0.title }
+            ?? (claude && policy.string == "dontAsk" ? "Deny requests that need approval" : claude && policy.string == "plan" ? "Plan Mode" : policy == .null ? "Permissions unconfirmed" : "Custom provider settings")
+        return title + (selection != .inherit ? " · Next message" : isNew && effective == nil ? " · Default" : stale ? " · Last reported" : "")
+    }
     var body: some View {
         Button { showing.toggle() } label: {
-            if iconOnly {
-                Image(systemName: displayed == .fullAccess ? "exclamationmark.shield" : displayed == .autoReview ? "checkmark.shield" : "hand.raised")
-                    .font(.system(size: 17)).frame(width: 30, height: 30)
-                    .foregroundStyle(displayed == .fullAccess ? Color.orange : Color.secondary)
-            } else {
-                Text(displayed?.title ?? "Agent permissions").font(.caption)
+            ViewThatFits(in: .horizontal) {
+                Label(label, systemImage: "hand.raised").font(.caption).lineLimit(1).fixedSize()
+                Image(systemName: "hand.raised").font(.system(size: 17)).frame(width: 30, height: 30)
             }
-        }.buttonStyle(.borderless)
-            .accessibilityLabel("Permissions: \(displayed?.title ?? "Agent settings")")
-            .help(selection == .inherit ? (displayed?.title ?? "Agent permissions") : "\(selection.title) · next message")
+        }.pointingHand().buttonStyle(.borderless).accessibilityLabel("Permissions: \(label)").help(label)
+
             .popover(isPresented: $showing) {
-                PermissionsMenu(selected: displayed, pending: selection != .inherit, claude: claude) { choice in
-                    selection = choice; showing = false
-                }
+                VStack(alignment: .leading, spacing: 8) {
+                    PermissionsMenu(selected: displayed, pending: selection != .inherit, claude: claude, supportsAutoMode: supportsAutoMode, unavailable: unavailable) { choice in
+                        if !claude && !isNew && choice != .inherit && (choice == .fullAccess || sandbox["type"].string == "dangerFullAccess" || effective == nil) {
+                            proposedBoundaryChange = choice
+                        } else { selection = choice; showing = false }
+                    }
+                    if let notice { Text(notice).font(.caption).foregroundStyle(.orange).padding(.horizontal) }
+                    if let choice = proposedBoundaryChange {
+                        Text(choice == .fullAccess ? "This removes Codex’s filesystem and network sandbox boundaries." : "This selects workspace write access. Existing managed restrictions still apply; custom boundaries may differ.").font(.caption)
+                        HStack { Button("Cancel") { proposedBoundaryChange = nil }.pointingHand(); Button("Use \(choice.title)") { selection = choice; proposedBoundaryChange = nil; showing = false }.pointingHand() }
+                    }
+                    if policy != .null {
+                        Text(claude ? "Claude mode: \(policy.string ?? policy.pretty)" : "Reviewer: \(reviewer ?? "unconfirmed") · Network: \(sandbox["networkAccess"] == .bool(true) ? "enabled" : sandbox["networkAccess"] == .bool(false) ? "restricted" : "provider settings")")
+                            .font(.caption).foregroundStyle(.secondary).padding(.horizontal)
+                    }
+                }.padding(.bottom, 8)
+                    .focusable().focused($popoverFocused).onAppear { popoverFocused = true }
+                    .avatarPopoverDismissal(isPresented: $showing)
             }
     }
 }
@@ -38,39 +66,30 @@ struct PermissionsMenu: View {
     let selected: ApprovalReviewChoice?
     let pending: Bool
     var claude = false
+    var supportsAutoMode: Bool? = nil
+    var unavailable: [ApprovalReviewChoice: String] = [:]
     let choose: (ApprovalReviewChoice) -> Void
     var body: some View {
         VStack(alignment: .leading, spacing: 4) {
-            HStack {
-                Text(claude ? "How should Claude actions be approved?" : "How should Codex actions be approved?")
-                Spacer()
-                Link("Learn more", destination: URL(string: claude ? "https://code.claude.com/docs/en/permissions" : "https://learn.chatgpt.com/docs/sandboxing")!).underline()
-            }.font(.system(size: 13)).foregroundStyle(.secondary).padding(.horizontal, 12).padding(.vertical, 10)
-            row(.user, icon: "hand.raised", subtitle: claude ? "Use Claude’s normal permission prompts" : "Ask before editing external files or using the internet")
-            row(.autoReview, icon: "checkmark.shield", subtitle: claude ? "Use Claude’s automatic approval mode when available" : "Let Codex review eligible requests automatically")
-            row(.fullAccess, icon: "exclamationmark.shield", subtitle: "Allow unrestricted file and internet access")
-            if selected == nil { Text("Using current agent settings · mode not yet confirmed").font(.caption).foregroundStyle(.secondary).padding(.horizontal, 12).padding(.top, 6) }
-            if pending {
-                HStack {
-                    Text("Applies with your next message").foregroundStyle(.secondary)
-                    Spacer()
-                    Button("Undo choice") { choose(.inherit) }.buttonStyle(.plain)
-                }.font(.caption).padding(.horizontal, 12).padding(.top, 6)
-            }
-        }.padding(8).frame(width: 480)
+            Text(claude ? "Claude permissions" : "Codex permissions").font(.headline).padding(12)
+            row(.autoReview, subtitle: claude ? "Claude reviews eligible actions automatically" : "Codex reviews eligible requests automatically", unavailable: supportsAutoMode == false ? "Automatic review is unavailable for this model" : nil)
+            row(.user, subtitle: "Show requests requiring your approval")
+            if claude { row(.acceptEdits, subtitle: "Accept supported file operations; commands may still ask") }
+            row(.fullAccess, subtitle: claude ? "Bypass normal checks; provider rules still apply" : "Remove filesystem and network sandbox restrictions")
+            if selected == nil { Text("Using provider settings · preset not confirmed").font(.caption).foregroundStyle(.secondary).padding(12) }
+            if pending { HStack { Text("Applies with your next message"); Spacer(); Button("Undo choice") { choose(.inherit) }.pointingHand() }.font(.caption).padding(12) }
+        }.padding(8).frame(width: 440)
     }
-    private func row(_ choice: ApprovalReviewChoice, icon: String, subtitle: String) -> some View {
+    private func row(_ choice: ApprovalReviewChoice, subtitle: String, unavailable: String? = nil) -> some View {
         Button { choose(choice) } label: {
             HStack(spacing: 12) {
-                Image(systemName: icon).font(.system(size: 19)).frame(width: 23)
                 VStack(alignment: .leading, spacing: 3) {
-                    Text(choice.title).font(.system(size: 15))
-                    Text(subtitle).font(.system(size: 12)).foregroundStyle(choice == .fullAccess ? Color.orange : Color.secondary)
+                    Text(claude && choice == .fullAccess ? "Bypass permissions" : choice.title).font(.system(size: 15))
+                    Text(self.unavailable[choice] ?? unavailable ?? subtitle).font(.system(size: 12)).foregroundStyle(.secondary)
                 }
                 Spacer(minLength: 4)
                 Image(systemName: "checkmark").opacity(selected == choice ? 1 : 0)
-            }.foregroundStyle(choice == .fullAccess ? Color.orange : Color.primary)
-                .padding(.horizontal, 12).padding(.vertical, 10).contentShape(Rectangle())
-        }.buttonStyle(.plain).accessibilityAddTraits(selected == choice ? [.isSelected] : [])
+            }.padding(.horizontal, 12).padding(.vertical, 10).contentShape(Rectangle())
+        }.pointingHand().buttonStyle(.plain).disabled(unavailable != nil || self.unavailable[choice] != nil).help(self.unavailable[choice] ?? unavailable ?? subtitle).accessibilityAddTraits(selected == choice ? [.isSelected] : [])
     }
 }

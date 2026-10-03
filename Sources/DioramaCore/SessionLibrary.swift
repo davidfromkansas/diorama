@@ -11,6 +11,7 @@ public struct Session: Identifiable, Hashable, Sendable {
     public let url: URL?
     public let sessionID: String
     public let title: String
+    public var titleSource: TaskTitleSource = .prompt
     public let project: String
     public let modified: Date
     public let bytes: Int
@@ -24,10 +25,13 @@ public struct Session: Identifiable, Hashable, Sendable {
     public var lastObservedHook: Date? = nil
     public func retainingDiscoveryMetadata(from known: Session) -> Session {
         var updated = Session(id: id, provider: provider, url: url, sessionID: sessionID,
-            title: known.title.hasPrefix("Untitled conversation") ? title : known.title, project: project,
+            title: retainingTitle(from: known).title, project: project,
             modified: modified, bytes: bytes, archived: known.archived, parentID: parentID ?? known.parentID,
             classification: known.classification == .unknown ? classification : known.classification,
             classificationEvidence: known.classification == .unknown ? classificationEvidence : known.classificationEvidence)
+        updated.titleSource = retainingTitle(from: known).titleSource
+        updated.desktopSessionID = known.desktopSessionID
+        updated.lastObservedHook = lastObservedHook ?? known.lastObservedHook
         updated.origin = known.origin
         updated.historySource = known.historySource
         return updated
@@ -47,6 +51,7 @@ public struct Entry: Identifiable, Equatable, Sendable, Codable {
     public var tool: ToolResult? = nil
     public var turnID: String? = nil
     public var providerItemID: String? = nil
+    public var completionMessageID: String? = nil
     public var claude: ClaudePresentation? = nil
     public var codex: CodexPresentation? = nil
     public var sourceRecords: [TranscriptSource]? = nil
@@ -122,6 +127,7 @@ public actor SessionLibrary {
         let session: Session?
     }
     private var cache: [URL: Cached] = [:]
+    private var titleIndexes: [URL: (Date, Int, [String: SavedTaskTitle])] = [:]
     private let desktop: ClaudeDesktopHistory?
     public init(roots: [StorageRoot]? = nil, desktop: ClaudeDesktopHistory? = nil) {
         self.roots = roots ?? StorageRoot.defaults()
@@ -134,6 +140,7 @@ public actor SessionLibrary {
         var notices: [String] = []
         var visited: Set<URL> = []
         var unrecognized = 0
+        var indexedTitles: [String: SavedTaskTitle] = [:]
         for root in roots {
             if Task.isCancelled { break }
             guard fm.fileExists(atPath: root.url.path) else {
@@ -154,6 +161,24 @@ public actor SessionLibrary {
             }
             for case let file as URL in files {
                 if Task.isCancelled { break }
+                if root.provider == .claude && file.lastPathComponent == "sessions-index.json" {
+                    if let attrs = try? file.resourceValues(forKeys: [.fileSizeKey, .contentModificationDateKey, .isSymbolicLinkKey]), attrs.isSymbolicLink != true, let size = attrs.fileSize, size <= 4 * 1024 * 1024 {
+                        let date = attrs.contentModificationDate ?? .distantPast
+                        if titleIndexes[file]?.0 != date || titleIndexes[file]?.1 != size {
+                            if let data = try? Data(contentsOf: file), let object = try? JSONSerialization.jsonObject(with: data) as? [String: Any], let entries = object["entries"] as? [[String: Any]] {
+                                var values: [String: SavedTaskTitle] = [:]
+                                for entry in entries {
+                                    guard let id = entry["sessionId"] as? String else { continue }
+                                    if let title = entry["customTitle"] as? String, !title.isEmpty { values[id] = SavedTaskTitle(text: title, source: .explicit) }
+                                    else if let title = entry["summary"] as? String, !title.isEmpty { values[id] = SavedTaskTitle(text: title, source: .summary) }
+                                }
+                                titleIndexes[file] = (date, size, values)
+                            }
+                        }
+                        for (id, title) in titleIndexes[file]?.2 ?? [:] { indexedTitles[id] = title }
+                    }
+                    continue
+                }
                 guard file.pathExtension == "jsonl" else { continue }
                 do {
                     let values = try file.resourceValues(forKeys: [.isRegularFileKey, .isSymbolicLinkKey, .fileSizeKey, .contentModificationDateKey])
@@ -167,8 +192,10 @@ public actor SessionLibrary {
                     } else {
                         let handle = try FileHandle(forReadingFrom: file)
                         defer { try? handle.close() }
-                        let data = try handle.read(upToCount: 512 * 1024) ?? Data()
-                        session = Self.metadata(data: data, url: file, root: root, modified: date, size: size)
+                        let data = try Self.metadataWindow(handle, includeTail: root.provider == .claude)
+                        session = Self.metadata(data: data, url: file, root: root, modified: date, size: size).map { fresh in
+                            cache[file]?.session.map { fresh.retainingTitle(from: $0) } ?? fresh
+                        }
                         cache[file] = Cached(modified: date, size: size, session: session)
                     }
                     if let session {
@@ -182,6 +209,11 @@ public actor SessionLibrary {
             if enumerationFailed { notices.append("Some folders could not be read under \(root.url.path)") }
         }
         cache = cache.filter { visited.contains($0.key) }
+        for (id, var session) in sessions where session.provider == .claude && session.classification != .subagent {
+            if let title = indexedTitles[session.sessionID], title.source.priority > session.titleSource.priority {
+                session = session.updated(title: title.text); session.titleSource = title.source; sessions[id] = session
+            }
+        }
         if unrecognized > 0 { notices.append("\(unrecognized) files have no recognized session metadata in their first 512 KiB.") }
         if let desktop {
             let merged = desktop.merging(Array(sessions.values))
@@ -237,7 +269,7 @@ public actor SessionLibrary {
                   attributes.isRegularFile == true,
                   let handle = try? FileHandle(forReadingFrom: url) else { continue }
             defer { try? handle.close() }
-            if let data = try? handle.read(upToCount: 512 * 1024),
+            if let data = try? metadataWindow(handle, includeTail: root.provider == .claude),
                let session = metadata(data: data, url: url, root: root,
                   modified: attributes.contentModificationDate ?? .distantPast, size: attributes.fileSize ?? 0) {
                 found.append(session)
@@ -246,10 +278,27 @@ public actor SessionLibrary {
         return found
     }
 
+    // Read the head for identity and the tail for appended provider titles. Never
+    // scan an unbounded transcript just to discover its name.
+    static func metadataWindow(_ handle: FileHandle, includeTail: Bool = true) throws -> Data {
+        let size = try handle.seekToEnd()
+        try handle.seek(toOffset: 0)
+        let head = try handle.read(upToCount: 512 * 1024) ?? Data()
+        guard includeTail, size > 512 * 1024 else { return head }
+        try handle.seek(toOffset: max(512 * 1024, size - min(size, 512 * 1024)))
+        let tail = try handle.read(upToCount: 512 * 1024) ?? Data()
+        var result = Data()
+        if let last = head.lastIndex(of: 10) { result.append(head.prefix(through: last)) }
+        if let first = tail.firstIndex(of: 10) { result.append(tail.suffix(from: tail.index(after: first))) }
+        return result
+    }
+
     static func metadata(data: Data, url: URL, root: StorageRoot, modified: Date, size: Int) -> Session? {
         var sid: String?
         var project = ""
         var preview = ""
+        var reportedTitle: String?
+        var titleSource: TaskTitleSource = .prompt
         var parent: String?
         var classification: SessionClassification = .unknown
         var evidence = "No recognized session metadata"
@@ -277,6 +326,12 @@ public actor SessionLibrary {
                     preview = titlePreview(MessageContent.split(content(p["content"]), provider: .codex).filter { !$0.context }.map(\.text).joined(separator: "\n"))
                 }
             } else {
+                let type = record["type"] as? String
+                if type == "custom-title", let name = record["customTitle"] as? String, !name.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+                    reportedTitle = name; titleSource = .explicit
+                } else if type == "summary", titleSource != .explicit, let name = record["summary"] as? String, !name.isEmpty {
+                    reportedTitle = name; titleSource = .summary
+                }
                 if sid == nil { sid = record["sessionId"] as? String }
                 if record["isSidechain"] as? Bool == true {
                     classification = .subagent; evidence = "isSidechain=true"
@@ -288,7 +343,7 @@ public actor SessionLibrary {
                     preview = titlePreview(content(msg["content"]))
                 }
             }
-            if sid != nil && !preview.isEmpty && !project.isEmpty { break }
+            if root.provider == .codex && sid != nil && !preview.isEmpty && !project.isEmpty { break }
         }
         guard let sessionID = sid else { return nil }
         var key = sessionID
@@ -297,9 +352,11 @@ public actor SessionLibrary {
             parent = url.deletingLastPathComponent().deletingLastPathComponent().lastPathComponent
             key = parent! + "/" + url.deletingPathExtension().lastPathComponent
         }
-        return Session(id: root.provider.rawValue + ":" + key, provider: root.provider, url: url, sessionID: sessionID,
-                       title: classification == .internalReview ? "Internal approval review" : (preview.isEmpty ? "Untitled conversation · \(sessionID.prefix(8))" : preview),
+        var result = Session(id: root.provider.rawValue + ":" + key, provider: root.provider, url: url, sessionID: sessionID,
+                       title: classification == .internalReview ? "Internal approval review" : (reportedTitle ?? (preview.isEmpty ? "Untitled conversation · \(sessionID.prefix(8))" : preview)),
                        project: project, modified: modified, bytes: size, archived: root.archived, parentID: parent, classification: classification, classificationEvidence: evidence)
+        result.titleSource = titleSource
+        return result
     }
 
     private static func titlePreview(_ text: String) -> String {

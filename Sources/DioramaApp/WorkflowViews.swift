@@ -40,13 +40,13 @@ struct WorkflowControls: View {
                         }
                     }
                     Spacer()
-                    if task.workflow.goal["status"].string == "active" { Button("Pause goal") { run { try await controller.setGoal(id: task.id, status: "paused") } } }
-                    Button("Edit") { objective = task.workflow.goal["objective"].string ?? ""; budget = task.workflow.goal["tokenBudget"].number.map { String(Int($0)) } ?? ""; showGoal = true }
-                    Button("Clear") { run { try await controller.clearGoal(id: task.id) } }.help("Clear the goal; an already running turn continues until stopped")
+                    if task.workflow.goal["status"].string == "active" { Button("Pause goal") { run { try await controller.setGoal(id: task.id, status: "paused") } }.pointingHand() }
+                    Button("Edit") { objective = task.workflow.goal["objective"].string ?? ""; budget = task.workflow.goal["tokenBudget"].number.map { String(Int($0)) } ?? ""; showGoal = true }.pointingHand()
+                    Button("Clear") { run { try await controller.clearGoal(id: task.id) } }.pointingHand().help("Clear the goal; an already running turn continues until stopped")
                 }
             }
             if !capabilities.isEmpty {
-                HStack { ForEach(capabilities) { value in Button("\(value.name) ×") { capabilities.removeAll { $0.id == value.id } } } }.font(.caption)
+                HStack { ForEach(capabilities) { value in Button("\(value.name) ×") { capabilities.removeAll { $0.id == value.id } }.pointingHand() } }.font(.caption)
             }
             if !task.workflow.queue.isEmpty || task.workflow.queueUncertain {
                 VStack(spacing: 6) {
@@ -56,16 +56,17 @@ struct WorkflowControls: View {
                             Text(row["input"].array.compactMap { $0["text"].string }.joined(separator: " ").isEmpty ? "Queued attachment" : row["input"].array.compactMap { $0["text"].string }.joined(separator: " "))
                                 .lineLimit(1).truncationMode(.tail)
                             Spacer(minLength: 8)
-                            if [Provider.codex, .claude].contains(task.provider) { Button(task.provider == .claude ? "Interrupt & steer" : "Steer") { run { try await controller.steerQueued(id: task.id, submissionID: row["id"].string ?? "") } }
+                            if [Provider.codex, .claude].contains(task.provider) { Button(task.provider == .claude ? "Interrupt & steer" : "Steer") { run { try await controller.steerQueued(id: task.id, submissionID: row["id"].string ?? "") } }.pointingHand()
                                 .disabled(!controller.canSteer(id: task.id) || task.workflow.queueUncertain) }
-                            Button { run { try await controller.removeQueued(id: task.id, submissionID: row["id"].string ?? "") } } label: { Image(systemName: "xmark") }.buttonStyle(.plain).help("Remove queued message")
+                            Button { run { try await controller.removeQueued(id: task.id, submissionID: row["id"].string ?? "") } } label: { Image(systemName: "xmark") }.pointingHand().buttonStyle(.plain).help("Remove queued message")
                         }.font(.caption).padding(10).background(.quaternary, in: RoundedRectangle(cornerRadius: 10))
                     }
                     if task.workflow.queueUncertain {
                         Text("Queue paused · delivery needs verification").font(.caption).foregroundStyle(.orange)
-                        Button("Refresh and verify queue") { run { try await controller.acknowledgeQueueInspection(id: task.id) } }
+                        Button("Refresh and verify queue") { run { try await controller.acknowledgeQueueInspection(id: task.id) } }.pointingHand()
                     } else if !task.phase.active && !task.workflow.queue.isEmpty {
-                        Button("Send next queued message") { run { try await controller.startQueued(id: task.id) } }
+                        Text("Queued messages use current accepted permissions at delivery.").font(.caption).foregroundStyle(.secondary)
+                        Button("Send next queued message") { run { try await controller.startQueued(id: task.id) } }.pointingHand()
                     }
                 }
             }
@@ -82,8 +83,8 @@ struct WorkflowControls: View {
                     }
                     Text("Starting or resuming a goal may continue work automatically. Permissions stay unchanged.").font(.caption).foregroundStyle(.secondary)
                     HStack {
-                        Button("Save paused") { saveGoal(active: false) }
-                        Button("Resume goal") { saveGoal(active: true) }
+                        Button("Save paused") { saveGoal(active: false) }.pointingHand()
+                        Button("Resume goal") { saveGoal(active: true) }.pointingHand()
 
                     }
                     if let error { Text(error).foregroundStyle(.orange) }
@@ -117,7 +118,7 @@ struct UsageView: View {
                     if let reset = limit["resetsAt"].number { Text("Resets " + Date(timeIntervalSince1970: reset).formatted()).font(.caption) }
                 }
             }
-            Button("Compact conversation") { Task { do { try await controller.compact(id: task.id) } catch { self.error = error.localizedDescription } } }.disabled(task.phase.active)
+            Button("Compact conversation") { Task { do { try await controller.compact(id: task.id) } catch { self.error = error.localizedDescription } } }.pointingHand().disabled(task.phase.active)
             if let error = error ?? controller.featureErrors["usage"] { Text(error).foregroundStyle(.orange) }
         }.padding(20).frame(width: 380).textSelection(.enabled)
     }
@@ -134,7 +135,7 @@ struct IntegrationPicker: View {
     @State private var busy = false
     var body: some View {
         VStack(alignment: .leading, spacing: 14) {
-            HStack { Text("Skills & connectors").font(.title2); Spacer(); Button("Done") { dismiss() } }
+            HStack { Text("Skills & connectors").font(.title2); Spacer(); Button("Done") { dismiss() }.pointingHand() }
 
             Text("Choose capabilities to include with the next message. Connection and tool approval are separate.").foregroundStyle(.secondary)
             ScrollView {
@@ -144,7 +145,7 @@ struct IntegrationPicker: View {
                         HStack {
                             VStack(alignment: .leading) { Text(skill["name"].scalarText); Text(skill["description"].string ?? "").font(.caption).foregroundStyle(.secondary) }
                             Spacer()
-                            Button(skill["enabled"].bool ? "Disable" : "Enable") { run { try await controller.setSkill(path: skill["path"].string ?? "", enabled: !skill["enabled"].bool) } }.help("Saves the enabled state in Codex configuration")
+                            Button(skill["enabled"].bool ? "Disable" : "Enable") { run { try await controller.setSkill(path: skill["path"].string ?? "", enabled: !skill["enabled"].bool) } }.pointingHand().help("Saves the enabled state in Codex configuration")
                             if skill["enabled"].bool { chooseButton(.init(name: skill["name"].string ?? "", path: skill["path"].string ?? "", kind: "skill")) }
                         }
                     }
@@ -155,14 +156,14 @@ struct IntegrationPicker: View {
                             VStack(alignment: .leading) { Text(app["name"].scalarText); Text(app["isAccessible"].bool ? "Accessible" : "Not connected / not accessible").font(.caption).foregroundStyle(.secondary) }
                             Spacer()
                             if app["isAccessible"].bool && app["isEnabled"] != .bool(false) { chooseButton(.init(name: app["name"].string ?? "", path: "app://" + (app["id"].string ?? ""), kind: "mention")) }
-                            if let link = safeURL(app["installUrl"].string) { Button("Manage connection") { openURL(link) } }
+                            if let link = safeURL(app["installUrl"].string) { Button("Manage connection") { openURL(link) }.pointingHand() }
                         }
                     }
                     HStack {
                         if !controller.appDirectoryLoaded || controller.appDirectoryCursor != nil {
                             Button(controller.appDirectoryLoaded ? "Load more apps" : "Browse app directory") {
                                 Task { await controller.loadMoreApps(threadID: threadID) }
-                            }.disabled(controller.appDirectoryLoading || controller.integrationSectionsLoading.contains("app/installed"))
+                            }.pointingHand().disabled(controller.appDirectoryLoading || controller.integrationSectionsLoading.contains("app/installed"))
                         }
                         if controller.appDirectoryLoading { ProgressView().controlSize(.small).accessibilityLabel("Loading app directory") }
                     }
@@ -171,7 +172,7 @@ struct IntegrationPicker: View {
                         HStack {
                             VStack(alignment: .leading) { Text(connector["name"].scalarText); Text("Auth: \(connector["authStatus"].scalarText) · \(connector["tools"].object.count) tools").font(.caption).foregroundStyle(.secondary) }
                             Spacer()
-                            Button("Sign in") { run { openURL(try await controller.connectorLogin(name: connector["name"].string ?? "", threadID: threadID)) } }
+                            Button("Sign in") { run { openURL(try await controller.connectorLogin(name: connector["name"].string ?? "", threadID: threadID)) } }.pointingHand()
                         }
                     }
                     Text("MCP tools become available through the connected server; they are not inserted as fake skill mentions.").font(.caption).foregroundStyle(.secondary)
@@ -181,8 +182,8 @@ struct IntegrationPicker: View {
                 }
             }
             HStack {
-                Button("Refresh status") { Task { await controller.loadIntegrations(folder: folder, threadID: threadID, forceRefresh: true) } }.disabled(controller.integrationsLoading)
-                Button("Reload configured MCP servers") { run { try await controller.reloadConnectors(); await controller.loadIntegrations(folder: folder, threadID: threadID, forceRefresh: true) } }
+                Button("Refresh status") { Task { await controller.loadIntegrations(folder: folder, threadID: threadID, forceRefresh: true) } }.pointingHand().disabled(controller.integrationsLoading)
+                Button("Reload configured MCP servers") { run { try await controller.reloadConnectors(); await controller.loadIntegrations(folder: folder, threadID: threadID, forceRefresh: true) } }.pointingHand()
             }
         }.padding(24).frame(width: 650, height: 580).disabled(busy)
             .task { await controller.loadIntegrations(folder: folder, threadID: threadID) }
@@ -196,7 +197,7 @@ struct IntegrationPicker: View {
             Spacer()
         }
     }
-    private func chooseButton(_ value: CapabilityInput) -> some View { Button(selection.contains(value) ? "Remove" : "Use") { if selection.contains(value) { selection.removeAll { $0 == value } } else { selection.append(value) } } }
+    private func chooseButton(_ value: CapabilityInput) -> some View { Button(selection.contains(value) ? "Remove" : "Use") { if selection.contains(value) { selection.removeAll { $0 == value } } else { selection.append(value) } }.pointingHand() }
     private func safeURL(_ value: String?) -> URL? { guard let value, let url = URL(string: value), ["https", "http"].contains(url.scheme ?? "") else { return nil }; return url }
     private func run(_ operation: @escaping @MainActor () async throws -> Void) { busy = true; Task { defer { busy = false }; do { try await operation() } catch { self.error = error.localizedDescription } } }
 }

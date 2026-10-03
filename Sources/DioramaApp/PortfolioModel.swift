@@ -183,6 +183,11 @@ nonisolated struct PortfolioSurface: Equatable, Sendable {
         }
     }
 
+    func planSources(provider: Provider, nativeID: String) -> [Session] {
+        let parent = primarySources[provider.rawValue + ":" + nativeID]
+        let children = Array(childrenByParent[provider.rawValue + ":" + nativeID, default: [:]].values)
+        return [parent].compactMap { $0 } + children
+    }
     func observation(for provider: Provider, nativeID: String) -> ExternalObservationSnapshot? {
         guard let source = primarySources[provider.rawValue + ":" + nativeID] else { return nil }
         return observations[source.id]

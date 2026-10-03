@@ -64,6 +64,7 @@ import Testing
 extension WorkspaceNavigationTests {
     @Test func shellRendersAtSupportedWidthsWithApprovalAndLongTitles() async throws {
         let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
         defer { try? FileManager.default.removeItem(at: root) }
         let projects = ProjectModel(storageURL: root.appendingPathComponent("projects.json"))
         let controller = ExecutionController(transport: WorkspaceFixtureTransport())
@@ -173,5 +174,39 @@ extension WorkspaceNavigationTests {
             try #require(bitmap.representation(using: .png, properties: [:])).write(to: URL(fileURLWithPath: "/tmp/diorama-workspace-\(name).png"))
             window.orderOut(nil)
         }
+    }
+}
+
+extension WorkspaceNavigationTests {
+    @Test func longRetainedTranscriptHasBoundedViewportDuringUpdates() async throws {
+        let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        defer { try? FileManager.default.removeItem(at: root) }
+        let controller = ExecutionController(transport: WorkspaceFixtureTransport())
+        var task = ExecutedTask(id: "layout-stress", title: "Writing tab", folder: root.path, turnID: "turn", attached: true)
+        task.phase = .working
+        task.transcript.entries = (0..<120).map { index in
+            Entry(id: "row-\(index)", kind: index % 3 == 0 ? "You" : "Assistant",
+                  text: "## Step \(index)\n\n" + String(repeating: "- Verify the article importer and preserve existing content.\n", count: 12), timestamp: nil)
+        }
+        controller.tasks[task.id] = task
+        let model = LibraryModel(execution: controller, projects: ProjectModel(storageURL: root.appendingPathComponent("projects.json")), navigation: WorkspaceNavigation(defaults: defaults()))
+        model.sessions = [task.session]; model.selectedID = task.session.id
+        model.transcriptSessionID = task.session.id; model.viewMode = .conversation; model.paused = true
+        let host = NSHostingView(rootView: WorkspacePaneStack {
+            SessionView(session: task.session, model: model, hasLocalReview: true)
+        })
+        host.frame = NSRect(x: 0, y: 0, width: 900, height: 700)
+        let window = NSWindow(contentRect: host.frame, styleMask: [.borderless], backing: .buffered, defer: false)
+        window.contentView = host
+        defer { window.contentView = nil; window.orderOut(nil) }
+        let started = Date()
+        for index in 0..<4 {
+            host.frame.size.width = index % 2 == 0 ? 760 : 1100
+            controller.tasks[task.id]?.transcript.entries.append(Entry(id: "live-\(index)", kind: "Assistant", text: "Incoming progress \(index)", timestamp: nil))
+            try await Task.sleep(for: .milliseconds(100))
+            host.layoutSubtreeIfNeeded()
+            #expect(host.frame.height == 700)
+        }
+        #expect(Date().timeIntervalSince(started) < 15, "Conversation layout must yield to the main run loop")
     }
 }

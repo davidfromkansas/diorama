@@ -3,6 +3,7 @@ import DioramaCore
 
 /// Codex dispatch deliberately owns its native item semantics.
 struct CodexEntryView: View {
+    @Environment(\.historyDetails) private var historyDetails
     let entry: Entry
     let presentation: CodexPresentation
     var selectWorker: ((String) -> Void)?
@@ -18,7 +19,7 @@ struct CodexEntryView: View {
                 } else if presentation.category == "unknown" {
                     Text("This Codex event has no specialized view yet. Its available source details remain inspectable.").font(.callout).foregroundStyle(.secondary)
                 }
-                DisclosureGroup("Reported details") { TranscriptContent(text: presentation.evidence.pretty, literal: true).textSelection(.enabled) }
+                if historyDetails || presentation.category == "unknown" { DisclosureGroup { TranscriptContent(text: presentation.evidence.pretty, literal: true).textSelection(.enabled) } label: { Text("Reported details").disclosurePointingHand() } }
             }.padding(18).background(.quaternary.opacity(0.3), in: RoundedRectangle(cornerRadius: 14))
         }
     }
@@ -36,7 +37,7 @@ struct CodexUsageView: View {
                 if let cached = usage["cached_input_tokens"].number { Text("Cached input: \(cached.formatted()) · included in input").font(.caption).foregroundStyle(.secondary) }
             } else { Text("A compatible input/output breakdown was not supplied.").font(.caption) }
             if presentation.cumulativeUsage != .null {
-                DisclosureGroup("Cumulative usage · not added to the figures above") { Text(presentation.cumulativeUsage.pretty).font(.caption.monospaced()).textSelection(.enabled) }
+                DisclosureGroup { Text(presentation.cumulativeUsage.pretty).font(.caption.monospaced()).textSelection(.enabled) } label: { Text("Cumulative usage · not added to the figures above").disclosurePointingHand() }
             }
         }
     }
@@ -71,7 +72,7 @@ struct CodexSearchView: View {
                 if let address = result["url"].string, let url = URL(string: address), ["https", "http"].contains(url.scheme) {
                     VStack(alignment: .leading, spacing: 5) {
                         Text(url.host ?? address).font(.caption).foregroundStyle(.secondary)
-                        Button { NSWorkspace.shared.open(url) } label: { Text(result["title"].string ?? address).font(.callout.weight(.medium)).foregroundStyle(Color.accentColor).multilineTextAlignment(.leading) }.buttonStyle(.plain).accessibilityLabel("Open source: " + (result["title"].string ?? address))
+                        Button { NSWorkspace.shared.open(url) } label: { Text(result["title"].string ?? address).font(.callout.weight(.medium)).foregroundStyle(Color.accentColor).multilineTextAlignment(.leading) }.pointingHand().buttonStyle(.plain).accessibilityLabel("Open source: " + (result["title"].string ?? address))
                         if let snippet = result["snippet"].string ?? result["description"].string { Text(snippet).font(.callout).lineLimit(3) }
                     }
                 }
@@ -91,22 +92,22 @@ struct SourceRecordDetails: View {
     @State private var expanded = false
     @State private var busy = false
     var body: some View {
-        DisclosureGroup("Source input / output", isExpanded: $expanded) {
+        DisclosureGroup(isExpanded: $expanded) {
             VStack(alignment: .leading, spacing: 10) {
                 if records.count > 1 {
-                    Picker("Record", selection: $selected) { ForEach(records.indices, id: \.self) { Text("Record \($0 + 1)").tag($0) } }
+                    Picker("Record", selection: $selected) { ForEach(records.indices, id: \.self) { Text("Record \($0 + 1)").tag($0) } }.pointingHand()
                 }
                 if busy { ProgressView("Reading source…") }
                 if let error { Text(error).foregroundStyle(.orange) }
                 if let text {
                     Text(text).font(.caption.monospaced()).textSelection(.enabled)
                     HStack {
-                        Button("Copy loaded source") { NSPasteboard.general.clearContents(); NSPasteboard.general.setString(text, forType: .string) }
-                        if text.hasSuffix("[More source content available]"), limit < 16 * 1024 * 1024 { Button("Load more of this record") { limit = min(limit * 2, 16 * 1024 * 1024) } }
+                        Button("Copy loaded source") { NSPasteboard.general.clearContents(); NSPasteboard.general.setString(text, forType: .string) }.pointingHand()
+                        if text.hasSuffix("[More source content available]"), limit < 16 * 1024 * 1024 { Button("Load more of this record") { limit = min(limit * 2, 16 * 1024 * 1024) }.pointingHand() }
                     }
                 }
             }
-        }.font(.caption)
+        } label: { Text("Source input / output").disclosurePointingHand() }.font(.caption)
         .task(id: "\(expanded)-\(selected)-\(limit)-\(records.count)") {
             guard expanded, records.indices.contains(selected) else { return }
             busy = true; error = nil; text = nil

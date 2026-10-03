@@ -27,10 +27,10 @@ private actor WorkflowStub: ExecutionTransport {
         }
         switch method {
         case "model/list": return .object(["data": .array([.object(["model": .string("fixture"), "displayName": .string("Fixture"), "supportedReasoningEfforts": .array([])])])])
-        case "thread/start": return .object(["thread": .object(["id": .string("test")]), "model": .string("fixture"), "cwd": .string("/tmp")])
+        case "thread/start": return .object(["thread": .object(["id": .string("test")]), "model": .string("fixture"), "cwd": .string("/tmp"), "approvalsReviewer": .string("auto_review"), "approvalPolicy": .string("on-request"), "sandbox": .object(["type": .string("workspaceWrite")])])
         case "thread/turns/list": return .object(["data": .array([])])
         case "thread/read": return .object(["thread": .object(["id": p["threadId"], "cwd": .string("/tmp"), "turns": .array([])])])
-        case "thread/resume": return .object(["thread": .object(["id": p["threadId"], "status": .object(["type": .string("idle")])]), "model": .string("fixture"), "cwd": .string("/tmp")])
+        case "thread/resume": return .object(["thread": .object(["id": p["threadId"], "status": .object(["type": .string("idle")])]), "model": .string("fixture"), "cwd": .string("/tmp"), "approvalsReviewer": .string("auto_review"), "approvalPolicy": .string("on-request"), "sandbox": .object(["type": .string("workspaceWrite")])])
         case "thread/goal/get": return .object(["goal": .null])
         case "thread/goal/set": return .object(["goal": .object(["objective": p["objective"].string == nil ? .string("Goal") : p["objective"], "status": p["status"], "tokensUsed": .number(0)])])
         case "thread/goal/clear": return .object(["cleared": .bool(true)])

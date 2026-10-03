@@ -7,19 +7,21 @@ public struct ExecutionModel: Identifiable, Sendable {
     public let efforts: [String]
     public let defaultEffort: String
     public let isDefault: Bool
+    public var supportsAutoMode: Bool? = nil
 }
-public enum ApprovalReviewChoice: String, CaseIterable, Sendable {
-    case inherit, user, autoReview = "auto_review", fullAccess
+public enum ApprovalReviewChoice: String, CaseIterable, Codable, Sendable {
+    case inherit, user, autoReview = "auto_review", acceptEdits, fullAccess
     public var title: String {
         switch self {
-        case .inherit: "Use current Codex settings"
+        case .inherit: "Use reported provider settings"
         case .user: "Ask for approval"
         case .autoReview: "Approve for me"
+        case .acceptEdits: "Accept edits"
         case .fullAccess: "Full access"
         }
     }
     public func overrides(folder: String) -> [String: WireValue] {
-        guard self != .inherit else { return [:] }
+        guard self != .inherit, self != .acceptEdits else { return [:] }
         let sandbox: WireValue = self == .fullAccess
             ? .object(["type": .string("dangerFullAccess")])
             : .object(["type": .string("workspaceWrite"), "writableRoots": .array([.string(folder)]), "networkAccess": .bool(false)])
@@ -51,6 +53,11 @@ public struct ExecutedTask: Identifiable, Sendable {
     public var attached = false
     public var requiresReconciliation = false
     public var settings = ""
+    public var permissionFolder: String?
+    public var permissionPreference: ApprovalReviewChoice?
+    public var permissionsUnconfirmed = false
+    public var permissionNotice: String?
+    public var activePermissionProfile: WireValue = .null
     public var approvalReviewer: String?
     public var approvalPolicy: WireValue = .null
     public var sandbox: WireValue = .null
@@ -61,7 +68,6 @@ public struct ExecutedTask: Identifiable, Sendable {
     public var activity: [ActivityEvent] = []
     public var structuredActivity = SessionActivitySnapshot()
     public var error: String?
-    public var canvasNotice: String?
     public var terminalTurns: Set<String> = []
     public var work = ExecutionWork()
     public var steering = false
@@ -71,6 +77,7 @@ public struct ExecutedTask: Identifiable, Sendable {
     public var toolProgress: [String: String] = [:]
 }
 public struct ExecutionRequest: Identifiable, Sendable {
+    public let instanceID = UUID()
     public let wireID: WireValue
     public let method: String
     public let params: WireValue
@@ -89,6 +96,8 @@ private struct TaskBookmark: Codable {
     var pendingQueueSteers: Set<String>? = nil
     var provider: String? = nil
     var model: String? = nil
+    var permissionPreference: ApprovalReviewChoice? = nil
+    var permissionFolder: String? = nil
 }
 
 @Observable @MainActor
@@ -127,8 +136,9 @@ public final class ExecutionController {
     var queueAutoStart: Set<String> = []
     var providerSwitches: Set<String> = []
     public var retiredProviderSessions: Set<String> = []
-    public var conversationCanvasIdentity: [String: (Provider, String)] = [:]
     public private(set) var models: [ExecutionModel] = []
+    public internal(set) var permissionRequirements: WireValue = .null
+    var changingPermissions: Set<String> = []
     public private(set) var connected = false
     public private(set) var connecting = false
     public var error: String?
@@ -141,20 +151,24 @@ public final class ExecutionController {
     private let journal: URL?
     private let activityDirectory: URL?
     private let activityStore: SessionActivityStore?
+    // One bounded source cache: polling unchanged history must not replay activity
+    // events, rewrite the journal, or invalidate every conversation row.
+    @ObservationIgnored private var lastActivityImport: (key: String, modified: Date, url: URL?, entries: [Entry], snapshot: SessionActivitySnapshot)?
     private var activityWrites: [String: Task<Void, Never>] = [:]
-    private let canvas: ConversationCanvas?
     private var eventTask: Task<Void, Never>?
     private var sequence = 0
     public static var defaultJournal: URL {
         FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent("Library/Application Support/Diorama/owned-tasks.json")
     }
-    public init(transport: any ExecutionTransport = CodexExecutionTransport(), journal: URL? = nil, canvas: ConversationCanvas? = nil) {
-        self.transport = transport; self.journal = journal; self.canvas = canvas
+    public init(transport: any ExecutionTransport = CodexExecutionTransport(), journal: URL? = nil) {
+        self.transport = transport; self.journal = journal
         activityDirectory = journal?.deletingLastPathComponent().appendingPathComponent("SessionActivity")
         activityStore = activityDirectory.map { SessionActivityStore(directory: $0) }
         if let journal, let data = try? Data(contentsOf: journal), let saved = try? JSONDecoder().decode([TaskBookmark].self, from: data) {
             for item in saved { tasks[item.id] = ExecutedTask(id: item.id, title: item.title, folder: item.folder, parentID: item.parentID, phase: .disconnected, error: "Previous run: read saved history and explicitly reconnect before sending. No work has been restarted.")
                 tasks[item.id]?.model = item.model ?? ""
+                tasks[item.id]?.permissionPreference = item.permissionPreference
+                tasks[item.id]?.permissionFolder = item.permissionFolder ?? item.folder
                 tasks[item.id]?.provider = Provider(rawValue: item.provider ?? "") ?? .codex
                 if let activityDirectory {
                     let provider = tasks[item.id]!.provider
@@ -187,12 +201,13 @@ public final class ExecutionController {
                 let response = try await transport.request("model/list", .object(params))
                 for m in response["data"].array {
                     guard let id = m["model"].string else { continue }
-                    fetched.append(.init(id: id, name: m["displayName"].string ?? id, efforts: m["supportedReasoningEfforts"].array.compactMap { $0["reasoningEffort"].string }, defaultEffort: m["defaultReasoningEffort"].string ?? "", isDefault: m["isDefault"].bool))
+                    fetched.append(.init(id: id, name: m["displayName"].string ?? id, efforts: m["supportedReasoningEfforts"].array.compactMap { $0["reasoningEffort"].string }, defaultEffort: m["defaultReasoningEffort"].string ?? "", isDefault: m["isDefault"].bool, supportsAutoMode: m["supportsAutoMode"] == .null ? nil : m["supportsAutoMode"].bool))
                 }
                 cursor = response["nextCursor"].string
                 if let cursor, !seen.insert(cursor).inserted { throw AppServerFailure("Model pagination repeated") }
             } while cursor != nil
             models = fetched; error = nil
+            permissionRequirements = (try? await transport.request("configRequirements/read", .object([:])))?["requirements"] ?? .null
         } catch { self.error = error.localizedDescription }
     }
     public func refreshModels() async {
@@ -206,7 +221,7 @@ public final class ExecutionController {
         if let reply = try? await transport.request("model/list", .object([:])) {
             models = reply["data"].array.compactMap { m in
                 guard let id = m["model"].string else { return nil }
-                return ExecutionModel(id: id, name: m["displayName"].string ?? id, efforts: m["supportedReasoningEfforts"].array.compactMap { $0["reasoningEffort"].string }, defaultEffort: m["defaultReasoningEffort"].string ?? "", isDefault: m["isDefault"].bool)
+                return ExecutionModel(id: id, name: m["displayName"].string ?? id, efforts: m["supportedReasoningEfforts"].array.compactMap { $0["reasoningEffort"].string }, defaultEffort: m["defaultReasoningEffort"].string ?? "", isDefault: m["isDefault"].bool, supportsAutoMode: m["supportsAutoMode"] == .null ? nil : m["supportsAutoMode"].bool)
             }
         }
         return info
@@ -214,13 +229,21 @@ public final class ExecutionController {
     public func connectionInfo() async -> WireValue {
         (try? await transport.request("diorama/connections", .object([:]))) ?? .null
     }
-    public func prepare(folder: String, title: String, model: String, projectContext: String? = nil) async throws -> String {
+    public func prepare(folder: String, title: String, model: String, projectContext: String? = nil, permission: ApprovalReviewChoice = .autoReview) async throws -> String {
         guard connected, !creating, !stopping else { throw AppServerFailure("Connect an account before creating a task") }
         var isDirectory: ObjCBool = false
         guard folder.hasPrefix("/"), FileManager.default.fileExists(atPath: folder, isDirectory: &isDirectory), isDirectory.boolValue else { throw AppServerFailure("Choose an existing working folder") }
         if !model.isEmpty, !models.contains(where: { $0.id == model }) { throw AppServerFailure("Choose a model from the provider catalog") }
+        let initialPermission: ApprovalReviewChoice = permission == .inherit ? .autoReview : permission
+        if model.hasPrefix("claude/"), initialPermission == .autoReview, models.first(where: { $0.id == model })?.supportsAutoMode == false {
+            throw ExecutionRPCRejection("Automatic review is unavailable for this model. Choose Accept edits or Ask for approval.")
+        }
+        if !model.hasPrefix("claude/"), let reason = permissionUnavailable(initialPermission, model: model) { throw ExecutionRPCRejection(reason) }
         creating = true; defer { creating = false }
         var params: [String: WireValue] = ["cwd": .string(folder), "threadSource": .string("user")]
+        if !model.hasPrefix("claude/") { params["sandbox"] = .string(initialPermission == .fullAccess ? "danger-full-access" : "workspace-write"); params["approvalPolicy"] = .string(initialPermission == .fullAccess ? "never" : "on-request"); params["approvalsReviewer"] = .string(initialPermission == .autoReview ? "auto_review" : "user") }
+        if !model.hasPrefix("claude/"), initialPermission != .fullAccess { params["config"] = .object(["sandbox_workspace_write.network_access": .bool(false)]) }
+        if model.hasPrefix("claude/") { params["permissionMode"] = .string(initialPermission.claudeMode ?? "auto") }
         if !model.isEmpty { params["model"] = .string(model) }
         if let projectContext { params["developerInstructions"] = .string(projectContext) }
         let reply = try await transport.request("thread/start", .object(params))
@@ -228,6 +251,8 @@ public final class ExecutionController {
         var task = ExecutedTask(id: id, title: String(title.prefix(100)), folder: folder, attached: true)
         task.provider = model.hasPrefix("claude/") ? .claude : .codex
         applySettings(reply, to: &task)
+        task.permissionPreference = initialPermission
+        task.permissionFolder = folder
         tasks[id] = task; persist()
         if projectContext != nil, URL(fileURLWithPath: task.folder).resolvingSymlinksInPath() != URL(fileURLWithPath: folder).resolvingSymlinksInPath() {
             throw AppServerFailure("Codex created task \(id) in a different working folder. No message was sent; inspect the prepared conversation.")
@@ -241,6 +266,7 @@ public final class ExecutionController {
         task.approvalReviewer = reply["approvalsReviewer"].string
         task.approvalPolicy = reply["approvalPolicy"]
         task.sandbox = reply["sandbox"]
+        task.activePermissionProfile = reply["activePermissionProfile"]
         task.settings = "Model: \(task.model)\nWorking folder: \(task.folder)\nApproval policy: \(reply["approvalPolicy"].pretty)\nReviewer: \(reply["approvalsReviewer"].pretty)\nPermissions: \(reply["activePermissionProfile"].pretty)\nSandbox: \(reply["sandbox"].pretty)"
     }
     public private(set) var observedDesktopSessionIDs: Set<String> = []
@@ -270,6 +296,10 @@ public final class ExecutionController {
         guard !retiredProviderSessions.contains(id), !providerSwitches.contains(id) else { throw AppServerFailure("This provider session is historical or switching") }
         guard connected, !stopping, !workflowBusy.contains(id), var task = tasks[id], task.attached, task.parentID == nil, !task.phase.active, !task.steering, !task.steeringUncertain,
               !requests.values.contains(where: { $0.threadID == id && $0.isBlocking }) else { throw AppServerFailure("This task is not ready for a new turn") }
+        if !model.isEmpty, model.hasPrefix("claude/") != (task.provider == .claude) { throw ExecutionRPCRejection("Changing providers requires a new linked session.") }
+        if !model.isEmpty, !models.contains(where: { $0.id == model }) { throw ExecutionRPCRejection("Model unavailable. No message was sent.") }
+        try await preparePermissions(id: id, choice: approvalReview, model: model, mode: mode)
+        guard let refreshed = tasks[id] else { throw ExecutionRPCRejection("Conversation removed") }; task = refreshed
         var input = try ConversationAttachment.input(prompt: prompt, attachments: attachments)
         for capability in capabilities {
             let valid = capability.kind == "skill" ? skills.contains { $0["path"].string == capability.path && $0["name"].string == capability.name && $0["enabled"].bool } : capability.kind == "mention" && apps.contains { "app://" + ($0["id"].string ?? "") == capability.path && $0["isAccessible"].bool && $0["isEnabled"] != .bool(false) }
@@ -287,16 +317,6 @@ public final class ExecutionController {
             await GitHubCheckoutLocks.shared.endAgentSubmission(task.folder)
             throw AppServerFailure("This task is not ready for a new turn")
         }
-        if let canvas {
-            do {
-                let identity = conversationCanvasIdentity[id] ?? (task.provider, id)
-                let url = try canvas.prepare(folder: task.folder, provider: identity.0, sessionID: identity.1, title: task.title)
-                input.append(.object(["type": .string("text"), "text": .string(ConversationCanvas.instructions(for: url))]))
-                task.canvasNotice = nil
-            } catch {
-                task.canvasNotice = "HTML view unavailable for this turn: \(error.localizedDescription)"
-            }
-        }
         if task.liveStartedAt == nil { task.liveStartedAt = Date() }
         task.work = ExecutionWork(); task.reviewNotice = nil
         task.phase = .submitting; task.requiresReconciliation = true; task.error = nil; task.transcript.source = "Live agent"
@@ -311,7 +331,8 @@ public final class ExecutionController {
             if !selectedEffort.isEmpty { settings["reasoning_effort"] = .string(selectedEffort) }
             params["collaborationMode"] = .object(["mode": .string(mode), "settings": .object(settings)])
         }
-        let permissionOverrides = approvalReview.overrides(folder: task.folder)
+        let permissionOverrides: [String: WireValue] = task.provider == .claude
+            ? ["permissionMode": .string(mode == "plan" ? "plan" : (task.permissionPreference?.claudeMode ?? task.approvalPolicy.string ?? "default"))] : [:]
         params.merge(permissionOverrides) { _, override in override }
         do {
             let reply = try await transport.request("turn/start", .object(params))
@@ -320,25 +341,6 @@ public final class ExecutionController {
                 tasks[id]?.turnID = turn
                 tasks[id]?.work.turnID = turn
                 if tasks[id]?.phase == .submitting { tasks[id]?.phase = .working }
-            }
-            if approvalReview != .inherit {
-                tasks[id]?.approvalReviewer = permissionOverrides["approvalsReviewer"]?.string
-                tasks[id]?.approvalPolicy = permissionOverrides["approvalPolicy"] ?? .null
-                tasks[id]?.sandbox = permissionOverrides["sandboxPolicy"] ?? .null
-                let lines = tasks[id]?.settings.components(separatedBy: "\n") ?? []
-                tasks[id]?.settings = lines.map { line in
-                    if line.hasPrefix("Reviewer:") { return "Reviewer: \(permissionOverrides["approvalsReviewer"]?.pretty ?? "unknown")" }
-                    if line.hasPrefix("Approval policy:") { return "Approval policy: \(permissionOverrides["approvalPolicy"]?.pretty ?? "unknown")" }
-                    if line.hasPrefix("Sandbox:") { return "Sandbox: \(permissionOverrides["sandboxPolicy"]?.pretty ?? "unknown")" }
-                    if line.hasPrefix("Permissions:") { return "Permissions: \(approvalReview.title) (accepted turn setting)" }
-                    return line
-                }.joined(separator: "\n")
-            }
-            if task.provider == .claude {
-                tasks[id]?.sandbox = .null
-                let permission = mode == "plan" ? "plan" : approvalReview == .fullAccess ? "bypassPermissions" : approvalReview == .autoReview ? "auto" : approvalReview == .user ? "default" : task.approvalPolicy.string == "plan" ? "default" : task.approvalPolicy.string ?? "default"
-                tasks[id]?.approvalPolicy = .string(permission)
-                tasks[id]?.settings = "Claude permission mode: \(permission)\nWorking folder: \(task.folder)\nPermissions are enforced by Claude Code."
             }
             if let mode { tasks[id]?.workflow.mode = mode }
             if !model.isEmpty { tasks[id]?.model = model }
@@ -428,6 +430,8 @@ public final class ExecutionController {
             guard reply["thread"]["id"].string == id else { throw AppServerFailure("Resume returned an unexpected conversation identity; no prompt was sent") }
             var task = ExecutedTask(id: id, provider: session.provider, title: session.title, folder: folder, attached: true)
             applySettings(reply, to: &task)
+            task.permissionPreference = tasks[id]?.permissionPreference
+            task.permissionFolder = tasks[id]?.permissionFolder
             if session.provider == .claude, let previous = tasks[id]?.model, !previous.isEmpty { task.model = previous }
             if reply["thread"]["status"]["type"].string == "active" {
                 task.phase = .working; task.requiresReconciliation = true
@@ -457,7 +461,8 @@ public final class ExecutionController {
         _ = try await transport.request("turn/interrupt", .object(["threadId": .string(id), "turnId": .string(turn)]))
         // Acknowledging the request is not the same as observing turn completion.
     }
-    public func answer(id: String, result: WireValue) async throws {
+    public func answer(id: String, result: WireValue, expectedInstance: UUID? = nil) async throws {
+        if let expectedInstance, requests[id]?.instanceID != expectedInstance { throw ExecutionRPCRejection("This approval request has been replaced or disconnected.") }
         guard connected, let request = requests[id], !request.responding, tasks[request.threadID]?.attached == true else { throw AppServerFailure("This request is no longer actionable") }
         try requireControllable(request.threadID)
         if request.method == "item/commandExecution/requestApproval" || request.method == "item/fileChange/requestApproval" {
@@ -526,10 +531,13 @@ public final class ExecutionController {
         guard let journal else { return }
         do {
             try FileManager.default.createDirectory(at: journal.deletingLastPathComponent(), withIntermediateDirectories: true, attributes: [.posixPermissions: 0o700])
-            let records = tasks.values.map { TaskBookmark(id: $0.id, folder: $0.folder, title: $0.title, parentID: $0.parentID, pendingQueueSteers: $0.workflow.steeredQueueIDs, provider: $0.provider.rawValue, model: $0.model) }
+            let records = tasks.values.map { TaskBookmark(id: $0.id, folder: $0.folder, title: $0.title, parentID: $0.parentID, pendingQueueSteers: $0.workflow.steeredQueueIDs, provider: $0.provider.rawValue, model: $0.model, permissionPreference: $0.permissionPreference, permissionFolder: $0.permissionFolder) }
             try JSONEncoder().encode(records).write(to: journal, options: .atomic)
             try FileManager.default.setAttributes([.posixPermissions: 0o600], ofItemAtPath: journal.path)
-        } catch { self.error = "Could not save task ownership: \(error.localizedDescription)" }
+        } catch {
+            self.error = "Could not save task ownership: \(error.localizedDescription)"
+            for id in tasks.keys where tasks[id]?.permissionPreference != nil { tasks[id]?.permissionNotice = "Effective permissions could not be saved and may not survive restart." }
+        }
     }
     private func activity(_ id: String, kind: String, state: ActivityState? = nil, call: String? = nil, tool: String? = nil, detail: String? = nil) {
         guard let task = tasks[id] else { return }; sequence += 1
@@ -537,8 +545,26 @@ public final class ExecutionController {
         tasks[id]?.activity.append(event)
         if let count = tasks[id]?.activity.count, count > 500 { tasks[id]?.activity.removeFirst(count - 500) }
     }
+    @ObservationIgnored public var titleEvent: ((String, Provider, String) -> Void)?
+    @ObservationIgnored public var inboxEvent: ((Session, WireValue, [Entry]) -> Void)?
+
     public func receive(_ event: WireValue) async {
+        defer {
+            let method = event["method"].string
+            if method == "turn/completed" || method == "diorama/claudeActivity",
+               let id = event["params"]["threadId"].string, let task = tasks[id] {
+                inboxEvent?(task.session, event, task.transcript.entries)
+            }
+        }
         let method = event["method"].string ?? "", p = event["params"]
+        if method == "thread/name/updated", let id = p["threadId"].string, let name = p["threadName"].string, !name.isEmpty {
+            titleEvent?(id, .codex, name)
+        }
+        if method == "diorama/permissions/changed", let id = p["threadId"].string {
+            if let mode = p["permissionMode"].string { tasks[id]?.approvalPolicy = .string(mode) }
+            if let model = p["model"].string { tasks[id]?.model = model }
+            return
+        }
         if method == "diorama/sessionDisconnected" || method == "diorama/providerDisconnected" {
             for id in tasks.keys where tasks[id]?.attached == true && (p["threadId"].string == id || p["provider"].string == tasks[id]?.provider.rawValue) {
                 tasks[id]?.structuredActivity.lastKnown = true
@@ -772,6 +798,10 @@ public final class ExecutionController {
     public func importActivity(_ session: Session, transcript: Transcript) async {
         let key = session.provider.rawValue + ":" + session.sessionID
         guard tasks[session.sessionID]?.attached != true else { return }
+        if let previous = lastActivityImport, previous.key == key,
+           previous.modified == session.modified, previous.url == session.url,
+           previous.entries == transcript.entries,
+           previous.snapshot == activitySnapshot(provider: session.provider, id: session.sessionID) { return }
         var snapshot = activityDirectory.map { SessionActivityStore.read(directory: $0, provider: session.provider, id: session.sessionID) } ?? .init()
         if snapshot.records.isEmpty { snapshot = await SessionActivityHistory.read(session) }
         // App Server saved-history plans and collaboration items retain their native type.
@@ -784,8 +814,10 @@ public final class ExecutionController {
         }
         snapshot.lastKnown = true
         guard tasks[session.sessionID]?.attached != true else { return }
-        if tasks[session.sessionID] != nil { tasks[session.sessionID]?.structuredActivity = snapshot }
-        recordedActivity[key] = snapshot
+        guard !Task.isCancelled else { return }
+        if let task = tasks[session.sessionID], task.structuredActivity != snapshot { tasks[session.sessionID]?.structuredActivity = snapshot }
+        if recordedActivity[key] != snapshot { recordedActivity[key] = snapshot }
+        lastActivityImport = (key, session.modified, session.url, transcript.entries, snapshot)
         try? await activityStore?.save(snapshot, provider: session.provider, id: session.sessionID, members: activityMembership[key] ?? [])
     }
 

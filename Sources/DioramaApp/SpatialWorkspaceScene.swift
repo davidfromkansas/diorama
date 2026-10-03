@@ -1,7 +1,7 @@
 import SwiftUI
 import SceneKit
 
-struct SpatialCameraPose: Equatable {
+struct SpatialCameraPose: Codable, Equatable {
     var x = 0.0
     var y = 0.0
     var z = 0.0
@@ -26,23 +26,68 @@ struct SpatialSceneSurface: NSViewRepresentable {
     var page: Int
     var select: (SpatialFocus) -> Void
     var screenAnchor: (CGPoint) -> Void
-    func makeNSView(context: Context) -> SpatialSceneView { SpatialSceneView() }
+    var openInspection: ((AgentInspectionDestination) -> Void)? = nil
+    var dismissPlan: (() -> Void)? = nil
+    var editStatus: ((String?) -> Void)? = nil
+    var cameraStore: ProjectTabStore? = nil
+    func makeNSView(context: Context) -> SpatialSceneView {
+        let view = SpatialSceneView(); view.placementDefaults = .standard
+        view.editor.defaults = .standard
+        if let url = Bundle.main.url(forResource: "DevelopmentRoot", withExtension: "txt"),
+           let root = try? String(contentsOf: url, encoding: .utf8).trimmingCharacters(in: .whitespacesAndNewlines) {
+            view.editor.exportURL = URL(fileURLWithPath: root).appendingPathComponent(".local/office-layout-drafts.json")
+        }
+        return view
+    }
     func updateNSView(_ view: SpatialSceneView, context: Context) {
+        view.cameraStore = cameraStore
+        view.editStatus = editStatus
         view.select = select
+        view.openInspection = openInspection
+        let restoringSceneFocus = view.dismissPlan != nil && dismissPlan == nil
+        view.dismissPlan = dismissPlan
+        if restoringSceneFocus { view.window?.makeFirstResponder(view) }
         view.screenAnchor = screenAnchor
-        view.apply(world: world, focus: focus, active: active, reducedMotion: reducedMotion, reset: reset, page: page)
+        view.applyWhenPrepared(world: world, focus: focus, active: active, reducedMotion: reducedMotion, reset: reset, page: page)
     }
     static func dismantleNSView(_ view: SpatialSceneView, coordinator: ()) { view.tearDown() }
 }
 
 final class SpatialSceneView: SCNView {
+    weak var cameraStore: ProjectTabStore?
+    let editor = OfficeLayoutEditor()
+    private var selectionStart: CGPoint?
+    private var selectionBase: Set<String> = []
+    private let selectionBox = CAShapeLayer()
+    private func clearSelectionBox() {
+        selectionStart = nil; selectionBase = []; selectionBox.removeFromSuperlayer()
+    }
+    private func updateSelectionBox(to point: CGPoint) {
+        guard let start = selectionStart else { return }
+        let rect = CGRect(x: min(start.x, point.x), y: min(start.y, point.y),
+                          width: abs(point.x-start.x), height: abs(point.y-start.y))
+        CATransaction.begin(); CATransaction.setDisableActions(true)
+        selectionBox.frame = bounds
+        selectionBox.path = CGPath(rect: rect, transform: nil)
+        selectionBox.fillColor = NSColor.systemBlue.withAlphaComponent(0.12).cgColor
+        selectionBox.strokeColor = NSColor.systemBlue.cgColor; selectionBox.lineWidth = 1
+        CATransaction.commit()
+        if selectionBox.superlayer == nil { layer?.addSublayer(selectionBox) }
+        if rect.width + rect.height > 5 { editor.chooseMany(selectionBase.union(editor.items(in: rect, view: self))) }
+    }
+    var editStatus: ((String?) -> Void)?
+    private var editKeyMonitor: Any?
     var select: ((SpatialFocus) -> Void)?
+    var openInspection: ((AgentInspectionDestination) -> Void)?
+    var dismissPlan: (() -> Void)?
     var screenAnchor: ((CGPoint) -> Void)?
     private(set) var pose = SpatialCameraPose()
     private(set) var workstations: [String: WorkspaceWorkstation] = [:]
     private(set) var officeWorkstations: [String: OfficeWorkstation] = [:]
+    private var reusableOfficeWorkstations: [OfficeWorkstation] = []
     private(set) var emptyOfficeDesks: [Int: EmptyOfficeDesk] = [:]
     private(set) var officeLayouts: [String: SharedOfficeLayout] = [:]
+    var placementDefaults: UserDefaults?
     private var officeOccupants: [OfficeOccupant] = []
     private var officeProject: String?
     private(set) var projectSlots = SpatialSlots()
@@ -73,14 +118,19 @@ final class SpatialSceneView: SCNView {
     private let gpuProbe = SceneGPUProbe()
     private var lastQualitySample = 0.0
     var frameObserved: ((Double) -> Void)?
-    private var escapeMonitor: Any?
     private var travel: (start: SpatialCameraPose, end: SpatialCameraPose, time: TimeInterval)?
+    private var lastLeisureFrame: Double?
+    private var leisureRevision = ""
+    private var leisureUpdateScheduled = false
+    private var leisureNavigation = WorkspaceCapybaraNavigation()
+    private var editorWasEnabled = false
     private var lastPoint = NSPoint.zero
     private var dragged = 0.0
     private var framePose = SpatialCameraPose()
 
     init() {
         super.init(frame: .zero, options: nil)
+        _ = OfficeAssetPreparation.ready
         scene = SCNScene()
         delegate = frameTelemetry
         backgroundColor = NSColor(srgbRed: 0.91, green: 0.94, blue: 0.95, alpha: 1)
@@ -117,14 +167,29 @@ final class SpatialSceneView: SCNView {
         }
         if ScenePerformance.disabled("MEADOW") { meadow.root.isHidden = true }
         if ScenePerformance.disabled("SHADOWS") { sun.light?.castsShadow = false }
+        editor.changed = { [weak self] in
+            guard let self else { return }
+            self.needsDisplay = true
+            if !self.editor.enabled { self.clearSelectionBox() }
+            if self.editorWasEnabled && !self.editor.enabled { self.configureLeisure() }
+            self.editorWasEnabled = self.editor.enabled
+            self.lastLeisureFrame = nil
+            self.updateAgents(); self.updatePlayback()
+            let status = self.editor.status
+            DispatchQueue.main.async { [weak self] in self?.editStatus?(status) }
+        }
         updateCamera()
     }
     override func viewDidMoveToWindow() {
         super.viewDidMoveToWindow()
-        if let escapeMonitor { NSEvent.removeMonitor(escapeMonitor); self.escapeMonitor = nil }
+        if let editKeyMonitor { NSEvent.removeMonitor(editKeyMonitor); self.editKeyMonitor = nil }
         frameLink?.invalidate(); frameLink = nil; frameDriver = nil
         windowObservers.forEach(NotificationCenter.default.removeObserver); windowObservers = []
         guard let window else { return }
+        editKeyMonitor = NSEvent.addLocalMonitorForEvents(matching: .keyDown) { [weak self] event in
+            let handled = MainActor.assumeIsolated { self?.handleEditKey(event) == true }
+            return handled ? nil : event
+        }
         let driver = SceneFrameDriver(); driver.view = self; frameDriver = driver
         let link = displayLink(target: driver, selector: #selector(SceneFrameDriver.frame(_:)))
         link.add(to: .main, forMode: .common); frameLink = link; lastLinkFPS = 0
@@ -134,22 +199,51 @@ final class SpatialSceneView: SCNView {
             })
         }
         updatePlayback()
-        escapeMonitor = NSEvent.addLocalMonitorForEvents(matching: .keyDown) { [weak self] event in
-            guard let self, self.active, event.window === self.window, self.window?.attachedSheet == nil,
-                  event.keyCode == 53, let focus = self.focus, focus != .portfolio else { return event }
-            if !event.isARepeat { self.select?(focus.officeReturn) }
-            return nil
-        }
     }
     func tearDown() {
+        preparing?.cancel(); preparing = nil; preparedApply = nil
+        reusableOfficeWorkstations.removeAll()
+        officeWorkstations.values.forEach { $0.leisureMotion?.stop() }
+        editor.finish()
+        if let editKeyMonitor { NSEvent.removeMonitor(editKeyMonitor); self.editKeyMonitor = nil }
         suspend()
         frameLink?.invalidate(); frameLink = nil; frameDriver = nil
         windowObservers.forEach(NotificationCenter.default.removeObserver); windowObservers = []
-        if let escapeMonitor { NSEvent.removeMonitor(escapeMonitor); self.escapeMonitor = nil }
     }
     required init?(coder: NSCoder) { fatalError("init(coder:) has not been implemented") }
 
+    private var assetsPrepared = false
+    private var preparing: Task<Void, Never>?
+    private var preparedApply: (() -> Void)?
+    func applyWhenPrepared(world: SpatialWorld, focus: SpatialFocus, active: Bool, reducedMotion: Bool, reset: Int, page: Int) {
+        if assetsPrepared || focus == .portfolio {
+            if focus == .portfolio { preparedApply = nil }
+            apply(world: world, focus: focus, active: active, reducedMotion: reducedMotion, reset: reset, page: page)
+            return
+        }
+        // A single replaceable request prevents an old project appearing after a rapid switch.
+        preparedApply = { [weak self] in self?.apply(world: world, focus: focus, active: active, reducedMotion: reducedMotion, reset: reset, page: page) }
+        guard preparing == nil else { return }
+        preparing = Task { [weak self] in
+            await OfficeAssetPreparation.ready.value
+            guard !Task.isCancelled, let self else { return }
+            assetsPrepared = true; preparing = nil
+            let latest = preparedApply; preparedApply = nil; latest?()
+        }
+    }
+
     func apply(world: SpatialWorld, focus: SpatialFocus, active: Bool, reducedMotion: Bool, reset: Int, page: Int = 0) {
+        let changingProject = self.focus?.projectID != focus.projectID
+        if changingProject, let previous = self.focus?.projectID { cameraStore?.cameras[previous] = pose }
+        if focus == .portfolio || changingProject || !active { editor.finish() }
+        if focus == .portfolio {
+            // Home is a 2D library. Do not reframe its hidden camera or stream a new meadow.
+            let needsSuspension = self.active || self.focus != .portfolio
+            self.focus = focus; self.reset = reset; self.page = page; reduced = reducedMotion
+            setAccessibilityElement(false)
+            if needsSuspension { suspend() }
+            return
+        }
         let pageChanged = self.page != page
         self.page = page
         let contentsChanged: Bool
@@ -163,9 +257,19 @@ final class SpatialSceneView: SCNView {
         // Home hides and pauses this surface, retaining the office nodes and desk assignments.
         if changed && focus != .portfolio { reconcile(focus) }
         if self.focus != focus || self.reset != reset || pageChanged {
+            // Work screens are overlays: preserve the user's orbit and zoom when
+            // opening, switching agents, or returning to the same office.
+            let sameSpace = self.focus != .portfolio && focus != .portfolio && self.focus != nil &&
+                (focus.projectID != nil ? self.focus?.projectID == focus.projectID :
+                    self.focus?.projectID == nil && self.focus?.conversationID == focus.conversationID)
+            let preserveCamera = sameSpace && (focus.expanded || self.focus?.expanded == true) && self.reset == reset && !pageChanged
             self.focus = focus; self.reset = reset
-            framePose = framing(focus)
-            move(to: framePose, animated: active && !reducedMotion)
+            if preserveCamera {
+                travel = nil
+            } else {
+                framePose = framing(focus)
+                move(to: changingProject ? (focus.projectID.flatMap { cameraStore?.cameras[$0] } ?? framePose) : framePose, animated: !changingProject && active && !reducedMotion)
+            }
         }
         if changed || lifecycleChanged { updateAgents() }
         if !active || reducedMotion {
@@ -289,6 +393,7 @@ final class SpatialSceneView: SCNView {
                     desk.root.addChildNode(monitor)
                 }
                 workstations[agent.id]?.root.position = agentPosition(agent, team: team)
+                AgentPlanButton.update(root: workstations[agent.id]!.root, id: agent.id, plan: agent.value.plan, height: 5.2, scale: 3)
                 targets["agent:" + agent.id] = agent.focus
                 targets["screen:" + agent.id] = .agent(project: agent.projectID, conversation: agent.conversationID, agent: agent.id, expanded: true)
             }
@@ -302,31 +407,35 @@ final class SpatialSceneView: SCNView {
     private func reconcileOffice(_ project: SpatialProject, focus next: SpatialFocus) {
         for desk in workstations.values { desk.root.removeFromParentNode() }
         workstations = [:]
-        for (id,node) in nodes where id != "sharedFloor:" + project.id {
+        let changedProject = officeProject != project.id
+        for (id,node) in nodes where id != "sharedFloor:window" {
             node.removeFromParentNode(); nodes.removeValue(forKey: id); labelValues.removeValue(forKey: id)
-        }
-        if officeProject != project.id {
-            for desk in emptyOfficeDesks.values { desk.root.removeFromParentNode() }; emptyOfficeDesks = [:]
         }
         officeProject = project.id
         officeOccupants = OfficeRoster(teams: project.teams, now: Date(), including: next.agentID,
                                       conversation: next.conversationID).occupants
-        var layout = officeLayouts[project.id, default: SharedOfficeLayout()]
-        layout.register(officeOccupants.map(\.id))
+        let key = "officePlacement.v1." + project.id
+        let saved = officeLayouts[project.id] == nil ? placementDefaults?.data(forKey: key).flatMap { try? JSONDecoder().decode(SharedOfficeLayout.Saved.self, from: $0) } : nil
+        var layout = officeLayouts[project.id] ?? SharedOfficeLayout(saved: saved)
+        let before = layout.saved
+        layout.place(officeOccupants)
         officeLayouts[project.id] = layout
-        let floor = retained("sharedFloor:" + project.id) { SCNNode() }
+        officeOccupants = officeOccupants.filter { layout.visibleIDs.contains($0.id) }
+        if before != layout.saved, let data = try? JSONEncoder().encode(layout.saved) { placementDefaults?.set(data, forKey: key) }
+        let floor = retained("sharedFloor:window") { SCNNode() }
         let desks = layout.desks
-        let minX = (desks.map(\.x).min() ?? -2) - 1.73, maxX = (desks.map(\.x).max() ?? 2) + 1.73
-        let minZ = (desks.map(\.z).min() ?? -2) - 1.73, maxZ = (desks.map(\.z).max() ?? 2) + 1.73
+        let minX = layout.floorMinX, maxX = layout.floorMaxX
+        let minZ = layout.floorMinZ, maxZ = layout.floorMaxZ
         let width = CGFloat(maxX - minX), depth = CGFloat(maxZ - minZ)
         meadow.configure(project: project.id, office: MeadowBounds(minX: minX, maxX: maxX, minZ: minZ, maxZ: maxZ))
         if (floor.geometry as? SCNBox)?.width != width || (floor.geometry as? SCNBox)?.length != depth {
+            lastMeadowVisibility = nil
             let slab = SCNBox(width: width, height: 0.38, length: depth, chamferRadius: 0.09)
             slab.materials = [WorkspaceAvatarFactory.material(NSColor(srgbRed: 0.79, green: 0.82, blue: 0.75, alpha: 1))]
             floor.geometry = slab; floor.position = SCNVector3((minX + maxX) / 2, -0.20, (minZ + maxZ) / 2)
             // The default camera looks from -X/+Z: these are the two far edges.
             // Walls belong to the floor, so they grow with it without moving desks.
-            floor.childNodes.forEach { $0.removeFromParentNode() }
+            floor.childNodes.filter { $0.name != "officeLeisureFurniture" }.forEach { $0.removeFromParentNode() }
             let surface = SCNPlane(width: width - 0.12, height: depth - 0.12)
             let wood = SCNMaterial()
             wood.name = "Matte wood floor"
@@ -358,8 +467,17 @@ final class SpatialSceneView: SCNView {
             side.name = "officeSideWall"
             floor.addChildNode(back); floor.addChildNode(side)
         }
+        let leisure = floor.childNode(withName: "officeLeisureFurniture", recursively: false) ?? {
+            let node = OfficeLoungeAssets.make(); floor.addChildNode(node); return node
+        }()
+        // Furniture stays in world space while the floor centre moves during expansion.
+        leisure.position = SCNVector3(-floor.position.x, -floor.position.y, -floor.position.z)
+        if changedProject {
+            // Reset shared placement nodes before applying this project's explicit edits.
+            for node in leisure.childNodes.flatMap({ $0.name == "officeTVLounge" ? $0.childNodes : [$0] }) { OfficeBakedLayout.apply(to: node) }
+        }
         let occupiedSlots = Set(officeOccupants.compactMap { layout.assignments[$0.id]?.slot })
-        for slot in Array(emptyOfficeDesks.keys) where occupiedSlots.contains(slot) {
+        for slot in Array(emptyOfficeDesks.keys) where occupiedSlots.contains(slot) || slot >= SharedOfficeLayout.minimumDeskCount {
             emptyOfficeDesks.removeValue(forKey: slot)?.root.removeFromParentNode()
         }
         for assignment in desks where !occupiedSlots.contains(assignment.slot) {
@@ -371,24 +489,32 @@ final class SpatialSceneView: SCNView {
         }
         let ids = Set(officeOccupants.map(\.id))
         for id in Array(officeWorkstations.keys) where !ids.contains(id) {
-            officeWorkstations[id]?.suspend(); officeWorkstations[id]?.root.removeFromParentNode()
-            officeWorkstations.removeValue(forKey: id)
+            if let station = officeWorkstations.removeValue(forKey: id) {
+                station.leisureMotion?.stop(); station.suspend(); station.root.removeFromParentNode()
+                if reusableOfficeWorkstations.count < 34 { reusableOfficeWorkstations.append(station) }
+            }
         }
         targets = [:]
         for occupant in officeOccupants {
-            guard let assignment = layout.assignments[occupant.id] else { continue }
+            let assignment = layout.assignments[occupant.id] ?? OfficeDeskAssignment(slot: -1, x: 0, z: 0, yaw: 0)
             if officeWorkstations[occupant.id] == nil {
-                let station = OfficeWorkstation(id: occupant.id)
+                let station: OfficeWorkstation
+                if let reused = reusableOfficeWorkstations.popLast() { reused.rebind(id: occupant.id); station = reused }
+                else { station = OfficeWorkstation(id: occupant.id) }
                 station.animationChanged = { [weak self] in self?.updatePlayback() }
                 officeWorkstations[occupant.id] = station; content.addChildNode(station.root)
             }
             let station = officeWorkstations[occupant.id]!
-            station.root.position = SCNVector3(assignment.x, 0, assignment.z)
-            station.root.eulerAngles.y = assignment.yaw
+            station.showsFurniture = layout.assignments[occupant.id] != nil
+            station.root.isHidden = false
+            station.place(desk: assignment, standingAt: layout.standingPosition(occupant.id), animated: active && !reduced)
+            AgentPlanButton.update(root: station.person, id: occupant.id, plan: occupant.agent.value.plan, height: 2.08)
             targets["agent:" + occupant.id] = occupant.destination
             targets["screen:" + occupant.id] = occupant.destination
         }
-        updateMeadowVisibility()
+        if !changedProject { updateMeadowVisibility() }
+        configureEditor(layout: layout, leisure: leisure, project: project.id)
+        if !editor.enabled { configureLeisure() }
         if ScenePerformance.disabled("FURNITURE") {
             emptyOfficeDesks.values.forEach { $0.root.isHidden = true }
             officeWorkstations.values.forEach { $0.root.isHidden = true }
@@ -424,12 +550,16 @@ final class SpatialSceneView: SCNView {
     }
 
     private func framing(_ next: SpatialFocus) -> SpatialCameraPose {
+        if officeProject == next.projectID, let id = next.agentID, officeWorkstations[id] == nil { return pose }
         if let id = next.projectID, let layout = officeLayouts[id] {
-            if let agent = next.agentID, let desk = layout.assignments[agent] {
-                return SpatialCameraPose(x: desk.x, y: 0.7, z: desk.z, scale: 1.7, yaw: -.pi * 0.82, elevation: .pi / 5)
+            if let agent = next.agentID, let point = officeWorkstations[agent]?.person.worldPosition {
+                return SpatialCameraPose(x: Double(point.x), y: 0.7, z: Double(point.z), scale: 1.7, yaw: -.pi * 0.82, elevation: .pi / 5)
             }
             let occupants = officeOccupants.filter { next.conversationID == nil || $0.agent.conversationID == next.conversationID }
-            let positions = (next.conversationID == nil ? layout.desks : occupants.compactMap { layout.assignments[$0.id] }).map { SCNVector3($0.x, 0, $0.z) }
+            var positions = next.conversationID == nil ? layout.desks.map { SCNVector3($0.x,0,$0.z) } : occupants.compactMap { officeWorkstations[$0.id]?.person.worldPosition }
+            if next.conversationID == nil {
+                positions += [SCNVector3(layout.floorMinX, 0, layout.floorMinZ), SCNVector3(layout.floorMaxX, 0, layout.floorMaxZ)]
+            }
             var pose = fitted(positions, padding: 3.5)
             // Orthographic magnification is inverse to scale: 1.5× zoom.
             if next.conversationID == nil { pose.scale /= 1.5 }
@@ -465,11 +595,12 @@ final class SpatialSceneView: SCNView {
         updatePlayback()
     }
     private func updateCamera() {
+        if let id = focus?.projectID, cameraStore?.cameras[id] != pose { cameraStore?.cameras[id] = pose }
         let interval = ScenePerformance.begin("Camera update")
         defer { ScenePerformance.end("Camera update", interval) }
         camera.camera?.orthographicScale = pose.scale * max(1, Double(bounds.height / max(1, bounds.width)))
         let distance = max(100, pose.scale * 4)
-        let offset = focus?.expanded == true && bounds.width >= 850 ? pose.scale * 0.70 * Double(bounds.width / max(1, bounds.height)) : 0
+        let offset = 0.0
         let targetX = pose.x + offset * cos(pose.yaw)
         let targetZ = pose.z - offset * sin(pose.yaw)
         camera.position = SCNVector3(targetX + distance * cos(pose.elevation) * sin(pose.yaw), pose.y + distance * sin(pose.elevation), targetZ + distance * cos(pose.elevation) * cos(pose.yaw))
@@ -477,13 +608,14 @@ final class SpatialSceneView: SCNView {
         updateMeadowVisibility()
         needsDisplay = true
     }
+    private var lastMeadowVisibility: (project: String, bounds: MeadowBounds, centre: SIMD2<Double>, detail: Bool)?
     private func updateMeadowVisibility() {
         guard officeProject != nil, bounds.width > 0, bounds.height > 0 else { return }
         // Analytic orthographic ray/ground intersections, expanded above blade tips.
         let halfY = Double(camera.camera?.orthographicScale ?? pose.scale)
         let halfX = halfY * Double(bounds.width / bounds.height)
         let forwardGround = (pose.y + 0.395) / tan(pose.elevation)
-        let offset = focus?.expanded == true && bounds.width >= 850 ? pose.scale * 0.70 * Double(bounds.width / bounds.height) : 0
+        let offset = 0.0
         let cx = pose.x + offset * cos(pose.yaw) - sin(pose.yaw) * forwardGround
         let cz = pose.z - offset * sin(pose.yaw) - cos(pose.yaw) * forwardGround
         let yawCos: Double = abs(cos(pose.yaw))
@@ -492,7 +624,11 @@ final class SpatialSceneView: SCNView {
         let ex: Double = yawCos * halfX + yawSin * groundHalfY + 5.0
         let ez: Double = yawSin * halfX + yawCos * groundHalfY + 5.0
         if ScenePerformance.disabled("MEADOW") { meadow.root.isHidden = true; return }
-        meadow.updateVisibility(bounds: MeadowBounds(minX: cx-ex, maxX: cx+ex, minZ: cz-ez, maxZ: cz+ez), centre: SIMD2(pose.x, pose.z))
+        let coverage = MeadowBounds(minX: cx-ex, maxX: cx+ex, minZ: cz-ez, maxZ: cz+ez)
+        let centre = SIMD2(pose.x, pose.z)
+        if let last = lastMeadowVisibility, last.project == officeProject, last.bounds == coverage, last.centre == centre, last.detail == meadow.reducedDetail { return }
+        lastMeadowVisibility = (officeProject!, coverage, centre, meadow.reducedDetail)
+        meadow.updateVisibility(bounds: coverage, centre: centre)
     }
     private func updateAgents() {
         if officeProject != nil {
@@ -506,7 +642,7 @@ final class SpatialSceneView: SCNView {
                 // SceneKit culls geometry. Visibility gates motion only; hiding the root
                 // here would make subsequent frustum queries reject it permanently.
                 station.update(occupant, selected: focus?.agentID == occupant.id, reduced: reduced,
-                               active: effectiveActive && visible, distant: distant)
+                               active: effectiveActive && visible && !editor.enabled && focus != .portfolio, distant: distant)
             }
             return
         }
@@ -540,6 +676,11 @@ final class SpatialSceneView: SCNView {
     }
     func frameStep(at time: TimeInterval) {
         frameObserved?(time)
+        let elapsed = lastLeisureFrame.map { min(0.05,max(0,time-$0)) } ?? 0
+        lastLeisureFrame = time
+        if effectiveActive && focus != .portfolio && !editor.enabled {
+            for station in officeWorkstations.values { station.leisureMotion?.step(elapsed) }
+        }
         meadow.advance(now: time)
         meadow.uploadReady()
         if let travel {
@@ -580,32 +721,206 @@ final class SpatialSceneView: SCNView {
         active = false; travel = nil; pendingCamera = false; frameLink?.isPaused = true
         updateAgents(); isPlaying = false; rendersContinuously = false
     }
-    override func layout() { super.layout(); updateCamera(); updateAgents() }
+    override func layout() { super.layout(); guard focus != .portfolio else { return }; updateCamera(); updateAgents() }
+    private func handleEditKey(_ event: NSEvent) -> Bool {
+        guard event.window === window, active, focus?.projectID != nil, focus != .portfolio,
+              dismissPlan == nil, window?.attachedSheet == nil,
+              !(window?.firstResponder is NSTextInputClient),
+              event.modifierFlags.intersection([.command, .control, .option]).isEmpty else { return false }
+        let key = event.charactersIgnoringModifiers?.lowercased()
+        if key == "e" {
+            if !event.isARepeat { travel = nil; pendingCamera = false; editor.toggle(); window?.makeFirstResponder(self) }
+            return true
+        }
+        guard editor.enabled else { return false }
+        if event.keyCode == 53 { editor.finish(); return true }
+        if key == "1" || key == "2" {
+            if !event.isARepeat { editor.rotate(clockwise: key == "2") }
+            return true
+        }
+        return false
+    }
+
+    private func scheduleLeisureUpdate() {
+        guard !leisureUpdateScheduled else { return }
+        leisureUpdateScheduled = true
+        Task { @MainActor [weak self] in
+            guard let self else { return }
+            leisureUpdateScheduled = false
+            updateAgents(); updatePlayback()
+        }
+    }
+
+    private func configureLeisure() {
+        guard let project = officeProject, let layout = officeLayouts[project] else { return }
+        editor.prepareReconciliation()
+        let furniture = editor.items.filter { !$0.id.hasPrefix("desk:") }.map(\.node)
+        let desks = editor.items.filter { $0.id.hasPrefix("desk:") }.map(\.node)
+        let revision = editor.items.map { "\($0.id):\($0.node.worldPosition):\($0.node.eulerAngles.y)" }.joined(separator: "|") + "\(layout.floorMaxZ)"
+        let changed = revision != leisureRevision
+        leisureRevision = revision
+        if changed { leisureNavigation = OfficeLeisureAnchors.navigation(furniture: furniture, desks: desks, bounds: .init(minX:layout.floorMinX,maxX:layout.floorMaxX,minZ:layout.floorMinZ,maxZ:layout.floorMaxZ)) }
+        let nav = leisureNavigation
+        let anchors = OfficeLeisureAnchors.targets(furniture:furniture,overflow: 0)
+        for occupant in officeOccupants {
+            guard let station = officeWorkstations[occupant.id], let motion = station.leisureMotion else { continue }
+            motion.changed = { [weak self] in
+                self?.scheduleLeisureUpdate()
+            }
+            if let slot = officeLayouts[project]?.leisureSlots[occupant.id] {
+                assignLeisure(occupant.id, slot:slot, anchors:anchors, navigation:nav, revisionChanged:changed)
+            } else {
+                let point=station.root.convertPosition(SCNVector3Zero,to:nil)
+                let approach=station.root.convertPosition(SCNVector3(0,0,-1.2),to:nil)
+                let target=OfficeLeisureTarget(id:"desk:"+occupant.id,kind:.desk,point:SIMD2(Float(point.x),Float(point.z)),approach:SIMD2(Float(approach.x),Float(approach.z)),yaw:Float(station.root.eulerAngles.y))
+                motion.blocked = nil
+                motion.setTarget(target,navigation:nav,animated:active && !reduced,revisionChanged:changed)
+            }
+        }
+    }
+
+    private func assignLeisure(_ id: String, slot: Int, anchors: [OfficeLeisureTarget], navigation: WorkspaceCapybaraNavigation, revisionChanged: Bool) {
+        guard let project=officeProject, let station=officeWorkstations[id], let motion=station.leisureMotion else { return }
+        let occupied=Set((officeLayouts[project]?.leisureSlots ?? [:]).filter { $0.key != id }.values)
+        guard let available=(min(slot,anchors.count)..<anchors.count).first(where: { !occupied.contains($0) && OfficeLeisureAnchors.accessible(anchors[$0],navigation:navigation) != nil }) else {
+            station.root.isHidden = true; motion.stop(); return
+        }
+        station.root.isHidden = false
+        if officeLayouts[project]?.leisureSlots[id] != available {
+            officeLayouts[project]?.reserveLeisure(available,for:id)
+            if let defaults=placementDefaults, let saved=officeLayouts[project]?.saved, let data=try? JSONEncoder().encode(saved) { defaults.set(data,forKey:"officePlacement.v1."+project) }
+        }
+        motion.blocked = { [weak self] in
+            guard self?.officeProject == project else { return }
+            self?.assignLeisure(id,slot:available+1,anchors:anchors,navigation:navigation,revisionChanged:true)
+        }
+        guard let target=OfficeLeisureAnchors.accessible(anchors[available],navigation:navigation) else { return }
+        motion.setTarget(target,navigation:navigation,animated:active && !reduced,revisionChanged:revisionChanged)
+    }
+
+    private func configureEditor(layout: SharedOfficeLayout, leisure: SCNNode, project: String) {
+        editor.prepareReconciliation()
+        var items: [OfficeLayoutEditor.Item] = []
+        for assignment in layout.desks {
+            let occupant = officeOccupants.first { layout.assignments[$0.id]?.slot == assignment.slot }
+            let station = occupant.flatMap { officeWorkstations[$0.id] }
+            guard let root = station?.root ?? emptyOfficeDesks[assignment.slot]?.root else { continue }
+            let standing = occupant.flatMap { layout.standingPosition($0.id) }
+            items.append(.init(id: "desk:\(assignment.slot)", label: "Desk \(assignment.slot+1) and chair", node: root,
+                               ignored: station?.person, width: 1.8, depth: 1.9, apply: { [weak root, weak station] value in
+                let edited = OfficeDeskAssignment(slot: assignment.slot, x: value.x, z: value.z, yaw: value.rotationRadians)
+                if let station { station.place(desk: edited, standingAt: standing, animated: false) }
+                else { root?.position = SCNVector3(value.x,0,value.z); root?.eulerAngles.y = value.rotationRadians }
+            }))
+        }
+        let furniture = leisure.childNodes.flatMap { $0.name == "officeTVLounge" ? $0.childNodes : [$0] }
+        for node in furniture {
+            guard let id = node.name else { continue }
+            let bounds = node.boundingBox
+            let label = id == "officeArcade" ? "Arcade" : id == "officePinball" ? "Pinball" : id == "loungeTV" ? "TV" : id == "loungeFoosball" ? "Foosball table" : id.hasPrefix("loungeSofa") ? "Luva sectional" : "Eames chair"
+            items.append(.init(id: id, label: label, node: node, ignored: nil,
+                               width: Double(bounds.max.x-bounds.min.x), depth: Double(bounds.max.z-bounds.min.z), apply: { [weak node] value in
+                guard let node else { return }
+                node.worldPosition = SCNVector3(value.x,node.worldPosition.y,value.z)
+                node.eulerAngles.y = value.rotationRadians
+            }))
+        }
+        editor.configure(project: project, items: items, floor: .init(minX: layout.floorMinX, maxX: layout.floorMaxX, minZ: layout.floorMinZ, maxZ: layout.floorMaxZ))
+    }
+
+    private var cursorTracking: NSTrackingArea?
+    private var pointerDragging = false
+    override func updateTrackingAreas() {
+        super.updateTrackingAreas()
+        if let cursorTracking { removeTrackingArea(cursorTracking) }
+        let area = NSTrackingArea(rect: .zero, options: [.cursorUpdate, .mouseMoved, .mouseEnteredAndExited, .activeInKeyWindow, .inVisibleRect], owner: self)
+        addTrackingArea(area); cursorTracking = area
+    }
+    func hasClickableTarget(at point: NSPoint) -> Bool {
+        guard !editor.enabled else { return false }
+        for hit in hitTest(point, options: [.searchMode: SCNHitTestSearchMode.all.rawValue, .categoryBitMask: 1]) {
+            var node: SCNNode? = hit.node
+            while let current = node {
+                if let name = current.name,
+                   (targets[name] != nil || (openInspection != nil && AgentInspectionDestination(nodeName: name) != nil)) { return true }
+                node = current.parent
+            }
+        }
+        return false
+    }
+    override func resetCursorRects() {
+        super.resetCursorRects()
+        if !visibleRect.isEmpty { addCursorRect(visibleRect, cursor: .arrow) }
+    }
+    private func updatePointer(_ event: NSEvent) {
+        guard !pointerDragging else { return }
+        // Tracking areas also receive events underneath sibling SwiftUI overlays.
+        // Only own the cursor when the scene actually owns the click destination.
+        if let content = window?.contentView,
+           let hit = content.hitTest(content.convert(event.locationInWindow, from: nil)),
+           hit !== self && !hit.isDescendant(of: self) { return }
+        let point = convert(event.locationInWindow, from: nil)
+        (hasClickableTarget(at: point) ? NSCursor.pointingHand : NSCursor.arrow).set()
+    }
+    override func cursorUpdate(with event: NSEvent) { updatePointer(event) }
+    override func mouseMoved(with event: NSEvent) { updatePointer(event) }
+    override func mouseExited(with event: NSEvent) { window?.invalidateCursorRects(for: self) }
+
     override var acceptsFirstResponder: Bool { true }
-    override func mouseDown(with event: NSEvent) { lastPoint = convert(event.locationInWindow, from: nil); dragged = 0 }
+    override func mouseDown(with event: NSEvent) {
+        pointerDragging = true
+        NSCursor.arrow.set()
+        window?.makeFirstResponder(self)
+        lastPoint = convert(event.locationInWindow, from: nil); dragged = 0
+        if editor.enabled {
+            let hit = hitTest(lastPoint, options: [.searchMode: SCNHitTestSearchMode.closest.rawValue, .categoryBitMask: 1]).first
+            clearSelectionBox()
+            if let id = hit.flatMap({ editor.item(for: $0.node)?.id }) {
+                if event.modifierFlags.contains(.shift) { editor.chooseMany(editor.selection.union([id])) }
+                else if !editor.selection.contains(id) { editor.choose(id) }
+                editor.beginDrag(at: OfficeLayoutEditor.floorPoint(lastPoint, in: self))
+            } else {
+                selectionBase = event.modifierFlags.contains(.shift) ? editor.selection : []
+                editor.chooseMany(selectionBase); selectionStart = lastPoint
+            }
+        }
+    }
     override func mouseDragged(with event: NSEvent) {
         let point = convert(event.locationInWindow, from: nil)
+        if editor.enabled {
+            if selectionStart != nil { updateSelectionBox(to: point) }
+            else { editor.drag(to: OfficeLayoutEditor.floorPoint(point, in: self)) }
+            return
+        }
         let dx = point.x - lastPoint.x, dy = point.y - lastPoint.y
         dragged += abs(dx) + abs(dy); lastPoint = point; travel = nil
         pose.yaw -= dx * 0.008; pose.elevation = min(1.2, max(0.25, pose.elevation + dy * 0.005))
         pendingCamera = true; updatePlayback()
     }
+    @discardableResult func activatePlan(named name: String) -> Bool {
+        guard let destination = AgentInspectionDestination(nodeName: name) else { return false }
+        openInspection?(destination); return true
+    }
     override func mouseUp(with event: NSEvent) {
+        defer { pointerDragging = false; updatePointer(event) }
+        if editor.enabled {
+            if selectionStart != nil { updateSelectionBox(to: convert(event.locationInWindow, from: nil)) }
+            clearSelectionBox(); editor.endDrag(); return
+        }
         guard dragged < 5 else { return }
         let point = convert(event.locationInWindow, from: nil)
         for hit in hitTest(point, options: [.searchMode: SCNHitTestSearchMode.all.rawValue, .categoryBitMask: 1]) {
             var node: SCNNode? = hit.node
             while let current = node {
+                if let name = current.name, activatePlan(named: name) { return }
                 if let name = current.name, let target = targets[name] {
-                    if officeProject == nil, target.expanded, focus?.agentID != target.agentID {
-                        select?(target.parent)
-                    } else {
-                        if target.expanded {
-                            let projected = projectPoint(hit.worldCoordinates)
-                            screenAnchor?(CGPoint(x: CGFloat(projected.x) / max(1, bounds.width), y: 1 - CGFloat(projected.y) / max(1, bounds.height)))
-                        }
-                        select?(target)
-                    }
+                    let destination: SpatialFocus
+                    if case let .agent(project, conversation, agent, _) = target {
+                        destination = .agent(project: project, conversation: conversation, agent: agent, expanded: true)
+                        let projected = projectPoint(hit.worldCoordinates)
+                        screenAnchor?(CGPoint(x: CGFloat(projected.x) / max(1, bounds.width), y: 1 - CGFloat(projected.y) / max(1, bounds.height)))
+                    } else { destination = target }
+                    select?(destination)
                     return
                 }
                 node = current.parent

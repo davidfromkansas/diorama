@@ -8,24 +8,113 @@ enum ConversationViewMode: String, CaseIterable {
 
 @Observable
 final class LibraryModel {
-    let library = ImportedSessionLibrary()
-    let localDiscovery = SessionLibrary()
+    /// Only the service owner installs provider callbacks and runs discovery. Window facades
+    /// share its data but own navigation, transcript selection and presentation lifetimes.
+    @ObservationIgnored let sharedOwner: LibraryModel?
+    @ObservationIgnored private var servicesTask: Task<Void, Never>?
+    @ObservationIgnored private var portfolioTask: Task<Void, Never>?
+    @ObservationIgnored private var windowCount = 0
+    @ObservationIgnored var windowModels: [WeakLibraryWindow] = []
+    func makeWindowModel() -> LibraryModel {
+        windowCount += 1
+        let window = LibraryModel(navigation: WorkspaceNavigation(namespace: "window.\(windowCount)"), sharedOwner: self)
+        windowModels.append(WeakLibraryWindow(window))
+        startServices()
+        return window
+    }
+    func startServices() {
+        guard sharedOwner == nil, servicesTask == nil else { return }
+        beginWatching()
+        servicesTask = Task { [weak self] in
+            while !Task.isCancelled {
+                guard let self else { return }
+                if !paused { await refresh(); await projects.associate(sessions) }
+                try? await Task.sleep(for: .seconds(15))
+            }
+        }
+        portfolioTask = Task { [weak self] in
+            while !Task.isCancelled {
+                guard let self else { return }
+                if NSApp.isActive && !paused { await portfolio.refresh(self) }
+                try? await Task.sleep(for: .seconds(1))
+            }
+        }
+    }
+    func flushWindowPresentation() {
+        for item in windowModels { item.value?.captureProjectPresentation(); item.value?.navigation.flushPersistence() }
+        navigation.flushPersistence()
+    }
+
+    let library: ImportedSessionLibrary
+    let localDiscovery: SessionLibrary
     let projects: ProjectModel
-    let reviews = SessionReviewStore()
+    let reviews: SessionReviewStore
     let navigation: WorkspaceNavigation
     let spatial = SpatialWorkspaceState()
+    let projectInbox: ProjectInboxModel
     @ObservationIgnored let workspaceProjectionCache = WorkspaceProjectionCache()
-    var portfolio = PortfolioStore()
+    @ObservationIgnored let agentNames: AgentDisplayNameModel
+    @ObservationIgnored let planDiscovery: AgentPlanDiscovery
+    var portfolio: PortfolioStore
     var activityPanels: [String: ActivityPanelState] = [:]
     let conversations: DioramaConversationModel
+    var drafts: [String: ConversationDraft] {
+        get { sharedOwner?.drafts ?? ownedDrafts }
+        set { if let sharedOwner { sharedOwner.drafts = newValue } else { ownedDrafts = newValue } }
+    }
+    var outgoing: [String: OutgoingMessage] {
+        get { sharedOwner?.outgoing ?? ownedOutgoing }
+        set { if let sharedOwner { sharedOwner.outgoing = newValue } else { ownedOutgoing = newValue } }
+    }
+    var retryOutgoing: [String: () -> Void] {
+        get { sharedOwner?.retryOutgoing ?? ownedRetryOutgoing }
+        set { if let sharedOwner { sharedOwner.retryOutgoing = newValue } else { ownedRetryOutgoing = newValue } }
+    }
+    var sessions: [Session] {
+        get { sharedOwner?.sessions ?? ownedSessions }
+        set { if let sharedOwner { sharedOwner.sessions = newValue } else { ownedSessions = newValue } }
+    }
+    var notices: [String] {
+        get { sharedOwner?.notices ?? ownedNotices }
+        set { if let sharedOwner { sharedOwner.notices = newValue } else { ownedNotices = newValue } }
+    }
+    var pinned: Set<String> {
+        get { sharedOwner?.pinned ?? ownedPinned }
+        set { if let sharedOwner { sharedOwner.pinned = newValue } else { ownedPinned = newValue } }
+    }
+    var isScanning: Bool {
+        get { sharedOwner?.isScanning ?? ownedIsScanning }
+        set { if let sharedOwner { sharedOwner.isScanning = newValue } else { ownedIsScanning = newValue } }
+    }
+    var scannedAt: Date? {
+        get { sharedOwner?.scannedAt ?? ownedScannedAt }
+        set { if let sharedOwner { sharedOwner.scannedAt = newValue } else { ownedScannedAt = newValue } }
+    }
+    var observations: [String: ExternalObservationSnapshot] {
+        get { sharedOwner?.observations ?? ownedObservations }
+        set { if let sharedOwner { sharedOwner.observations = newValue } else { ownedObservations = newValue } }
+    }
+    var observationClock: Date {
+        get { sharedOwner?.observationClock ?? ownedObservationClock }
+        set { if let sharedOwner { sharedOwner.observationClock = newValue } else { ownedObservationClock = newValue } }
+    }
+    var activity: [String: ActivitySummary] {
+        get { sharedOwner?.activity ?? ownedActivity }
+        set { if let sharedOwner { sharedOwner.activity = newValue } else { ownedActivity = newValue } }
+    }
+    var folderOrder: [String] {
+        get { sharedOwner?.folderOrder ?? ownedFolderOrder }
+        set { if let sharedOwner { sharedOwner.folderOrder = newValue } else { ownedFolderOrder = newValue } }
+    }
     func appendReviewDraft(_ session: String, text: String) {
         var draft = drafts[session] ?? ConversationDraft()
         draft.text += (draft.text.isEmpty ? "" : "\n\n") + text
         drafts[session] = draft
         if let data = try? JSONEncoder().encode(drafts) { UserDefaults.standard.set(data, forKey: "conversationDrafts") }
     }
+    var historyRevealTargets: [String: String] = [:]
     var scrollPositions: [String: String] = UserDefaults.standard.dictionary(forKey: "conversationScrollPositions") as? [String: String] ?? [:]
-    var drafts: [String: ConversationDraft] = {
+    private var ownedDrafts: [String: ConversationDraft] = {
         guard let data = UserDefaults.standard.data(forKey: "conversationDrafts") else { return [:] }
         return (try? JSONDecoder().decode([String: ConversationDraft].self, from: data)) ?? [:]
     }()
@@ -36,13 +125,13 @@ final class LibraryModel {
         drafts[session] = draft
         if let data = try? JSONEncoder().encode(drafts) { UserDefaults.standard.set(data, forKey: "conversationDrafts") }
     }
-    var outgoing: [String: OutgoingMessage] = {
+    private var ownedOutgoing: [String: OutgoingMessage] = {
         guard let data = UserDefaults.standard.data(forKey: "outgoingMessages"),
               var values = try? JSONDecoder().decode([String: OutgoingMessage].self, from: data) else { return [:] }
         for key in values.keys where values[key]?.state == .pending { values[key]?.state = .uncertain }
         return values
     }()
-    var retryOutgoing: [String: () -> Void] = [:]
+    private var ownedRetryOutgoing: [String: () -> Void] = [:]
     func persistOutgoing() {
         if let data = try? JSONEncoder().encode(outgoing) { UserDefaults.standard.set(data, forKey: "outgoingMessages") }
     }
@@ -56,14 +145,41 @@ final class LibraryModel {
     var developmentReload: DevelopmentReload?
     let execution: ExecutionController
     let observationHookDirectory: URL?
-    init(execution: ExecutionController? = nil, projects: ProjectModel? = nil, conversations: DioramaConversationModel? = nil, navigation: WorkspaceNavigation? = nil, observationHookDirectory: URL? = HookStore.directory) {
+    init(execution: ExecutionController? = nil, projects: ProjectModel? = nil, conversations: DioramaConversationModel? = nil, navigation: WorkspaceNavigation? = nil, observationHookDirectory: URL? = HookStore.directory, sharedOwner: LibraryModel? = nil) {
+        _ = AgentCompletionViews.shared
+        self.sharedOwner = sharedOwner
+        self.library = sharedOwner?.library ?? ImportedSessionLibrary(titleCacheURL: ProjectStorage.directory.appendingPathComponent("provider-task-titles.json"))
+        self.localDiscovery = sharedOwner?.localDiscovery ?? SessionLibrary()
+        self.reviews = sharedOwner?.reviews ?? SessionReviewStore()
+        self.projectInbox = sharedOwner?.projectInbox ?? ProjectInboxModel()
+        self.agentNames = sharedOwner?.agentNames ?? AgentDisplayNameModel()
+        self.planDiscovery = sharedOwner?.planDiscovery ?? AgentPlanDiscovery()
+        self.portfolio = sharedOwner?.portfolio ?? PortfolioStore()
+        self.externalObserver = sharedOwner?.externalObserver ?? ExternalSessionObserver()
+        self.activityLibrary = sharedOwner?.activityLibrary ?? ActivityLibrary()
         self.observationHookDirectory = observationHookDirectory
         self.navigation = navigation ?? WorkspaceNavigation()
-        self.execution = execution ?? ExecutionController(transport: AgentExecutionTransport(), journal: ExecutionController.defaultJournal, canvas: ConversationCanvas())
-        self.projects = projects ?? ProjectModel()
-        self.conversations = conversations ?? DioramaConversationModel()
+        self.execution = sharedOwner?.execution ?? execution ?? ExecutionController(transport: AgentExecutionTransport(), journal: ExecutionController.defaultJournal)
+        self.projects = sharedOwner.map { ProjectModel(sharing: $0.projects) } ?? projects ?? ProjectModel()
+        self.conversations = sharedOwner?.conversations ?? conversations ?? DioramaConversationModel()
+        guard sharedOwner == nil else { return }
         restoreConversationMembership()
+        self.execution.titleEvent = { [weak self] id, provider, name in
+            guard let self else { return }
+            for index in self.sessions.indices where self.sessions[index].sessionID == id && self.sessions[index].provider == provider {
+                self.sessions[index] = self.sessions[index].updated(title: name)
+                self.sessions[index].titleSource = .provider
+            }
+            self.refreshProjectInbox()
+        }
+        self.execution.inboxEvent = { [weak self] session, event, entries in
+            guard let self else { return }
+            for source in self.inboxSources() where source.session.provider == session.provider && source.session.sessionID == session.sessionID {
+                self.projectInbox.live(source, event: event, entries: entries)
+            }
+        }
     }
+    var windowIsActive = true
     var showNewTask = false
     var projectNavigation = false
     var showingLiveTurn: Bool {
@@ -113,22 +229,20 @@ final class LibraryModel {
     func selectOwned(_ id: String) {
         syncOwnedSessions()
         query = ""; provider = "All"; activityFilter = "All"
-        selectedFolderID = execution.tasks[id].flatMap { WorkingFolder.group([$0.session]).first?.id }
-        selectedID = conversations.record(id)?.id ?? execution.tasks[id]?.session.id
-        viewMode = .workspace
-        if projectNavigation, let project = projects.projects.first(where: { $0.workspaces.contains(where: { $0.threadID == id }) }) {
-            projects.selectedID = project.id
-            navigation.tabs[project.id + ":" + (selectedID ?? "draft")] = .workspace
-            projects.update(project.id) { $0.selectedSession = selectedID; $0.section = "Sessions" }
-        }
+        let conversation = conversations.record(id)?.id ?? execution.tasks[id]?.session.id
+        if let project = projects.projects.first(where: { $0.workspaces.contains(where: { $0.threadID == id }) }) {
+            navigate(.project(project.id, conversation))
+        } else if let session = sessions.first(where: { $0.id == conversation }) { openInWorkspace(session) }
+        else { navigate(.imported(conversation)) }
     }
-    var sessions: [Session] = [] { didSet { sessionsRevision &+= 1 } }
-    private(set) var sessionsRevision: UInt64 = 0
-    var notices: [String] = []
+    private var ownedSessions: [Session] = [] { didSet { if ownedSessions != oldValue { ownedSessionsRevision &+= 1 } } }
+    private var ownedSessionsRevision: UInt64 = 0
+    var sessionsRevision: UInt64 { sharedOwner?.sessionsRevision ?? ownedSessionsRevision }
+    private var ownedNotices: [String] = []
     var selectedID: String?
     var selectedFolderID: String?
     var query = ""
-    var pinned = Set(UserDefaults.standard.stringArray(forKey: "pinnedConversations") ?? [])
+    private var ownedPinned = Set(UserDefaults.standard.stringArray(forKey: "pinnedConversations") ?? [])
     var archiveFilter = "All"
     var showMessageSearch = false
     var renameSession: Session?
@@ -136,25 +250,35 @@ final class LibraryModel {
     var archiveSession: Session?
     var workflowError: String?
     var provider = "All"
-    var isScanning = false
-    var scannedAt: Date?
+    private var ownedIsScanning = false
+    private var ownedScannedAt: Date?
     var transcript = Transcript()
     var transcriptSessionID: String?
+    var readingTranscriptID: String?
+    func historyIsLoading(_ session: Session) -> Bool {
+        guard !paused else { return false }
+        return transcriptSessionID != session.id ||
+            ((transcript.entries.isEmpty || transcript.error != nil) && readingTranscriptID == session.id)
+    }
     var entryLimit = 300
     var showConnections = false
-    var paused = false {
+    var paused: Bool {
+        get { sharedOwner?.paused ?? ownedPaused }
+        set { if let sharedOwner { sharedOwner.paused = newValue } else { ownedPaused = newValue } }
+    }
+    private var ownedPaused = false {
         didSet {
             if paused { watcher = nil; updateTask?.cancel(); updateTask = nil }
-            else { beginWatching(); Task { await readSelected() } }
+            else { beginWatching() }
         }
     }
-    let externalObserver = ExternalSessionObserver()
-    var observations: [String: ExternalObservationSnapshot] = [:]
-    var observationClock = Date()
+    let externalObserver: ExternalSessionObserver
+    private var ownedObservations: [String: ExternalObservationSnapshot] = [:]
+    private var ownedObservationClock = Date()
     private var readingSelection = false
     private var selectionReadRequested = false
-    let activityLibrary = ActivityLibrary()
-    var activity: [String: ActivitySummary] = [:]
+    let activityLibrary: ActivityLibrary
+    private var ownedActivity: [String: ActivitySummary] = [:]
     var activityFilter = "All"
     var showInbox = false
     var watcher: DirectoryWatcher?
@@ -162,7 +286,7 @@ final class LibraryModel {
     var rescanRequested = false
     private var changedObservationPaths: Set<String> = []
     var viewMode: ConversationViewMode = .workspace
-    var folderOrder: [String] = []
+    private var ownedFolderOrder: [String] = []
     func summary(_ session: Session) -> ActivitySummary {
         if let task = execution.tasks[session.sessionID], task.attached, !task.activity.isEmpty {
             return .merged(task.activity)
@@ -192,7 +316,18 @@ final class LibraryModel {
         }
         return "Last reported conversations: " + count(false) + "\nSubagents: " + count(true) + " · current activity unverified"
     }
+    static func affectsSelectedHistory(paths: [String], incoming: [Session], selected: Session?) -> Bool {
+        guard let selected else { return false }
+        if incoming.contains(where: { $0.provider == selected.provider && ($0.sessionID == selected.sessionID || $0.parentID == selected.sessionID) }) { return true }
+        return paths.contains { path in
+            // Directory-level events and hooks may not carry a transcript identity.
+            path == selected.url?.path || path.hasPrefix(HookStore.base.path + "/") ||
+                !["json", "jsonl"].contains(URL(fileURLWithPath: path).pathExtension)
+        }
+    }
+
     func beginWatching() {
+        guard sharedOwner == nil else { return }
         guard watcher == nil else { return }
         // Watch transcripts, not Codex's runtime database/logs: our reader must not
         // trigger another discovery pass through its own App Server housekeeping.
@@ -213,7 +348,6 @@ final class LibraryModel {
                 let paths = Array(self.changedObservationPaths)
                 self.changedObservationPaths.removeAll()
                 async let changed = SessionLibrary.changedSessions(paths: paths)
-                await self.readSelected()
                 let incomingSessions = await changed
                 self.portfolio.register(incomingSessions)
                 guard !self.paused, !Task.isCancelled else { return }
@@ -223,9 +357,10 @@ final class LibraryModel {
                         self.sessions[index] = incoming.retainingDiscoveryMetadata(from: self.sessions[index])
                     } else { self.sessions.append(incoming) }
                 }
+                self.refreshProjectInbox()
                 // The periodic pass reconciles metadata-only changes and archives.
                 if paths.contains(where: { $0.hasSuffix(".json") }) { Task { await self.refresh() } }
-                if !paths.isEmpty { await self.readSelected() }
+                // Visible windows refresh their selected history; discovery never hydrates hidden views.
                 } while !self.changedObservationPaths.isEmpty && !self.paused && !Task.isCancelled
             }
         })
@@ -268,6 +403,7 @@ final class LibraryModel {
         selectedID = SessionPresentation.selection(selectedID, rows: rows)
     }
     func refresh() async {
+        if let sharedOwner { await sharedOwner.refresh(); return }
         guard !isScanning else { rescanRequested = true; return }
         isScanning = true
         let scanStarted = Date()
@@ -296,7 +432,7 @@ final class LibraryModel {
             for session in sessions where session.modified > scanStarted { incoming[session.id] = session }
             for task in execution.tasks.values where incoming[task.session.id] == nil { incoming[task.session.id] = task.session }
             let existing = Set(sessions.map(\.id))
-            sessions = sessions.compactMap { incoming[$0.id] } + snapshot.sessions.filter { !existing.contains($0.id) }
+            sessions = sessions.compactMap { old in incoming[old.id].map { $0.retainingTitle(from: old) } } + snapshot.sessions.filter { !existing.contains($0.id) }
             syncOwnedSessions()
             for folder in WorkingFolder.group(sessions) where !folderOrder.contains(folder.id) { folderOrder.append(folder.id) }
             execution.observeDesktopSessions(snapshot.sessions)
@@ -305,6 +441,7 @@ final class LibraryModel {
             notices = snapshot.notices; scannedAt = Date()
             reconcileSelection()
         }
+        refreshProjectInbox()
         isScanning = false
         if rescanRequested && !paused { rescanRequested = false; await refresh() }
     }
@@ -321,6 +458,9 @@ final class LibraryModel {
 
     private func readCurrentSelection() async {
         guard let session = selected else { transcript = Transcript(); transcriptSessionID = nil; return }
+        let selectionGeneration = navigation.projectTabs.generation
+        readingTranscriptID = session.id
+        defer { if readingTranscriptID == session.id { readingTranscriptID = nil } }
         observationClock = Date()
         if session.url != nil && execution.tasks[session.sessionID]?.attached != true {
             var observation = await externalObserver.read(session, limit: entryLimit, hookDirectory: observationHookDirectory)
@@ -334,7 +474,7 @@ final class LibraryModel {
             }
             // Publish the selected conversation before child I/O, then return all
             // child observations in one actor hop rather than twenty UI round trips.
-            guard !paused, selectedID == session.id, !Task.isCancelled else { return }
+            guard !paused, selectedID == session.id, navigation.projectTabs.generation == selectionGeneration, !Task.isCancelled else { return }
             if observation.error == nil,
                transcript != observation.transcript || transcriptSessionID != session.id {
                 transcript = observation.transcript; transcriptSessionID = session.id
@@ -345,7 +485,7 @@ final class LibraryModel {
                     observation.structured.apply(childObservation.agentRecord(child, parent: session))
                 }
             }
-            guard !paused, !Task.isCancelled, selectedID == session.id else { return }
+            guard !paused, !Task.isCancelled, selectedID == session.id, navigation.projectTabs.generation == selectionGeneration else { return }
             var updatedObservations = observations.merging(observedChildren) { _, latest in latest }
             updatedObservations[session.id] = observation
             if updatedObservations.count > 24 {
@@ -364,12 +504,17 @@ final class LibraryModel {
             execution.observeActivity(session, snapshot: observation.structured)
         } else {
             let result = await library.transcript(for: session, limit: entryLimit)
-            guard !paused, !Task.isCancelled, selectedID == session.id else { return }
+            guard !paused, !Task.isCancelled, selectedID == session.id, navigation.projectTabs.generation == selectionGeneration else { return }
             if transcript != result || transcriptSessionID != session.id { transcript = result; transcriptSessionID = session.id }
             await execution.importActivity(session, transcript: result)
         }
     }
 
+}
+
+final class WeakLibraryWindow {
+    weak var value: LibraryModel?
+    init(_ value: LibraryModel) { self.value = value }
 }
 
 @main
@@ -379,13 +524,15 @@ struct DioramaApp: App {
     @NSApplicationDelegateAdaptor(DioramaApplicationDelegate.self) private var delegate
     var body: some Scene {
         WindowGroup("Diorama") {
-            if CommandLine.arguments.contains("--scene-benchmark") || Bundle.main.object(forInfoDictionaryKey: "DioramaSceneBenchmark") as? Bool == true {
+            if CommandLine.arguments.contains("--inbox-benchmark") {
+                SceneBenchmarkView(withInbox: true)
+            } else if CommandLine.arguments.contains("--scene-benchmark") || Bundle.main.object(forInfoDictionaryKey: "DioramaSceneBenchmark") as? Bool == true {
                 SceneBenchmarkView()
             } else if CommandLine.arguments.contains("--capybara-lab") || Bundle.main.object(forInfoDictionaryKey: "DioramaMovementLab") as? Bool == true {
                 WorkspaceSceneView(startInMovementLab: true)
                     .frame(minWidth: 760, minHeight: 600).preferredColorScheme(.dark)
             } else {
-            ProjectsRootView(library: model)
+            DesktopWindow(services: model)
                 .onAppear {
                     delegate.execution = model.execution
                     if model.developmentReload == nil { model.developmentReload = DevelopmentReload.configured(library: model) }
@@ -396,29 +543,20 @@ struct DioramaApp: App {
                     AgentSettingsView(controller: model.execution, onboarding: true, finish: { onboarded = true })
                 }
                 .frame(minWidth: 760, minHeight: 600)
-                .preferredColorScheme(.dark)
             }
         }
         .defaultSize(width: 1320, height: 850)
         .windowStyle(.hiddenTitleBar)
         .commands {
+            DesktopCommands()
             CommandGroup(after: .newItem) {
-                Button("New session") { model.showNewTask = true }.keyboardShortcut("n")
-                Button("Refresh sessions") { Task { await model.refresh() } }.keyboardShortcut("r")
+                Button("Refresh sessions") { Task { await model.refresh() } }.pointingHand().keyboardShortcut("r")
                 if let reload = model.developmentReload {
-                    Toggle("Automatically reload source changes", isOn: Binding(get: { reload.enabled }, set: { reload.setEnabled($0) }))
+                    Toggle("Automatically reload source changes", isOn: Binding(get: { reload.enabled }, set: { reload.setEnabled($0) })).pointingHand()
                     Text(reload.status)
-                }
-                Button("Toggle sidebar") { model.navigation.layout.sidebarVisible.toggle() }.keyboardShortcut("b")
-                Button("Toggle inspector") { model.navigation.layout.inspectorVisible.toggle() }.keyboardShortcut("b", modifiers: [.command, .option])
-                Button("Find session") { model.navigation.searchPresented = true }.keyboardShortcut("k")
-                Button("Focus composer") { model.focusWorkspaceComposer() }.keyboardShortcut("l")
-                Button("Back") { if let route = model.navigation.back() { model.navigate(route, record: false) } }.keyboardShortcut("[")
-                Button("Forward") { if let route = model.navigation.forward() { model.navigate(route, record: false) } }.keyboardShortcut("]")
-                Button("Home") { model.navigate(.home) }.keyboardShortcut("h", modifiers: [.command, .shift])
-                ForEach(Array(["Sessions", "Pull Requests", "Files", "Context"].enumerated()), id: \.offset) { index, section in
-                    Button(section) { if let id = model.projects.selectedID { model.projects.update(id) { $0.section = section } } }
-                        .keyboardShortcut(KeyEquivalent(Character(String(index + 1))))
+                    Button("Benchmark live agent roster") { AgentRosterBenchmarkWindow.open() }.pointingHand()
+                    Button("Benchmark standing office") { StandingOfficeBenchmarkWindow.open() }.pointingHand()
+                    Button("Benchmark fixed office") { FixedOfficeBenchmarkWindow.open() }.pointingHand()
                 }
             }
         }
@@ -437,11 +575,11 @@ struct LibraryView: View {
                     Picker("Provider", selection: $model.provider) {
                         Text("All").tag("All")
                         ForEach(Provider.allCases, id: \.rawValue) { Text($0.rawValue).tag($0.rawValue) }
-                    }.pickerStyle(.segmented).padding(.top, 12)
+                    }.pointingHand().pickerStyle(.segmented).padding(.top, 12)
                 }.padding(20)
                 Button { model.showInbox = true } label: {
                     Label("Attention inbox · \(model.attentionSessions.count)", systemImage: "tray")
-                }.padding(.horizontal, 20).padding(.bottom, 12)
+                }.pointingHand().padding(.horizontal, 20).padding(.bottom, 12)
                 List(selection: $model.selectedFolderID) {
                     ForEach(model.folders) { folder in
                         VStack(alignment: .leading, spacing: 6) {
@@ -450,14 +588,14 @@ struct LibraryView: View {
                             Text(SessionPresentation.counts(folder.sessions, showInternal: model.showInternal))
                                 .font(.system(size: 10)).foregroundStyle(.tertiary)
                             Text(model.counts(folder)).font(.system(size: 10)).foregroundStyle(.secondary)
-                        }.padding(.vertical, 6).tag(folder.id)
+                        }.padding(.vertical, 6).pointingHand().tag(folder.id)
                     }
                 }.listStyle(.sidebar)
                 HStack {
                     if model.isScanning { ProgressView().controlSize(.small) }
                     Text("\(model.folders.count) folders · \(model.filtered.count) sessions").font(.caption).foregroundStyle(.secondary)
                     Spacer()
-                    Button { model.showConnections = true } label: { Image(systemName: "externaldrive.connected.to.line.below") }.help("Local connections")
+                    Button { model.showConnections = true } label: { Image(systemName: "externaldrive.connected.to.line.below") }.pointingHand().help("Local connections")
                 }.padding(16)
             }.navigationSplitViewColumnWidth(min: 230, ideal: 280, max: 400)
             .searchable(text: $model.query, prompt: "Search folders or sessions")
@@ -468,16 +606,16 @@ struct LibraryView: View {
                         Text(folder.name).font(.headline)
                         Text(SessionPresentation.counts(folder.sessions, showInternal: model.showInternal)).font(.caption).foregroundStyle(.secondary)
                         if let path = folder.path {
-                            Button("Open folder in Finder") { NSWorkspace.shared.open(URL(fileURLWithPath: path)) }
+                            Button("Open folder in Finder") { NSWorkspace.shared.open(URL(fileURLWithPath: path)) }.pointingHand()
                                 .font(.caption)
                         }
                     }.padding(18)
-                    Picker("Archive", selection: $model.archiveFilter) { Text("All conversations").tag("All"); Text("Active").tag("Active"); Text("Archived").tag("Archived") }.padding(.horizontal, 18)
+                    Picker("Archive", selection: $model.archiveFilter) { Text("All conversations").tag("All"); Text("Active").tag("Active"); Text("Archived").tag("Archived") }.pointingHand().padding(.horizontal, 18)
                     Picker("Activity", selection: $model.activityFilter) {
                         Text("All").tag("All")
                         Text("Working").tag("Working")
                         Text("Needs attention").tag("Needs attention")
-                    }.padding(.horizontal, 18)
+                    }.pointingHand().padding(.horizontal, 18)
                     if model.rows(folder).isEmpty {
                         Text("No conversations match these filters.")
                             .font(.callout).foregroundStyle(.secondary).padding(18)
@@ -486,7 +624,7 @@ struct LibraryView: View {
                         ForEach(model.rows(folder)) { row in
                             let session = row.session
                             VStack(alignment: .leading, spacing: 6) {
-                                Text((model.pinned.contains(session.id) ? "📌 " : "") + markdownTitle(session.title)).font(.system(size: 13, weight: .medium)).lineLimit(2)
+                                Text((model.pinned.contains(session.id) ? "📌 " : "") + session.displayTitle).help(TaskTitle.full(session.title)).accessibilityLabel(TaskTitle.full(session.title)).font(.system(size: 13, weight: .medium)).lineLimit(2)
                                 HStack {
                                     Text(session.sourceLabel)
                                     Text(row.label)
@@ -494,7 +632,7 @@ struct LibraryView: View {
                                 }.font(.caption2).foregroundStyle(.secondary)
                                 ActivityBadge(summary: model.summary(session), livePhase: model.execution.tasks[session.sessionID]?.attached == true ? model.execution.tasks[session.sessionID]?.phase : nil)
                                 Text(session.modified, style: .date).font(.caption2).foregroundStyle(.tertiary)
-                            }.padding(.vertical, 6).padding(.leading, CGFloat(min(row.depth, 8)) * 16).tag(session.id)
+                            }.padding(.vertical, 6).padding(.leading, CGFloat(min(row.depth, 8)) * 16).pointingHand().tag(session.id)
                                 .contextMenu { ConversationActions(model: model, session: session) }
                         }
                     }
@@ -510,32 +648,32 @@ struct LibraryView: View {
                 } description: {
                     Text("Existing local Codex and Claude Code sessions appear automatically. No sign-in or API calls are needed.")
                 } actions: {
-                    Button("Check connections") { model.showConnections = true }
+                    Button("Check connections") { model.showConnections = true }.pointingHand()
                 }
             }
         }
         .toolbar {
             ToolbarItemGroup {
-                Button("Search chats") { model.showMessageSearch = true }
-                Button { model.projects.selectedID = nil } label: { Label("New Session", systemImage: "plus") }
-                Toggle("Show internal sessions", isOn: $model.showInternal)
+                Button("Search chats") { model.showMessageSearch = true }.pointingHand()
+                Button { model.projects.selectedID = nil } label: { Label("New Session", systemImage: "plus") }.pointingHand()
+                Toggle("Show internal sessions", isOn: $model.showInternal).pointingHand()
                     .help("Include internal approval reviews without changing source records")
-                Button { model.paused.toggle() } label: { Label(model.paused ? "Resume updates" : "Pause updates", systemImage: model.paused ? "play" : "pause") }
+                Button { model.paused.toggle() } label: { Label(model.paused ? "Resume updates" : "Pause updates", systemImage: model.paused ? "play" : "pause") }.pointingHand()
                     .help("Pause observation only; agents continue working")
-                Button { Task { await model.refresh(); await model.readSelected() } } label: { Label("Refresh", systemImage: "arrow.clockwise") }.disabled(model.isScanning)
+                Button { Task { await model.refresh(); await model.readSelected() } } label: { Label("Refresh", systemImage: "arrow.clockwise") }.pointingHand().disabled(model.isScanning)
             }
         }
         .sheet(isPresented: $model.showMessageSearch) { ConversationSearchView(model: model, threadID: nil) }
         .alert("Rename conversation", isPresented: Binding(get: { model.renameSession != nil }, set: { if !$0 { model.renameSession = nil } })) {
             TextField("Name", text: $model.renameText)
-            Button("Save") { if let session = model.renameSession { model.renameConversation(session) } }
-            Button("Cancel", role: .cancel) { model.renameSession = nil }
+            Button("Save") { if let session = model.renameSession { model.renameConversation(session) } }.pointingHand()
+            Button("Cancel", role: .cancel) { model.renameSession = nil }.pointingHand()
         }
         .alert(model.archiveSession?.archived == true ? "Restore conversation?" : "Archive conversation?", isPresented: Binding(get: { model.archiveSession != nil }, set: { if !$0 { model.archiveSession = nil } })) {
-            Button("Continue") { if let session = model.archiveSession { model.archiveConversation(session) } }
-            Button("Cancel", role: .cancel) { model.archiveSession = nil }
+            Button("Continue") { if let session = model.archiveSession { model.archiveConversation(session) } }.pointingHand()
+            Button("Cancel", role: .cancel) { model.archiveSession = nil }.pointingHand()
         } message: { Text("This uses Codex's conversation API. Archiving may include spawned descendants; it does not delete working files.") }
-        .alert("Conversation action", isPresented: Binding(get: { model.workflowError != nil }, set: { if !$0 { model.workflowError = nil } })) { Button("OK") { model.workflowError = nil } } message: { Text(model.workflowError ?? "") }
+        .alert("Conversation action", isPresented: Binding(get: { model.workflowError != nil }, set: { if !$0 { model.workflowError = nil } })) { Button("OK") { model.workflowError = nil }.pointingHand() } message: { Text(model.workflowError ?? "") }
         .onChange(of: model.execution.tasks.keys.sorted()) { model.syncOwnedSessions() }
         .sheet(isPresented: $model.showInbox) { AttentionInbox(model: model) }
         .onChange(of: model.activityFilter) { model.selectFolderSession() }
@@ -567,6 +705,7 @@ struct LibraryView: View {
 }
 
 struct SessionView: View {
+    @Environment(\.avatarMessages) private var avatarMessages
     let session: Session
     @Bindable var model: LibraryModel
     var hasLocalReview = false
@@ -582,7 +721,91 @@ struct SessionView: View {
     @State private var showDetails = false
     @State private var showChanges = false
     @State private var showFind = false
-    @State private var transcriptScrollID: String?
+    @State private var followsLatest = true
+    @State private var bottomRevealRevision = 0
+    @AppStorage("conversationHistoryDisplayMode") private var historyMode = HistoryDisplayMode.conversation.rawValue
+    @State private var showUsage = false
+    private var displayMode: HistoryDisplayMode { HistoryDisplayMode(rawValue: historyMode) ?? .conversation }
+    private var workingIndicator: ConversationWorkingState? {
+        let task = model.execution.tasks[session.sessionID]
+        return ConversationWorkingState.resolve(
+            phase: task?.phase, attached: task?.attached == true,
+            pending: model.outgoing.values.contains { $0.sessionID == session.sessionID && $0.state == .pending },
+            blocked: model.execution.requests.values.contains { $0.threadID == session.sessionID && $0.isBlocking }
+        )
+    }
+    @State private var rowCache = ConversationRowCache()
+    @State private var historyViewport = ConversationHistoryViewport()
+    @State private var historyWindow = 100
+    @State private var historyReadLimit = 300
+    @State private var oldestVisibleID: String?
+    @State private var loadingOlder = false
+    @State private var olderError: String?
+    @State private var olderRequest = 0
+    private var preparedRows: [ConversationRowCache.Prepared] { rowCache.prepare(model.displayedTranscript.entries, mode: displayMode) }
+    private var historyRows: [HistoryRow] { preparedRows.map(\.row) }
+    private func loadOlder(scroll: ScrollViewProxy) async {
+        guard !loadingOlder else { return }
+        let before = preparedRows
+        let start = oldestVisibleID.flatMap { id in before.firstIndex { $0.id == id } } ?? max(0, before.count - historyWindow)
+        guard start > 0 || model.displayedTranscript.earlierContentOmitted else { return }
+        loadingOlder = true; olderError = nil
+        defer { loadingOlder = false }
+        if start == 0 {
+            guard !model.paused else { olderError = "Resume observation to load older history."; return }
+            let oldLimit = model.entryLimit
+            model.entryLimit += 300
+            historyReadLimit = model.entryLimit
+            await model.readSelected()
+            guard !Task.isCancelled, model.selectedID == session.id else { return }
+            if let error = model.observations[session.id]?.error ?? model.displayedTranscript.error {
+                olderError = error; model.entryLimit = oldLimit; return
+            }
+        }
+        let updated = preparedRows
+        let previousStart = before.indices.contains(start) ? updated.firstIndex { $0.id == before[start].id } : nil
+        let newStart = max(0, (previousStart ?? updated.count - historyWindow) - 100)
+        guard let first = updated.dropFirst(newStart).first,
+              first.id != before.dropFirst(start).first?.id else {
+            olderError = "No additional history is available from this source."; return
+        }
+        let anchor = historyViewport.capture()
+        oldestVisibleID = first.id
+        historyWindow = updated.count - newStart
+        await Task.yield()
+        guard !Task.isCancelled else { return }
+        if let anchor { scroll.scrollTo(anchor, anchor: .top) }
+        historyViewport.restore()
+    }
+    private func saveHistoryBookmark() {
+        historyViewport.capture()
+        model.navigation.projectTabs.conversationBookmarks[session.id] = ConversationViewBookmark(
+            followsLatest: followsLatest, anchor: historyViewport.checkpoint,
+            oldestID: oldestVisibleID, window: historyWindow, entryLimit: historyReadLimit)
+    }
+    private var failureReview: (key: String, label: String)? {
+        guard let agent = model.workspaceAgents(session).first(where: \.isMain),
+              [.failed, .stopped].contains(agent.status), let key = agent.completionKey else { return nil }
+        return (key, agent.status == .failed ? "This turn failed." : "This turn was interrupted.")
+    }
+    private var completionVisibilityKeys: [String: String] {
+        let tracker = AgentCompletionViews.shared
+        let sources = model.conversations.record(session.id)?.segments
+            ?? [ConversationSegment(nativeID: session.sessionID, provider: session.provider, model: "")]
+        var last: [String: String] = [:]
+        for entry in model.displayedTranscript.entries where entry.claude?.agentID == nil {
+            guard entry.kind == "Assistant" || entry.kind == "Proposed plan" || entry.image != nil || !(entry.tool?.outputs.isEmpty ?? true) || ConversationHistory.needsAttention(entry),
+                  let turn = entry.completionMessageID ?? entry.turnID else { continue }
+            let matches = sources.compactMap { source -> String? in
+                let key = source.provider + ":" + source.nativeID + ":" + turn
+                return tracker.confirmed.contains(key) || model.execution.tasks[source.nativeID]?.terminalTurns.contains(turn) == true ? key : nil
+            }
+            // Ambiguous imported identities must never acknowledge another segment.
+            guard Set(matches).count == 1, let key = matches.first else { continue }
+            last[key] = entry.id
+        }
+        return Dictionary(last.map { ($0.value, $0.key) }, uniquingKeysWith: { first, _ in first })
+    }
     var body: some View {
         // Project sessions already have a review host. Even a hidden inspector
         // installs a native split view whose intrinsic height can push the
@@ -605,23 +828,100 @@ struct SessionView: View {
                 }
         }
     }
+    private func historyEntry(_ entry: Entry) -> some View {
+        VStack(alignment: .trailing, spacing: 6) {
+        if entry.kind == "Provider switch" {
+            DisclosureGroup {
+                Text(entry.text.components(separatedBy: "\n").dropFirst(2).joined(separator: "\n")).font(.caption).textSelection(.enabled)
+            } label: { Text(entry.text.components(separatedBy: "\n").first ?? "Model switched").disclosurePointingHand() }.font(.caption).foregroundStyle(.secondary).padding(.vertical, 12)
+        } else {
+        EntryView(entry: entry, viewPlan: { activityState.selectedPlan = model.activitySnapshot(session).plans.first(where: { $0.nativeID == entry.providerItemID || $0.detail == entry.text })?.id; openActivity("Plan") }, selectWorker: { model.openWorker($0) }, progress: model.execution.tasks[session.sessionID]?.toolProgress[entry.tool?.item["id"].string ?? ""])
+            .contextMenu {
+                if let turn = entry.turnID, session.provider == .codex {
+                    Button("Fork through this turn") { model.forkConversation(session, through: turn) }.pointingHand().disabled(model.execution.tasks[session.sessionID]?.phase.active == true)
+                }
+            }
+        }
+        if let message = model.outgoing[entry.id] {
+            if message.state == .failed || message.state == .uncertain {
+                HStack {
+                    Text(message.state == .failed ? "Not sent" : "Delivery unconfirmed · check history before resending").font(.caption).foregroundStyle(.secondary)
+                    if message.state == .failed, let retry = model.retryOutgoing[entry.id] { Button("Retry", action: retry).pointingHand().buttonStyle(.borderless) }
+                }
+                if let error = message.error { DisclosureGroup { Text(error).font(.caption).textSelection(.enabled) } label: { Text("Details").disclosurePointingHand() } }
+            }
+        }
+        }
+        .environment(\.historyDetails, displayMode == .detailed)
+    }
+
+    @ViewBuilder private var historyControls: some View {
+                    Menu {
+                        Picker("History detail", selection: $historyMode) {
+                            ForEach(HistoryDisplayMode.allCases, id: \.rawValue) { Text($0.rawValue).tag($0.rawValue) }
+                        }.pointingHand()
+                    } label: { Label(displayMode.rawValue, systemImage: "text.alignleft") }.pointingHand()
+                        .help("Conversation groups routine activity. Detailed shows all available records.")
+                        .accessibilityLabel("History view: " + displayMode.rawValue)
+                    Button("Usage") { showUsage = true }.pointingHand()
+
+                        .popover(isPresented: $showUsage) {
+                            ScrollView {
+                                VStack(alignment: .leading, spacing: 16) {
+                                    Text("Reported usage").font(.headline)
+                                    Text("From loaded conversation history; reports may overlap. These are not added together.").font(.caption).foregroundStyle(.secondary)
+                                    let records = model.displayedTranscript.entries.filter(ConversationHistory.isUsage)
+                                    if records.isEmpty { Text("No usage reported in loaded history.").foregroundStyle(.secondary) }
+                                    ForEach(records) { EntryView(entry: $0) }
+                                }.padding(20)
+                            }.frame(width: 380, height: 420)
+                        }
+    }
+
+    private var avatarTools: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            Text("Conversation").font(.caption.weight(.semibold)).foregroundStyle(.secondary)
+            historyControls
+            if session.provider == .codex { Button("Find") { showFind = true }.pointingHand().keyboardShortcut("f", modifiers: .command) }
+            Button("Activity") { openActivity(activityState.section) }.pointingHand()
+            let snapshot = model.activitySnapshot(session)
+            if !snapshot.plans.isEmpty { Button("Plan") { openActivity("Plan") }.pointingHand() }
+            if !snapshot.steps.isEmpty { Button("Tasks") { openActivity("Steps") }.pointingHand() }
+            Menu("Conversation actions") { ConversationActions(model: model, session: session) }.pointingHand()
+            DisclosureGroup {
+                VStack(alignment: .leading, spacing: 6) {
+                    Text(session.sourceLabel + " · " + model.health)
+                    Text(model.summary(session).state.rawValue)
+                    Text(session.project)
+                    Text("Session: " + session.sessionID)
+                    if let observation = model.observations[session.id] {
+                        Text("Last read: " + observation.synchronizedAt.formatted())
+                    }
+                    Text("Saved transcript updates may be buffered by the provider.")
+                    if let url = session.url { Button("Reveal transcript") { NSWorkspace.shared.activateFileViewerSelecting([url]) }.pointingHand() }
+                }.font(.caption).textSelection(.enabled)
+            } label: { Text("Details").disclosurePointingHand() }
+        }
+    }
+
     private var conversationContent: some View {
         VStack(alignment: .leading, spacing: 0) {
+            if !avatarMessages {
             VStack(alignment: .leading, spacing: 10) {
                 HStack(alignment: .top, spacing: 12) {
                     VStack(alignment: .leading, spacing: 5) {
-                        if !shellContent { Text(markdownTitle(session.title)).font(.system(size: 16, weight: .medium)).lineLimit(2).textSelection(.enabled) }
+                        if !shellContent { Text(session.displayTitle).help(TaskTitle.full(session.title)).accessibilityLabel(TaskTitle.full(session.title)).font(.system(size: 16, weight: .medium)).lineLimit(2).textSelection(.enabled) }
                         Text("\(session.sourceLabel) · Last reported: \(model.summary(session).state.rawValue) · \(model.health)")
                             .font(.caption).foregroundStyle(.secondary)
                     }
                     Spacer(minLength: 0)
                     if session.provider == .codex {
-                        Button("Find") { showFind = true }.keyboardShortcut("f", modifiers: .command)
-                        if !hasLocalReview { Button("Review") { showChanges = true } }
-                        Menu { ConversationActions(model: model, session: session) } label: { Image(systemName: "ellipsis.circle") }
+                        Button("Find") { showFind = true }.pointingHand().keyboardShortcut("f", modifiers: .command)
+                        if !hasLocalReview { Button("Review") { showChanges = true }.pointingHand() }
+                        Menu { ConversationActions(model: model, session: session) } label: { Image(systemName: "ellipsis.circle") }.pointingHand()
                     }
-                    Button("Activity") { openActivity(activityState.section) }
-                    Button { showDetails.toggle() } label: { Image(systemName: "info.circle") }
+                    Button("Activity") { openActivity(activityState.section) }.pointingHand()
+                    Button { showDetails.toggle() } label: { Image(systemName: "info.circle") }.pointingHand()
                         .buttonStyle(.plain).help("Conversation details").accessibilityLabel("Conversation details")
                         .popover(isPresented: $showDetails) {
                             VStack(alignment: .leading, spacing: 12) {
@@ -638,20 +938,25 @@ struct SessionView: View {
                                 }
                                 Text("\(model.displayedTranscript.source) · \(model.displayedTranscript.malformed) unrecognized records")
                                 Text("Recorded status may be stale. Claude Code Desktop conversations are view-only.").foregroundStyle(.secondary)
-                                if let url = session.url { Button("Reveal transcript") { NSWorkspace.shared.activateFileViewerSelecting([url]) } }
+                                if let url = session.url { Button("Reveal transcript") { NSWorkspace.shared.activateFileViewerSelecting([url]) }.pointingHand() }
                             }.font(.caption).textSelection(.enabled).padding(20).frame(width: 380)
                         }
+                }
+                HStack(spacing: 12) {
+                    historyControls
+                    Spacer(minLength: 0)
                 }
             }.buttonStyle(.borderless).padding(.horizontal, 20).padding(.vertical, shellContent ? 8 : 12)
             if session.provider == .codex && model.execution.tasks[session.sessionID]?.attached != true {
                 Label("Observing saved transcript · Codex may buffer updates until later in the turn. Hooks can improve activity coverage.", systemImage: "clock.badge.exclamationmark")
                     .font(.caption).foregroundStyle(.secondary).padding(.horizontal, 20).padding(.bottom, 8)
             }
-            if let error = model.observations[session.id]?.error {
+            }
+            if !model.historyIsLoading(session), let error = model.observations[session.id]?.error {
                 HStack {
                     Label("Observation unavailable: " + error, systemImage: "exclamationmark.triangle")
                     Spacer()
-                    Button("Retry") { Task { await model.readSelected() } }.disabled(model.paused)
+                    Button("Retry") { Task { await model.readSelected() } }.pointingHand().disabled(model.paused)
                 }.font(.caption).foregroundStyle(.orange).padding(12)
             }
             if !shellContent {
@@ -663,14 +968,17 @@ struct SessionView: View {
             }
             WorkspacePaneStack {
                 VStack(spacing: 0) {
-                    if let task = model.execution.tasks[session.sessionID], task.attached {
-                        let snapshot = model.activitySnapshot(session)
+                    let snapshot = model.activitySnapshot(session)
+                    if !avatarMessages && (!snapshot.plans.isEmpty || !snapshot.steps.isEmpty || !snapshot.agents.isEmpty) {
                         HStack {
-                            if !snapshot.steps.isEmpty { Button("Steps · \(snapshot.steps.filter { $0.status == "completed" }.count) of \(snapshot.steps.count) completed") { openActivity("Steps") } }
-                            if !snapshot.agents.isEmpty { Button("Agents · " + snapshot.agentSummary) { openActivity("Agents") } }
+                            if !snapshot.plans.isEmpty { Button("Plan") { openActivity("Plan") }.pointingHand() }
+                            if !snapshot.steps.isEmpty { Button("Tasks · \(snapshot.steps.filter { $0.status == "completed" }.count)/\(snapshot.steps.count)") { openActivity("Steps") }.pointingHand() }
+                            if !snapshot.agents.isEmpty { Button("Agents · " + snapshot.agentSummary) { openActivity("Agents") }.pointingHand() }
                         }.font(.callout).padding(.horizontal, 24).padding(.bottom, 10)
-                        if !hasLocalReview && !task.work.diff.isEmpty {
-                            Button("Changes · \(task.work.files.count) files · +\(task.work.files.reduce(0) { $0 + $1.additions }) −\(task.work.files.reduce(0) { $0 + $1.deletions })") { showChanges.toggle() }
+                    }
+                    if let task = model.execution.tasks[session.sessionID], task.attached {
+                        if !avatarMessages && !hasLocalReview && !task.work.diff.isEmpty {
+                            Button("Changes · \(task.work.files.count) files · +\(task.work.files.reduce(0) { $0 + $1.additions }) −\(task.work.files.reduce(0) { $0 + $1.deletions })") { showChanges.toggle() }.pointingHand()
                                 .padding(.horizontal, 24).padding(.bottom, 10)
                         }
                     }
@@ -680,75 +988,117 @@ struct SessionView: View {
                             .id(session.id)
                     } else if effectiveMode == .activity {
                         SessionActivityPanel(session: session, library: model, state: activityState, close: { model.viewMode = .conversation })
-                    } else if model.transcriptSessionID != session.id && !model.showingLiveTurn && !model.outgoing.values.contains(where: { $0.sessionID == session.sessionID }) {
-                        ProgressView("Reading transcript…").frame(maxWidth: .infinity, maxHeight: .infinity)
-                    } else if let error = model.displayedTranscript.error {
+                    } else if model.historyIsLoading(session) && model.displayedTranscript.entries.isEmpty {
+                        ConversationHistoryLoader().frame(maxWidth: .infinity, maxHeight: .infinity)
+                    } else if model.paused && model.transcriptSessionID != session.id {
+                        ContentUnavailableView("Observation paused", systemImage: "pause.circle", description: Text("Resume observation to load conversation history."))
+                    } else if !model.historyIsLoading(session), let error = model.displayedTranscript.error {
                         ContentUnavailableView("Transcript unavailable", systemImage: "exclamationmark.triangle", description: Text(error))
                     } else {
+                        ScrollViewReader { scroll in
                         ScrollView {
                             LazyVStack(alignment: .leading, spacing: 18) {
-                                if let notice = model.displayedTranscript.notice { Text(notice).font(.caption).foregroundStyle(.orange).textSelection(.enabled) }
+                                if model.historyIsLoading(session) {
+                                    ConversationHistoryLoader(compact: true)
+                                } else if let notice = model.displayedTranscript.notice {
+                                    Text(notice).font(.caption).foregroundStyle(.orange).textSelection(.enabled)
+                                }
                                 if !model.displayedTranscript.unrecognizedTypes.isEmpty {
-                                    DisclosureGroup("Some source record types are not displayed") {
+                                    DisclosureGroup {
                                         ForEach(model.displayedTranscript.unrecognizedTypes.keys.sorted(), id: \.self) { type in
                                             Text("\(type): \(model.displayedTranscript.unrecognizedTypes[type] ?? 0)").font(.caption.monospaced())
                                         }
-                                    }.font(.caption).foregroundStyle(.secondary)
-                                }
-                                if model.displayedTranscript.earlierContentOmitted {
-                                    HStack {
-                                        Text("Showing the latest \(model.displayedTranscript.entries.count) entries.").font(.caption).foregroundStyle(.secondary)
-                                        Spacer()
-                                        if model.entryLimit < 5000 {
-                                            Button("Load more") { model.entryLimit = min(5000, model.entryLimit + 500); Task { await model.readSelected() } }
-                                        }
-                                    }
+                                    } label: { Text("Some source record types are not displayed").disclosurePointingHand() }.font(.caption).foregroundStyle(.secondary)
                                 }
                                 if model.displayedTranscript.entries.isEmpty { Text(model.execution.tasks[session.sessionID]?.phase.active == true ? "Your conversation will appear here." : "No messages yet.").foregroundStyle(.secondary) }
-                                ForEach(model.displayedTranscript.entries) { entry in
-                                    VStack(alignment: .trailing, spacing: 6) {
-                                    if entry.kind == "Provider switch" {
-                                        DisclosureGroup(entry.text.components(separatedBy: "\n").first ?? "Model switched") {
-                                            Text(entry.text.components(separatedBy: "\n").dropFirst(2).joined(separator: "\n")).font(.caption).textSelection(.enabled)
-                                        }.font(.caption).foregroundStyle(.secondary).padding(.vertical, 12)
-                                    } else {
-                                    EntryView(entry: entry, viewPlan: { activityState.selectedPlan = model.activitySnapshot(session).plans.first(where: { $0.nativeID == entry.providerItemID || $0.detail == entry.text })?.id; openActivity("Plan") }, selectWorker: { model.openWorker($0) }, progress: model.execution.tasks[session.sessionID]?.toolProgress[entry.tool?.item["id"].string ?? ""])
-                                        .contextMenu {
-                                            if let turn = entry.turnID, session.provider == .codex {
-                                                Button("Fork through this turn") { model.forkConversation(session, through: turn) }.disabled(model.execution.tasks[session.sessionID]?.phase.active == true)
-                                            }
-                                        }
-                                    }
-                                    if let message = model.outgoing[entry.id] {
-                                        if message.state == .failed || message.state == .uncertain {
-                                            HStack {
-                                                Text(message.state == .failed ? "Not sent" : "Delivery unconfirmed · check history before resending").font(.caption).foregroundStyle(.secondary)
-                                                if message.state == .failed, let retry = model.retryOutgoing[entry.id] { Button("Retry", action: retry).buttonStyle(.borderless) }
-                                            }
-                                            if let error = message.error { DisclosureGroup("Details") { Text(error).font(.caption).textSelection(.enabled) } }
-                                        }
-                                    }
-                                    }
+                                let prepared = preparedRows
+                                let completionKeys = completionVisibilityKeys
+                                let start = oldestVisibleID.flatMap { id in prepared.firstIndex { $0.id == id } } ?? max(0, prepared.count - historyWindow)
+                                if start > 0 || model.displayedTranscript.earlierContentOmitted {
+                                    HStack {
+                                        if loadingOlder { ProgressView().controlSize(.small); Text("Loading older messages…") }
+                                        else { Button("Load older messages") { olderRequest += 1 }.pointingHand() }
+                                        if let olderError { Text(olderError).foregroundStyle(.secondary) }
+                                    }.font(.caption).id("older-history")
                                 }
-                            }.scrollTargetLayout().padding(24).frame(maxWidth: 800, alignment: .leading).frame(maxWidth: .infinity)
-                        }.frame(minHeight: 0, maxHeight: .infinity).layoutPriority(-1).defaultScrollAnchor(.bottom)
+                                ForEach(Array(prepared.dropFirst(start))) { item in
+                                    let row = item.row
+                                    VStack(alignment: .leading, spacing: 0) {
+                                    if avatarMessages, let date = item.separator {
+                                        Text(date.formatted(date: .abbreviated, time: .shortened))
+                                            .font(.caption).foregroundStyle(.secondary).frame(maxWidth: .infinity).padding(.vertical, 8)
+                                    }
+                                    if row.grouped {
+                                        HistoryActivityGroup(row: row) { historyEntry($0) }
+                                    } else if let entry = row.entries.first {
+                                        historyEntry(entry).environment(\.avatarBubbleTail, item.tail)
+                                    }
+                                    }.background(ConversationHistoryRowAnchor(id: item.id, viewport: historyViewport))
+                                    .background(AgentCompletionVisibility(key: row.entries.last.flatMap { completionKeys[$0.id] }, active: model.windowIsActive && model.selectedID == session.id && effectiveMode == .conversation))
+                                }
+                                if let failure = failureReview {
+                                    Text(failure.label).font(.callout).foregroundStyle(.secondary)
+                                        .background(AgentCompletionVisibility(key: failure.key, active: model.windowIsActive && model.selectedID == session.id))
+                                }
+                                if let workingIndicator {
+                                    ConversationWorkingIndicator(state: workingIndicator, active: effectiveMode == .conversation)
+                                }
+                                Color.clear.frame(height: 1).id("conversation-bottom")
+                            }.padding(24).frame(maxWidth: 800, alignment: .leading).frame(maxWidth: .infinity)
+                                .background(ConversationScrollTracking(followsLatest: followsLatest, revealRevision: bottomRevealRevision, onOlderHistory: { if !loadingOlder && olderError == nil { olderRequest += 1 } }, onScrollBegan: { historyViewport.cancel(); if oldestVisibleID == nil { oldestVisibleID = preparedRows.suffix(historyWindow).first?.id } }) { followsLatest = $0; saveHistoryBookmark() })
+                        }.frame(minHeight: 0, maxHeight: .infinity).layoutPriority(-1)
+                        .task(id: olderRequest) { if olderRequest > 0 { await loadOlder(scroll: scroll) } }
+                        .onChange(of: session.id) { historyWindow = 100; oldestVisibleID = nil; olderError = nil; historyViewport.cancel() }
+                        .onChange(of: historyMode) { historyWindow = 100; oldestVisibleID = nil; historyViewport.cancel() }
                         .onChange(of: model.execution.tasks[session.sessionID]?.transcript) { model.reconcileOutgoing(session.sessionID) }
-                        .scrollPosition(id: $transcriptScrollID, anchor: .top)
-                        .onAppear { transcriptScrollID = model.scrollPositions[session.id] }
-                        .onChange(of: model.scrollPositions[session.id]) { _, value in
-                            if transcriptScrollID != value { transcriptScrollID = value }
+                        .onAppear {
+                            let saved = model.navigation.projectTabs.conversationBookmarks[session.id]
+                            followsLatest = saved?.followsLatest ?? true
+                            historyReadLimit = saved?.entryLimit ?? model.entryLimit
+                            historyWindow = saved?.window ?? 100
+                            oldestVisibleID = saved?.oldestID
+                            if !followsLatest, let anchor = saved?.anchor {
+                                historyViewport.checkpoint = anchor
+                                DispatchQueue.main.async {
+                                    scroll.scrollTo(anchor.id, anchor: .top)
+                                    historyViewport.restore()
+                                }
+                            } else { bottomRevealRevision += 1 }
                         }
-                        .task(id: transcriptScrollID) {
-                            // Scroll layout writes must not synchronously invalidate the shared library.
-                            guard let position = transcriptScrollID else { return }
-                            do { try await Task.sleep(for: .milliseconds(350)) } catch { return }
-                            guard model.scrollPositions[session.id] != position else { return }
-                            model.scrollPositions[session.id] = position
-                            UserDefaults.standard.set(model.scrollPositions, forKey: "conversationScrollPositions")
+                        .onDisappear { saveHistoryBookmark() }
+                        .task(id: bottomRevealRevision) {
+                            // A deliberate reveal (open, send, Jump to latest) waits for the new row's layout.
+                            await Task.yield()
+                            guard !Task.isCancelled, followsLatest else { return }
+                            scroll.scrollTo("conversation-bottom", anchor: .bottom)
+                        }
+                        .onChange(of: model.outgoing.keys.sorted()) { old, new in
+                            if new.contains(where: { !old.contains($0) && model.outgoing[$0]?.sessionID == session.sessionID }) {
+                                followsLatest = true
+                                bottomRevealRevision += 1
+                            }
+                        }
+                        .overlay(alignment: .bottomTrailing) {
+                            if !followsLatest {
+                                Button {
+                                    followsLatest = true
+                                    bottomRevealRevision += 1
+                                } label: { Label("Jump to latest", systemImage: "arrow.down") }.pointingHand()
+                                    .buttonStyle(.borderedProminent).padding(16)
+                            }
+                        }
+                        .onChange(of: model.historyRevealTargets[session.id]) { _, value in
+                            guard let value else { return }
+                            followsLatest = false
+                            historyWindow = preparedRows.count; oldestVisibleID = preparedRows.first?.id
+                            let target = ConversationHistory.anchor(value, in: historyRows, original: model.displayedTranscript.entries) ?? value
+                            scroll.scrollTo(target, anchor: .top)
+                        }
                         }
                     }
                     Divider()
                     ExecutionControls(library: model, session: session).id(session.id)
+                        .environment(\.avatarConversationTools, AnyView(avatarTools))
                         .frame(maxWidth: 800).frame(maxWidth: .infinity)
                 }
                 .opacity(effectiveMode == .workspace ? 0 : 1)
@@ -761,6 +1111,7 @@ struct SessionView: View {
                 }
             }
         }
+        .environment(\.conversationImageBaseURL, URL(fileURLWithPath: session.project, isDirectory: true))
         .sheet(isPresented: $showFind) { ConversationSearchView(model: model, threadID: session.sessionID) }
         .onChange(of: session.id) { showChanges = false }
         .onChange(of: model.showingLiveTurn) { if !model.showingLiveTurn { showChanges = false } }
@@ -768,13 +1119,23 @@ struct SessionView: View {
 }
 
 struct EntryView: View {
+    @Environment(\.avatarMessages) private var avatarMessages
     let entry: Entry
     var viewPlan: (() -> Void)?
     var selectWorker: ((String) -> Void)?
     var progress: String?
     @Environment(\.colorScheme) private var colorScheme
+    @Environment(\.historyDetails) private var historyDetails
     private var isUser: Bool { entry.category == .user }
     var body: some View {
+        if avatarMessages && (entry.category == .user || entry.category == .assistant) {
+            VStack(alignment: .leading, spacing: 6) {
+                AvatarMessageBubble(entry: entry)
+                if historyDetails, let records = entry.sourceRecords, !records.isEmpty {
+                    SourceRecordDetails(records: records)
+                }
+            }
+        } else {
         HStack(alignment: .top, spacing: 0) {
             if isUser { Spacer(minLength: 52) }
             VStack(alignment: .leading, spacing: 8) {
@@ -789,8 +1150,8 @@ struct EntryView: View {
                     VStack(alignment: .leading, spacing: 10) {
                         Label("Proposed plan", systemImage: "doc.text").font(.headline)
                         Text(entry.text).lineLimit(3).foregroundStyle(.secondary)
-                        if let viewPlan { Button("View plan", action: viewPlan) }
-                        else { DisclosureGroup("View plan") { TranscriptContent(text: entry.text) } }
+                        if let viewPlan { Button("View plan", action: viewPlan).pointingHand() }
+                        else { DisclosureGroup { TranscriptContent(text: entry.text) } label: { Text("View plan").disclosurePointingHand() } }
                     }.padding(16).frame(maxWidth: .infinity, alignment: .leading)
                         .background(Color.accentColor.opacity(0.08), in: RoundedRectangle(cornerRadius: 12))
                 } else if let tool = entry.tool {
@@ -798,16 +1159,16 @@ struct EntryView: View {
                 } else if entry.category == .activity || entry.category == .context {
                     DisclosureGroup {
                         TranscriptContent(text: entry.text, literal: entry.kind == "Tool call").padding(.top, 8)
-                    } label: {
+                    } label: { Group {
                         Label(entry.image != nil ? "Image details" : entry.category == .context ? "System context" : markdownTitle(String(entry.text.prefix(100))).replacingOccurrences(of: "\n", with: " "),
                               systemImage: entry.image != nil ? "photo" : entry.category == .context ? "doc.text" : "terminal")
                             .lineLimit(2)
-                    }.font(.callout).foregroundStyle(.secondary)
+                     }.disclosurePointingHand() }.font(.callout).foregroundStyle(.secondary)
                 } else {
                     if !isUser { Text("Assistant").font(.caption.weight(.medium)).foregroundStyle(.secondary) }
                     TranscriptContent(text: entry.text)
                 }
-                if let records = entry.sourceRecords, !records.isEmpty, entry.category != .context {
+                if historyDetails, let records = entry.sourceRecords, !records.isEmpty, entry.category != .context {
                     SourceRecordDetails(records: records)
                 }
             }
@@ -817,6 +1178,7 @@ struct EntryView: View {
             .help(entry.timestamp ?? entry.kind)
             if isUser == false { Spacer(minLength: 0) }
         }.padding(.vertical, isUser ? 6 : 2)
+        }
     }
 }
 
@@ -849,7 +1211,7 @@ struct ConnectionsView: View {
             if !model.notices.isEmpty {
                 ScrollView { Text(model.notices.joined(separator: "\n")).font(.caption).textSelection(.enabled).frame(maxWidth: .infinity, alignment: .leading) }.frame(maxHeight: 130)
             }
-            HStack { Spacer(); Button("Done") { dismiss() }.keyboardShortcut(.defaultAction) }
+            HStack { Spacer(); Button("Done") { dismiss() }.pointingHand().keyboardShortcut(.defaultAction) }
         }.padding(28)
         }.frame(width: 680, height: 740)
     }

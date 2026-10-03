@@ -2,7 +2,7 @@ import Foundation
 
 extension ExecutionController {
     /// Pause before creating another native session in the same working directory.
-    public func prepareProviderSwitch(session: Session, model: String, handoff: String) async throws -> String {
+    public func prepareProviderSwitch(session: Session, model: String, handoff: String, permission: ApprovalReviewChoice = .autoReview) async throws -> String {
         try await resumeImported(session)
         try requireIdle(session.sessionID)
         providerSwitches.insert(session.sessionID)
@@ -18,7 +18,7 @@ extension ExecutionController {
         }
         try requireIdle(session.sessionID, allowProviderSwitch: true)
         let goal = tasks[session.sessionID]?.workflow.goal ?? .null
-        let target = try await prepare(folder: session.project, title: session.title, model: model, projectContext: handoff)
+        let target = try await prepare(folder: session.project, title: session.title, model: model, projectContext: handoff, permission: permission)
         guard tasks[target]?.folder == session.project else { throw AppServerFailure("The provider did not preserve the worktree. No message was sent.") }
         if let objective = goal["objective"].string, ["active", "paused"].contains(goal["status"].string ?? "") {
             let remainingBudget = goal["tokenBudget"].number.map { max(1, Int($0 - (goal["tokensUsed"].number ?? 0))) }

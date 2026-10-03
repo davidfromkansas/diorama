@@ -69,10 +69,16 @@ public actor ClaudeExecutionTransport: ExecutionTransport {
         try JSONEncoder().encode(WireValue.object(["rows": .array(queue), "sending": queueSending])).write(to: queueFile, options: .atomic)
     }
     private var toolItems: [String: WireValue] = [:]
+    private var permissionConfirmed = false
     private var permissionMode = "default"
+    private var executionPermissionMode = "default"
     private let executable: URL?
+    private let initialModel: String?
+    private let initialPermission: String?
     private let backend: ClaudeBackend
-    public init(folder: String, sessionID: String = UUID().uuidString.lowercased(), resume: Bool = false, context: String? = nil, executable: URL? = nil, backend: ClaudeBackend = .automatic) {
+    public init(folder: String, sessionID: String = UUID().uuidString.lowercased(), resume: Bool = false, context: String? = nil, executable: URL? = nil, backend: ClaudeBackend = .automatic, initialPermission: String? = nil, initialModel: String? = nil) {
+        self.initialModel = initialModel
+        self.initialPermission = initialPermission
         self.folder = folder; self.sessionID = sessionID; self.resume = resume; self.context = context; self.executable = executable; self.backend = backend
         (events, sink) = AsyncStream.makeStream(of: WireValue.self)
     }
@@ -108,6 +114,8 @@ public actor ClaudeExecutionTransport: ExecutionTransport {
         let child = Process(), stdin = Pipe(), stdout = Pipe()
         child.executableURL = binary
         child.arguments = ["-p", "--allow-dangerously-skip-permissions", "--input-format", "stream-json", "--output-format", "stream-json", "--verbose", "--include-partial-messages", "--permission-prompt-tool", "stdio", resume ? "--resume" : "--session-id", sessionID]
+        if let initialModel { child.arguments! += ["--model", initialModel] }
+        if let initialPermission { child.arguments! += ["--permission-mode", initialPermission] }
         if let context { child.arguments! += ["--append-system-prompt", context] }
         let requested = ProcessInfo.processInfo.environment["DIORAMA_CLAUDE_BACKEND"].flatMap(ClaudeBackend.init(rawValue:)) ?? backend
         let runtime = requested == .cli || (executable != nil && requested == .automatic) ? nil : ClaudeSDKRuntime.discover()
@@ -143,7 +151,7 @@ public actor ClaudeExecutionTransport: ExecutionTransport {
                 try saveGoal()
             }
         }
-        if let mode = catalog["current_permission_mode"].string { permissionMode = mode }
+        if let mode = catalog["current_permission_mode"].string { permissionMode = mode; if mode != "plan" { executionPermissionMode = mode }; permissionConfirmed = true }
     }
     private func control(_ payload: [String: WireValue]) async throws -> WireValue {
         let id = UUID().uuidString
@@ -187,7 +195,7 @@ public actor ClaudeExecutionTransport: ExecutionTransport {
     public static func modelRows(_ catalog: WireValue) -> [WireValue] {
         catalog["models"].array.compactMap { m in
             guard let value = m["value"].string else { return nil }
-            return .object(["model": .string("claude/" + value), "displayName": m["displayName"], "isDefault": .bool(false), "supportedReasoningEfforts": .array([])])
+            return .object(["model": .string("claude/" + value), "displayName": m["displayName"], "isDefault": .bool(false), "supportedReasoningEfforts": .array([]), "supportsAutoMode": m["supportsAutoMode"]])
         }
     }
     public func request(_ method: String, _ p: WireValue) async throws -> WireValue {
@@ -195,8 +203,27 @@ public actor ClaudeExecutionTransport: ExecutionTransport {
         case "collaborationMode/list": return .object(["data": .array([.object(["mode": .string("default")]), .object(["mode": .string("plan")])])])
         case "diorama/capabilities": return try await control(["subtype": .string("capability_discovery")])
         case "model/list": return .object(["data": .array(Self.modelRows(catalog))])
+        case "diorama/permissions/set":
+            guard turn == nil, approvals.isEmpty else { throw ExecutionRPCRejection("Finish the current turn and approvals first") }
+            if let selected = p["model"].string, !selected.isEmpty, selected != model {
+                _ = try await control(["subtype": .string("set_model"), "model": .string(String(selected.dropFirst(7)))])
+                model = selected
+                emit("diorama/permissions/changed", ["model": .string(model), "permissionMode": .string(permissionMode)])
+            }
+            let target = p["permissionMode"].string ?? permissionMode
+            if target == "auto", Self.modelRows(catalog).contains(where: { $0["model"].string == model && $0["supportsAutoMode"] == .bool(false) }) {
+                throw ExecutionRPCRejection("Auto mode unavailable for this model. Choose Accept edits.")
+            }
+            _ = try await control(["subtype": .string("set_permission_mode"), "mode": .string(target)])
+            permissionMode = target; permissionConfirmed = true
+            executionPermissionMode = p["executionPermissionMode"].string ?? target
+            emit("diorama/permissions/changed", ["model": .string(model), "permissionMode": .string(permissionMode)])
+            return .object(["model": .string(model), "permissionMode": .string(permissionMode)])
         case "thread/start", "thread/resume":
-            return .object(["thread": .object(["id": .string(sessionID)]), "cwd": .string(folder), "model": .string(model), "approvalPolicy": .string(permissionMode)])
+            if let desired = p["permissionMode"].string {
+                _ = try await request("diorama/permissions/set", .object(["model": p["model"], "permissionMode": .string(desired)]))
+            }
+            return .object(["thread": .object(["id": .string(sessionID)]), "cwd": .string(folder), "model": .string(model), "approvalPolicy": permissionConfirmed ? .string(permissionMode) : .null])
         case "thread/goal/get": return .object(["goal": goal?.wire ?? .null])
         case "thread/goal/set":
             guard let status = p["status"].string, ["active", "paused"].contains(status) else { throw ExecutionRPCRejection("Choose active or paused") }
@@ -267,18 +294,21 @@ public actor ClaudeExecutionTransport: ExecutionTransport {
             } catch let error as ExecutionRPCRejection { queueSending = .null; try saveQueue(); throw error }
         case "turn/start":
             guard turn == nil else { throw ExecutionRPCRejection("Wait for Claude to finish or stop it first.") }
+            if permissionConfirmed, permissionMode != "plan", permissionMode != executionPermissionMode {
+                throw ExecutionRPCRejection("Claude permissions changed externally. Review them before continuing.")
+            }
             var content = try Self.input(p["input"].array)
             if let selected = p["model"].string, selected.hasPrefix("claude/") {
                 _ = try await control(["subtype": .string("set_model"), "model": .string(String(selected.dropFirst(7)))]); model = selected
             }
             if let effort = p["effort"].string, !effort.isEmpty { throw ExecutionRPCRejection("Changing Claude reasoning effort is not supported yet.") }
             let mode = p["collaborationMode"]["mode"].string
-            var nextMode = permissionMode
-            if p["approvalPolicy"].string == "never" { nextMode = "bypassPermissions" }
-            else if p["approvalsReviewer"].string == "auto_review" { nextMode = "auto" }
-            else if p["approvalsReviewer"].string == "user" { nextMode = "default" }
-            if mode == "plan" { nextMode = "plan" } else if nextMode == "plan" { nextMode = "default" }
+            if permissionMode == "auto", Self.modelRows(catalog).contains(where: { $0["model"].string == model && $0["supportsAutoMode"] == .bool(false) }) {
+                throw ExecutionRPCRejection("Automatic review is unavailable after the model change. Choose permissions before continuing.")
+            }
+            let nextMode = mode == "plan" ? "plan" : p["permissionMode"].string ?? (permissionMode == "plan" ? executionPermissionMode : permissionMode)
             if nextMode != permissionMode { _ = try await control(["subtype": .string("set_permission_mode"), "mode": .string(nextMode)]); permissionMode = nextMode }
+            if nextMode != "plan" { executionPermissionMode = nextMode }
             guard turn == nil else { throw ExecutionRPCRejection("Claude already started another turn") }
             if let revision = p["goalRevision"].string {
                 guard revision == goalRevision.uuidString, goal?.status == "active", !Task.isCancelled else { throw ExecutionRPCRejection("Goal paused before continuation") }
@@ -358,6 +388,11 @@ public actor ClaudeExecutionTransport: ExecutionTransport {
                 emit("item/commandExecution/requestApproval", ["itemId": r["tool_use_id"], "toolName": r["tool_name"], "toolInput": r["input"], "command": r["input"]["command"], "reason": r["input"]["description"], "availableDecisions": .array([.string("accept"), .string("decline")])], requestID: id)
             }
         case "system":
+            if let reported = e["permissionMode"].string {
+                if !permissionConfirmed, reported != "plan" { executionPermissionMode = reported }
+                permissionMode = reported; permissionConfirmed = true
+                emit("diorama/permissions/changed", ["permissionMode": .string(reported), "model": .string(model)])
+            }
             if let actual = e["session_id"].string, actual != sessionID {
                 disconnected(); if let process, process.isRunning { process.terminate() }
             }

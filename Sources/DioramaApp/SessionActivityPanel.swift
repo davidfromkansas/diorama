@@ -52,17 +52,17 @@ struct SessionActivityPanel: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 16) {
             HStack {
-                Button(action: close) { Label("Back to conversation", systemImage: "chevron.left") }
+                Button(action: close) { Label("Back to conversation", systemImage: "chevron.left") }.pointingHand()
                 Spacer()
                 Text(snapshot.lastKnown ? "Last known" : "Reported activity").font(.caption).foregroundStyle(.secondary)
             }
             Picker("Activity section", selection: $state.section) {
                 ForEach(["Plan", "Steps", "Agents", "Timeline"], id: \.self) { Text($0).tag($0) }
-            }.pickerStyle(.segmented)
+            }.pointingHand().pickerStyle(.segmented)
             .accessibilityHint("Plan, Steps, Agents, Timeline. Command Option 1 through 4 select a section.")
             HStack(spacing: 0) {
                 ForEach(Array(["Plan", "Steps", "Agents", "Timeline"].enumerated()), id: \.offset) { index, section in
-                    Button(section) { state.section = section }
+                    Button(section) { state.section = section }.pointingHand()
                         .keyboardShortcut(KeyEquivalent(Character(String(index + 1))), modifiers: [.command, .option])
                 }
             }.frame(width: 0, height: 0).clipped().accessibilityHidden(true)
@@ -120,8 +120,8 @@ struct SessionActivityPanel: View {
     }
     @ViewBuilder private var agents: some View {
         if let selected {
-            Button("Back to parent task") { state.selectedAgent = nil }
-            Text(selected.title.isEmpty ? "Subagent" : selected.title).font(.headline)
+            Button("Back to parent task") { state.selectedAgent = nil }.pointingHand()
+            Text(displayName(selected)).font(.headline)
             Text(status(selected.status))
             if !selected.detail.isEmpty { Text(selected.detail) }
             details(selected)
@@ -139,12 +139,12 @@ struct SessionActivityPanel: View {
                     HStack(alignment: .top) {
                         Image(systemName: agent.kind == "agent" ? "person.crop.circle" : "terminal")
                         VStack(alignment: .leading, spacing: 4) {
-                            Text(agent.title.isEmpty ? "Details unavailable" : agent.title).lineLimit(3)
+                            Text(displayName(agent)).lineLimit(3)
                             Text((agent.kind == "job" ? "Background job · " : "") + status(agent.status)).font(.caption).foregroundStyle(.secondary)
                         }
                         Spacer(); Image(systemName: "chevron.right").font(.caption)
                     }.padding(12).background(.quaternary.opacity(0.4), in: RoundedRectangle(cornerRadius: 10))
-                }.buttonStyle(.plain)
+                }.pointingHand().buttonStyle(.plain)
                 .accessibilityLabel(agentAccessibilityLabel(agent))
                 .accessibilityHint("Opens saved details without starting or resuming this agent.")
                 .padding(.leading, CGFloat(depth(agent) * 18)).id(agent.id)
@@ -164,8 +164,12 @@ struct SessionActivityPanel: View {
             Divider()
         }
     }
+    private func displayName(_ agent: SessionActivityRecord) -> String {
+        guard agent.kind == "agent" else { return agent.title.isEmpty ? "Background job" : agent.title }
+        return library.agentDisplayName(session, agent: [agent.provider, agent.sessionID, agent.nativeID].joined(separator: "\u{1F}"), reported: agent.reportedAgentName)
+    }
     private func agentAccessibilityLabel(_ agent: SessionActivityRecord) -> String {
-        let title = agent.title.isEmpty ? "Subagent" : agent.title
+        let title = displayName(agent)
         return "\(title), \(status(agent.status)), nesting level \(depth(agent) + 1)"
     }
     private var orderedAgents: [SessionActivityRecord] {
@@ -190,7 +194,7 @@ struct SessionActivityPanel: View {
         switch raw { case "inProgress", "in_progress", "running": "In progress"; case "completed": "Completed"; case "pending": "Pending"; case "unknown", "": "Unknown"; default: raw.capitalized }
     }
     private func details(_ record: SessionActivityRecord) -> some View {
-        DisclosureGroup("Details") {
+        DisclosureGroup {
             VStack(alignment: .leading, spacing: 5) {
                 Text(record.source + " · " + record.provider)
                 Text("Native ID: " + record.nativeID)
@@ -208,8 +212,8 @@ struct SessionActivityPanel: View {
                         if let count = usage[key].number { Text(key.replacingOccurrences(of: "_", with: " ").capitalized + ": " + Int(count).formatted()) }
                     }
                 }
-                if record.data != .null { DisclosureGroup("Provider fields") { Text(record.data.pretty).font(.system(.caption, design: .monospaced)) } }
+                if record.data != .null { DisclosureGroup { Text(record.data.pretty).font(.system(.caption, design: .monospaced)) } label: { Text("Provider fields").disclosurePointingHand() } }
             }.font(.caption).foregroundStyle(.secondary).padding(.top, 6)
-        }.font(.caption)
+        } label: { Text("Details").disclosurePointingHand() }.font(.caption)
     }
 }

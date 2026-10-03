@@ -30,7 +30,7 @@ import DioramaCore
 }
 
 extension LibraryModel {
-    func switchProvider(from session: Session, model: String) async throws -> Session {
+    func switchProvider(from session: Session, model: String, permission: ApprovalReviewChoice = .autoReview) async throws -> Session {
         guard !conversations.switching.contains(session.id) else { throw AppServerFailure("A model switch is already in progress") }
         guard !outgoing.values.contains(where: { $0.sessionID == session.sessionID && [.pending, .uncertain].contains($0.state) }) else { throw AppServerFailure("Resolve the pending message before switching providers.") }
         guard conversations.record(session.id)?.carried.contains(where: { $0.destinationID != nil }) != true else { throw AppServerFailure("Finish the pending queued-message transfer before switching providers again.") }
@@ -51,7 +51,7 @@ extension LibraryModel {
         let work = project?.workspaces.first { $0.threadID == session.sessionID }
         let context = work.map { $0.context.prompt(folder: $0.folder, commit: $0.baseCommit) } ?? ""
         let handoff = DioramaConversation.handoff(title: record.title, folder: record.folder, entries: record.precedingEntries() + nativeEntries, goal: execution.tasks[session.sessionID]?.workflow.goal ?? .null, projectContext: context)
-        let targetID = try await execution.prepareProviderSwitch(session: session, model: model, handoff: handoff)
+        let targetID = try await execution.prepareProviderSwitch(session: session, model: model, handoff: handoff, permission: permission)
         guard let target = execution.tasks[targetID]?.session else { throw AppServerFailure("New provider session unavailable. No message was sent.") }
         for row in execution.tasks[session.sessionID]?.workflow.queue ?? [] {
             if !record.carried.contains(where: { $0.sourceID == session.sessionID && $0.row["id"] == row["id"] }) {
@@ -73,9 +73,6 @@ extension LibraryModel {
     func restoreConversationMembership() {
         for record in conversations.records {
             execution.registerActivityConversation(record.segments.compactMap { segment in Provider(rawValue: segment.provider).map { ActivitySessionIdentity(provider: $0, id: segment.nativeID) } })
-            if let first = record.segments.first, let provider = Provider(rawValue: first.provider) {
-                execution.conversationCanvasIdentity[record.activeID] = (provider, first.nativeID)
-            }
             for segment in record.segments.dropLast() { execution.retireProviderSession(segment.nativeID) }
             for p in projects.projects {
                 for w in p.workspaces where w.threadID != record.activeID && w.threadID.map(record.contains) == true {

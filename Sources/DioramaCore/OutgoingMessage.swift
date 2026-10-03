@@ -25,7 +25,11 @@ public struct OutgoingMessage: Codable, Identifiable, Sendable {
             guard !baselineIDs.contains(entry.id), entry.kind == "You" else { return false }
             if let turnID, entry.turnID != turnID { return false }
             if text.isEmpty { return turnID != nil && !attachmentPaths.isEmpty }
-            return entry.text == text || (!attachmentPaths.isEmpty && entry.text.hasPrefix(text + "\n"))
+            // Separating provider context envelopes can leave a boundary newline.
+            // Identity/turn checks above still distinguish intentional repeat sends.
+            let submitted = text.trimmingCharacters(in: .whitespacesAndNewlines)
+            let echoed = entry.text.trimmingCharacters(in: .whitespacesAndNewlines)
+            return echoed == submitted || (!attachmentPaths.isEmpty && echoed.hasPrefix(submitted + "\n"))
         }
     }
 }

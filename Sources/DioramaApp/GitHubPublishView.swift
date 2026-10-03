@@ -18,32 +18,32 @@ struct GitHubPublishView: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 16) {
             Text("Publish to GitHub").font(.title2.weight(.semibold))
-            HStack { Text(account.isEmpty ? "Connect your GitHub account to publish" : "Publishing as @" + account).foregroundStyle(.secondary); Spacer(); Button("GitHub account…") { showAccount = true }.disabled(busy) }
+            HStack { Text(account.isEmpty ? "Connect your GitHub account to publish" : "Publishing as @" + account).foregroundStyle(.secondary); Spacer(); Button("GitHub account…") { showAccount = true }.pointingHand().disabled(busy) }
             HStack {
                 TextField("Owner or organization", text: $owner)
                 Text("/").foregroundStyle(.secondary)
                 TextField("Repository name", text: $name)
             }.textFieldStyle(.roundedBorder).disabled(busy)
-            Picker("Visibility", selection: $isPrivate) { Text("Private").tag(true); Text("Public").tag(false) }.pickerStyle(.segmented).disabled(busy)
+            Picker("Visibility", selection: $isPrivate) { Text("Private").tag(true); Text("Public").tag(false) }.pointingHand().pickerStyle(.segmented).disabled(busy)
             Text(isPrivate ? "Only people you grant access can see this repository." : "Anyone on the internet will be able to see this repository and its committed history.").font(.caption).foregroundStyle(.secondary)
-            DisclosureGroup("Committed history to upload") {
+            DisclosureGroup {
                 ScrollView { Text(commits).font(.system(.caption, design: .monospaced)).textSelection(.enabled).frame(maxWidth: .infinity, alignment: .leading) }.frame(height: 180)
-            }
+            } label: { Text("Committed history to upload").disclosurePointingHand() }
             Text("Publishes the current branch and its committed history. Uncommitted edits stay on this Mac.").font(.callout).foregroundStyle(.secondary)
             if let error { Text(error).foregroundStyle(.orange).textSelection(.enabled) }
             HStack {
-                Button("Cancel") { operation?.cancel(); dismiss() }.keyboardShortcut(.cancelAction)
-                Button("Refresh preview") { Task { await load() } }.disabled(busy)
+                Button("Cancel") { operation?.cancel(); dismiss() }.pointingHand().keyboardShortcut(.cancelAction)
+                Button("Refresh preview") { Task { await load() } }.pointingHand().disabled(busy)
                 Spacer()
                 if busy { ProgressView().controlSize(.small) }
-                Button("Create repository and publish") { operation = Task { await publish() } }.buttonStyle(.borderedProminent)
+                Button("Create repository and publish") { operation = Task { await publish() } }.pointingHand().buttonStyle(.borderedProminent)
                     .disabled(busy || fingerprint == nil || owner.isEmpty || name.isEmpty)
             }
         }.padding(24).frame(width: 580).interactiveDismissDisabled(busy)
         .task { name = project.name; await load() }
         .onDisappear { operation?.cancel() }
         .sheet(isPresented: $showAccount, onDismiss: { Task { await load() } }) {
-            VStack(alignment: .leading, spacing: 20) { GitHubSettingsView(); HStack { Spacer(); Button("Done") { showAccount = false } } }.padding(24).frame(width: 620)
+            VStack(alignment: .leading, spacing: 20) { GitHubSettingsView(); HStack { Spacer(); Button("Done") { showAccount = false }.pointingHand() } }.padding(24).frame(width: 620)
         }
     }
     private func load() async {

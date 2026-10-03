@@ -45,8 +45,8 @@ struct SessionReviewContainer: View {
                 Button { review.visible.toggle(); library.activityState(session).visible = false } label: {
                     let snapshot = review.snapshot
                     Text("Changes" + (snapshot.map { " · \($0.files.count) files · +\($0.added) −\($0.removed)" } ?? ""))
-                }.accessibilityLabel("Review session changes")
-                if let pr = work?.pullRequest { Button(pr.summary) { library.activityState(session).visible = false; review.visible = true; review.checksExpanded.toggle() } }
+                }.pointingHand().accessibilityLabel("Review session changes")
+                if let pr = work?.pullRequest { Button(pr.summary) { library.activityState(session).visible = false; review.visible = true; review.checksExpanded.toggle() }.pointingHand() }
                 Spacer(minLength: 0)
             }.font(.callout).padding(.horizontal, 20).padding(.vertical, 10)
             GeometryReader { geometry in
@@ -90,10 +90,10 @@ struct SessionReviewContainer: View {
             HStack {
                 Text(work?.pullRequest?.summary ?? (review.snapshot?.branch ?? "Session changes")).font(.caption).lineLimit(2)
                 Spacer()
-                Button { Task { await refreshLocal(); await refreshPR(force: true) } } label: { Image(systemName: "arrow.clockwise") }.help("Refresh review")
+                Button { Task { await refreshLocal(); await refreshPR(force: true) } } label: { Image(systemName: "arrow.clockwise") }.pointingHand().help("Refresh review")
             }.padding(.horizontal, 12).padding(.top, 12)
             if !session.observationOnly, work?.cleaned == false, project?.remote.flatMap({ try? GitHubGit.https($0) }) != nil {
-                Button(work?.pullRequest?.state == "OPEN" ? "Update PR" : "Create PR") { showPR = true }
+                Button(work?.pullRequest?.state == "OPEN" ? "Update PR" : "Create PR") { showPR = true }.pointingHand()
                     .buttonStyle(.borderedProminent).padding(.horizontal, 12)
                     .disabled(library.execution.tasks.values.contains { $0.phase.active && $0.folder == work?.folder })
             }
@@ -104,13 +104,13 @@ struct SessionReviewContainer: View {
                         else if review.prBusy { ProgressView("Checking pull requests…") }
                         else { Text("No linked pull request").foregroundStyle(.secondary) }
                         if !review.candidates.isEmpty {
-                            Menu("Choose pull request") { ForEach(review.candidates) { pr in Button(pr.title) { savePR(pr) } } }
+                            Menu("Choose pull request") { ForEach(review.candidates) { pr in Button(pr.title) { savePR(pr) }.pointingHand() } }.pointingHand()
                         }
                         if let error = review.prError { Text(error).foregroundStyle(.orange).textSelection(.enabled) }
                     }.padding(12)
                 }
             } else {
-                Picker("Changes scope", selection: $review.scope) { ForEach(ChangeScope.allCases, id: \.self) { Text($0.rawValue).tag($0) } }.labelsHidden().padding(.horizontal, 12)
+                Picker("Changes scope", selection: $review.scope) { ForEach(ChangeScope.allCases, id: \.self) { Text($0.rawValue).tag($0) } }.pointingHand().labelsHidden().padding(.horizontal, 12)
                 if let error = review.error { ContentUnavailableView("Changes unavailable", systemImage: "folder.badge.questionmark", description: Text(error)) }
                 else if review.snapshot == nil { ProgressView("Reading changes…").frame(maxWidth: .infinity, maxHeight: .infinity) }
                 else if review.snapshot?.files.isEmpty == true { ContentUnavailableView("No file changes", systemImage: "arrow.triangle.branch", description: Text("This worktree matches the comparison.")) }
@@ -128,7 +128,7 @@ struct SessionReviewContainer: View {
                                     Text("+\(file.added)").foregroundStyle(.green)
                                     Text("−\(file.removed)").foregroundStyle(.red)
                                 }.font(.system(size: 11)).padding(.vertical, 4).contentShape(Rectangle())
-                            }.buttonStyle(.plain)
+                            }.pointingHand().buttonStyle(.plain)
                         }
                     }.scrollContentBackground(.hidden)
                 }
@@ -146,17 +146,17 @@ struct SessionReviewContainer: View {
     func panel(_ workspace: ProjectWorkspace) -> some View {
         VStack(alignment: .leading, spacing: 12) {
             HStack {
-                Button { review.visible = false } label: { Label("Conversation", systemImage: "chevron.left") }
+                Button { review.visible = false } label: { Label("Conversation", systemImage: "chevron.left") }.pointingHand()
                 Spacer()
-                Button("Refresh") { Task { await refreshLocal() }; Task { await refreshPR(force: true) } }
+                Button("Refresh") { Task { await refreshLocal() }; Task { await refreshPR(force: true) } }.pointingHand()
             }
             Text(review.snapshot?.branch ?? workspace.branch).font(.headline).textSelection(.enabled)
-            Picker("Changes scope", selection: $review.scope) { ForEach(ChangeScope.allCases, id: \.self) { Text($0.rawValue).tag($0) } }.labelsHidden()
+            Picker("Changes scope", selection: $review.scope) { ForEach(ChangeScope.allCases, id: \.self) { Text($0.rawValue).tag($0) } }.pointingHand().labelsHidden()
             if let pr = workspace.pullRequest { prDetails(pr) }
             if !review.candidates.isEmpty {
                 Menu("Choose this session’s pull request…") {
-                    ForEach(review.candidates) { pr in Button("#\(pr.number) · \(pr.title)") { savePR(pr); review.candidates = [] } }
-                }
+                    ForEach(review.candidates) { pr in Button("#\(pr.number) · \(pr.title)") { savePR(pr); review.candidates = [] }.pointingHand() }
+                }.pointingHand()
             }
             if let error = review.prError {
                 Text("PR status unavailable. " + error).font(.caption).foregroundStyle(.secondary).lineLimit(3)
@@ -171,14 +171,14 @@ struct SessionReviewContainer: View {
                             HStack {
                                 VStack(alignment: .leading) { Text(file.path).lineLimit(2); Text(file.status).font(.caption).foregroundStyle(.secondary) }
                                 Spacer(); Text("+\(file.added) −\(file.removed)").font(.caption.monospacedDigit())
-                            }.tag(file.path)
+                            }.pointingHand().tag(file.path)
                         }
                     }.frame(minHeight: 95, idealHeight: 180, maxHeight: 260)
                     VStack(alignment: .leading, spacing: 8) {
                         if let path = review.selected {
                             HStack {
                                 Text(path).font(.caption).lineLimit(1); Spacer()
-                                Button("Open externally") { NSWorkspace.shared.open(URL(fileURLWithPath: workspace.folder).appendingPathComponent(path)) }
+                                Button("Open externally") { NSWorkspace.shared.open(URL(fileURLWithPath: workspace.folder).appendingPathComponent(path)) }.pointingHand()
                             }
                         }
                         DiffTextView(patch: review.patch).frame(maxWidth: .infinity, maxHeight: .infinity)
@@ -194,10 +194,10 @@ struct SessionReviewContainer: View {
                 if let date = pr.updatedAt { Text("\(review.prError == nil ? "Updated" : "Last known status") \(date.formatted(date: .abbreviated, time: .shortened))").font(.caption).foregroundStyle(.secondary) }
                 if let snapshot = review.snapshot, pr.excludesLocalChanges(snapshot) { Text("Local changes aren’t included in these checks").font(.caption).foregroundStyle(.orange) }
                 ForEach(pr.checks) { check in
-                    HStack { Text(check.title); Spacer(); Text(check.result); if let value = check.url, let url = URL(string: value) { Link("Details", destination: url) } }
+                    HStack { Text(check.title); Spacer(); Text(check.result); if let value = check.url, let url = URL(string: value) { Link("Details", destination: url).pointingHand() } }
                 }
                 HStack {
-                    if let url = URL(string: pr.url) { Link("Open on GitHub", destination: url) }
+                    if let url = URL(string: pr.url) { Link("Open on GitHub", destination: url).pointingHand() }
                     if pr.state == "MERGED", let base = pr.baseRefName, !session.observationOnly {
                         Button(updatingBranch ? "Updating…" : "Update local " + base) {
                             guard let project else { return }
@@ -211,7 +211,7 @@ struct SessionReviewContainer: View {
                                     review.prError = nil; await refreshLocal()
                                 } catch { review.prError = error.localizedDescription }
                             }
-                        }.disabled(updatingBranch || review.prError != nil)
+                        }.pointingHand().disabled(updatingBranch || review.prError != nil)
                     }
                     if pr.checks.contains(where: { $0.result == "Failed" }) {
                         Button(review.preparingFix ? "Preparing context…" : "Fix with agent") {
@@ -221,11 +221,11 @@ struct SessionReviewContainer: View {
                                 library.appendReviewDraft(session.id, text: prompt)
                                 review.preparingFix = false; review.visible = false
                             }
-                        }.disabled(review.preparingFix)
+                        }.pointingHand().disabled(review.preparingFix)
                     }
                 }
             }.padding(.top, 8)
-        } label: { Text(pr.summary).font(.callout) }
+        } label: { Group { Text(pr.summary).font(.callout)  }.disclosurePointingHand() }
     }
     private func savePR(_ value: LinkedPullRequest?) { library.projects.updateWorkspace(projectID, id: workspaceID) { $0.pullRequest = value } }
     private func refreshLocal() async {

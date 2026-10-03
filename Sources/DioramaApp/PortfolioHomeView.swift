@@ -44,13 +44,14 @@ struct PortfolioHomeView: View {
     }
 }
 
-private struct PortfolioProjectTile: View {
+struct PortfolioProjectTile: View {
     let project: SpatialProject
     let usage: PortfolioUsageSummary
     let paused: Bool
     let animate: Bool
     let loading: Bool
     let viewportHeight: CGFloat
+    var compact = false
     let select: (SpatialFocus) -> Void
     @State private var details = false
     @State private var attention = false
@@ -74,19 +75,26 @@ private struct PortfolioProjectTile: View {
     }
     var body: some View {
         GeometryReader { geometry in
-            let slabWidth = max(64, min(180, geometry.size.width * 0.34))
-            HStack(spacing: 16) {
-                Button { select(.project(project.id)) } label: {
-                    PortfolioPlatform(surface: PortfolioSurface(projectID: project.id))
-                        .frame(width: slabWidth, height: slabWidth * 0.695)
-                        .contentShape(Rectangle())
-                }.buttonStyle(.plain).accessibilityLabel("Open \(project.name) office")
-                metadataCard
+            Group {
+                if compact {
+                    HStack(spacing: 16) {
+                        PortfolioPlatform(surface: PortfolioSurface(projectID: project.id)).frame(width: 100, height: 80)
+                        metadataCard
+                    }
+                } else {
+                    VStack(spacing: 10) {
+                        Button { select(.project(project.id)) } label: {
+                            PortfolioPlatform(surface: PortfolioSurface(projectID: project.id)).frame(width: min(230, geometry.size.width * 0.7), height: 150)
+                                .frame(maxWidth: .infinity).contentShape(Rectangle())
+                        }.pointingHand().buttonStyle(.plain).accessibilityLabel("Open \(project.name) office")
+                        metadataCard
+                    }
+                }
             }.frame(maxHeight: .infinity)
                 .onChange(of: geometry.frame(in: .named("portfolio-scroll")), initial: true) { _, frame in
                     onScreen = frame.maxY > 0 && frame.minY < viewportHeight
                 }
-        }.frame(height: 198).onDisappear { onScreen = false }
+        }.frame(height: compact ? 165 : 330).onDisappear { onScreen = false }
     }
     private func exceptionText(_ first: PortfolioException) -> String {
         let extra = exceptions.count > 1 ? " · +\(exceptions.count - 1) more" : ""
@@ -97,7 +105,7 @@ private struct PortfolioProjectTile: View {
             Button { select(.project(project.id)) } label: {
                 Text(project.name).font(.system(size: 16, weight: .semibold)).lineLimit(2)
                     .frame(maxWidth: .infinity, alignment: .leading).contentShape(Rectangle())
-            }.buttonStyle(.plain).help("Open project office")
+            }.pointingHand().buttonStyle(.plain).help("Open project office")
             ViewThatFits(in: .horizontal) {
                 HStack(spacing: 12) { working; attentionButton }
                 VStack(alignment: .leading, spacing: 5) { working; attentionButton }
@@ -108,7 +116,7 @@ private struct PortfolioProjectTile: View {
                     Text(tokenText).fontWeight(.medium).monospacedDigit().lineLimit(1)
                     Text("tokens").foregroundStyle(.secondary)
                 }.font(.system(size: 12))
-            }.buttonStyle(.plain).help("Tokens consumed · All time")
+            }.pointingHand().buttonStyle(.plain).help("Tokens consumed · All time")
                 .accessibilityLabel("Tokens consumed, all time: \(tokenText). Show reported usage details")
                 .popover(isPresented: $details) { usageDetails }
             if let first = exceptions.first {
@@ -118,7 +126,7 @@ private struct PortfolioProjectTile: View {
                         Text(exceptionText(first)).lineLimit(2)
                     }.font(.system(size: 11)).foregroundStyle(Color(red: 0.60, green: 0.34, blue: 0.04))
                         .frame(maxWidth: .infinity, alignment: .leading)
-                }.buttonStyle(.plain)
+                }.pointingHand().buttonStyle(.plain)
             }
             if loading && project.teams.isEmpty {
                 freshness("Discovering activity…", icon: "arrow.triangle.2.circlepath")
@@ -130,7 +138,7 @@ private struct PortfolioProjectTile: View {
                 freshness("No active work", icon: "minus.circle")
             }
         }.padding(14).frame(maxWidth: .infinity, alignment: .leading)
-            .background(.white, in: RoundedRectangle(cornerRadius: 10))
+            .background(DioramaStyle.raised, in: RoundedRectangle(cornerRadius: 10))
             .overlay(RoundedRectangle(cornerRadius: 10).stroke(Color.black.opacity(0.10), lineWidth: 0.7))
             .shadow(color: .black.opacity(0.035), radius: 7, y: 3)
     }
@@ -146,7 +154,7 @@ private struct PortfolioProjectTile: View {
                 Image(systemName: "exclamationmark.bubble").foregroundStyle(summary.attention > 0 ? Color.orange : .gray)
                 Text("\(summary.attention) need input").monospacedDigit()
             }.font(.system(size: 12))
-        }.buttonStyle(.plain).accessibilityLabel("\(summary.attention) agents need input in \(project.name). Show attention list")
+        }.pointingHand().buttonStyle(.plain).accessibilityLabel("\(summary.attention) agents need input in \(project.name). Show attention list")
             .popover(isPresented: $attention) {
                 VStack(alignment: .leading, spacing: 12) {
                     Text(project.name + " · Attention").font(.headline)
@@ -160,7 +168,7 @@ private struct PortfolioProjectTile: View {
                                         Text(item.conversation).font(.caption).foregroundStyle(.secondary)
                                         Text(item.agent.value.statusLabel).font(.caption2).foregroundStyle(.secondary)
                                     }.frame(maxWidth: .infinity, alignment: .leading).contentShape(Rectangle())
-                                }.buttonStyle(.plain)
+                                }.pointingHand().buttonStyle(.plain)
                             }
                         }
                     }

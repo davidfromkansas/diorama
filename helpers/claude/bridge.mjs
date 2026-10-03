@@ -32,7 +32,8 @@ export async function serve({ sdkQuery = query, input = process.stdin, output = 
   for (const key of ['ANTHROPIC_API_KEY', 'ANTHROPIC_AUTH_TOKEN', 'CLAUDE_CODE_OAUTH_TOKEN', 'ANTHROPIC_BASE_URL', 'CLAUDE_CODE_USE_BEDROCK', 'CLAUDE_CODE_USE_VERTEX', 'CLAUDE_CODE_USE_FOUNDRY']) delete clean[key];
   const options = {
     cwd: process.cwd(), pathToClaudeCodeExecutable: env.DIORAMA_CLAUDE_EXECUTABLE,
-    env: clean, includePartialMessages: true, permissionMode: 'default', allowDangerouslySkipPermissions: true,
+    ...(value('--model') ? { model: value('--model') } : {}),
+    env: clean, includePartialMessages: true, ...(value('--permission-mode') ? { permissionMode: value('--permission-mode') } : {}), allowDangerouslySkipPermissions: true,
     settingSources: ['user', 'project', 'local'],
     ...(resume ? { resume } : { sessionId }),
     ...(append ? { systemPrompt: { type: 'preset', preset: 'claude_code', append } } : {}),

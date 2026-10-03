@@ -117,7 +117,7 @@ struct WorkspaceSceneView: View {
                                   movementStatus: { movementStatus = $0 })
                 .overlay(alignment: .top) {
                     HStack {
-                        Button("Agents · \(displayedAgents.count)", systemImage: "person.2") { rosterVisible.toggle() }
+                        Button("Agents · \(displayedAgents.count)", systemImage: "person.2") { rosterVisible.toggle() }.pointingHand()
                             .popover(isPresented: $rosterVisible) {
                                 ScrollView {
                                     LazyVStack(alignment: .leading, spacing: 4) {
@@ -130,7 +130,7 @@ struct WorkspaceSceneView: View {
                                                     Text(agent.name).fontWeight(.medium)
                                                     Text(agent.statusLabel).foregroundStyle(.secondary)
                                                 }.frame(maxWidth: .infinity, alignment: .leading).padding(8)
-                                            }
+                                            }.pointingHand()
                                             .buttonStyle(.plain)
                                             .accessibilityLabel(agent.accessibilityLabel)
                                             .accessibilityHint("Show agent details")
@@ -138,12 +138,12 @@ struct WorkspaceSceneView: View {
                                     }.padding(8)
                                 }.frame(width: 300, height: min(360, CGFloat(displayedAgents.count) * 70 + 16))
                             }
-                        Button("Library", systemImage: "books.vertical") { openLibrary() }
+                        Button("Library", systemImage: "books.vertical") { openLibrary() }.pointingHand()
                             .focused($libraryButtonFocused).help("Browse workspace capabilities")
-                        Button("Movement Lab", systemImage: "figure.walk") { movementLab.toggle() }
+                        Button("Movement Lab", systemImage: "figure.walk") { movementLab.toggle() }.pointingHand()
                             .help("Test the capybara in this workspace")
                         Spacer()
-                        Button("Reset View", systemImage: "arrow.counterclockwise") { resetGeneration += 1 }
+                        Button("Reset View", systemImage: "arrow.counterclockwise") { resetGeneration += 1 }.pointingHand()
                     }
                     .buttonStyle(.borderless).font(.caption)
                     .padding(10)
@@ -156,10 +156,10 @@ struct WorkspaceSceneView: View {
                             Text("Capybara movement").font(.headline)
                             Picker("Gait", selection: $movementGait) {
                                 ForEach(WorkspaceCapybaraMotion.Gait.allCases, id: \.self) { Text($0.rawValue).tag($0) }
-                            }.pickerStyle(.segmented)
+                            }.pointingHand().pickerStyle(.segmented)
                             HStack {
                                 ForEach(["Stop", "Turn left", "Turn right", "Reset"], id: \.self) { action in
-                                    Button(action) { movementAction = action.lowercased(); movementCommand += 1 }
+                                    Button(action) { movementAction = action.lowercased(); movementCommand += 1 }.pointingHand()
                                 }
                             }
                             Text(movementStatus).font(.caption.monospacedDigit()).foregroundStyle(.secondary)
@@ -188,7 +188,7 @@ struct WorkspaceSceneView: View {
             HStack {
                 Text(agent.name).font(.headline).lineLimit(2)
                 Spacer(minLength: 4)
-                Button { selectedID = nil } label: { Image(systemName: "xmark") }
+                Button { selectedID = nil } label: { Image(systemName: "xmark") }.pointingHand()
                     .buttonStyle(.plain).help("Close agent details").accessibilityLabel("Close agent details")
             }
             ScrollView {
@@ -209,7 +209,7 @@ struct WorkspaceSceneView: View {
                     if let agentDetails { agentDetails(agent) }
                 }.frame(maxWidth: .infinity, alignment: .leading)
             }.font(.caption)
-            Button(agent.isMain ? "Open Conversation" : "Open Activity Details") { openAgent(agent) }
+            Button(agent.isMain ? "Open Conversation" : "Open Activity Details") { openAgent(agent) }.pointingHand()
                 .buttonStyle(.bordered)
         }.padding(14)
     }
@@ -599,9 +599,8 @@ final class WorkspaceSceneNSView: SCNView {
     }
     override func mouseMoved(with event: NSEvent) {
         let hovering = target(at: convert(event.locationInWindow, from: nil)) == .library
-        guard hovering != hoverLibrary else { return }
-        hoverLibrary = hovering; highlightLibrary()
-        if hovering { NSCursor.pointingHand.set() } else { NSCursor.arrow.set() }
+        if hovering != hoverLibrary { hoverLibrary = hovering; highlightLibrary() }
+        if target(at: convert(event.locationInWindow, from: nil)) != nil { NSCursor.pointingHand.set() } else { NSCursor.arrow.set() }
     }
     override func mouseExited(with event: NSEvent) { hoverLibrary = false; highlightLibrary(); NSCursor.arrow.set() }
     private func highlightLibrary() {

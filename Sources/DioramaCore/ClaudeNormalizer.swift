@@ -8,6 +8,10 @@ public struct ClaudeOutput: Codable, Equatable, Sendable, Identifiable {
     public var mediaType: String? = nil
     public var encoded: String? = nil
     public var note: String? = nil
+    public init(id: String, name: String, kind: String, location: String? = nil, mediaType: String? = nil, encoded: String? = nil, note: String? = nil) {
+        self.id = id; self.name = name; self.kind = kind; self.location = location
+        self.mediaType = mediaType; self.encoded = encoded; self.note = note
+    }
 }
 
 public struct ClaudeChecklistItem: Codable, Equatable, Sendable {
@@ -32,7 +36,7 @@ public struct ClaudePresentation: Codable, Equatable, Sendable {
 
 /// Normalizes saved Claude evidence. It never executes tools or interprets prose as instructions.
 public enum ClaudeNormalizer {
-    private static let ignored = Set(["thinking", "redacted_thinking", "signature", "queue-operation", "last-prompt", "custom-title", "agent-name", "file-history-snapshot", "atis-latch"])
+    private static let ignored = Set(["thinking", "redacted_thinking", "signature", "queue-operation", "last-prompt", "summary", "custom-title", "agent-name", "file-history-snapshot", "atis-latch"])
     private static let internalAttachments = Set(["hook_success", "environment", "model", "deferred_tools_delta", "agent_listing_delta", "mcp_instructions_delta", "skill_listing", "auto_mode", "total_tokens_reminder", "session_context", "date", "remote_session_change", "prompt_snapshot"])
     private static func bounded(_ text: String, limit: Int = 64 * 1024) -> String {
         text.count <= limit ? text : String(text.prefix(limit)) + "\n[Output truncated; inspect the original conversation for more.]"
@@ -60,6 +64,9 @@ public enum ClaudeNormalizer {
             func entry(_ id: String, _ kind: String, _ text: String, _ presentation: ClaudePresentation? = nil) -> Entry {
                 var e = Entry(id: id, kind: kind, text: bounded(text), timestamp: stamp)
                 e.providerItemID = uuid; e.claude = presentation
+                if kind == "Assistant", agent == nil {
+                    e.completionMessageID = (r["message"] as? [String: Any])?["id"] as? String ?? uuid
+                }
                 if kind != "System context", let reference = TranscriptSource(path: sourcePath ?? scope, offset: offset, record: Data(line)) { e.sourceRecords = [reference] }
                 return e
             }

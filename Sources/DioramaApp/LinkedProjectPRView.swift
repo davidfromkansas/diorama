@@ -15,8 +15,8 @@ struct LinkedProjectPRView: View {
     var body: some View {
         VStack {
             HStack {
-                Picker("Pull requests", selection: $filter) { Text("Open").tag("OPEN"); Text("Merged").tag("MERGED"); Text("Closed").tag("CLOSED") }.pickerStyle(.segmented).frame(maxWidth: 320)
-                Spacer(); Button("Refresh") { Task { await refresh(force: true) } }.disabled(refreshing)
+                Picker("Pull requests", selection: $filter) { Text("Open").tag("OPEN"); Text("Merged").tag("MERGED"); Text("Closed").tag("CLOSED") }.pointingHand().pickerStyle(.segmented).frame(maxWidth: 320)
+                Spacer(); Button("Refresh") { Task { await refresh(force: true) } }.pointingHand().disabled(refreshing)
             }.padding(16)
             if rows.isEmpty { ContentUnavailableView("No linked pull requests", systemImage: "arrow.triangle.pull", description: Text("Pull requests linked to your sessions will appear here.")) }
             List {
@@ -24,9 +24,9 @@ struct LinkedProjectPRView: View {
                     VStack(alignment: .leading, spacing: 8) {
                         Text(pr.title).font(.headline)
                         Text(pr.summary).font(.callout).foregroundStyle(.secondary)
-                        if let url = URL(string: pr.url) { Link("Open on GitHub", destination: url) }
+                        if let url = URL(string: pr.url) { Link("Open on GitHub", destination: url).pointingHand() }
                         ForEach(project?.workspaces.filter { $0.pullRequest?.id == pr.id } ?? []) { work in
-                            Button { open(work) } label: { Label(sessionTitle(work), systemImage: "bubble.left") }
+                            Button { open(work) } label: { Label(sessionTitle(work), systemImage: "bubble.left") }.pointingHand()
                                 .disabled(!library.sessions.contains { $0.sessionID == work.threadID })
                             if let error = library.reviews.state(work.id).prError { Text("Last known status · " + error).font(.caption).foregroundStyle(.secondary).lineLimit(2) }
                         }
@@ -34,7 +34,7 @@ struct LinkedProjectPRView: View {
                 }
                 ForEach(project?.workspaces.filter { library.reviews.state($0.id).prError != nil && $0.pullRequest == nil } ?? []) { work in
                     VStack(alignment: .leading) {
-                        Button(sessionTitle(work)) { open(work) }
+                        Button(sessionTitle(work)) { open(work) }.pointingHand()
                         Text(library.reviews.state(work.id).prError ?? "").font(.caption).foregroundStyle(.secondary)
                     }
                 }
@@ -44,9 +44,9 @@ struct LinkedProjectPRView: View {
                             Button("#\(pr.number) · \(pr.title)") {
                                 library.projects.updateWorkspace(projectID, id: work.id) { $0.pullRequest = pr }
                                 library.reviews.state(work.id).candidates = []
-                            }
+                            }.pointingHand()
                         }
-                    }
+                    }.pointingHand()
                 }
             }
         }

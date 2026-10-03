@@ -69,6 +69,8 @@ private struct WorkspaceLayoutSnapshot: Codable, Equatable {
 }
 @Observable final class WorkspaceNavigation {
     let layout: WorkspaceLayout
+    let projectTabs: ProjectTabStore
+    private let namespace: String
     var tabs: [String: WorkspaceTab] = [:] { didSet { schedulePersistence() } }
     var documents: [String: [WorkspaceDocument]] = [:] { didSet { schedulePersistence() } }
     var backStack: [WorkspaceDestination] = []
@@ -78,16 +80,20 @@ private struct WorkspaceLayoutSnapshot: Codable, Equatable {
     @ObservationIgnored private var isRestoring = true
     private let defaults: UserDefaults
     let hadSavedLayout: Bool
-    init(defaults: UserDefaults = .standard) {
+    init(defaults: UserDefaults = .standard, namespace: String = "") {
         self.defaults = defaults
-        let saved = defaults.data(forKey: "workspaceLayout.v1").flatMap { try? JSONDecoder().decode(WorkspaceLayout.self, from: $0) }
+        self.namespace = namespace
+        func key(_ value: String) -> String { namespace.isEmpty ? value : namespace + "." + value }
+        let saved = (defaults.data(forKey: key("workspaceLayout.v1")) ?? (namespace == "window.1" ? defaults.data(forKey: "workspaceLayout.v1") : nil)).flatMap { try? JSONDecoder().decode(WorkspaceLayout.self, from: $0) }
         hadSavedLayout = saved != nil
         layout = saved ?? WorkspaceLayout()
+        projectTabs = ProjectTabStore(data: defaults.data(forKey: key("projectTabs.v1")), migration: saved?.destination ?? .home)
         layout.sidebarWidth = min(360, max(190, layout.sidebarWidth))
         layout.inspectorWidth = min(560, max(280, layout.inspectorWidth))
-        if let data = defaults.data(forKey: "workspaceTabs.v1"), let saved = try? JSONDecoder().decode([String: WorkspaceTab].self, from: data) { tabs = saved }
-        if let data = defaults.data(forKey: "workspaceDocuments.v1"), let saved = try? JSONDecoder().decode([String: [WorkspaceDocument]].self, from: data) { documents = saved }
+        if let data = (defaults.data(forKey: key("workspaceTabs.v1")) ?? (namespace == "window.1" ? defaults.data(forKey: "workspaceTabs.v1") : nil)), let saved = try? JSONDecoder().decode([String: WorkspaceTab].self, from: data) { tabs = saved }
+        if let data = (defaults.data(forKey: key("workspaceDocuments.v1")) ?? (namespace == "window.1" ? defaults.data(forKey: "workspaceDocuments.v1") : nil)), let saved = try? JSONDecoder().decode([String: [WorkspaceDocument]].self, from: data) { documents = saved }
         isRestoring = false
+        projectTabs.changed = { [weak self] in self?.schedulePersistence() }
         layout.changed = { [weak self] in self?.schedulePersistence() }
     }
     private func schedulePersistence() {
@@ -103,9 +109,11 @@ private struct WorkspaceLayoutSnapshot: Codable, Equatable {
     /// Flush on app termination and before an explicit restore. Normal clicks never encode or write preferences.
     func flushPersistence() {
         persistenceTask?.cancel(); persistenceTask = nil
-        if let data = try? JSONEncoder().encode(layout) { defaults.set(data, forKey: "workspaceLayout.v1") }
-        if let data = try? JSONEncoder().encode(tabs) { defaults.set(data, forKey: "workspaceTabs.v1") }
-        if let data = try? JSONEncoder().encode(documents) { defaults.set(data, forKey: "workspaceDocuments.v1") }
+        func key(_ value: String) -> String { namespace.isEmpty ? value : namespace + "." + value }
+        if let data = projectTabs.encoded() { defaults.set(data, forKey: key("projectTabs.v1")) }
+        if let data = try? JSONEncoder().encode(layout) { defaults.set(data, forKey: key("workspaceLayout.v1")) }
+        if let data = try? JSONEncoder().encode(tabs) { defaults.set(data, forKey: key("workspaceTabs.v1")) }
+        if let data = try? JSONEncoder().encode(documents) { defaults.set(data, forKey: key("workspaceDocuments.v1")) }
     }
     func visit(_ destination: WorkspaceDestination) {
         guard layout.destination != destination else { return }
@@ -130,11 +138,11 @@ private struct WorkspaceLayoutSnapshot: Codable, Equatable {
     static func inlineInspector(width: Double) -> Bool { width >= 1100 }
 }
 enum DioramaStyle {
-    static let canvas = Color(red: 0.075, green: 0.063, blue: 0.067)
-    static let sidebar = Color(red: 0.105, green: 0.101, blue: 0.098)
-    static let raised = Color(red: 0.14, green: 0.13, blue: 0.13)
-    static let selection = Color.white.opacity(0.065)
-    static let border = Color.white.opacity(0.08)
+    static let canvas = Color(nsColor: .windowBackgroundColor)
+    static let sidebar = Color(nsColor: .controlBackgroundColor)
+    static let raised = Color(nsColor: .textBackgroundColor)
+    static let selection = Color.primary.opacity(0.065)
+    static let border = Color.primary.opacity(0.10)
     static let accent = Color(red: 0.69, green: 0.42, blue: 0.96)
 }
 struct WorkspaceTabButton: View {
@@ -147,11 +155,19 @@ struct WorkspaceTabButton: View {
                 .foregroundStyle(selected ? .primary : .secondary).padding(.horizontal, 12).frame(height: 38)
                 .overlay(alignment: .bottom) { if selected { Rectangle().fill(DioramaStyle.accent).frame(height: 2) } }
                 .contentShape(Rectangle())
-        }.buttonStyle(.plain).accessibilityAddTraits(selected ? .isSelected : [])
+        }.pointingHand().buttonStyle(.plain).accessibilityAddTraits(selected ? .isSelected : [])
     }
 }
 extension LibraryModel {
     func navigate(_ destination: WorkspaceDestination, record: Bool = true) {
+        switch destination {
+        case .project(let id, _): if navigation.projectTabs.selected != .project(id) { selectProjectTab(id) }
+        case .home: selectDesktopTab(.home); return
+        case .imported(let session):
+            if navigation.projectTabs.selected != .home { selectDesktopTab(.home) }
+            navigation.projectTabs.home.section = .imported; navigation.projectTabs.home.importedSession = session
+        }
+        navigation.projectTabs.invalidatePresentation()
         if record { navigation.visit(destination) }
         viewMode = .workspace
         spatial.notice = nil
@@ -169,7 +185,6 @@ extension LibraryModel {
             selectedID = session
         case .project(let id, let session):
             navigation.tabs[id + ":" + (session ?? "draft")] = .workspace
-            guard projects.projects.contains(where: { $0.id == id }) else { navigate(.home); return }
             projects.selectedID = id
             projects.update(id) {
                 if $0.selectedSession != session { $0.fileLocation = nil; $0.fileSelection = nil }
@@ -178,6 +193,7 @@ extension LibraryModel {
             selectedID = session
         }
         projectNavigation = projects.selectedID != "imported"
+        entryLimit = selectedID.flatMap { navigation.projectTabs.conversationBookmarks[$0]?.entryLimit } ?? 300
     }
     func openInWorkspace(_ session: Session) {
         if let project = projects.projects.first(where: { projects.sessions($0, library: self).contains(where: { $0.id == session.id }) }) {
@@ -189,6 +205,17 @@ extension LibraryModel {
         if let project = projects.selected { navigation.tabs[project.id + ":" + (project.selectedSession ?? "draft")] = .conversation }
         viewMode = .conversation
         DispatchQueue.main.async { ComposerNSTextView.focusVisible() }
+    }
+    var spatialWorkspaceVisible: Bool {
+        if let project = projects.selected {
+            return (navigation.tabs[project.id + ":" + (project.selectedSession ?? "draft")] ?? .workspace) == .workspace
+        }
+        if projects.selectedID == "imported" { return selected != nil && viewMode == .workspace }
+        return true
+    }
+    func toggleWorkspaceInspector() {
+        if spatialWorkspaceVisible { spatial.conversationPanelVisible.toggle() }
+        else { navigation.layout.inspectorVisible.toggle() }
     }
     var workspaceDestination: WorkspaceDestination {
         if projects.selectedID == "imported" { return .imported(selectedID) }

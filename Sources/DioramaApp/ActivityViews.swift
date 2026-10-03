@@ -60,7 +60,7 @@ struct ActivityTimeline: View {
                         if livePhase == nil, event.state?.needsAttention == true, summary.attention.contains(where: { $0.id == event.id }) {
                             Text("Resolution unverified · respond in the source client").font(.caption).foregroundStyle(.orange)
                         }
-                        DisclosureGroup("Evidence and details") {
+                        DisclosureGroup {
                             VStack(alignment: .leading, spacing: 5) {
                                 Text(event.source)
                                 Text("Observed: " + event.observedAt.formatted())
@@ -72,7 +72,7 @@ struct ActivityTimeline: View {
                                 if let detail = event.detail { Text(verbatim: detail).font(.system(.caption, design: .monospaced)) }
                                 if let detail = end?.detail { Text(verbatim: detail).font(.system(.caption, design: .monospaced)) }
                             }.font(.caption).textSelection(.enabled).padding(.top, 4)
-                        }.font(.caption)
+                        } label: { Text("Evidence and details").disclosurePointingHand() }.font(.caption)
                     }.padding(14).background(.white.opacity(0.035), in: RoundedRectangle(cornerRadius: 10))
                 }
             }.padding(24)
@@ -85,7 +85,7 @@ struct AttentionInbox: View {
     @Environment(\.dismiss) private var dismiss
     var body: some View {
         VStack(alignment: .leading, spacing: 16) {
-            HStack { Text("Attention inbox").font(.title2); Spacer(); Button("Done") { dismiss() } }
+            HStack { Text("Attention inbox").font(.title2); Spacer(); Button("Done") { dismiss() }.pointingHand() }
             Text("Diorama tasks: select a request to respond here. Observed tasks: respond in the original client; resolution requires correlated evidence.")
                 .font(.caption).foregroundStyle(.secondary)
             if model.attentionSessions.isEmpty { ContentUnavailableView("No observed requests", systemImage: "tray") }
@@ -94,7 +94,7 @@ struct AttentionInbox: View {
                     ForEach(model.attentionSessions) { session in
                         Button { model.openAttention(session) } label: {
                             VStack(alignment: .leading, spacing: 6) {
-                                Text(markdownTitle(session.title)).font(.headline)
+                                Text(session.displayTitle).help(TaskTitle.full(session.title)).accessibilityLabel(TaskTitle.full(session.title)).font(.headline)
                                 Text(session.project).font(.caption).foregroundStyle(.secondary)
                                 Text(session.provider.rawValue + " · " + session.classification.rawValue).font(.caption)
                                 ForEach(model.summary(session).attention) { event in
@@ -105,7 +105,7 @@ struct AttentionInbox: View {
                                     Text("Respond in Diorama").font(.caption).foregroundStyle(.mint)
                                 } else { Text("Resolution unverified").font(.caption).foregroundStyle(.orange) }
                             }.frame(maxWidth: .infinity, alignment: .leading).padding(12)
-                        }.buttonStyle(.plain).background(.white.opacity(0.04), in: RoundedRectangle(cornerRadius: 8))
+                        }.pointingHand().buttonStyle(.plain).background(.white.opacity(0.04), in: RoundedRectangle(cornerRadius: 8))
                     }
                 }
             }
@@ -154,8 +154,8 @@ struct HookConnections: View {
             Text(capability.explanation).font(.caption).foregroundStyle(.secondary)
             Text("Chat, Cowork, cloud and SSH sessions are not connected.").font(.caption).foregroundStyle(.secondary)
             HStack {
-                Button("Enable Desktop activity reporting…") { prepare(.claude, remove: false, desktop: true) }.disabled(!capability.canInstall)
-                if installed { Button("Remove shared Claude reporter hooks…") { prepare(.claude, remove: true, desktop: true) } }
+                Button("Enable Desktop activity reporting…") { prepare(.claude, remove: false, desktop: true) }.pointingHand().disabled(!capability.canInstall)
+                if installed { Button("Remove shared Claude reporter hooks…") { prepare(.claude, remove: true, desktop: true) }.pointingHand() }
             }.font(.caption)
         }
     }
@@ -172,9 +172,9 @@ struct HookConnections: View {
                         Text("Last hook observed: " + last.observedAt.formatted()).font(.caption)
                     }
                     HStack {
-                        Button("Enable activity reporting…") { prepare(provider, remove: false) }.disabled(!capability.canInstall)
-                        if installed { Button("Remove reporter hooks…") { prepare(provider, remove: true) } }
-                        Link("Documentation", destination: URL(string: provider == .codex ? "https://learn.chatgpt.com/docs/hooks" : "https://code.claude.com/docs/en/hooks")!)
+                        Button("Enable activity reporting…") { prepare(provider, remove: false) }.pointingHand().disabled(!capability.canInstall)
+                        if installed { Button("Remove reporter hooks…") { prepare(provider, remove: true) }.pointingHand() }
+                        Link("Documentation", destination: URL(string: provider == .codex ? "https://learn.chatgpt.com/docs/hooks" : "https://code.claude.com/docs/en/hooks")!).pointingHand()
                     }.font(.caption)
                 }
             }
@@ -184,7 +184,7 @@ struct HookConnections: View {
                 Button("Clear activity history") {
                     do { try HookStore.clear(); Task { await model.refresh() } }
                     catch { message = error.localizedDescription }
-                }
+                }.pointingHand()
                 Text("Hook records only · 7 days / 50 MiB").font(.caption).foregroundStyle(.secondary)
             }
             if !message.isEmpty { Text(message).font(.caption).foregroundStyle(.orange) }
@@ -198,7 +198,7 @@ struct HookConnections: View {
                     Text("Only Diorama hook entries are shown below. Applying preserves other settings and creates a backup. Filenames, command previews, and errors may contain sensitive information. Records stay on this Mac. Claude session paths are retained separately for discovery. Claude hooks are shared by CLI and Desktop; removing them affects both. Review hook trust in the source client and restart it; Diorama does not bypass trust or handle approvals.").font(.callout)
                     ScrollView { Text(verbatim: previewText).font(.system(.caption, design: .monospaced)).textSelection(.enabled).frame(maxWidth: .infinity, alignment: .leading) }
                     HStack {
-                        Button("Cancel") { setup = nil }
+                        Button("Cancel") { setup = nil }.pointingHand()
                         Spacer()
                         Button(removing ? "Remove hooks" : "Apply configuration") {
                             do {
@@ -207,7 +207,7 @@ struct HookConnections: View {
                                 message = removing ? "Diorama hooks removed. Restart the source client." : "Configuration saved. Review trust in the source client and restart it. Live capability remains unverified."
                                 setup = nil
                             } catch { message = error.localizedDescription; setup = nil }
-                        }
+                        }.pointingHand()
                     }
                 }.padding(24).frame(width: 700, height: 580)
             }
