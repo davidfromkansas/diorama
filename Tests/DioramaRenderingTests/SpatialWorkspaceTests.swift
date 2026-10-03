@@ -155,7 +155,7 @@ import Testing
         let first = world(agents)
         let focus = SpatialFocus.team(project: "p", conversation: "Codex:root")
         view.apply(world: first, focus: focus, active: true, reducedMotion: true, reset: 0)
-        #expect(view.officeWorkstations.count == 60)
+        #expect(view.officeWorkstations.count == 16)
         let retained = try #require(view.officeWorkstations[agents[0].id])
         let position = retained.root.position
         var changed = first
@@ -163,9 +163,10 @@ import Testing
         view.apply(world: changed, focus: agents[0].focus, active: true, reducedMotion: true, reset: 0)
         let updated = try #require(view.officeWorkstations[agents[0].id])
         #expect(updated.root.position.x == position.x && updated.root.position.z == position.z)
-        #expect(view.officeWorkstations.count == 60)
+        #expect(view.officeWorkstations.count == 16)
         view.apply(world: first, focus: agents[59].focus, active: true, reducedMotion: true, reset: 0)
-        #expect(view.officeWorkstations[agents[59].id] != nil)
+        #expect(view.officeWorkstations[agents[59].id] == nil) // Selecting a hidden agent must not create an extra avatar.
+        #expect(view.officeWorkstations.count == 16)
         view.suspend()
         #expect(!view.isPlaying && !view.rendersContinuously)
     }

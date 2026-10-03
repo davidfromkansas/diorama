@@ -42,6 +42,11 @@ import Testing
         let restored = ProjectModel(storageURL: storage)
         #expect(restored.projects.count == 2)
         #expect(restored.projects.first?.isGitBacked == false)
+        // Shared project storage does not own a window's selection. Restore its
+        // separately persisted presentation snapshot before asserting selection.
+        #expect(restored.projects.first?.selectedSession == nil)
+        let savedSelection = try JSONEncoder().encode(try #require(model.presentation[first.id]))
+        restored.presentation[first.id] = try JSONDecoder().decode(ProjectViewSelection.self, from: savedSelection)
         #expect(restored.projects.first?.selectedSession == session.id)
         #expect(restored.projects.first?.draft == "Keep draft")
         await #expect(throws: (any Error).self) { try await restored.prepare(projectID: first.id, base: "", cached: false) }
@@ -78,6 +83,9 @@ import Testing
         #expect(model.projects.count == 1)
         model.update(p.id) { $0.section = "Context"; $0.draft = "Keep this draft" }
         let reloaded = ProjectModel(storageURL: file)
+        #expect(reloaded.projects.first?.section == "Sessions")
+        let savedSelection = try JSONEncoder().encode(try #require(model.presentation[p.id]))
+        reloaded.presentation[p.id] = try JSONDecoder().decode(ProjectViewSelection.self, from: savedSelection)
         #expect(reloaded.projects.first?.section == "Context")
         #expect(reloaded.projects.first?.draft == "Keep this draft")
         model.projects.removeAll(); model.save()

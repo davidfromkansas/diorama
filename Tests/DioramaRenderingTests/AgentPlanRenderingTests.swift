@@ -24,7 +24,7 @@ import Testing
         let view = SpatialSceneView(); view.frame = NSRect(x: 0, y: 0, width: 1100, height: 760)
         defer { view.tearDown() }
         view.apply(world: world, focus: .project("p"), active: false, reducedMotion: true, reset: 0)
-        #expect(view.officeWorkstations.count == 64)
+        #expect(view.officeWorkstations.count == 18) // Fixed idle capacity; hidden agents remain in the roster.
         let first = try #require(agents.first)
         let station = try #require(view.officeWorkstations[first.id])
         let button = try #require(station.root.childNode(withName: "proposal:" + first.id, recursively: true))
