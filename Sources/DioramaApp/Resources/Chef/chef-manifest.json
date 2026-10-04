@@ -1,0 +1,492 @@
+{
+  "asset": "chef-animated.glb",
+  "props": "chef-props.glb",
+  "source": {
+    "file": "Meshy_AI_Tiny_Chef_Mascot_1004162827_texture.glb",
+    "sha256": "25c78e347715d55e169c81680dd8670ac9dc14af203c2b9a059ccf6fa12fafdc"
+  },
+  "units": "1 glTF unit = 1 source unit; chef height 1.90 (soles to toque top)",
+  "height": 1.9,
+  "floor_shift_blender": [
+    0.0,
+    0.05999999865889549,
+    0.9505689740180969
+  ],
+  "floor_shift_gltf": [
+    0.0,
+    0.9505689740180969,
+    -0.05999999865889549
+  ],
+  "facing": "+Z in glTF (-Y in Blender)",
+  "root_motion": "none - all clips are in place; navigation moves the avatar root",
+  "clips": {
+    "idle_available": {
+      "clip": "idle_available",
+      "duration": 4.0,
+      "frames": 121,
+      "fps": 30,
+      "loop": true,
+      "markers": {}
+    },
+    "planning_recipe": {
+      "clip": "planning_recipe",
+      "duration": 2.4,
+      "frames": 73,
+      "fps": 30,
+      "loop": true,
+      "markers": {
+        "tap": 0.0521
+      }
+    },
+    "researching_book": {
+      "clip": "researching_book",
+      "duration": 2.8,
+      "frames": 85,
+      "fps": 30,
+      "loop": true,
+      "markers": {}
+    },
+    "working_chop": {
+      "clip": "working_chop",
+      "duration": 0.4,
+      "frames": 13,
+      "fps": 30,
+      "loop": true,
+      "markers": {
+        "impact": 0.1667,
+        "impact_2": 0.6667
+      }
+    },
+    "waiting_tool": {
+      "clip": "waiting_tool",
+      "duration": 3.6,
+      "frames": 109,
+      "fps": 30,
+      "loop": true,
+      "markers": {}
+    },
+    "testing_dish": {
+      "clip": "testing_dish",
+      "duration": 2.6,
+      "frames": 79,
+      "fps": 30,
+      "loop": true,
+      "markers": {
+        "taste": 0.2885
+      }
+    },
+    "walk": {
+      "clip": "walk",
+      "duration": 0.5333,
+      "frames": 17,
+      "fps": 30,
+      "loop": true,
+      "markers": {},
+      "nominal_speed": 0.75
+    },
+    "run": {
+      "clip": "run",
+      "duration": 0.4,
+      "frames": 13,
+      "fps": 30,
+      "loop": true,
+      "markers": {},
+      "nominal_speed": 1.3636
+    },
+    "carry_idle": {
+      "clip": "carry_idle",
+      "duration": 2.0,
+      "frames": 61,
+      "fps": 30,
+      "loop": true,
+      "markers": {}
+    },
+    "carry_walk": {
+      "clip": "carry_walk",
+      "duration": 0.5333,
+      "frames": 17,
+      "fps": 30,
+      "loop": true,
+      "markers": {},
+      "nominal_speed": 0.6818
+    },
+    "request_input": {
+      "clip": "request_input",
+      "duration": 1.0,
+      "frames": 31,
+      "fps": 30,
+      "loop": false,
+      "markers": {}
+    },
+    "wait_input": {
+      "clip": "wait_input",
+      "duration": 2.4,
+      "frames": 73,
+      "fps": 30,
+      "loop": true,
+      "markers": {}
+    },
+    "blocked_react": {
+      "clip": "blocked_react",
+      "duration": 1.0,
+      "frames": 31,
+      "fps": 30,
+      "loop": false,
+      "markers": {}
+    },
+    "blocked_wait": {
+      "clip": "blocked_wait",
+      "duration": 3.2,
+      "frames": 97,
+      "fps": 30,
+      "loop": true,
+      "markers": {}
+    },
+    "error_react": {
+      "clip": "error_react",
+      "duration": 0.8,
+      "frames": 25,
+      "fps": 30,
+      "loop": false,
+      "markers": {}
+    },
+    "present_review": {
+      "clip": "present_review",
+      "duration": 1.4,
+      "frames": 43,
+      "fps": 30,
+      "loop": false,
+      "markers": {
+        "release": 0.3571
+      }
+    },
+    "wait_review": {
+      "clip": "wait_review",
+      "duration": 2.6,
+      "frames": 79,
+      "fps": 30,
+      "loop": true,
+      "markers": {}
+    },
+    "celebrate_done": {
+      "clip": "celebrate_done",
+      "duration": 1.0,
+      "frames": 31,
+      "fps": 30,
+      "loop": false,
+      "markers": {}
+    },
+    "unknown_wait": {
+      "clip": "unknown_wait",
+      "duration": 4.0,
+      "frames": 121,
+      "fps": 30,
+      "loop": true,
+      "markers": {}
+    },
+    "cancel_cleanup": {
+      "clip": "cancel_cleanup",
+      "duration": 0.6,
+      "frames": 19,
+      "fps": 30,
+      "loop": false,
+      "markers": {
+        "release": 0.4667
+      }
+    },
+    "pickup": {
+      "clip": "pickup",
+      "duration": 0.5,
+      "frames": 16,
+      "fps": 30,
+      "loop": false,
+      "markers": {
+        "attach": 0.48
+      }
+    },
+    "putdown": {
+      "clip": "putdown",
+      "duration": 0.5,
+      "frames": 16,
+      "fps": 30,
+      "loop": false,
+      "markers": {
+        "release": 0.52
+      }
+    }
+  },
+  "sockets": {
+    "socket_hand.L": {
+      "parent": "hand.L",
+      "use": "left-hand props (recipe card, cookbook)"
+    },
+    "socket_hand.R": {
+      "parent": "hand.R",
+      "use": "right-hand props (knife, spoon)"
+    },
+    "socket_carry": {
+      "parent": "root (baked to hands' midpoint, level)",
+      "use": "two-hand plate"
+    }
+  },
+  "attach": {
+    "prop_recipe_card": {
+      "planning_recipe": {
+        "socket": "socket_hand.L",
+        "position": [
+          0.0209,
+          0.01,
+          -0.02152
+        ],
+        "quaternion": [
+          0.80699,
+          0.45862,
+          -0.11369,
+          0.35428
+        ],
+        "fit_frame": 30,
+        "blender": [
+          [
+            0.5534800291061401,
+            -0.14146284759044647,
+            0.8207603693008423,
+            0.02090275287628174
+          ],
+          [
+            0.6596481800079346,
+            0.676074743270874,
+            -0.32830822467803955,
+            0.010003909468650818
+          ],
+          [
+            -0.5084520578384399,
+            0.7231262922286987,
+            0.46751001477241516,
+            -0.021517306566238403
+          ],
+          [
+            0.0,
+            0.0,
+            0.0,
+            1.0
+          ]
+        ],
+        "grip_gap": 0.0316
+      }
+    },
+    "prop_cookbook": {
+      "researching_book": {
+        "socket": "socket_hand.L",
+        "position": [
+          0.02666,
+          0.02543,
+          -0.00655
+        ],
+        "quaternion": [
+          0.55236,
+          0.56477,
+          0.50243,
+          0.35142
+        ],
+        "fit_frame": 0,
+        "blender": [
+          [
+            -0.14280618727207184,
+            -0.9519903659820557,
+            0.27077624201774597,
+            0.02665775641798973
+          ],
+          [
+            0.9770403504371643,
+            -0.17929640412330627,
+            -0.11508090794086456,
+            0.025425985455513
+          ],
+          [
+            0.15810517966747284,
+            0.2481253445148468,
+            0.9557384252548218,
+            -0.0065484438091516495
+          ],
+          [
+            0.0,
+            0.0,
+            0.0,
+            1.0
+          ]
+        ],
+        "grip_gap": 0.0374
+      }
+    },
+    "prop_knife": {
+      "working_chop": {
+        "socket": "socket_hand.R",
+        "position": [
+          -0.07976,
+          -0.0576,
+          0.0492
+        ],
+        "quaternion": [
+          0.42895,
+          -0.30392,
+          -0.2748,
+          0.80506
+        ],
+        "fit_frame": 2,
+        "blender": [
+          [
+            0.6642305254936218,
+            0.7251009941101074,
+            0.18172714114189148,
+            -0.07976113259792328
+          ],
+          [
+            -0.7031988501548767,
+            0.5236272215843201,
+            0.4809625446796417,
+            -0.057598989456892014
+          ],
+          [
+            0.253589391708374,
+            -0.44726094603538513,
+            0.857700526714325,
+            0.04919864237308502
+          ],
+          [
+            0.0,
+            0.0,
+            0.0,
+            1.0
+          ]
+        ],
+        "grip_gap": 0.11
+      }
+    },
+    "prop_spoon": {
+      "testing_dish": {
+        "socket": "socket_hand.R",
+        "position": [
+          -0.0,
+          -0.0,
+          0.0
+        ],
+        "quaternion": [
+          0.73052,
+          -0.50761,
+          -0.2478,
+          0.38375
+        ],
+        "fit_frame": 22,
+        "blender": [
+          [
+            0.36184871196746826,
+            0.7516446113586426,
+            -0.5514482259750366,
+            -3.725290298461914e-08
+          ],
+          [
+            -0.9318292737007141,
+            0.3090997338294983,
+            -0.1901329904794693,
+            -2.2351741790771484e-08
+          ],
+          [
+            0.027540042996406555,
+            0.5826547145843506,
+            0.8122526407241821,
+            7.078051567077637e-08
+          ],
+          [
+            0.0,
+            0.0,
+            0.0,
+            1.0
+          ]
+        ],
+        "grip_gap": 0.0
+      }
+    },
+    "prop_plate": {
+      "carry_idle": {
+        "socket": "socket_carry",
+        "position": [
+          0.0,
+          -0.006,
+          0.02
+        ],
+        "quaternion": [
+          0.0,
+          0.0,
+          0.0,
+          1.0
+        ],
+        "fit_frame": 0,
+        "blender": [
+          [
+            1.0,
+            0.0,
+            0.0,
+            0.0
+          ],
+          [
+            0.0,
+            3.422854533141617e-08,
+            1.0000001192092896,
+            -0.005999937653541565
+          ],
+          [
+            0.0,
+            -1.0000001192092896,
+            3.422854533141617e-08,
+            0.020000038668513298
+          ],
+          [
+            0.0,
+            0.0,
+            0.0,
+            1.0
+          ]
+        ],
+        "grip_gap": 0.0209
+      }
+    }
+  },
+  "stations": {
+    "counter_top": 0.585,
+    "board_top": 0.605,
+    "counter_front_from_root": 0.43,
+    "note": "Distances in chef units, measured forward (+Z glTF) from the avatar root."
+  },
+  "bones": {
+    "deform": [
+      "hips",
+      "spine",
+      "chest",
+      "neck",
+      "head",
+      "hat",
+      "clavicle.L",
+      "upperarm.L",
+      "forearm.L",
+      "hand.L",
+      "clavicle.R",
+      "upperarm.R",
+      "forearm.R",
+      "hand.R",
+      "thigh.L",
+      "shin.L",
+      "foot.L",
+      "toe.L",
+      "thigh.R",
+      "shin.R",
+      "foot.R",
+      "toe.R"
+    ],
+    "sockets": [
+      "socket_hand.L",
+      "socket_hand.R",
+      "socket_carry"
+    ],
+    "root": "root"
+  }
+}
