@@ -14,16 +14,21 @@ import SceneKit
         let stone = material(NSColor(red: 0.76, green: 0.73, blue: 0.61, alpha: 1))
         let glass = material(NSColor(red: 0.47, green: 0.65, blue: 0.69, alpha: 1))
         let oak = (0..<4).map { i in material(NSColor(red: 0.43 + Double(i) * 0.025, green: 0.28 + Double(i) * 0.022, blue: 0.15 + Double(i) * 0.017, alpha: 1)) }
-        func box(_ name: String, _ w: CGFloat, _ h: CGFloat, _ d: CGFloat, _ x: CGFloat, _ y: CGFloat, _ z: CGFloat, _ mat: SCNMaterial) {
+        // Connecting cabinets follow the station worktop height (scaled about the floor line).
+        let cabinets = SCNNode(); cabinets.name = "connecting cabinets"
+        let k = CGFloat(KitchenLayout.heightScale)
+        cabinets.scale.y = k; cabinets.position.y = KitchenLayout.floorTop * (1 - k)
+        root.addChildNode(cabinets)
+        func box(_ name: String, _ w: CGFloat, _ h: CGFloat, _ d: CGFloat, _ x: CGFloat, _ y: CGFloat, _ z: CGFloat, _ mat: SCNMaterial, in parent: SCNNode? = nil) {
             let shape = SCNBox(width: w, height: h, length: d, chamferRadius: min(0.035, h / 3))
             shape.materials = [mat]; let node = SCNNode(geometry: shape)
-            node.name = name; node.position = SCNVector3(x, y, z); root.addChildNode(node)
+            node.name = name; node.position = SCNVector3(x, y, z); (parent ?? root).addChildNode(node)
         }
         let counter = material(NSColor(red: 0.9, green: 0.87, blue: 0.77, alpha: 1))
         let brass = material(NSColor(red: 0.63, green: 0.45, blue: 0.22, alpha: 1))
         for r in KitchenLayout.connectors {
-            box("connecting cabinet", r.width - 0.10, 0.87, r.height - 0.10, r.midX, 0.72, r.midY, trim)
-            box("connecting counter", r.width, 0.20, r.height, r.midX, 1.262, r.midY, counter)
+            box("connecting cabinet", r.width - 0.10, 0.87, r.height - 0.10, r.midX, 0.72, r.midY, trim, in: cabinets)
+            box("connecting counter", r.width, 0.20, r.height, r.midX, 1.262, r.midY, counter, in: cabinets)
             let sideways = r.height > r.width
             let length = sideways ? r.height : r.width
             let count = max(1, Int(length / 0.9))
@@ -32,11 +37,11 @@ import SceneKit
                 let along = -length / 2 + (CGFloat(i) + 0.5) * bay
                 if sideways {
                     let face = r.midX < 0 ? r.maxX - 0.04 : r.minX + 0.04
-                    box("module door", 0.04, 0.72, bay - 0.05, face, 0.72, r.midY + along, plaster)
-                    box("module pull", 0.07, 0.045, 0.24, face, 0.99, r.midY + along, brass)
+                    box("module door", 0.04, 0.72, bay - 0.05, face, 0.72, r.midY + along, plaster, in: cabinets)
+                    box("module pull", 0.07, 0.045, 0.24, face, 0.99, r.midY + along, brass, in: cabinets)
                 } else {
-                    box("module door", bay - 0.05, 0.72, 0.04, r.midX + along, 0.72, r.maxY - 0.04, plaster)
-                    box("module pull", 0.24, 0.045, 0.07, r.midX + along, 0.99, r.maxY - 0.04, brass)
+                    box("module door", bay - 0.05, 0.72, 0.04, r.midX + along, 0.72, r.maxY - 0.04, plaster, in: cabinets)
+                    box("module pull", 0.24, 0.045, 0.07, r.midX + along, 0.99, r.maxY - 0.04, brass, in: cabinets)
                 }
             }
         }

@@ -64,7 +64,10 @@ struct SpatialWorkspaceView: View {
                     dismissPlan: inspection == nil ? nil : { closePlan() }, editStatus: { editStatus = $0 }, cameraStore: library.navigation.projectTabs, presented: !kitchenSelected)
                     .opacity(focus == .portfolio || kitchenSelected ? 0 : 1)
                     .allowsHitTesting(!kitchenSelected && focus != .portfolio && inspection == nil).accessibilityHidden(kitchenSelected || focus == .portfolio || inspection != nil)
-                if kitchenSelected { KitchenSceneSurface() }
+                if kitchenSelected {
+                    KitchenSceneSurface(agents: kitchenAgents(snapshot, focus: focus), active: visible && scenePhase == .active && library.windowIsActive,
+                                        reducedMotion: reduced, select: go)
+                }
                 if !kitchenSelected && focus != .portfolio && !ScenePerformance.disabled("OVERLAYS") {
                     VStack(alignment: .leading, spacing: 12) {
                         toolbar(snapshot, focus: focus)
@@ -475,6 +478,12 @@ struct SpatialWorkspaceView: View {
         if team.session.archived { state.showArchived = true }
         go(.agent(project: team.projectID, conversation: team.session.id, agent: agent.id, expanded: true))
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.15) { ComposerNSTextView.focusVisible() }
+    }
+    /// The focused project's agents (or the focused standalone conversation's); none at portfolio.
+    private func kitchenAgents(_ world: SpatialWorld, focus: SpatialFocus) -> [SpatialAgent] {
+        guard focus != .portfolio else { return [] }
+        if let project = focus.projectID { return world.projects.first { $0.id == project }?.teams.flatMap(\.agents) ?? [] }
+        return world.team(focus)?.agents ?? []
     }
     private func go(_ focus: SpatialFocus) {
         if focus.expanded { state.conversationPanelVisible = true }

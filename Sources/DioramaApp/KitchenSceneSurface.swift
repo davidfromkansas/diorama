@@ -32,17 +32,43 @@ enum KitchenLayout {
     ]
 }
 struct KitchenSceneSurface: NSViewRepresentable {
+    var agents: [SpatialAgent] = []
+    var active = false
+    var reducedMotion = false
+    var select: (SpatialFocus) -> Void = { _ in }
     func makeNSView(context: Context) -> KitchenSceneView { KitchenSceneView() }
-    func updateNSView(_ view: KitchenSceneView, context: Context) { view.fitFloor() }
-    static func dismantleNSView(_ view: KitchenSceneView, coordinator: ()) { view.scene = nil }
+    func updateNSView(_ view: KitchenSceneView, context: Context) {
+        view.select = select
+        view.apply(agents: agents, active: active, reducedMotion: reducedMotion)
+        view.fitFloor()
+    }
+    static func dismantleNSView(_ view: KitchenSceneView, coordinator: ()) { view.tearDown() }
+}
+@MainActor private final class KitchenFrameDriver: NSObject {
+    weak var view: KitchenSceneView?
+    @objc func frame(_ link: CADisplayLink) { view?.frameStep(at: link.targetTimestamp) }
 }
 private final class KitchenLabel: NSTextField {
     override func hitTest(_ point: NSPoint) -> NSView? { nil }
 }
 
-/// Static design mockup; it never observes or controls provider execution.
+/// Kitchen workspace: the focused project's agents appear as chefs working at the station that
+/// matches their state. It only observes agent state; it never controls provider execution.
 final class KitchenSceneView: SCNView {
+    static let maxChefs = 12
     let floorSize = SIMD3<Float>(16, 0.2, 12)
+    var select: ((SpatialFocus) -> Void)?
+    private(set) var chefs: [String: ChefAvatar] = [:]
+    private var chefAgents: [String: SpatialAgent] = [:]
+    private var chefLabels: [String: NSTextField] = [:]
+    private var slots: [String: ChefStation] = [:]
+    private let navigation = KitchenLayout.chefNavigation
+    private var active = false
+    private var reduced = false
+    private var frameLink: CADisplayLink?
+    private var frameDriver: KitchenFrameDriver?
+    private var lastFrame: TimeInterval?
+    private var windowObservers: [NSObjectProtocol] = []
     private var labels: [NSTextField] = []
     private let leaders = CAShapeLayer()
     private var fittedSize = CGSize.zero
@@ -108,6 +134,112 @@ final class KitchenSceneView: SCNView {
     }
     required init?(coder: NSCoder) { fatalError("init(coder:) has not been implemented") }
     override func layout() { super.layout(); fitFloor() }
+
+    // MARK: Chefs
+
+    /// Reconcile chefs with agents: attention first, then working, capped at `maxChefs`.
+    func apply(agents: [SpatialAgent], active: Bool, reducedMotion: Bool) {
+        self.active = active; reduced = reducedMotion
+        let ranked = agents.enumerated().sorted { a, b in
+            let ra = a.element.needsAttention ? 0 : a.element.value.status == .working ? 1 : 2
+            let rb = b.element.needsAttention ? 0 : b.element.value.status == .working ? 1 : 2
+            return ra != rb ? ra < rb : a.offset < b.offset
+        }.prefix(Self.maxChefs).map(\.element)
+        let ids = Set(ranked.map(\.id))
+        for id in chefs.keys where !ids.contains(id) {
+            chefs.removeValue(forKey: id)?.root.removeFromParentNode()
+            chefLabels.removeValue(forKey: id)?.removeFromSuperview()
+            chefAgents[id] = nil; slots[id] = nil
+        }
+        guard !ranked.isEmpty, case let .success(assets) = ChefAssets.shared, let world = scene else { updatePlayback(); return }
+        slots = KitchenLayout.assignSlots(ranked.map { ($0.id, KitchenLayout.work(for: $0.value).area) }, previous: slots)
+        let table = KitchenLayout.chefSlots, pickup = table["test"]?.first, home = table["home"] ?? []
+        for agent in ranked {
+            chefAgents[agent.id] = agent
+            if let chef = chefs[agent.id] {
+                chef.director.reducedMotion = reduced
+                chef.director.setIntent(KitchenLayout.intent(for: agent.value, at: slots[agent.id], pickup: pickup, restored: false))
+            } else {
+                // New chefs start at their station in their current state: no walk-in, no replayed gesture.
+                let chef = ChefAvatar(id: agent.id, assets: assets, scale: KitchenLayout.chefScale, navigation: navigation)
+                chef.director.reducedMotion = reduced
+                let spawn = slots[agent.id] ?? (home.isEmpty ? nil : home[chefs.count % home.count])
+                if let spawn { chef.director.place(spawn.stand, heading: spawn.facing) }
+                chef.director.setIntent(KitchenLayout.intent(for: agent.value, at: slots[agent.id], pickup: pickup, restored: true))
+                chef.update(0)
+                world.rootNode.addChildNode(chef.root); chefs[agent.id] = chef
+                let label = KitchenLabel(labelWithString: "")
+                label.font = .systemFont(ofSize: 10, weight: .semibold); label.alignment = .center
+                label.wantsLayer = true; label.layer?.cornerRadius = 4
+                label.layer?.backgroundColor = NSColor.white.withAlphaComponent(0.9).cgColor
+                chefLabels[agent.id] = label; addSubview(label)
+            }
+            let label = chefLabels[agent.id]
+            label?.stringValue = agent.value.name + " · " + agent.value.statusLabel
+            label?.textColor = agent.needsAttention ? .systemOrange : .init(white: 0.2, alpha: 1)
+        }
+        placeChefLabels()
+        updatePlayback()
+        needsDisplay = true
+    }
+    func frameStep(at time: TimeInterval) {
+        let delta = lastFrame.map { Float(min(0.05, max(0, time - $0))) } ?? 0
+        lastFrame = time
+        for chef in chefs.values { chef.update(delta) }
+        placeChefLabels()
+        updatePlayback()
+    }
+    private var effectiveActive: Bool { active && (window == nil || window?.occlusionState.contains(.visible) == true) }
+    func updatePlayback() {
+        let moving = effectiveActive && chefs.values.contains(where: \.animating)
+        if isPlaying != moving { isPlaying = moving }
+        if rendersContinuously != moving { rendersContinuously = moving }
+        if frameLink?.isPaused != !moving { frameLink?.isPaused = !moving }
+        if !moving { lastFrame = nil }
+    }
+    override func viewDidMoveToWindow() {
+        super.viewDidMoveToWindow()
+        frameLink?.invalidate(); frameLink = nil; frameDriver = nil
+        windowObservers.forEach(NotificationCenter.default.removeObserver); windowObservers = []
+        guard let window else { return }
+        let driver = KitchenFrameDriver(); driver.view = self; frameDriver = driver
+        let link = displayLink(target: driver, selector: #selector(KitchenFrameDriver.frame(_:)))
+        link.add(to: .main, forMode: .common); frameLink = link
+        windowObservers.append(NotificationCenter.default.addObserver(forName: NSWindow.didChangeOcclusionStateNotification, object: window, queue: .main) { [weak self] _ in
+            MainActor.assumeIsolated { self?.updatePlayback() }
+        })
+        updatePlayback()
+    }
+    func tearDown() {
+        frameLink?.invalidate(); frameLink = nil; frameDriver = nil
+        windowObservers.forEach(NotificationCenter.default.removeObserver); windowObservers = []
+        scene = nil
+    }
+    private func placeChefLabels() {
+        for (id, chef) in chefs {
+            guard let label = chefLabels[id] else { continue }
+            let head = chef.root.simdPosition + SIMD3(0, 2.05 * KitchenLayout.chefScale, 0)
+            let point = projectPoint(SCNVector3(head))
+            let size = label.attributedStringValue.size()
+            let width = min(160, size.width + 12), height = size.height + 4
+            let y = isFlipped ? bounds.height - CGFloat(point.y) : CGFloat(point.y)
+            label.frame = CGRect(x: CGFloat(point.x) - width / 2, y: y, width: width, height: height)
+        }
+    }
+    override func mouseUp(with event: NSEvent) {
+        let point = convert(event.locationInWindow, from: nil)
+        for hit in hitTest(point, options: [.searchMode: SCNHitTestSearchMode.all.rawValue]) {
+            var node: SCNNode? = hit.node
+            while let current = node {
+                if let name = current.name, name.hasPrefix("agent:"), let agent = chefAgents[String(name.dropFirst(6))] {
+                    select?(.agent(project: agent.projectID, conversation: agent.conversationID, agent: agent.id, expanded: true))
+                    return
+                }
+                node = current.parent
+            }
+        }
+        super.mouseUp(with: event)
+    }
     var floorCorners: [SCNVector3] {
         var result: [SCNVector3] = []
         let signs: [Float] = [-1, 1]

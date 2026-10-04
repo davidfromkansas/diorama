@@ -6,7 +6,7 @@ import SceneKit
     static func make(_ area: KitchenArea) -> SCNNode {
         let root = SCNNode()
         root.name = area.id
-        root.scale.y = 1.25
+        root.scale.y = 1.25 * CGFloat(KitchenLayout.heightScale)
         root.position = SCNVector3(area.footprint.midX, 0.112, area.footprint.midY)
         let sideways = area.id == "test"
         let width = sideways ? area.footprint.height : area.footprint.width
