@@ -71,6 +71,7 @@ extension ExecutionController {
         guard ["active", "paused"].contains(status) else { throw AppServerFailure("Choose active or paused") }
         if let objective, objective.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty { throw AppServerFailure("Enter a goal") }
         if let tokenBudget, tokenBudget <= 0 { throw AppServerFailure("Token budget must be positive") }
+        if status == "active", !activateSubmittedGoal { try await preparePermissions(id: id) }
         workflowBusy.insert(id); defer { workflowBusy.remove(id) }
         var p: [String: WireValue] = ["threadId": .string(id), "status": .string(status)]
         if let objective { p["objective"] = .string(objective) }
@@ -278,6 +279,7 @@ extension ExecutionController {
     public func startQueued(id: String) async throws {
         try requireIdle(id)
         guard !workflowBusy.contains(id), tasks[id]?.workflow.queueUncertain != true, let next = tasks[id]?.workflow.queue.first?["id"].string else { throw AppServerFailure("No confirmed pending message") }
+        try await preparePermissions(id: id)
         workflowBusy.insert(id); defer { workflowBusy.remove(id) }
         tasks[id]?.phase = .submitting; tasks[id]?.requiresReconciliation = true
         tasks[id]?.work = ExecutionWork()
@@ -430,6 +432,7 @@ extension ExecutionController {
 public extension Session {
     func updated(title: String? = nil, archived: Bool? = nil) -> Self {
         var value = Self(id: id, provider: provider, url: url, sessionID: sessionID, title: title ?? self.title, project: project, modified: modified, bytes: bytes, archived: archived ?? self.archived, parentID: parentID)
+        value.titleSource = titleSource; value.origin = origin; value.desktopSessionID = desktopSessionID; value.lastObservedHook = lastObservedHook
         value.classification = classification; value.classificationEvidence = classificationEvidence; value.historySource = historySource
         return value
     }

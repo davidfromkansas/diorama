@@ -4,25 +4,8 @@ import DioramaCore
 
 struct ToolImagePreview: View {
     let reference: TranscriptImage
-    @State private var image: NSImage?
-    @State private var loaded = false
-
     var body: some View {
-        VStack(alignment: .leading, spacing: 8) {
-            if let image {
-                ToolImageContent(image: image, reference: reference)
-            } else if loaded {
-                Label("Image unavailable · \(reference.url.lastPathComponent)", systemImage: "photo.badge.exclamationmark")
-                    .font(.callout).foregroundStyle(.secondary)
-            } else {
-                ProgressView("Loading image…").controlSize(.small)
-            }
-        }
-        .task(id: reference.url) {
-            image = nil; loaded = false
-            image = Self.thumbnail(at: reference.url)
-            loaded = true
-        }
+        ConversationImageView(output: ConversationImageSource.output(reference.url))
     }
 
     /// Decode a bounded thumbnail instead of retaining full-resolution tool screenshots.
@@ -51,13 +34,13 @@ struct ToolImageContent: View {
                     .clipShape(RoundedRectangle(cornerRadius: 10))
                     .frame(maxWidth: 560, maxHeight: 420, alignment: .leading)
                     .contentShape(Rectangle())
-            }
+            }.pointingHand()
             .buttonStyle(.plain)
             .accessibilityLabel("Open image: \(reference.url.lastPathComponent)")
             .help("Open full-size image")
             HStack {
                 Text(reference.url.lastPathComponent).lineLimit(1)
-                Button("Show in Finder") { NSWorkspace.shared.activateFileViewerSelecting([reference.url]) }
+                Button("Show in Finder") { NSWorkspace.shared.activateFileViewerSelecting([reference.url]) }.pointingHand()
                     .buttonStyle(.link)
             }.font(.caption).foregroundStyle(.secondary)
         }

@@ -3,6 +3,7 @@ import PDFKit
 import DioramaCore
 
 struct ClaudeEntryView: View {
+    @Environment(\.historyDetails) private var historyDetails
     let entry: Entry
     let presentation: ClaudePresentation
     @State private var inputExpanded = false
@@ -50,36 +51,38 @@ struct ClaudeEntryView: View {
                         .font(.callout).fixedSize(horizontal: false, vertical: true)
                 }
             }
-            if let evidence = presentation.evidence, ["progress", "task", "event", "unknown"].contains(presentation.category ?? "") {
-                DisclosureGroup("Reported Claude details") { Text(evidence.pretty).font(.caption.monospaced()).textSelection(.enabled) }
+            if historyDetails, let evidence = presentation.evidence, ["progress", "task", "event", "unknown"].contains(presentation.category ?? "") {
+                DisclosureGroup { Text(evidence.pretty).font(.caption.monospaced()).textSelection(.enabled) } label: { Text("Reported Claude details").disclosurePointingHand() }
             }
             if !presentation.detail.isEmpty {
-                DisclosureGroup(entry.kind == "Proposed plan" ? "View plan" : "Details") {
+                DisclosureGroup {
                     TranscriptContent(text: presentation.detail, literal: entry.kind != "Proposed plan")
-                }
+                } label: { Text(entry.kind == "Proposed plan" ? "View plan" : "Details").disclosurePointingHand() }
             }
             if !presentation.input.isEmpty {
-                DisclosureGroup("Inputs", isExpanded: $inputExpanded) { TranscriptContent(text: presentation.input, literal: true) }
+                DisclosureGroup(isExpanded: $inputExpanded) { TranscriptContent(text: presentation.input, literal: true) } label: { Text("Inputs").disclosurePointingHand() }
             }
             if !entry.text.isEmpty {
-                DisclosureGroup(presentation.callID == nil ? "Details" : "View tool output", isExpanded: $outputExpanded) { TranscriptContent(text: entry.text).textSelection(.enabled) }
+                DisclosureGroup(isExpanded: $outputExpanded) { TranscriptContent(text: entry.text).textSelection(.enabled) } label: { Text(presentation.callID == nil ? "Details" : "View tool output").disclosurePointingHand() }
             }
             ForEach(presentation.outputs) { output in
+                if ConversationImageSource.isImage(output) { ConversationImageView(output: output) } else {
                 VStack(alignment: .leading, spacing: 4) {
                     HStack {
                         Label(output.name, systemImage: output.kind == "image" ? "photo" : "doc")
                         Spacer()
                         if presentation.status == "Running" { Text("Pending").font(.caption) }
                         else if output.kind != "unsupported" {
-                            Button("Preview") { selected = output }.disabled(output.location == nil && output.encoded == nil)
+                            Button("Preview") { selected = output }.pointingHand().disabled(output.location == nil && output.encoded == nil)
                             if let url = ClaudeOutputPreview.externalURL(output) {
-                                Button("Open externally") { NSWorkspace.shared.open(url) }
+                                Button("Open externally") { NSWorkspace.shared.open(url) }.pointingHand()
                             }
                         }
                     }
                     if let note = output.note { Text(note).font(.caption).foregroundStyle(.secondary) }
                     if let location = output.location { Text(location).font(.caption).foregroundStyle(.secondary).lineLimit(2).textSelection(.enabled) }
                 }.padding(10).background(.quaternary.opacity(0.4), in: RoundedRectangle(cornerRadius: 8))
+                }
             }
         }.padding(12).background(.quaternary.opacity(0.25), in: RoundedRectangle(cornerRadius: 10))
         .sheet(item: $selected) { ClaudeOutputPreviewView(output: $0) }
@@ -94,7 +97,7 @@ struct ClaudeOutputPreviewView: View {
     @State private var error: String?
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
-            HStack { Text(output.name).font(.headline); Spacer(); Button("Close") { dismiss() }.keyboardShortcut(.cancelAction) }
+            HStack { Text(output.name).font(.headline); Spacer(); Button("Close") { dismiss() }.pointingHand().keyboardShortcut(.cancelAction) }
             if let error { ContentUnavailableView("Preview unavailable", systemImage: "doc", description: Text(error)) }
             else if let preview {
                 if let notice = preview.notice { Text(notice).font(.caption).foregroundStyle(.secondary) }
@@ -107,7 +110,7 @@ struct ClaudeOutputPreviewView: View {
                 default: ScrollView { TranscriptContent(text: String(decoding: preview.data, as: UTF8.self), literal: preview.kind == "text").textSelection(.enabled).frame(maxWidth: .infinity, alignment: .leading) }
                 }
             } else { ProgressView("Loading preview…").frame(maxWidth: .infinity, maxHeight: .infinity) }
-            if let url = ClaudeOutputPreview.externalURL(output) { Button("Open externally") { NSWorkspace.shared.open(url) } }
+            if let url = ClaudeOutputPreview.externalURL(output) { Button("Open externally") { NSWorkspace.shared.open(url) }.pointingHand() }
         }.padding(20).frame(minWidth: 480, idealWidth: 800, minHeight: 400, idealHeight: 650)
         .task(id: output.id) {
             do {
@@ -132,17 +135,19 @@ struct ConversationOutputCards: View {
     @State private var selected: ClaudeOutput?
     var body: some View {
         ForEach(outputs) { output in
+            if ConversationImageSource.isImage(output) { ConversationImageView(output: output) } else {
             VStack(alignment: .leading, spacing: 5) {
                 Label(output.name, systemImage: output.kind == "image" ? "photo" : "doc")
                 HStack {
                     if output.kind != "unsupported" && (output.encoded != nil || ClaudeOutputPreview.externalURL(output)?.isFileURL == true) {
-                        Button("Preview") { selected = output }.accessibilityLabel("Preview " + output.name)
+                        Button("Preview") { selected = output }.pointingHand().accessibilityLabel("Preview " + output.name)
                     }
-                    if let url = ClaudeOutputPreview.externalURL(output) { Button("Open externally") { NSWorkspace.shared.open(url) }.accessibilityLabel("Open " + output.name + " externally") }
+                    if let url = ClaudeOutputPreview.externalURL(output) { Button("Open externally") { NSWorkspace.shared.open(url) }.pointingHand().accessibilityLabel("Open " + output.name + " externally") }
                 }
                 if let note = output.note { Text(note).font(.caption).foregroundStyle(.secondary) }
                 if output.location == nil && output.encoded == nil && output.note == nil { Text("No readable output location was provided.").font(.caption).foregroundStyle(.secondary) }
             }.padding(10).frame(maxWidth: .infinity, alignment: .leading).background(.quaternary.opacity(0.3), in: RoundedRectangle(cornerRadius: 8))
+            }
         }
         .sheet(item: $selected) { ClaudeOutputPreviewView(output: $0) }
     }
@@ -163,7 +168,7 @@ struct ClaudeUsageView: View {
             if let write = usage["cache_creation_input_tokens"].number { LabeledContent("Cache creation", value: write.formatted()) }
             if let cost = evidence["total_cost_usd"].number { LabeledContent("Reported cost", value: cost.formatted(.currency(code: "USD"))) }
             if let duration = evidence["duration_ms"].number { LabeledContent("Reported duration", value: (duration / 1000).formatted() + " s") }
-            DisclosureGroup("Usage source fields") { Text(evidence.pretty).font(.caption.monospaced()).textSelection(.enabled) }
+            DisclosureGroup { Text(evidence.pretty).font(.caption.monospaced()).textSelection(.enabled) } label: { Text("Usage source fields").disclosurePointingHand() }
         }.font(.callout).padding(14).background(.background.opacity(0.6), in: RoundedRectangle(cornerRadius: 10))
     }
 }
@@ -179,7 +184,7 @@ struct ClaudeSessionUsageView: View {
             if let duration = evidence["totalDuration"].number { LabeledContent("Reported total duration", value: (duration / 1000).formatted() + " s") }
             ForEach(evidence["modelUsage"].object.keys.sorted(), id: \.self) { model in
                 let usage = evidence["modelUsage"][model]
-                DisclosureGroup(model) {
+                DisclosureGroup {
                     VStack(alignment: .leading, spacing: 8) {
                         if let input = usage["inputTokens"].number, let output = usage["outputTokens"].number, input >= 0, output >= 0 {
                             UsageSegments(input: input, output: output)
@@ -187,9 +192,9 @@ struct ClaudeSessionUsageView: View {
                         if let read = usage["cacheReadInputTokens"].number { LabeledContent("Cache read", value: read.formatted()) }
                         if let write = usage["cacheCreationInputTokens"].number { LabeledContent("Cache creation", value: write.formatted()) }
                     }
-                }
+                } label: { Text(model).disclosurePointingHand() }
             }
-            DisclosureGroup("Session usage source fields") { Text(evidence.pretty).font(.caption.monospaced()).textSelection(.enabled) }
+            DisclosureGroup { Text(evidence.pretty).font(.caption.monospaced()).textSelection(.enabled) } label: { Text("Session usage source fields").disclosurePointingHand() }
         }.font(.callout).padding(14).background(.background.opacity(0.6), in: RoundedRectangle(cornerRadius: 10))
     }
 }

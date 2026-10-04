@@ -31,6 +31,15 @@ public enum SessionActivityHistory {
                     let item = CodexOutputEvidence.canonical(p["item"])
                     SessionActivityReducer.ingest(.object(["method": .string(type == "item_started" ? "item/started" : "item/completed"), "params": .object(["item": item, "turnId": codexTurn.map(WireValue.string) ?? .null, "timestamp": e["timestamp"]])]), provider: .codex, sessionID: session.sessionID, into: &state)
                 }
+                if type == "message", p["role"].string == "assistant" {
+                    let text = p["content"].array.compactMap { $0["text"].string }.joined(separator: "\n")
+                    if let start = text.range(of: "<proposed_plan>"), let end = text.range(of: "</proposed_plan>", range: start.upperBound..<text.endIndex) {
+                        let plan = String(text[start.upperBound..<end.lowerBound]).trimmingCharacters(in: .whitespacesAndNewlines)
+                        SessionActivityReducer.ingest(.object(["method": .string("item/completed"), "params": .object([
+                            "turnId": codexTurn.map(WireValue.string) ?? .null, "timestamp": e["timestamp"],
+                            "item": .object(["id": p["id"].string.map(WireValue.string) ?? .string("saved-plan:" + (codexTurn ?? e["timestamp"].string ?? "unknown")), "type": .string("plan"), "text": .string(plan)])])]), provider: .codex, sessionID: session.sessionID, into: &state)
+                    }
+                }
                 if type == "token_count" {
                     SessionActivityReducer.ingest(.object(["method": .string("thread/tokenUsage/updated"), "params": .object(["tokenUsage": p["info"], "turnId": codexTurn.map(WireValue.string) ?? .null, "timestamp": e["timestamp"]])]), provider: .codex, sessionID: session.sessionID, into: &state)
                 }
@@ -49,7 +58,7 @@ public enum SessionActivityHistory {
                 }
                 if p["type"].string == "function_call", p["name"].string == "update_plan",
                    let json = p["arguments"].string, let plan = try? JSONDecoder().decode(WireValue.self, from: Data(json.utf8)) {
-                    SessionActivityReducer.ingest(.object(["method": .string("turn/plan/updated"), "params": plan]), provider: .codex, sessionID: session.sessionID, into: &state)
+                    SessionActivityReducer.ingest(.object(["method": .string("turn/plan/updated"), "params": .object(plan.object.merging(["turnId": codexTurn.map(WireValue.string) ?? .null, "timestamp": e["timestamp"]]) { _, new in new })]), provider: .codex, sessionID: session.sessionID, into: &state)
                 }
             }
         }

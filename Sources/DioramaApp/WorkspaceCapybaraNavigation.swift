@@ -2,8 +2,8 @@ import Foundation
 import simd
 
 /// A small visibility-smoothed A* grid on the workspace floor. Obstacles already include body clearance.
-struct WorkspaceCapybaraNavigation {
-    struct Obstacle {
+nonisolated struct WorkspaceCapybaraNavigation: Sendable {
+    struct Obstacle: Sendable {
         let min: SIMD2<Float>
         let max: SIMD2<Float>
         func contains(_ p: SIMD2<Float>) -> Bool { p.x >= min.x && p.x <= max.x && p.y >= min.y && p.y <= max.y }
@@ -39,7 +39,10 @@ struct WorkspaceCapybaraNavigation {
         }
         guard let first = nearest(start), let last = nearest(goal) else { return nil }
         var open: Set<Int> = [first], closed = Set<Int>(), costs: [Int:Float] = [first:0], parents: [Int:Int] = [:]
+        var expansions = 0
         while let current = open.min(by: { costs[$0,default:.infinity]+simd_distance(point($0),goal) < costs[$1,default:.infinity]+simd_distance(point($1),goal) }) {
+            expansions += 1
+            if expansions > 12000 || (expansions % 64 == 0 && Task.isCancelled) { return nil }
             if current == last {
                 var path = [goal,point(last)], id = last
                 while let parent = parents[id] { path.append(point(parent)); id = parent }

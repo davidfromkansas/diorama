@@ -33,15 +33,15 @@ struct PermissionReviewCard: View {
         .overlay(RoundedRectangle(cornerRadius: 16).strokeBorder(Color.primary.opacity(0.12)))
         .sheet(isPresented: $reviewing) { reviewSheet }
     }
-    private var reviewButton: some View { Button("Review details…") { reviewing = true } }
+    private var reviewButton: some View { Button("Review details…") { reviewing = true }.pointingHand() }
     private var decisions: some View {
         HStack(spacing: 10) {
             if request.method == "item/permissions/requestApproval" {
-                Button("Deny") { grant(.object([:])) }
-                Button("Allow for this turn") { grant(request.params["permissions"]) }.buttonStyle(.borderedProminent)
+                Button("Deny") { grant(.object([:])) }.pointingHand()
+                Button("Allow for this turn") { grant(request.params["permissions"]) }.pointingHand().buttonStyle(.borderedProminent)
             } else {
-                if request.decisions.contains("decline") { Button("Deny") { decide(.string("decline")) } }
-                if request.decisions.contains("accept") { Button("Allow once") { decide(.string("accept")) }.buttonStyle(.borderedProminent) }
+                if request.decisions.contains("decline") { Button("Deny") { decide(.string("decline")) }.pointingHand() }
+                if request.decisions.contains("accept") { Button("Allow once") { decide(.string("accept")) }.pointingHand().buttonStyle(.borderedProminent) }
                 if request.approvalDecisions.isEmpty { Text("Unsupported request · use Stop to cancel").font(.caption) }
             }
         }.disabled(unavailable)
@@ -59,15 +59,15 @@ struct PermissionReviewCard: View {
                             VStack(alignment: .leading, spacing: 8) {
                                 if let scope = decision.scope { Text(scope).font(.body.monospaced()).textSelection(.enabled) }
                                 else if decision.value.string == "acceptForSession" { Text("Allows the provider’s requested action scope for this session.").foregroundStyle(.secondary) }
-                                Button(decision.title) { decide(decision.value) }.disabled(unavailable)
+                                Button(decision.title) { decide(decision.value) }.pointingHand().disabled(unavailable)
                             }
                         }
                     }
-                    DisclosureGroup("Raw request") { Text(request.params.pretty).font(.system(size: 13, design: .monospaced)).textSelection(.enabled) }
+                    DisclosureGroup { Text(request.params.pretty).font(.system(size: 13, design: .monospaced)).textSelection(.enabled) } label: { Text("Raw request").disclosurePointingHand() }
                 }.padding(.trailing, 8)
             }.frame(minHeight: 180, idealHeight: 320, maxHeight: 420)
             Divider()
-            HStack { Button("Back") { reviewing = false }.keyboardShortcut(.cancelAction); Spacer(); decisions }
+            HStack { Button("Back") { reviewing = false }.pointingHand().keyboardShortcut(.cancelAction); Spacer(); decisions }
         }.padding(24).frame(minWidth: 460, idealWidth: 680, maxWidth: 800)
     }
     private func grant(_ permissions: WireValue) { reviewing = false; respond(.object(["permissions": permissions, "scope": .string("turn")])) }

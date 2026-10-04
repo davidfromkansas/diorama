@@ -73,6 +73,23 @@ import Testing
         #expect(execution.tasks.isEmpty)
     }
 
+    @Test func workScreenPreservesOfficeCameraOnOpenAndClose() {
+        let view = SpatialSceneView()
+        let snapshot = world()
+        view.apply(world: snapshot, focus: .project("p"), active: false, reducedMotion: true, reset: 0)
+        let custom = SpatialCameraPose(x: 3, y: 1, z: 5, scale: 9, yaw: 0.3, elevation: 0.5)
+        view.move(to: custom, animated: false)
+        let cameraPosition = view.pointOfView!.position
+        let selected = agent()
+        view.apply(world: snapshot, focus: .agent(project: "p", conversation: selected.conversationID, agent: selected.id, expanded: true), active: false, reducedMotion: true, reset: 0)
+        #expect(view.pose == custom)
+        #expect(view.pointOfView!.position.x == cameraPosition.x)
+        #expect(view.pointOfView!.position.z == cameraPosition.z)
+        view.apply(world: snapshot, focus: .project("p"), active: false, reducedMotion: true, reset: 0)
+        #expect(view.pose == custom)
+        view.tearDown()
+    }
+
     @Test func interruptedCameraTravelStartsFromRenderedPose() {
         let view = SpatialSceneView()
         view.move(to: SpatialCameraPose(x: 50, scale: 6), animated: true, at: 100)
@@ -138,7 +155,7 @@ import Testing
         let first = world(agents)
         let focus = SpatialFocus.team(project: "p", conversation: "Codex:root")
         view.apply(world: first, focus: focus, active: true, reducedMotion: true, reset: 0)
-        #expect(view.officeWorkstations.count == 60)
+        #expect(view.officeWorkstations.count == 16)
         let retained = try #require(view.officeWorkstations[agents[0].id])
         let position = retained.root.position
         var changed = first
@@ -146,9 +163,10 @@ import Testing
         view.apply(world: changed, focus: agents[0].focus, active: true, reducedMotion: true, reset: 0)
         let updated = try #require(view.officeWorkstations[agents[0].id])
         #expect(updated.root.position.x == position.x && updated.root.position.z == position.z)
-        #expect(view.officeWorkstations.count == 60)
+        #expect(view.officeWorkstations.count == 16)
         view.apply(world: first, focus: agents[59].focus, active: true, reducedMotion: true, reset: 0)
-        #expect(view.officeWorkstations[agents[59].id] != nil)
+        #expect(view.officeWorkstations[agents[59].id] == nil) // Selecting a hidden agent must not create an extra avatar.
+        #expect(view.officeWorkstations.count == 16)
         view.suspend()
         #expect(!view.isPlaying && !view.rendersContinuously)
     }

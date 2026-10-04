@@ -98,7 +98,7 @@ public actor AgentExecutionTransport: ExecutionTransport {
         if method == "thread/start", params["model"].string?.hasPrefix("claude/") == true {
             guard !catalog.isEmpty else { throw ExecutionRPCRejection(claudeError ?? "Connect Claude in Settings") }
             let newID = UUID().uuidString.lowercased()
-            let transport = ClaudeExecutionTransport(folder: params["cwd"].string ?? "", sessionID: newID, context: params["developerInstructions"].string)
+            let transport = ClaudeExecutionTransport(folder: params["cwd"].string ?? "", sessionID: newID, context: params["developerInstructions"].string, initialPermission: params["permissionMode"].string, initialModel: params["model"].string.map { String($0.dropFirst(7)) })
             try await transport.connect(); attach(transport, id: newID)
             var reply = try await transport.request(method, params).object; reply["model"] = params["model"]; reply["provider"] = .string(Provider.claude.rawValue)
             return .object(reply)

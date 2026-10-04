@@ -36,7 +36,7 @@ struct ProjectWorkbench: View {
                 ZStack(alignment: .trailing) {
                     Color.black.opacity(0.3).onTapGesture { overlayOpen = false }
                     VStack(spacing: 0) {
-                        HStack { Text("Inspector").font(.caption); Spacer(); Button { overlayOpen = false } label: { Image(systemName: "xmark") }.help("Close inspector") }.padding(12)
+                        HStack { Text("Inspector").font(.caption); Spacer(); Button { overlayOpen = false } label: { Image(systemName: "xmark") }.pointingHand().help("Close inspector") }.padding(12)
                         inspector
                     }.frame(width: 340).background(DioramaStyle.sidebar).shadow(radius: 16)
                 }
@@ -60,7 +60,7 @@ struct ProjectWorkbench: View {
                 ForEach(navigation.documents[key] ?? []) { document in
                     HStack(spacing: 0) {
                         WorkspaceTabButton(title: document.title, selected: tab == .document(document)) { select(.document(document)) }
-                        Button { navigation.close(document, key: key) } label: { Image(systemName: "xmark").font(.system(size: 9)) }.buttonStyle(.plain).padding(.trailing, 10).help("Close " + document.title)
+                        Button { navigation.close(document, key: key) } label: { Image(systemName: "xmark").font(.system(size: 9)) }.pointingHand().buttonStyle(.plain).padding(.trailing, 10).help("Close " + document.title)
                     }
                 }
             }.padding(.horizontal, 4)
@@ -82,7 +82,7 @@ struct ProjectWorkbench: View {
             if !showsConversation {
                 VStack(spacing: 0) {
                     if let session, library.needsAttention(session) {
-                        Button("Session needs attention — return to conversation") { select(.conversation) }
+                        Button("Session needs attention — return to conversation") { select(.conversation) }.pointingHand()
                             .font(.caption).foregroundStyle(.orange).padding(10)
                     }
                     switch tab {
@@ -168,15 +168,15 @@ struct WorkspaceDocumentView: View {
                 }
                 Spacer()
                 Menu {
-                    Button("Open externally") { openExternal() }
-                    Button("Attach to session") { attach() }
+                    Button("Open externally") { openExternal() }.pointingHand()
+                    Button("Attach to session") { attach() }.pointingHand()
                     Button("Add to shared context") {
                         library.projects.update(projectID) {
                             if !$0.context.references.contains(document.path) { $0.context.references.append(document.path); $0.context.revision = UUID().uuidString }
                         }
-                    }
-                    Button("Refresh") { refresh = UUID() }
-                } label: { Image(systemName: "ellipsis") }.menuStyle(.borderlessButton).fixedSize()
+                    }.pointingHand()
+                    Button("Refresh") { refresh = UUID() }.pointingHand()
+                } label: { Image(systemName: "ellipsis") }.pointingHand().menuStyle(.borderlessButton).fixedSize()
             }.padding(16)
             Divider()
             if loading { ProgressView("Loading document…").frame(maxWidth: .infinity, maxHeight: .infinity) }

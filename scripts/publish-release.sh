@@ -9,6 +9,7 @@ test "$RELEASE_TAG" = "v$RELEASE_VERSION"
 test "$(git rev-parse "$RELEASE_TAG^{commit}")" = "$GITHUB_SHA"
 image="Diorama-$RELEASE_VERSION-$RELEASE_BUILD-arm64.dmg"
 (cd "$RUNNER_TEMP/output" && shasum -a 256 -c "$image.sha256")
+python3 scripts/verify-update-feed.py "$RUNNER_TEMP/output/appcast.xml" "$RUNNER_TEMP/output" "$RELEASE_VERSION" "$RELEASE_BUILD"
 test "$(gh api "repos/$RELEASE_REPOSITORY" --jq .private)" = false
 gh api --paginate "repos/$RELEASE_REPOSITORY/releases?per_page=100" --jq '.[].tag_name' > "$RUNNER_TEMP/public-release-tags"
 if grep -Fxq "$RELEASE_TAG" "$RUNNER_TEMP/public-release-tags"; then
@@ -56,17 +57,20 @@ fi
 if [[ "$create_tag" == 1 ]]; then
   gh api --method POST "repos/$RELEASE_REPOSITORY/git/refs" -f "ref=refs/tags/$RELEASE_TAG" -f "sha=$public_sha" --silent
 fi
-gh release create "$RELEASE_TAG" "$RUNNER_TEMP/output/$image" "$RUNNER_TEMP/output/$image.sha256" --repo "$RELEASE_REPOSITORY" --verify-tag --draft ${release_flags[@]+"${release_flags[@]}"} --title "Diorama $RELEASE_VERSION ($RELEASE_BUILD)" --notes-file "$notes" --target "$public_sha"
+gh release create "$RELEASE_TAG" "$RUNNER_TEMP/output/$image" "$RUNNER_TEMP/output/$image.sha256" "$RUNNER_TEMP/output/appcast.xml" --repo "$RELEASE_REPOSITORY" --verify-tag --draft ${release_flags[@]+"${release_flags[@]}"} --title "Diorama $RELEASE_VERSION ($RELEASE_BUILD)" --notes-file "$notes" --target "$public_sha"
 gh release view "$RELEASE_TAG" --repo "$RELEASE_REPOSITORY" --json tagName,isDraft,assets
 test "$(gh api "repos/$RELEASE_REPOSITORY/git/ref/tags/$RELEASE_TAG" --jq .object.sha)" = "$public_sha"
 # Verify the uploaded draft before making it public.
 gh release download "$RELEASE_TAG" --repo "$RELEASE_REPOSITORY" --pattern "$image*" --dir "$RUNNER_TEMP/draft-download"
 (cd "$RUNNER_TEMP/draft-download" && shasum -a 256 -c "$image.sha256")
 cmp "$RUNNER_TEMP/output/$image" "$RUNNER_TEMP/draft-download/$image"
+gh release download "$RELEASE_TAG" --repo "$RELEASE_REPOSITORY" --pattern appcast.xml --dir "$RUNNER_TEMP/draft-download"
+cmp "$RUNNER_TEMP/output/appcast.xml" "$RUNNER_TEMP/draft-download/appcast.xml"
+python3 scripts/verify-update-feed.py "$RUNNER_TEMP/draft-download/appcast.xml" "$RUNNER_TEMP/draft-download" "$RELEASE_VERSION" "$RELEASE_BUILD"
 gh release edit "$RELEASE_TAG" --repo "$RELEASE_REPOSITORY" --draft=false "$latest_flag"
 # Verify public availability without sending the publishing token.
 mkdir -p "$RUNNER_TEMP/public-download"
-for asset in "$image" "$image.sha256"; do
+for asset in "$image" "$image.sha256" appcast.xml; do
   curl --fail --silent --show-error --location "https://github.com/$RELEASE_REPOSITORY/releases/download/$RELEASE_TAG/$asset" -o "$RUNNER_TEMP/public-download/$asset"
 done
 (cd "$RUNNER_TEMP/public-download" && shasum -a 256 -c "$image.sha256")

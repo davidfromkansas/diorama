@@ -1,4 +1,5 @@
 import AppKit
+import DioramaCore
 import SceneKit
 import ModelIO
 import SceneKit.ModelIO
@@ -6,15 +7,21 @@ import simd
 
 /// Shared immutable meshes; cloned nodes retain the manufacturer's actual metre proportions.
 enum OfficeFurnitureAssets {
-    static let loaded = loadModels(suffix: "")
-    static let low = loadModels(suffix: "Low")
+    private enum Templates {
+        nonisolated(unsafe) static let loaded = loadModels(suffix: "")
+        nonisolated(unsafe) static let low = loadModels(suffix: "Low")
+    }
+    static var loaded: Result<(chair: SCNNode, desk: SCNNode), Error> { OfficeAssetResources.prepare(); return Templates.loaded }
+    static var low: Result<(chair: SCNNode, desk: SCNNode), Error> { OfficeAssetResources.prepare(); return Templates.low }
+    nonisolated static func preloadMeshes() { _ = Templates.low; _ = Templates.loaded }
     static let lowAvatar: WorkspaceCapybaraAsset? = {
-        let bundle = Bundle.main.resourceURL.flatMap { Bundle(url: $0.appendingPathComponent("Diorama_DioramaApp.bundle")) } ?? Bundle.module
+        OfficeAssetResources.prepare()
+        let bundle = OfficeAssetResources.bundle
         guard let url = bundle.url(forResource: "CapybaraOfficeLow", withExtension: "glb", subdirectory: "OfficeFurniture") else { return nil }
         return try? WorkspaceCapybaraAsset(data: Data(contentsOf: url))
     }()
-    private static func loadModels(suffix: String) -> Result<(chair: SCNNode, desk: SCNNode), Error> { Result {
-        let bundle = Bundle.main.resourceURL.flatMap { Bundle(url: $0.appendingPathComponent("Diorama_DioramaApp.bundle")) } ?? Bundle.module
+    nonisolated private static func loadModels(suffix: String) -> Result<(chair: SCNNode, desk: SCNNode), Error> { Result {
+        let bundle = OfficeAssetResources.bundle
         func load(_ name: String) throws -> SCNNode {
             guard let url = bundle.url(forResource: name, withExtension: "obj", subdirectory: "OfficeFurniture") else {
                 throw CocoaError(.fileNoSuchFile)
@@ -78,12 +85,25 @@ final class OfficeWorkstation {
     let avatar: WorkspaceAvatar
     let monitor = SCNNode()
     let label = SCNNode()
+    let person = SCNNode()
+    var leisureMotion: OfficeLeisureMotion?
+    var showsFurniture = true {
+        didSet { for node in root.childNodes where node !== person { node.isHidden = !showsFurniture } }
+    }
+    private var seatedPose: [WorkspaceCapybaraAsset.Pose] = []
+    private(set) var standing = false
+    private var placed = false
+    private var placementAnimating = false
     private let selection = SCNNode()
     private let lowFurniture = SCNNode()
     private var lastLabel = ""
+    private var lastRawTitle = ""
+    private var fullTitle = ""
     private var lastScreenState: Int?
     private var armRest: [(SCNNode, simd_quatf)] = []
-    private(set) var animating = false
+    private var typing = false
+    private let scrollingTitle = OfficeScrollingTitle()
+    var animating: Bool { typing || scrollingTitle.running || placementAnimating || leisureMotion?.animating == true }
     private(set) var assetsAvailable = false
     private let screen = WorkspaceAvatarFactory.material(.darkGray, constant: true)
     let chair: SCNNode?
@@ -95,7 +115,9 @@ final class OfficeWorkstation {
         avatar = WorkspaceAvatarFactory.capybara(height: 1.17, asset: OfficeFurnitureAssets.lowAvatar)
         // 30% larger uniformly, anchored around the chair seat rather than the feet.
         avatar.root.position = SCNVector3(0, 0.2364, -0.10)
-        root.addChildNode(avatar.root)
+        person.name = "agent:" + id
+        root.addChildNode(person)
+        person.addChildNode(avatar.root)
         switch OfficeFurnitureAssets.loaded {
         case .success(let models):
             let chairNode = models.chair.clone(), deskNode = models.desk.clone()
@@ -128,11 +150,60 @@ final class OfficeWorkstation {
         let ring = SCNTorus(ringRadius: 0.53, pipeRadius: 0.013)
         ring.materials = [WorkspaceAvatarFactory.material(.systemTeal, constant: true)]
         selection.geometry = ring; selection.position = SCNVector3(0,0.02,-0.25)
-        root.addChildNode(selection)
+        person.addChildNode(selection)
         label.position = SCNVector3(0,1.55,0.1)
         label.constraints = [SCNBillboardConstraint()]
-        root.addChildNode(label)
+        person.addChildNode(label)
+        label.addChildNode(scrollingTitle.node)
         fitPaws()
+        seatedPose = avatar.capybaraRig?.nodes.map { .init(position: $0.simdPosition, rotation: $0.simdOrientation, scale: $0.simdScale) } ?? []
+        leisureMotion = OfficeLeisureMotion(person: person, avatar: avatar, seed: id)
+    }
+
+    /// Reuse the expensive rig and furniture, never the previous agent's interaction state.
+    func rebind(id: String) {
+        suspend(); leisureMotion?.stop()
+        root.name = "agent:" + id; person.name = "agent:" + id; monitor.name = "screen:" + id
+        person.childNode(withName: "inspection-controls", recursively: false)?.removeFromParentNode()
+        person.transform = SCNMatrix4Identity; person.opacity = 1
+        avatar.capybaraRig?.apply(seatedPose)
+        avatar.root.position = SCNVector3(0, 0.2364, -0.10)
+        selection.position = SCNVector3(0, 0.02, -0.25); selection.isHidden = true
+        standing = false; placed = false
+        leisureMotion = OfficeLeisureMotion(person: person, avatar: avatar, seed: id)
+    }
+
+    func place(desk: OfficeDeskAssignment, standingAt destination: OfficeDeskAssignment?, animated: Bool) {
+        if leisureMotion?.target != nil {
+            let worldPosition = person.worldPosition, worldOrientation = person.worldOrientation
+            root.position = SCNVector3(desk.x,0,desk.z); root.eulerAngles.y = desk.yaw
+            person.worldPosition = worldPosition; person.worldOrientation = worldOrientation
+            return
+        }
+        let nextStanding = destination != nil
+        let changed = placed && standing != nextStanding
+        placed = true
+        root.position = SCNVector3(desk.x, 0, desk.z)
+        root.eulerAngles.y = desk.yaw
+        person.position = destination.map { root.convertPosition(SCNVector3($0.x, 0, $0.z), from: nil) } ?? SCNVector3Zero
+        person.eulerAngles.y = destination == nil ? 0 : -desk.yaw
+        if standing != nextStanding {
+            suspend()
+            standing = nextStanding
+            if let rig = avatar.capybaraRig {
+                rig.apply(nextStanding ? rig.pose("idle", time: 0) : seatedPose)
+            }
+            avatar.root.position = nextStanding ? SCNVector3Zero : SCNVector3(0, 0.2364, -0.10)
+            selection.position = nextStanding ? SCNVector3(0, 0.02, 0) : SCNVector3(0, 0.02, -0.25)
+        }
+        if changed && animated {
+            person.opacity = 0
+            placementAnimating = true
+            person.runAction(.fadeIn(duration: 0.18), forKey: "placement") { [weak self] in
+                Task { @MainActor in self?.placementAnimating = false; self?.animationChanged?() }
+            }
+            animationChanged?()
+        }
     }
 
     /// Two-bone reach uses authored bone lengths, never stretched limbs or a distorted avatar.
@@ -157,24 +228,39 @@ final class OfficeWorkstation {
     }
 
     func update(_ occupant: OfficeOccupant, selected: Bool, reduced: Bool, active: Bool, distant: Bool) {
+        if (!active || reduced) && placementAnimating {
+            person.removeAction(forKey: "placement"); person.opacity = 1; placementAnimating = false
+        }
         selection.isHidden = !selected
         let useLow = distant && !selected && !lowFurniture.childNodes.isEmpty
-        chair?.isHidden = useLow; desk?.isHidden = useLow; lowFurniture.isHidden = !useLow
+        chair?.isHidden = !showsFurniture || useLow; desk?.isHidden = !showsFurniture || useLow; lowFurniture.isHidden = !showsFurniture || !useLow
         let agent = occupant.agent.value
         let screenState = agent.isWorking ? 1 : occupant.agent.needsAttention ? 2 : 0
         if lastScreenState != screenState {
             lastScreenState = screenState
             screen.diffuse.contents = screenState == 1 ? NSColor.systemTeal : screenState == 2 ? NSColor.systemOrange : NSColor(white:0.22,alpha:1)
         }
-        let text = occupant.assignment + "\n" + agent.name + " · " + agent.statusLabel
+        let rawTitle = agent.task.isEmpty ? occupant.assignment : agent.task
+        if rawTitle != lastRawTitle {
+            lastRawTitle = rawTitle
+            fullTitle = TaskTitle.full(rawTitle)
+        }
+        let text = fullTitle + "\n" + agent.name + " · " + agent.statusLabel
         if text != lastLabel {
             lastLabel = text
-            label.geometry = Self.labelGeometry(title: occupant.assignment, status: assetsAvailable ? Self.stateLabel(agent) : "Furniture assets unavailable")
+            scrollingTitle.setTitle(fullTitle)
+            label.geometry = Self.labelGeometry(title: "", status: assetsAvailable ? Self.stateLabel(agent) : "Furniture assets unavailable")
         }
         label.isHidden = distant && !selected && !occupant.agent.needsAttention
-        let shouldAnimate = active && !reduced && agent.isWorking
-        guard shouldAnimate != animating else { return }
-        animating = shouldAnimate
+        let wasAnimating = animating
+        scrollingTitle.setRunning(active && !reduced && !label.isHidden)
+        leisureMotion?.setRunning(active, reduced: reduced, distant: distant)
+        let shouldAnimate = active && !reduced && agent.isWorking && (leisureMotion?.target != nil ? leisureMotion?.atDesk == true : !standing)
+        guard shouldAnimate != typing else {
+            if wasAnimating != animating { animationChanged?() }
+            return
+        }
+        typing = shouldAnimate
         for (index,pair) in armRest.enumerated() {
             let (node,rest) = pair
             node.removeAllActions(); node.simdOrientation = rest
@@ -190,8 +276,12 @@ final class OfficeWorkstation {
         animationChanged?()
     }
     func suspend() {
-        animating = false
-        for (node,rest) in armRest { node.removeAllActions(); node.simdOrientation = rest }
+        leisureMotion?.setRunning(false, reduced: false, distant: false)
+        typing = false
+        placementAnimating = false
+        person.removeAction(forKey: "placement"); person.opacity = 1
+        scrollingTitle.setRunning(false)
+        for (node,rest) in armRest { node.removeAllActions(); if !standing { node.simdOrientation = rest } }
     }
     private static func stateLabel(_ agent: WorkspaceAgent) -> String {
         if ![.live,.recentlyObserved].contains(agent.freshness) { return "◷ " + agent.statusLabel }
@@ -203,7 +293,11 @@ final class OfficeWorkstation {
         default: return "– " + agent.statusLabel
         }
     }
+    private static var labelTemplates: [String: SCNGeometry] = [:]
+    private static var labelOrder: [String] = []
     private static func labelGeometry(title: String, status: String) -> SCNGeometry {
+        let key = title + "\u{1f}" + status
+        if let cached = labelTemplates[key] { return cached }
         let image = NSImage(size: NSSize(width:480,height:112)); image.lockFocus()
         NSColor.white.withAlphaComponent(0.96).setFill()
         NSBezierPath(roundedRect:NSRect(x:0,y:0,width:480,height:112),xRadius:12,yRadius:12).fill()
@@ -213,6 +307,9 @@ final class OfficeWorkstation {
         image.unlockFocus()
         let plane = SCNPlane(width:1.65,height:0.385)
         let material = WorkspaceAvatarFactory.material(.white,constant:true); material.diffuse.contents=image;material.isDoubleSided=true
-        plane.materials=[material]; return plane
+        plane.materials=[material]
+        labelTemplates[key] = plane; labelOrder.append(key)
+        if labelOrder.count > 32 { labelTemplates.removeValue(forKey: labelOrder.removeFirst()) }
+        return plane
     }
 }

@@ -46,14 +46,14 @@ struct AgentSettingsView: View {
                                 ForEach(controller.models.filter { info[$0.id.hasPrefix("claude/") ? "claude" : "codex"].bool }) { model in
                                     Text(model.name).tag(model.id)
                                 }
-                            }
+                            }.pointingHand()
                             Text("You can choose another model in each conversation.").font(.caption).foregroundStyle(.secondary)
                         }
                         if let notice { Text(notice).font(.callout).foregroundStyle(.secondary).textSelection(.enabled) }
                         if !onboarding {
                             Divider()
                             GitHubSettingsView()
-                            Button("Review setup…") { reviewSetup = true }
+                            Button("Review setup…") { reviewSetup = true }.pointingHand()
                         }
                     }
                 }.frame(maxWidth: .infinity, alignment: .leading)
@@ -61,17 +61,17 @@ struct AgentSettingsView: View {
             Divider()
             HStack {
                 if githubStep {
-                    Button("Back") { githubStep = false }
+                    Button("Back") { githubStep = false }.pointingHand()
                     Spacer()
-                    Button("Skip for now") { finish?() }
-                    Button("Finish setup") { finish?() }.disabled(!githubConnected).keyboardShortcut(.defaultAction)
+                    Button("Skip for now") { finish?() }.pointingHand()
+                    Button("Finish setup") { finish?() }.pointingHand().disabled(!githubConnected).keyboardShortcut(.defaultAction)
                 } else {
-                    if let cancel { Button("Cancel", action: cancel).keyboardShortcut(.cancelAction) }
-                    Button("Refresh connections", action: refresh).disabled(refreshing)
+                    if let cancel { Button("Cancel", action: cancel).pointingHand().keyboardShortcut(.cancelAction) }
+                    Button("Refresh connections", action: refresh).pointingHand().disabled(refreshing)
                     if refreshing { ProgressView().controlSize(.small).accessibilityLabel("Checking connections") }
                     Spacer()
                     if onboarding {
-                        Button("Continue") { pendingLogin = nil; githubStep = true }
+                        Button("Continue") { pendingLogin = nil; githubStep = true }.pointingHand()
                             .disabled(!selectionAvailable).keyboardShortcut(.defaultAction)
                     }
                 }
@@ -117,17 +117,17 @@ struct AgentSettingsView: View {
             HStack {
                 if !connected {
                     if missing {
-                        Link("Installation instructions", destination: URL(string: key == "claude" ? "https://code.claude.com/docs/en/setup" : "https://developers.openai.com/codex/cli")!)
-                        Button("Locate existing installation…") { locate(key) }.disabled(controller.hasActiveWork || locating != nil)
+                        Link("Installation instructions", destination: URL(string: key == "claude" ? "https://code.claude.com/docs/en/setup" : "https://developers.openai.com/codex/cli")!).pointingHand()
+                        Button("Locate existing installation…") { locate(key) }.pointingHand().disabled(controller.hasActiveWork || locating != nil)
                     } else {
-                        Button("Login with " + title) { login(key) }.disabled(pendingLogin == key || state == .checking)
-                        if detail != nil { Button("Try again", action: refresh).disabled(refreshing) }
+                        Button("Login with " + title) { login(key) }.pointingHand().disabled(pendingLogin == key || state == .checking)
+                        if detail != nil { Button("Try again", action: refresh).pointingHand().disabled(refreshing) }
                     }
                 }
-                if connected { Button("Manage login…") { login(key) } }
+                if connected { Button("Manage login…") { login(key) }.pointingHand() }
                 if !missing { Menu("Advanced") {
-                    Button("Locate existing installation…") { locate(key) }.disabled(controller.hasActiveWork || locating != nil)
-                }.fixedSize() }
+                    Button("Locate existing installation…") { locate(key) }.pointingHand().disabled(controller.hasActiveWork || locating != nil)
+                }.pointingHand().fixedSize() }
             }
             if pendingLogin == key { Text("Finish signing in through Terminal and your browser. Diorama will check automatically when you return.").font(.caption).foregroundStyle(.secondary) }
         }.padding(16).frame(maxWidth: .infinity, alignment: .leading)

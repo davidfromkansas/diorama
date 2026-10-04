@@ -30,15 +30,15 @@ struct AgentWorkDetailsView: View {
                 } else if let tool = entry.tool {
                     RichToolResultView(result: tool, selectWorker: { library.openWorker($0) })
                 } else if entry.kind == "Proposed plan" {
-                    DisclosureGroup("Proposed plan") { TranscriptContent(text: entry.text) }
+                    DisclosureGroup { TranscriptContent(text: entry.text) } label: { Text("Proposed plan").disclosurePointingHand() }
                 }
                 Group {
                     Button("View in conversation") {
                         guard let session else { return }
-                        library.scrollPositions[session.id] = entry.id
+                        library.historyRevealTargets[session.id] = entry.id
                         library.openInWorkspace(session)
                         openConversation()
-                    }.font(.caption)
+                    }.pointingHand().font(.caption)
                 }
             }
             if let snapshot {

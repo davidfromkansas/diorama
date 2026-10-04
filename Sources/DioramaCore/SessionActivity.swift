@@ -24,6 +24,7 @@ public struct SessionActivityRecord: Codable, Equatable, Identifiable, Sendable 
 public struct SessionActivitySnapshot: Codable, Equatable, Sendable {
     public var version = 1
     public var codexTurn: String? = nil
+    public var currentPlanTurnID: String? = nil
     public var records: [SessionActivityRecord] = []
     public var events: [SessionActivityRecord] = []
     public var lastKnown = false
@@ -86,9 +87,10 @@ public enum SessionActivityReducer {
     public static func records(_ event: WireValue, provider: Provider, sessionID: String, now: Date = Date()) -> [SessionActivityRecord] {
         let method = event["method"].string ?? "", p = event["params"]
         let turn = p["turnId"].string
+        let owner = p["parentID"].string
         func record(_ kind: String, _ id: String, _ title: String, status: String = "unknown", detail: String = "", parent: String? = nil, data: WireValue = .null, time: Date? = nil) -> SessionActivityRecord {
-            .init(id: provider.rawValue + ":" + sessionID + ":" + kind + ":" + (provider == .codex && kind == "tool" ? (turn ?? "unknown") + ":" : "") + id, provider: provider.rawValue, sessionID: sessionID,
-                  turnID: turn, nativeID: id, parentID: parent, kind: kind, title: String(title.prefix(500)), status: status,
+            .init(id: provider.rawValue + ":" + sessionID + ":" + kind + ":" + (provider == .codex && kind == "tool" ? (turn ?? "unknown") + ":" : "") + (kind == "step" || kind == "checklist" ? (parent ?? owner).map { String($0.utf8.count) + ":" + $0 + ":" } ?? "" : "") + id, provider: provider.rawValue, sessionID: sessionID,
+                  turnID: turn, nativeID: id, parentID: parent ?? owner, kind: kind, title: String(title.prefix(500)), status: status,
                   detail: String(detail.prefix(kind == "proposal" ? 65536 : 4000)), source: provider == .claude ? "Claude structured event" : "Codex App Server",
                   recordedAt: time ?? ActivityParser.date(p["timestamp"].string), observedAt: now, data: bounded(data))
         }
@@ -103,16 +105,16 @@ public enum SessionActivityReducer {
                     if name == "ExitPlanMode", let plan = args["plan"].string {
                         out.append(record("proposal", id + ":plan", "Proposed plan", status: "proposed", detail: plan, parent: parent, time: time))
                     }
-                    out.append(record("tool", id, name, status: "running", detail: args["description"].string ?? args["command"].string ?? args["file_path"].string ?? "", parent: parent, data: ["TaskCreate", "TaskUpdate", "TodoWrite"].contains(name) ? .object(["input": args]) : .null, time: time))
+                    out.append(record("tool", id, name, status: "running", detail: args["description"].string ?? args["command"].string ?? args["file_path"].string ?? "", parent: parent, data: ["TaskCreate", "TaskUpdate", "TodoWrite", "ExitPlanMode"].contains(name) ? .object(["input": args]) : .null, time: time))
                 }
                 return out
             }
             if type == "user" {
                 let r = e["tool_use_result"]
                 if let id = r["task"]["id"].string {
-                    out.append(record("step", id, r["task"]["subject"].string ?? "Step", status: "pending", time: time))
+                    out.append(record("step", id, r["task"]["subject"].string ?? "Step", status: r["task"]["status"].string ?? "pending", parent: parent, time: time))
                 } else if let id = r["taskId"].string, let status = r["statusChange"]["to"].string {
-                    out.append(record("step", id, "", status: status, time: time))
+                    out.append(record("step", id, "", status: status, parent: parent, time: time))
                 }
                 for b in e["message"]["content"].array where b["type"].string == "tool_result" {
                     guard let id = b["tool_use_id"].string else { continue }
@@ -178,6 +180,7 @@ public enum SessionActivityReducer {
     }
 
     public static func ingest(_ event: WireValue, provider: Provider, sessionID: String, into snapshot: inout SessionActivitySnapshot) {
+        var event = event
         let method = event["method"].string
         if let uuid = event["params"]["event"]["uuid"].string {
             let identity = provider.rawValue + ":" + sessionID + ":" + uuid
@@ -185,40 +188,90 @@ public enum SessionActivityReducer {
             snapshot.seenEventIDs.append(identity)
             if snapshot.seenEventIDs.count > 10_000 { snapshot.seenEventIDs.removeFirst() }
         }
+        let params = event["params"], claude = params["event"]
+        if method == "turn/started" || method == "turn/completed" || provider == .claude,
+           let turn = params["turnId"].string ?? params["turn"]["id"].string { snapshot.currentPlanTurnID = turn }
+        if provider == .claude, claude["type"].string == "user", claude["tool_use_result"] == .null,
+           !claude["message"]["content"].array.contains(where: { $0["type"].string == "tool_result" }),
+           let id = claude["uuid"].string { snapshot.currentPlanTurnID = id }
+        if provider == .claude, params["turnId"] == .null, let turn = snapshot.currentPlanTurnID {
+            var object = event.object; var p = params.object; p["turnId"] = .string(turn); object["params"] = .object(p); event = .object(object)
+        }
         if method == "turn/plan/updated" {
             // Whole checklist revisions replace the current checklist, history stays in events.
-            snapshot.records.removeAll { $0.kind == "step" }
+            let owner = event["params"]["parentID"].string
+            let prior = snapshot.records.filter { $0.kind == "checklist" && $0.provider == provider.rawValue && $0.sessionID == sessionID && $0.parentID == owner }
+                .max { ($0.recordedAt ?? $0.observedAt) < ($1.recordedAt ?? $1.observedAt) }
+            if let prior, let previousTime = prior.recordedAt, let incomingTime = ActivityParser.date(event["params"]["timestamp"].string), incomingTime < previousTime { return }
+            if let prior, prior.turnID == event["params"]["turnId"].string, prior.data == bounded(event["params"]["plan"]) { return }
+            snapshot.records.removeAll { $0.kind == "step" && $0.provider == provider.rawValue && $0.sessionID == sessionID && $0.parentID == owner }
         }
         if method == "diorama/claudeActivity", event["params"]["event"]["type"].string == "user" {
             let e = event["params"]["event"]
             for block in e["message"]["content"].array where block["type"].string == "tool_result" && !block["is_error"].bool {
-                guard let tool = snapshot.records.first(where: { $0.kind == "tool" && $0.nativeID == block["tool_use_id"].string }) else { continue }
+                guard let tool = snapshot.records.first(where: { $0.kind == "tool" && $0.provider == provider.rawValue && $0.sessionID == sessionID && $0.nativeID == block["tool_use_id"].string }) else { continue }
                 let args = tool.data["input"]
                 if tool.title == "TaskUpdate", let id = args["taskId"].string,
-                   var step = snapshot.records.first(where: { $0.kind == "step" && $0.nativeID == id }) {
+                   var step = snapshot.records.first(where: { $0.kind == "step" && $0.provider == provider.rawValue && $0.sessionID == sessionID && $0.parentID == tool.parentID && $0.nativeID == id }) {
                     if let title = args["subject"].string { step.title = title }
                     if let status = args["status"].string { step.status = status }
                     if let description = args["description"].string { step.detail = String(description.prefix(4000)) }
-                    step.observedAt = Date(); snapshot.apply(step)
+                    step.recordedAt = ActivityParser.date(e["timestamp"].string); step.observedAt = Date(); snapshot.apply(step)
                 }
                 if tool.title == "TodoWrite" {
                     let plan = args["todos"].array.map { WireValue.object(["step": $0["content"], "status": $0["status"]]) }
-                    ingest(.object(["method": .string("turn/plan/updated"), "params": .object(["turnId": event["params"]["turnId"], "plan": .array(plan)])]), provider: provider, sessionID: sessionID, into: &snapshot)
+                    ingest(.object(["method": .string("turn/plan/updated"), "params": .object(["turnId": event["params"]["turnId"], "plan": .array(plan), "parentID": tool.parentID.map(WireValue.string) ?? .null, "timestamp": e["timestamp"]])]), provider: provider, sessionID: sessionID, into: &snapshot)
                 }
             }
         }
-        for var r in records(event, provider: provider, sessionID: sessionID) {
+        var reported = records(event, provider: provider, sessionID: sessionID)
+        if method == "diorama/claudeActivity", event["params"]["event"]["type"].string == "user" {
+            let e = event["params"]["event"]
+            let results = e["message"]["content"].array.filter { $0["type"].string == "tool_result" }
+            let calls = results.compactMap { block -> SessionActivityRecord? in
+                guard !block["is_error"].bool else { return nil }
+                return snapshot.records.first { $0.kind == "tool" && $0.provider == provider.rawValue && $0.sessionID == sessionID && $0.nativeID == block["tool_use_id"].string }
+            }
+            if !results.isEmpty {
+                reported.removeAll { $0.kind == "step" }
+                for tool in calls where tool.title == "TaskCreate" {
+                    if let id = e["tool_use_result"]["task"]["id"].string {
+                        let args = tool.data["input"], task = e["tool_use_result"]["task"]
+                        var step = tool
+                        step.kind = "step"; step.nativeID = id
+                        step.id = provider.rawValue + ":" + sessionID + ":step:" + (tool.parentID.map { String($0.utf8.count) + ":" + $0 + ":" } ?? "") + id
+                        step.title = task["subject"].string ?? args["subject"].string ?? "Step"
+                        step.detail = args["description"].string ?? ""
+                        step.status = task["status"].string ?? "pending"; step.data = .null
+                        step.recordedAt = ActivityParser.date(e["timestamp"].string)
+                        reported.append(step)
+                    }
+                }
+                for tool in calls where tool.title == "ExitPlanMode" {
+                    if let text = e["tool_use_result"]["plan"].string {
+                        var plan = tool; plan.kind = "proposal"; plan.nativeID += ":plan"
+                        plan.id = provider.rawValue + ":" + sessionID + ":proposal:" + plan.nativeID
+                        plan.title = "Proposed plan"; plan.detail = String(text.prefix(65536)); plan.status = "proposed"; plan.data = .null
+                        plan.recordedAt = ActivityParser.date(e["timestamp"].string); reported.append(plan)
+                    }
+                }
+            }
+        }
+        if reported.contains(where: { $0.detail.count >= 65536 || $0.title.count >= 500 }) ||
+            event["params"]["event"]["message"]["content"].array.contains(where: { $0["input"]["todos"].array.count > 40 }) { snapshot.truncated = true }
+        for var r in reported {
             // Claude progress/notification may omit the task type; preserve the original classification.
             if r.kind == "job", let old = snapshot.records.first(where: { $0.nativeID == r.nativeID && $0.kind == "agent" }) { r.kind = "agent"; r.id = old.id }
             if let old = snapshot.records.first(where: { $0.id == r.id }) {
                 if r.title.isEmpty { r.title = old.title }
                 if r.status.isEmpty { r.status = old.status }
-                if r.detail.isEmpty { r.detail = old.detail }
+                if r.detail.isEmpty && r.kind != "proposal" { r.detail = old.detail }
                 if r.parentID == nil { r.parentID = old.parentID }
                 if r.data == .null { r.data = old.data }
                 else if !old.data.object.isEmpty {
                     r.data = .object(old.data.object.merging(r.data.object.filter { $0.value != .null }) { _, new in new })
                 }
+                if method == "item/plan/delta", old.status == "proposed" { continue }
                 if method == "item/plan/delta" { r.detail = String((old.detail + r.detail).prefix(65536)) }
             }
             snapshot.apply(r)

@@ -20,7 +20,7 @@ struct ProjectContextView: View {
                         HStack {
                             Label("Repository", systemImage: "folder").font(.headline)
                             Spacer()
-                            Button(refreshing ? "Refreshing…" : "Fetch from remote") { refresh() }.disabled(refreshing)
+                            Button(refreshing ? "Refreshing…" : "Fetch from remote") { refresh() }.pointingHand().disabled(refreshing)
                         }
                         Text(project.folder).textSelection(.enabled)
                         TextField("Remote comparison base", text: Binding(get: { project.base }, set: { value in projects.update(projectID) { $0.base = value } }))
@@ -46,12 +46,12 @@ struct ProjectContextView: View {
                                 if missing.contains(ref) { Text("Not found in the current base revision").font(.caption).foregroundStyle(.orange) }
                             }
                             Spacer()
-                            Button { projects.update(projectID) { $0.context.references.removeAll { $0 == ref }; $0.context.revision = UUID().uuidString } } label: { Image(systemName: "minus.circle") }.help("Remove reference")
+                            Button { projects.update(projectID) { $0.context.references.removeAll { $0 == ref }; $0.context.revision = UUID().uuidString } } label: { Image(systemName: "minus.circle") }.pointingHand().help("Remove reference")
                         }
                     }
                     HStack {
                         TextField("docs/spec.md or https://…", text: $reference)
-                        Button("Add reference") { add() }.disabled(reference.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+                        Button("Add reference") { add() }.pointingHand().disabled(reference.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
                     }
                 }
                 if let notice { Text(notice).foregroundStyle(.orange).textSelection(.enabled) }
@@ -140,13 +140,13 @@ struct ProjectFilesView: View {
                 Picker("Files from", selection: $location) {
                     Text(project.isGitBacked ? "Project base · " + project.base : "Working folder").tag("base")
                     ForEach(project.workspaces.filter { !$0.cleaned }) { work in Text(work.branch).tag(work.id) }
-                }.labelsHidden().frame(maxWidth: .infinity)
+                }.pointingHand().labelsHidden().frame(maxWidth: .infinity)
     }
     private var fileOptions: some View {
         HStack {
-            Toggle("Show ignored", isOn: $showIgnored).disabled(location == "base")
+            Toggle("Show ignored", isOn: $showIgnored).pointingHand().disabled(location == "base")
             Spacer()
-            Button { Task { await load() } } label: { Image(systemName: "arrow.clockwise") }.help("Refresh files").disabled(loading)
+            Button { Task { await load() } } label: { Image(systemName: "arrow.clockwise") }.pointingHand().help("Refresh files").disabled(loading)
         }.controlSize(.small)
     }
     private var fileControls: some View { HStack { locationPicker; fileOptions } }
@@ -158,7 +158,7 @@ struct ProjectFilesView: View {
                 if query.isEmpty {
                     ProjectFileRows(nodes: tree, expanded: Binding(get: { project.expandedFolders }, set: { value in projects.update(projectID) { $0.expandedFolders = value } }))
                 } else {
-                    ForEach(files.filter { $0.localizedCaseInsensitiveContains(query) }, id: \.self) { file in Label(file, systemImage: "doc").font(.callout).help(file).tag(file) }
+                    ForEach(files.filter { $0.localizedCaseInsensitiveContains(query) }, id: \.self) { file in Label(file, systemImage: "doc").font(.callout).help(file).pointingHand().tag(file) }
                 }
             }.scrollContentBackground(.hidden)
         }
@@ -171,10 +171,10 @@ struct ProjectFilesView: View {
                             Spacer()
                             Button("Add to Context") { projects.update(projectID) {
                                 if !$0.context.references.contains(selection) { $0.context.references.append(selection); $0.context.revision = UUID().uuidString }
-                            }}
-                            Button(project.selectedSession == nil ? "Attach to new session" : "Attach to session") { attach(selection) }
+                            }}.pointingHand()
+                            Button(project.selectedSession == nil ? "Attach to new session" : "Attach to session") { attach(selection) }.pointingHand()
                             if location != "base" || !project.isGitBacked {
-                                Button("Open externally") { NSWorkspace.shared.open(URL(fileURLWithPath: folder).appendingPathComponent(selection)) }
+                                Button("Open externally") { NSWorkspace.shared.open(URL(fileURLWithPath: folder).appendingPathComponent(selection)) }.pointingHand()
                             }
                         }.padding(14)
                         if let image { ScrollView([.horizontal, .vertical]) { Image(nsImage: image).resizable().scaledToFit().frame(maxWidth: 800) } }
@@ -246,9 +246,9 @@ struct ProjectFileRows: View {
                     if value { expanded.insert(node.id) } else { expanded.remove(node.id) }
                 })) {
                     ProjectFileRows(nodes: children, expanded: $expanded)
-                } label: { Label(node.name, systemImage: "folder").font(.callout) }
+                } label: { Group { Label(node.name, systemImage: "folder").font(.callout)  }.disclosurePointingHand() }
             } else {
-                Label(node.name, systemImage: "doc").font(.callout).help(node.id).tag(node.id)
+                Label(node.name, systemImage: "doc").font(.callout).help(node.id).pointingHand().tag(node.id)
             }
         }
     }

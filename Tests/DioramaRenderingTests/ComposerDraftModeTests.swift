@@ -15,6 +15,7 @@ import Testing
         model.saveDraft(id, text: "", attachments: [], mode: "plan")
         model.saveDraft(id, text: "Keep planning", attachments: [])
         #expect(model.drafts[id]?.mode == "plan")
+        model.flushDrafts() // Persistence is debounced; normal close flushes before reopening.
         let data = try #require(UserDefaults.standard.data(forKey: "conversationDrafts"))
         let restored = try JSONDecoder().decode([String: ConversationDraft].self, from: data)
         #expect(restored[id]?.mode == "plan")

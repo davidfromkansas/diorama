@@ -1,0 +1,22 @@
+{
+  "EamesLounge": {
+    "source": "eames.dwg",
+    "sha256": "d17b14afce673900a087898af0f7298373d8a9bc682b62e8ef00c5d048634210",
+    "dimensions": [
+      0.8585200000000004,
+      0.8943263966317888,
+      0.8716479496666224
+    ],
+    "triangles": 5820
+  },
+  "LuvaCorner": {
+    "source": "luva.dwg",
+    "sha256": "a6a070faad02837c0e7b6d3234628ba90c031be7059827f6961578652d68afaa",
+    "dimensions": [
+      2.949182734889349,
+      0.7230671404145613,
+      2.9498023616839717
+    ],
+    "triangles": 40765
+  }
+}

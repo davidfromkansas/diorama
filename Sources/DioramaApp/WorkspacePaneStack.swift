@@ -1,17 +1,19 @@
 import SwiftUI
 
-/// A workbench pane fills its viewport; its transcript must never determine the
-/// viewport's ideal size. Unlike ZStack, this layout does not recursively measure
-/// retained (including invisible) panes to negotiate their intrinsic dimensions.
-struct WorkspacePaneStack: Layout {
-    func sizeThatFits(proposal: ProposedViewSize, subviews: Subviews, cache: inout ()) -> CGSize {
-        let size = proposal.replacingUnspecifiedDimensions()
-        return CGSize(width: size.width.isFinite ? max(0, size.width) : 0,
-                      height: size.height.isFinite ? max(0, size.height) : 0)
-    }
+/// Retain pane identity, but give every pane a concrete viewport before laying out
+/// transcript content. A Layout's default alignment negotiation recursively asks
+/// retained scroll views for their content dimensions, even when invisible.
+struct WorkspacePaneStack<Content: View>: View {
+    @ViewBuilder var content: () -> Content
 
-    func placeSubviews(in bounds: CGRect, proposal: ProposedViewSize, subviews: Subviews, cache: inout ()) {
-        let viewport = ProposedViewSize(width: bounds.width, height: bounds.height)
-        for pane in subviews { pane.place(at: bounds.origin, anchor: .topLeading, proposal: viewport) }
+    var body: some View {
+        GeometryReader { viewport in
+            ZStack(alignment: .topLeading) {
+                content()
+                    .frame(width: max(0, viewport.size.width), height: max(0, viewport.size.height), alignment: .topLeading)
+            }
+            .frame(width: max(0, viewport.size.width), height: max(0, viewport.size.height), alignment: .topLeading)
+            .clipped()
+        }
     }
 }

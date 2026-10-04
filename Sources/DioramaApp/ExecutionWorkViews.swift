@@ -5,7 +5,7 @@ struct ExecutionPlanView: View {
     let work: ExecutionWork
     @State private var expanded = true
     var body: some View {
-        DisclosureGroup("Plan · \(work.plan.filter { $0.status == "completed" }.count) of \(work.plan.count) steps done", isExpanded: $expanded) {
+        DisclosureGroup(isExpanded: $expanded) {
             VStack(alignment: .leading, spacing: 8) {
                 if let explanation = work.explanation { Text(explanation).foregroundStyle(.secondary) }
                 ForEach(work.plan) { step in
@@ -17,7 +17,7 @@ struct ExecutionPlanView: View {
                 }
                 Text("Reported by Codex. Finishing a turn does not complete the plan.").font(.caption).foregroundStyle(.secondary)
             }.frame(maxWidth: .infinity, alignment: .leading).padding(.top, 8).textSelection(.enabled)
-        }.font(.callout).padding(12).background(.quaternary.opacity(0.3), in: RoundedRectangle(cornerRadius: 10))
+        } label: { Text("Plan · \(work.plan.filter { $0.status == "completed" }.count) of \(work.plan.count) steps done").disclosurePointingHand() }.font(.callout).padding(12).background(.quaternary.opacity(0.3), in: RoundedRectangle(cornerRadius: 10))
     }
 }
 
@@ -42,7 +42,7 @@ struct ExecutionChangesView: View {
                                         Text("+\(file.additions) −\(file.deletions)").font(.caption.monospaced())
                                     }.frame(maxWidth: .infinity, alignment: .leading).padding(8)
                                         .background(selectedFile?.id == file.id ? Color.accentColor.opacity(0.12) : .clear, in: RoundedRectangle(cornerRadius: 6))
-                                }.buttonStyle(.plain).accessibilityLabel("Show diff for " + file.path)
+                                }.pointingHand().buttonStyle(.plain).accessibilityLabel("Show diff for " + file.path)
                             }
                         }
                     }.frame(minWidth: 110, idealWidth: 150, maxWidth: 220)
@@ -79,9 +79,9 @@ struct ElicitationFormView: View {
             if request.params["mode"].string == "url" {
                 Text(request.params["url"].string ?? "URL unavailable").font(.caption).textSelection(.enabled)
                 if let url = safeURL {
-                    Button("Open connector page in browser") { openURL(url) }
+                    Button("Open connector page in browser") { openURL(url) }.pointingHand()
                     Text("Opening the page does not submit a response. Complete the browser flow, then acknowledge here.").font(.caption).foregroundStyle(.secondary)
-                    Button("I completed the browser step") { respond(.object(["action": .string("accept"), "content": .null])) }
+                    Button("I completed the browser step") { respond(.object(["action": .string("accept"), "content": .null])) }.pointingHand()
                 } else { Text("This connector URL cannot be opened safely. You can decline or cancel.").foregroundStyle(.orange) }
             } else if request.supportsElicitationForm {
                 ForEach(request.elicitationFields) { field in
@@ -89,16 +89,16 @@ struct ElicitationFormView: View {
                         Text(field.title + (field.required ? " · Required" : " · Optional"))
                         if let description = field.schema["description"].string { Text(description).font(.caption).foregroundStyle(.secondary) }
                         fieldControl(field)
-                        if !field.required, values[field.id] != nil { Button("Omit this field") { values[field.id] = nil; numberText[field.id] = nil }.font(.caption) }
+                        if !field.required, values[field.id] != nil { Button("Omit this field") { values[field.id] = nil; numberText[field.id] = nil }.pointingHand().font(.caption) }
                     }
                 }
-                Button("Submit to connector") { submit() }
+                Button("Submit to connector") { submit() }.pointingHand()
             } else {
                 Text("This connector requests a form shape Diorama cannot render. Review the details, then decline or cancel.").foregroundStyle(.orange)
             }
             HStack {
-                Button("Decline") { respond(.object(["action": .string("decline"), "content": .null])) }
-                Button("Cancel request") { respond(.object(["action": .string("cancel"), "content": .null])) }
+                Button("Decline") { respond(.object(["action": .string("decline"), "content": .null])) }.pointingHand()
+                Button("Cancel request") { respond(.object(["action": .string("cancel"), "content": .null])) }.pointingHand()
             }
             if let error { Text(error).foregroundStyle(.red) }
         }.onAppear {
@@ -116,7 +116,7 @@ struct ElicitationFormView: View {
         if field.type == "boolean" {
             Picker(field.title, selection: Binding(get: { values[field.id]?.pretty ?? "" }, set: { values[field.id] = $0.isEmpty ? nil : .bool($0 == "true") })) {
                 Text("Choose…").tag(""); Text("Yes").tag("true"); Text("No").tag("false")
-            }.labelsHidden()
+            }.pointingHand().labelsHidden()
         } else if field.type == "array" {
             ForEach(field.choices, id: \.value) { choice in
                 Toggle(choice.title, isOn: Binding(get: { values[field.id]?.array.contains(.string(choice.value)) == true }, set: { enabled in
@@ -124,14 +124,14 @@ struct ElicitationFormView: View {
                     selected.removeAll { $0 == .string(choice.value) }
                     if enabled { selected.append(.string(choice.value)) }
                     values[field.id] = .array(selected)
-                }))
+                })).pointingHand()
             }
-            if values[field.id] == nil { Button("Use an empty selection") { values[field.id] = .array([]) }.font(.caption) }
+            if values[field.id] == nil { Button("Use an empty selection") { values[field.id] = .array([]) }.pointingHand().font(.caption) }
         } else if !field.choices.isEmpty {
             Picker(field.title, selection: Binding(get: { values[field.id]?.string }, set: { values[field.id] = $0.map(WireValue.string) })) {
                 Text("Choose…").tag(String?.none)
                 ForEach(field.choices, id: \.value) { choice in Text(choice.title).tag(Optional(choice.value)) }
-            }.labelsHidden()
+            }.pointingHand().labelsHidden()
         } else if field.type == "number" || field.type == "integer" {
             TextField(field.title, text: Binding(get: { numberText[field.id] ?? "" }, set: { numberText[field.id] = $0; values[field.id] = Double($0).map(WireValue.number) ?? .string($0) }))
         } else {

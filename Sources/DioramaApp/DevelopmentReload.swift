@@ -112,7 +112,7 @@ import DioramaCore
             process.currentDirectoryURL = root
             var environment = ProcessInfo.processInfo.environment
             environment["PATH"] = "/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin"
-            environment["DIORAMA_BUILD_CONFIGURATION"] = "debug"
+            environment["DIORAMA_BUILD_CONFIGURATION"] = "release"
             environment["DIORAMA_APP_PATH"] = stagedApp.path
             environment["DIORAMA_DEVELOPMENT_ROOT"] = root.path
             environment["DIORAMA_REUSE_HELPER_FROM"] = installedApp.appendingPathComponent("Contents/Resources/ClaudeHelper").path
@@ -189,7 +189,7 @@ import DioramaCore
                 isRequestingQuit = false
                 return false
             }
-            library.navigation.flushPersistence()
+            library.flushWindowPresentation()
             try await library.execution.stopAndShutdown()
             let helper = Process()
             helper.executableURL = URL(fileURLWithPath: "/bin/zsh")

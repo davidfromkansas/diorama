@@ -7,10 +7,10 @@ struct ConversationActions: View {
     let session: Session
     var body: some View {
         if session.provider == .codex && session.classification != .internalReview {
-            Button("Rename…") { model.renameSession = session; model.renameText = session.title }
-            Button(model.pinned.contains(session.id) ? "Unpin in Diorama" : "Pin in Diorama") { model.togglePin(session) }
-            Button(session.archived ? "Restore conversation" : "Archive conversation…") { model.archiveSession = session }
-            Button("Fork conversation") { model.forkConversation(session) }.help("Copies conversation history. Project sessions receive a new worktree from the source’s committed revision; uncommitted files are not copied.").disabled(model.execution.tasks[session.sessionID]?.phase.active == true)
+            Button("Rename…") { model.renameSession = session; model.renameText = session.title }.pointingHand()
+            Button(model.pinned.contains(session.id) ? "Unpin in Diorama" : "Pin in Diorama") { model.togglePin(session) }.pointingHand()
+            Button(session.archived ? "Restore conversation" : "Archive conversation…") { model.archiveSession = session }.pointingHand()
+            Button("Fork conversation") { model.forkConversation(session) }.pointingHand().help("Copies conversation history. Project sessions receive a new worktree from the source’s committed revision; uncommitted files are not copied.").disabled(model.execution.tasks[session.sessionID]?.phase.active == true)
         }
     }
 }
@@ -30,11 +30,11 @@ struct ConversationSearchView: View {
     @State private var matchPrefix = ""
     var body: some View {
         VStack(alignment: .leading, spacing: 14) {
-            HStack { Text(threadID == nil ? "Search chats" : "Find in conversation").font(.title2); Spacer(); Button("Done") { dismiss() } }
+            HStack { Text(threadID == nil ? "Search chats" : "Find in conversation").font(.title2); Spacer(); Button("Done") { dismiss() }.pointingHand() }
             HStack {
                 TextField("Search message text", text: $query).onSubmit { search(more: false) }
-                if threadID == nil { Toggle("Archived", isOn: $archived) }
-                Button("Search") { search(more: false) }.disabled(busy || query.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+                if threadID == nil { Toggle("Archived", isOn: $archived).pointingHand() }
+                Button("Search") { search(more: false) }.pointingHand().disabled(busy || query.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
             }.disabled(busy)
             Text(threadID == nil ? "Search uses the server's message index; existing sidebar search still matches titles and folders." : "Find searches visible user and final assistant messages. Tool output is outside the server search scope.").font(.caption).foregroundStyle(.secondary)
             if let error { Text(error).foregroundStyle(.orange).textSelection(.enabled) }
@@ -54,9 +54,9 @@ struct ConversationSearchView: View {
                                     if threadID == nil { Text(result["thread"]["name"].string ?? result["thread"]["preview"].string ?? "Conversation").font(.headline).lineLimit(2) }
                                     Text(result["snippet"].string ?? "Match").lineLimit(5)
                                 }.padding(10).frame(maxWidth: .infinity, alignment: .leading).background(.quaternary.opacity(0.4), in: RoundedRectangle(cornerRadius: 8))
-                            }.buttonStyle(.plain).disabled(busy)
+                            }.pointingHand().buttonStyle(.plain).disabled(busy)
                         }
-                        if nextCursor != nil { Button("More matches") { search(more: true) }.disabled(busy) }
+                        if nextCursor != nil { Button("More matches") { search(more: true) }.pointingHand().disabled(busy) }
                     }
                 }.frame(minWidth: 260)
                 if let preview {
@@ -114,13 +114,14 @@ struct ReviewChangesControls: View {
                         
                     } catch { self.error = error.localizedDescription }
                 }
-            }.disabled(busy || session.archived || model.execution.tasks[session.sessionID]?.phase.active == true)
+            }.pointingHand().disabled(busy || session.archived || model.execution.tasks[session.sessionID]?.phase.active == true)
             if let error { Text(error).foregroundStyle(.orange).font(.caption) }
         }.padding(16)
     }
 }
 
 struct RichToolResultView: View {
+    @Environment(\.historyDetails) private var historyDetails
     let result: ToolResult
     var selectWorker: ((String) -> Void)?
     var progress: String?
@@ -141,23 +142,23 @@ struct RichToolResultView: View {
             }
             if !result.outputs.isEmpty { ConversationOutputCards(outputs: result.outputs) }
             if result.item["arguments"] != .null {
-                DisclosureGroup("Inputs") { TranscriptContent(text: CodexOutputEvidence.safeDetails(result.item["arguments"]).pretty, literal: true).textSelection(.enabled) }
+                DisclosureGroup { TranscriptContent(text: CodexOutputEvidence.safeDetails(result.item["arguments"]).pretty, literal: true).textSelection(.enabled) } label: { Text("Inputs").disclosurePointingHand() }
             }
             if result.item["error"] != .null { Text(CodexOutputEvidence.safeDetails(result.item["error"]).pretty).foregroundStyle(.orange) }
             if let failure = result.item["failure"].string { Text(failure).foregroundStyle(.orange) }
             ForEach(result.type == "webSearch" ? [] : result.item["results"].array, id: \.pretty) { source in
-                if let s = source["url"].string, let url = URL(string: s), ["http", "https"].contains(url.scheme ?? "") { Link(source["title"].string ?? s, destination: url) }
+                if let s = source["url"].string, let url = URL(string: s), ["http", "https"].contains(url.scheme ?? "") { Link(source["title"].string ?? s, destination: url).pointingHand() }
             }
-            if !result.output.isEmpty { DisclosureGroup("Output") { TranscriptContent(text: result.output, literal: result.type == "commandExecution").textSelection(.enabled) } }
+            if !result.output.isEmpty { DisclosureGroup { TranscriptContent(text: result.output, literal: result.type == "commandExecution").textSelection(.enabled) } label: { Text("Output").disclosurePointingHand() } }
             ForEach(result.item["changes"].array, id: \.pretty) { change in
-                DisclosureGroup(change["path"].string ?? "Changed file") { Text(change["diff"].string ?? "No historical diff was supplied by the source.").font(.caption.monospaced()).textSelection(.enabled) }
+                DisclosureGroup { Text(change["diff"].string ?? "No historical diff was supplied by the source.").font(.caption.monospaced()).textSelection(.enabled) } label: { Text(change["path"].string ?? "Changed file").disclosurePointingHand() }
             }
             if result.type != "webSearch", let query = result.item["query"].string ?? result.item["action"]["query"].string { Text(query).font(.caption).foregroundStyle(.secondary) }
             ForEach(result.workers, id: \.self) { worker in
-                if let selectWorker { Button("Open agent · " + String(worker.prefix(12))) { selectWorker(worker) } }
+                if let selectWorker { Button("Open agent · " + String(worker.prefix(12))) { selectWorker(worker) }.pointingHand() }
                 else { Text("Agent · " + worker).font(.caption).textSelection(.enabled) }
             }
-            DisclosureGroup("Raw tool details") { Text(result.rawPreview).font(.caption.monospaced()).textSelection(.enabled) }
+            if historyDetails { DisclosureGroup { Text(result.rawPreview).font(.caption.monospaced()).textSelection(.enabled) } label: { Text("Raw tool details").disclosurePointingHand() } }
         }.font(.callout).padding(12).background(.quaternary.opacity(0.3), in: RoundedRectangle(cornerRadius: 10))
     }
 }
@@ -195,7 +196,7 @@ extension LibraryModel {
                 else { project = try await ProjectGit.discover(session.project); projects.add(project) }
                 try projects.checkpoint()
                 let commit = try await ProjectCommand.git(session.project, ["rev-parse", "HEAD"])
-                let workspace = try await ProjectGit.createWorkspace(project: project, id: UUID().uuidString, base: commit, useCached: true)
+                let workspace = try await ProjectGit.createWorkspace(project: project, id: UUID().uuidString, base: commit, useCached: true, branchName: DescriptiveBranch.suggestion("fork " + session.title) ?? "fork-conversation")
                 projects.update(project.id) { $0.workspaces.append(workspace) }
                 projects.updateWorkspace(project.id, id: workspace.id) { $0.creationUncertain = true }
                 try projects.checkpoint()

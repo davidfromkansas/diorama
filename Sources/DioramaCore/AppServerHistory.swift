@@ -149,7 +149,7 @@ public enum AppServerHistory {
             }
             return allowed ? url : nil
         }
-        return Session(id: Provider.codex.rawValue + ":" + id, provider: .codex, url: url, sessionID: id, title: title,
+        return Session(id: Provider.codex.rawValue + ":" + id, provider: .codex, url: url, sessionID: id, title: title, titleSource: name.isEmpty ? .prompt : .provider,
                        project: thread["cwd"] as? String ?? fallback?.project ?? "",
                        modified: (thread["updatedAt"] as? Double).map(Date.init(timeIntervalSince1970:)) ?? fallback?.modified ?? .distantPast,
                        bytes: fallback?.bytes ?? 0, archived: archived, parentID: parent,
@@ -231,9 +231,22 @@ public actor ImportedSessionLibrary {
     private let files: SessionLibrary
     private let server: any AppServerReading
     private var previousCodex: [String: Session] = [:]
+    private var titleCache: [String: SavedTaskTitle] = [:]
+    private let titleCacheURL: URL?
+    private var loadedTitles = false
+
     private var lastTranscript: (id: String, value: Transcript)?
-    public init(files: SessionLibrary = SessionLibrary(), server: any AppServerReading = AppServerConnection()) {
-        self.files = files; self.server = server
+    private struct HistoryPageCache {
+        var id: String
+        var modified: Date
+        var limit: Int
+        var rows: [[String: Any]]
+        var cursor: String?
+        var seen: Set<String>
+    }
+    private var historyPage: HistoryPageCache?
+    public init(files: SessionLibrary = SessionLibrary(), server: any AppServerReading = AppServerConnection(), titleCacheURL: URL? = nil) {
+        self.files = files; self.server = server; self.titleCacheURL = titleCacheURL
     }
     private func request(_ method: String, _ params: [String: Any]) async throws -> [String: Any] {
         let data = try JSONSerialization.data(withJSONObject: params)
@@ -242,6 +255,10 @@ public actor ImportedSessionLibrary {
         return object
     }
     public func scan() async -> LibrarySnapshot {
+        if !loadedTitles {
+            loadedTitles = true
+            if let titleCacheURL, let data = try? Data(contentsOf: titleCacheURL), let saved = try? JSONDecoder().decode([String: SavedTaskTitle].self, from: data) { titleCache = saved }
+        }
         let local = await files.scan()
         let lookup = Dictionary(uniqueKeysWithValues: local.sessions.map { ($0.id, $0) })
         var imported: [String: Session] = [:]
@@ -257,7 +274,7 @@ public actor ImportedSessionLibrary {
                     guard let threads = page["data"] as? [[String: Any]] else { throw AppServerFailure("App Server omitted session list") }
                     for thread in threads {
                         let key = Provider.codex.rawValue + ":" + (thread["id"] as? String ?? "")
-                        if let session = AppServerHistory.session(thread, archived: archived, fallback: lookup[key]) { imported[session.id] = session }
+                        if let session = AppServerHistory.session(thread, archived: archived, fallback: lookup[key]) { imported[session.id] = previousCodex[key].map { session.retainingTitle(from: $0) } ?? session }
                     }
                     cursor = page["nextCursor"] as? String; pages += 1
                     if let cursor, !seen.insert(cursor).inserted { throw AppServerFailure("App Server repeated pagination cursor") }
@@ -267,8 +284,8 @@ public actor ImportedSessionLibrary {
             previousCodex = imported
             notices.insert("Codex history: App Server connected · read-only · activity from hooks/local records", at: 0)
         } catch {
-            imported = previousCodex.filter { lookup[$0.key] == nil }.mapValues { session in
-                var cached = session; cached.historySource = "Cached App Server metadata"; return cached
+            imported = previousCodex.mapValues { session in
+                var cached = lookup[session.id]?.retainingDiscoveryMetadata(from: session) ?? session; cached.historySource = "Cached App Server metadata"; return cached
             }
             notices.insert("Codex history: local fallback · \(error.localizedDescription)", at: 0)
         }
@@ -277,18 +294,39 @@ public actor ImportedSessionLibrary {
         if missing > 0 { notices.append("\(missing) Codex records discovered through local-file fallback") }
         var combined = lookup
         for (id, session) in imported { combined[id] = session }
+        let oldCache = titleCache
+        for (id, var session) in combined {
+            if let saved = titleCache[id], saved.source.priority > session.titleSource.priority {
+                session = session.updated(title: saved.text); session.titleSource = saved.source
+            }
+            if session.titleSource != .prompt { titleCache[id] = SavedTaskTitle(text: session.title, source: session.titleSource) }
+            combined[id] = session
+        }
+        if titleCache != oldCache, let titleCacheURL, let data = try? JSONEncoder().encode(titleCache) {
+            do {
+                try FileManager.default.createDirectory(at: titleCacheURL.deletingLastPathComponent(), withIntermediateDirectories: true)
+                try data.write(to: titleCacheURL, options: .atomic)
+            } catch { notices.append("Task titles could not be cached: " + error.localizedDescription) }
+        }
         return LibrarySnapshot(sessions: combined.values.sorted { $0.modified > $1.modified }, notices: notices)
     }
     private func paginatedTranscript(_ session: Session, limit: Int) async throws -> Transcript {
-        var rows: [[String: Any]] = []; var cursor: String?; var seen = Set<String>()
-        repeat {
+        let cached = historyPage.flatMap { $0.id == session.id && $0.modified == session.modified && limit > $0.limit ? $0 : nil }
+        var rows = cached?.rows ?? []
+        var cursor = cached?.cursor
+        var seen = cached?.seen ?? []
+        var needsPage = cached == nil || cursor != nil
+        while needsPage && rows.count < limit {
+            try Task.checkCancellation()
             var params: [String: Any] = ["threadId": session.sessionID, "limit": min(100, max(1, limit - rows.count)), "sortDirection": "desc"]
             if let cursor { params["cursor"] = cursor }
             let response = try await request("thread/items/list", params)
             guard let data = response["data"] as? [[String: Any]] else { throw AppServerFailure("Paginated items unavailable") }
             rows += data; cursor = response["nextCursor"] as? String
             if let cursor, !seen.insert(cursor).inserted { throw AppServerFailure("History cursor repeated") }
-        } while cursor != nil && rows.count < limit
+            needsPage = cursor != nil
+        }
+        historyPage = rows.count <= 5000 ? HistoryPageCache(id: session.id, modified: session.modified, limit: limit, rows: rows, cursor: cursor, seen: seen) : nil
         var turns: [[String: Any]] = []
         for row in rows.reversed() {
             guard let turnID = row["turnId"] as? String, let item = row["item"] as? [String: Any] else { throw AppServerFailure("Invalid paginated history item") }

@@ -25,16 +25,16 @@ struct HTMLCanvasView: View {
                     Label(observationLabel ?? effectivePhase?.rawValue ?? "No recent activity", systemImage: effectivePhase == .working || effectivePhase == .submitting ? "circle.fill" : "doc.richtext")
                         .foregroundStyle(effectivePhase == .working || effectivePhase == .submitting ? Color.mint : Color.secondary)
                     Spacer()
-                    Button(paused ? "Resume updates" : "Pause updates") { paused.toggle() }
+                    Button(paused ? "Resume updates" : "Pause updates") { paused.toggle() }.pointingHand()
                     if let url {
-                        Button("Open in browser") { NSWorkspace.shared.open(url) }
+                        Button("Open in browser") { NSWorkspace.shared.open(url) }.pointingHand()
                         Menu {
-                            Button("Show in Finder") { NSWorkspace.shared.activateFileViewerSelecting([url]) }
+                            Button("Show in Finder") { NSWorkspace.shared.activateFileViewerSelecting([url]) }.pointingHand()
                             Button("Copy agent instructions") {
                                 NSPasteboard.general.clearContents()
                                 NSPasteboard.general.setString(ConversationCanvas.instructions(for: url), forType: .string)
-                            }
-                        } label: { Image(systemName: "ellipsis.circle") }
+                            }.pointingHand()
+                        } label: { Image(systemName: "ellipsis.circle") }.pointingHand()
                         .menuStyle(.borderlessButton).fixedSize()
                     }
                 }
@@ -42,9 +42,7 @@ struct HTMLCanvasView: View {
                     Text("Page saved \(document.modified.formatted(date: .abbreviated, time: .standard)) · \(paused ? "Updates paused" : "Watching for changes")")
                         .foregroundStyle(.secondary)
                 }
-                if session.provider != .codex {
-                    Text("For this provider, copy the agent instructions into its own client to maintain this page.").foregroundStyle(.secondary)
-                }
+                Text("Optional visual summary. Use Copy agent instructions and explicitly ask the agent to maintain this page.").foregroundStyle(.secondary)
                 if let error { Text(error).foregroundStyle(.orange).textSelection(.enabled) }
             }.font(.caption).padding(.horizontal, 24).padding(.vertical, 12)
             Divider()

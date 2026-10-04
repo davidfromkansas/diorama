@@ -10,7 +10,12 @@ mkdir -p "$app_path/Contents/MacOS"
 cp "$build_path/$configuration/Diorama" "$app_path/Contents/MacOS/Diorama"
 cp "$build_path/$configuration/DioramaReporter" "$app_path/Contents/MacOS/DioramaReporter"
 codesign --force --sign - "$app_path/Contents/MacOS/DioramaReporter"
+mkdir -p "$app_path/Contents/Frameworks"
+sparkle="$build_path/artifacts/sparkle/Sparkle/Sparkle.xcframework/macos-arm64_x86_64/Sparkle.framework"
+/usr/bin/ditto "$sparkle" "$app_path/Contents/Frameworks/Sparkle.framework"
+bash scripts/sign-sparkle.sh "$app_path" -
 mkdir -p "$app_path/Contents/Resources"
+bash scripts/build-app-icon.sh assets/app-icon/AppIcon.png "$app_path/Contents/Resources/AppIcon.icns"
 for resource_bundle in "$build_path/$configuration/"*.bundle(N); do
   /usr/bin/ditto "$resource_bundle" "$app_path/Contents/Resources/${resource_bundle:t}"
 done
@@ -24,7 +29,9 @@ else
 fi
 printf '%s\n' "$helper_stamp" > "$app_path/Contents/Resources/ClaudeHelper/source.sha1"
 mkdir -p "$app_path/Contents/Resources/Licenses"
+cp -f licenses/GenerativeLoaders.txt "$app_path/Contents/Resources/Licenses/GenerativeLoaders.txt"
 cp -f "$build_path/checkouts/swift-markdown-ui/LICENSE" "$app_path/Contents/Resources/Licenses/MarkdownUI.txt"
+cp -f "$build_path/artifacts/sparkle/Sparkle/LICENSE" "$app_path/Contents/Resources/Licenses/Sparkle.txt"
 cp -f "$build_path/checkouts/NetworkImage/LICENSE" "$app_path/Contents/Resources/Licenses/NetworkImage.txt"
 cp -f "$build_path/checkouts/swift-cmark/COPYING" "$app_path/Contents/Resources/Licenses/swift-cmark.txt"
 cat > "$app_path/Contents/Info.plist" <<'PLIST'
@@ -36,6 +43,7 @@ cat > "$app_path/Contents/Info.plist" <<'PLIST'
 <key>CFBundleName</key><string>Diorama</string>
 <key>CFBundleDisplayName</key><string>Diorama</string>
 <key>CFBundlePackageType</key><string>APPL</string>
+<key>CFBundleIconFile</key><string>AppIcon.icns</string>
 <key>CFBundleShortVersionString</key><string>0.8.3</string>
 <key>CFBundleVersion</key><string>54</string>
 <key>DioramaGitHubClientID</key><string>Ov23liN3O8j2ksYfPj0j</string>
@@ -43,6 +51,15 @@ cat > "$app_path/Contents/Info.plist" <<'PLIST'
 <key>NSHighResolutionCapable</key><true/>
 </dict></plist>
 PLIST
+/usr/libexec/PlistBuddy -c 'Add :SUFeedURL string https://github.com/davidfromkansas/diorama-releases/releases/latest/download/appcast.xml' "$app_path/Contents/Info.plist"
+/usr/libexec/PlistBuddy -c 'Add :SUEnableAutomaticChecks bool true' "$app_path/Contents/Info.plist"
+/usr/libexec/PlistBuddy -c 'Add :SUAutomaticallyUpdate bool false' "$app_path/Contents/Info.plist"
+/usr/libexec/PlistBuddy -c 'Add :SUSendProfileInfo bool false' "$app_path/Contents/Info.plist"
+/usr/libexec/PlistBuddy -c 'Add :SUScheduledCheckInterval integer 21600' "$app_path/Contents/Info.plist"
+/usr/libexec/PlistBuddy -c 'Add :SUVerifyUpdateBeforeExtraction bool true' "$app_path/Contents/Info.plist"
+if [[ -n "${DIORAMA_UPDATE_PUBLIC_KEY:-}" ]]; then
+  /usr/libexec/PlistBuddy -c "Add :SUPublicEDKey string $DIORAMA_UPDATE_PUBLIC_KEY" "$app_path/Contents/Info.plist"
+fi
 # Opt-in source watching is restricted to this local development build.
 if [[ -n "${DIORAMA_DEVELOPMENT_ROOT:-}" ]]; then
   printf '%s\n' "$DIORAMA_DEVELOPMENT_ROOT" > "$app_path/Contents/Resources/DevelopmentRoot.txt"

@@ -28,6 +28,23 @@ struct AppServerHistoryTests {
         let second = try JSONSerialization.jsonObject(with: calls[1].1) as? [String: Any]
         #expect(second?["cursor"] as? String == "older")
     }
+    @Test func expandingHistoryRetainsCursorButRefreshReadsNewest() async throws {
+        let row: (String) -> [String: Any] = { ["turnId": "turn", "item": ["id": $0, "type": "agentMessage", "text": $0]] }
+        let stub = HistoryStub(try [data(["data": [row("new")], "nextCursor": "older"]), data(["data": [row("old")]]), data(["data": [row("latest"), row("new")]])])
+        let library = ImportedSessionLibrary(files: SessionLibrary(roots: []), server: stub)
+        let session = try #require(AppServerHistory.session(task("fixture"), archived: false))
+        _ = await library.transcript(for: session, limit: 1)
+        let expanded = await library.transcript(for: session, limit: 2)
+        #expect(expanded.entries.map(\.text) == ["old", "new"])
+        let refreshed = await library.transcript(for: session, limit: 2)
+        #expect(refreshed.entries.last?.text == "latest")
+        let calls = await stub.calls
+        #expect(calls.count == 3)
+        let second = try JSONSerialization.jsonObject(with: calls[1].1) as? [String: Any]
+        let third = try JSONSerialization.jsonObject(with: calls[2].1) as? [String: Any]
+        #expect(second?["cursor"] as? String == "older")
+        #expect(third?["cursor"] == nil)
+    }
     @Test func boundedPageReportsOlderContentWithoutFetchingIt() async throws {
         let stub = HistoryStub(try [data(["data": [["turnId": "turn", "item": ["id": "new", "type": "agentMessage", "text": "Newest"]]], "nextCursor": "older"])])
         let library = ImportedSessionLibrary(files: SessionLibrary(roots: []), server: stub)

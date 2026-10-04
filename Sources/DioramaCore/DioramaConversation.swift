@@ -37,7 +37,7 @@ public struct DioramaConversation: Codable, Equatable, Identifiable, Sendable {
     }
     public func contains(_ nativeID: String) -> Bool { segments.contains { $0.nativeID == nativeID } }
     public func session(using native: Session) -> Session {
-        var result = Session(id: id, provider: native.provider, url: native.url, sessionID: native.sessionID, title: title, project: folder, modified: native.modified, bytes: native.bytes, archived: native.archived, parentID: nil)
+        var result = Session(id: id, provider: native.provider, url: native.url, sessionID: native.sessionID, title: native.titleSource == .prompt ? title : native.title, titleSource: native.titleSource, project: folder, modified: native.modified, bytes: native.bytes, archived: native.archived, parentID: nil)
         result.classification = native.classification; result.historySource = "Diorama conversation"; return result
     }
     public func precedingEntries() -> [Entry] {

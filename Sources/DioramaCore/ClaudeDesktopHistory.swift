@@ -147,6 +147,8 @@ public struct ClaudeDesktopHistory: Sendable {
                                   title: meta.title.flatMap { $0.isEmpty ? nil : String($0.prefix(500)) } ?? local?.title ?? "Untitled Desktop conversation",
                                   project: meta.cwd, modified: max(date, local?.modified ?? .distantPast), bytes: local?.bytes ?? 0,
                                   archived: meta.isArchived ?? false, parentID: nil)
+            session.titleSource = meta.title?.isEmpty == false ? .provider : local?.titleSource ?? .prompt
+            if let local { session = session.retainingTitle(from: local) }
             session.origin = .claudeDesktop
             session.desktopSessionID = meta.sessionId
             session.lastObservedHook = latest[meta.cliSessionId]?.observedAt

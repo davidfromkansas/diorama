@@ -3,7 +3,7 @@ import Observation
 import DioramaCore
 
 /// UI-only addresses. Provider sessions and project membership remain authoritative.
-enum SpatialFocus: Equatable, Hashable {
+enum SpatialFocus: Codable, Equatable, Hashable {
     case portfolio
     case project(String)
     case team(project: String?, conversation: String)
@@ -45,7 +45,7 @@ enum SpatialFocus: Equatable, Hashable {
 struct SpatialAgent: Identifiable, Equatable {
     let projectID: String?
     let conversationID: String
-    let value: WorkspaceAgent
+    var value: WorkspaceAgent
     var id: String { Self.identity(project: projectID, conversation: conversationID, provider: value.provider, agent: value.id) }
     static func identity(project: String?, conversation: String, provider: String, agent: String) -> String {
         // Length prefixes keep arbitrary provider identifiers unambiguous.
@@ -89,7 +89,7 @@ struct SpatialTeam: Identifiable, Equatable {
     let session: Session
     var agents: [SpatialAgent]
     var id: String { SpatialAgent.identity(project: projectID, conversation: session.id, provider: "", agent: "") }
-    var title: String { markdownTitle(session.title) }
+    var title: String { session.displayTitle }
     var focus: SpatialFocus { .team(project: projectID, conversation: session.id) }
     var summary: SpatialSummary { .init(agents: agents) }
 }
@@ -116,11 +116,24 @@ struct SpatialWorld: Equatable {
 }
 
 @Observable final class SpatialWorkspaceState {
-    var focus: SpatialFocus = .portfolio
+    var sceneKind: WorkspaceSceneKind = .office
+    var focus: SpatialFocus = .portfolio {
+        didSet { if focus.expanded { conversationPanelVisible = true } }
+    }
+    var inboxExpanded = false
+    var serversExpanded = false
+    var inboxSelection: InboxThread?
+    var conversationWidth: Double?
+    var conversationPanelVisible = false
     var showArchived = false
     var notice: String?
     var resetGeneration = 0
     var page = 0
+    @ObservationIgnored private var rosters: [String: LiveAgentRosterModel] = [:]
+    func roster(for key: String) -> LiveAgentRosterModel {
+        if let existing = rosters[key] { return existing }
+        let model = LiveAgentRosterModel(); rosters[key] = model; return model
+    }
 }
 
 /// Slots survive status changes, sorting changes, and temporary disappearance.
@@ -134,7 +147,41 @@ struct SpatialSlots {
 }
 
 extension LibraryModel {
-    func spatialWorld(showArchived: Bool) -> SpatialWorld {
+    private func spatialTeam(_ session: Session, project: String?) -> SpatialTeam {
+    var agents = workspaceAgents(session)
+    // Summary-only sources can report attention before structured activity arrives.
+    let reported = portfolio.observation(for: session.provider, nativeID: session.sessionID)?.activity.state ?? summary(session).state
+    if (reported == .approval || reported == .input), let index = agents.firstIndex(where: \.isMain), agents[index].attentionReason == .other {
+        agents[index].status = .waiting
+        agents[index].attentionReason = reported == .approval ? .approval : .input
+    }
+    return SpatialTeam(projectID: project, session: session, agents: agents.map {
+        SpatialAgent(projectID: project, conversationID: session.id, value: $0)
+    })
+    }
+
+    /// Home needs the same reported counts, but must not project the entire library in one frame.
+    func homeProjectSummaries() async -> [SpatialProject]? {
+        let records = projects.projects
+        var result: [SpatialProject] = []
+        var assigned = Set<String>()
+        for project in records {
+            var teams: [SpatialTeam] = []
+            let sessions = projects.sessions(project, library: self).filter {
+                !$0.archived && $0.classification != .subagent && $0.classification != .internalReview
+            }.sorted { $0.id < $1.id }
+            for session in sessions where assigned.insert(session.id).inserted {
+                guard !Task.isCancelled else { return nil }
+                teams.append(spatialTeam(session, project: project.id))
+                await Task.yield()
+            }
+            result.append(SpatialProject(id: project.id, name: project.name, teams: teams))
+            await Task.yield()
+        }
+        return Task.isCancelled ? nil : result
+    }
+
+    func spatialWorld(showArchived: Bool, projectScope: String? = nil, includeStandalone: Bool = true) -> SpatialWorld {
         let interval = ScenePerformance.begin("Spatial projection")
         defer { ScenePerformance.end("Spatial projection", interval) }
         let known = Set(sessions.map(\.id))
@@ -145,23 +192,14 @@ extension LibraryModel {
             sessions.filter { (showArchived || !$0.archived) && $0.classification != .subagent && $0.classification != .internalReview }
                 .sorted { $0.id < $1.id }.compactMap { session in
                     guard assigned.insert(session.id).inserted else { return nil }
-                    var agents = workspaceAgents(session)
-                    // Summary-only sources can report attention before structured activity arrives.
-                    let reported = portfolio.observation(for: session.provider, nativeID: session.sessionID)?.activity.state ?? summary(session).state
-                    if (reported == .approval || reported == .input), let index = agents.firstIndex(where: \.isMain), agents[index].attentionReason == .other {
-                        agents[index].status = .waiting
-                        agents[index].attentionReason = reported == .approval ? .approval : .input
-                    }
-                    return SpatialTeam(projectID: project, session: session, agents: agents.map {
-                        SpatialAgent(projectID: project, conversationID: session.id, value: $0)
-                    })
+                    return spatialTeam(session, project: project)
                 }
         }
         for project in projects.projects {
             world.projects.append(SpatialProject(id: project.id, name: project.name,
-                teams: teams(projects.sessions(project, library: self), project: project.id)))
+                teams: projectScope == nil || projectScope == project.id ? teams(projects.sessions(project, library: self), project: project.id) : []))
         }
-        world.standalone = teams(sessions, project: nil)
+        if projectScope == nil && includeStandalone { world.standalone = teams(sessions, project: nil) }
         // An explicitly opened orphan subagent remains readable, without inventing a parent.
         if let selected, selected.classification == .subagent, !world.teams.contains(where: { $0.session.id == selected.id }) {
             world.standalone.append(SpatialTeam(projectID: nil, session: selected, agents: workspaceAgents(selected).map {

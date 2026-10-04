@@ -18,6 +18,7 @@ public struct SessionStartOptions: Codable, Equatable, Sendable {
     public var folder: String
     public var reference: String
     public var createWorktree: Bool
+    public var branchName: String? = nil
     public init(folder: String, reference: String, createWorktree: Bool = true) {
         self.folder = folder; self.reference = reference; self.createWorktree = createWorktree
     }
@@ -76,6 +77,8 @@ public struct DioramaProject: Codable, Identifiable, Equatable, Sendable {
 }
 
 public enum ProjectStorage {
+    /// New repositories live here; imported projects retain their original locations.
+    public static var newProjectsDirectory: URL { FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent("Diorama", isDirectory: true) }
     public static var directory: URL { FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent("Library/Application Support/Diorama/Projects", isDirectory: true) }
     public static var file: URL { directory.appendingPathComponent("projects.json") }
     public static func load(from url: URL = file) throws -> [DioramaProject] {
@@ -210,6 +213,18 @@ public enum ProjectGit {
         _ = try await ProjectCommand.git(folder, ["rev-parse", "--verify", "HEAD^{commit}"])
         return try await ProjectCommand.git(folder, ["for-each-ref", "--format=%(refname:short)", "refs/heads"]).split(separator: "\n").map(String.init)
     }
+    /// Cached local and remote refs; opening the picker never fetches from the network.
+    public static func startBranches(_ folder: String) async throws -> [String] {
+        _ = try await localBranches(folder)
+        return try await ProjectCommand.git(folder, ["for-each-ref", "--format=%(refname:short)", "refs/heads", "refs/remotes"])
+            .split(separator: "\n").map(String.init).filter { !$0.hasSuffix("/HEAD") }
+    }
+    public static func defaultStartReference(_ folder: String) async throws -> String {
+        let branches = try await startBranches(folder)
+        if branches.contains("origin/main") { return "origin/main" }
+        if let remote = try? await ProjectCommand.git(folder, ["symbolic-ref", "--short", "refs/remotes/origin/HEAD"]), branches.contains(remote) { return remote }
+        return try await defaultLocalReference(folder)
+    }
     public static func currentBranch(_ folder: String) async -> String {
         (try? await ProjectCommand.git(folder, ["symbolic-ref", "--short", "HEAD"])) ?? "HEAD"
     }
@@ -225,7 +240,7 @@ public enum ProjectGit {
         var source = project
         source.folder = options.folder; source.commonDirectory = found.commonDirectory
         if options.createWorktree {
-            return try await createWorkspace(project: source, id: id, base: options.reference)
+            return try await createWorkspace(project: source, id: id, base: options.reference, branchName: options.branchName)
         }
         let current = await currentBranch(options.folder)
         if current != options.reference {
@@ -266,16 +281,17 @@ public enum ProjectGit {
         try await fetchBase(project, reference: project.base)
         return try await ProjectCommand.git(project.folder, ["rev-parse", "--verify", project.base + "^{commit}"])
     }
-    public static func createWorkspace(project: DioramaProject, id: String, base: String? = nil, useCached: Bool = false, root: URL = ProjectStorage.directory.appendingPathComponent("worktrees")) async throws -> ProjectWorkspace {
+    public static func createWorkspace(project: DioramaProject, id: String, base: String? = nil, useCached: Bool = false, branchName: String? = nil, root: URL = ProjectStorage.directory.appendingPathComponent("worktrees")) async throws -> ProjectWorkspace {
         let folder = root.appendingPathComponent(project.id).appendingPathComponent(id).resolvingSymlinksInPath().path
-        let branch = "codex/session-" + id.lowercased()
+        let requested = branchName ?? "work-session"
         if FileManager.default.fileExists(atPath: folder) {
             let actual = try await ProjectCommand.git(folder, ["rev-parse", "--show-toplevel"])
             let actualBranch = try await ProjectCommand.git(folder, ["branch", "--show-current"])
             let common = try await ProjectCommand.git(folder, ["rev-parse", "--path-format=absolute", "--git-common-dir"])
-            guard URL(fileURLWithPath: actual).resolvingSymlinksInPath().path == folder, actualBranch == branch, URL(fileURLWithPath: common).resolvingSymlinksInPath().path == project.commonDirectory else { throw AppServerFailure("The session folder is already occupied by different work. Nothing was overwritten.") }
+            let owner = try? await ProjectCommand.git(folder, ["config", "--get", "branch." + actualBranch + ".dioramaWorkspace"])
+            guard URL(fileURLWithPath: actual).resolvingSymlinksInPath().path == folder, (actualBranch == "diorama/session-" + id.lowercased() || owner == id), URL(fileURLWithPath: common).resolvingSymlinksInPath().path == project.commonDirectory else { throw AppServerFailure("The session folder is already occupied by different work. Nothing was overwritten.") }
             let commit = try await ProjectCommand.git(folder, ["rev-parse", "HEAD"])
-            return ProjectWorkspace(id: id, folder: folder, branch: branch, baseCommit: commit, context: project.context)
+            return ProjectWorkspace(id: id, folder: folder, branch: actualBranch, baseCommit: commit, context: project.context)
         }
         let reference: String
         if let base, !base.isEmpty { reference = base }
@@ -283,7 +299,7 @@ public enum ProjectGit {
         guard !reference.hasPrefix("-") else { throw AppServerFailure("Choose a valid base branch.") }
         let commit = try await ProjectCommand.git(project.folder, ["rev-parse", "--verify", reference + "^{commit}"])
         try FileManager.default.createDirectory(at: URL(fileURLWithPath: folder).deletingLastPathComponent(), withIntermediateDirectories: true)
-        _ = try await ProjectCommand.git(project.folder, ["worktree", "add", "-b", branch, folder, commit])
+        let branch = try await DescriptiveBranchCreation.shared.create(project: project, id: id, branch: requested, folder: folder, commit: commit)
         return ProjectWorkspace(id: id, folder: folder, branch: branch, baseCommit: commit, context: project.context)
     }
     public static func initialize(_ path: String, githubIdentity: GitHubIdentity? = nil) async throws -> DioramaProject {

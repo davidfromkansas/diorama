@@ -36,7 +36,7 @@ public enum ClaudeOutputPreview {
             data = try bytes(url)
         }
         let ext = url?.pathExtension.lowercased() ?? ""
-        if output.mediaType?.hasPrefix("image/") == true || ["png", "jpg", "jpeg", "gif", "webp", "heic", "tiff"].contains(ext) { return .init(kind: "image", data: data) }
+        if output.kind == "image" || output.mediaType?.hasPrefix("image/") == true || ["png", "jpg", "jpeg", "gif", "webp", "heic", "tiff"].contains(ext) { return .init(kind: "image", data: data) }
         if output.mediaType == "application/pdf" || ext == "pdf" { return .init(kind: "pdf", data: data) }
         guard let text = String(data: data, encoding: .utf8), !data.contains(0) else { throw AppServerFailure("This document requires an external viewer.") }
         if ["html", "htm"].contains(ext) || output.mediaType == "text/html" {

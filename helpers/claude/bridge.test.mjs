@@ -127,3 +127,23 @@ test('history retains cumulative saved cost-state and mode without reinterpretin
   assert.equal(rows[1].hasUnknownModelCost, true);
   assert.equal(rows[1].usage, undefined);
 });
+
+test('native startup mode and rejected changes do not submit a prompt', async () => {
+  const input = new PassThrough(), output = new PassThrough(), events = [];
+  let options, prompts = 0;
+  output.on('data', b => events.push(...b.toString().trim().split('\n').map(JSON.parse)));
+  const server = await serve({ input, output, argv: ['--session-id', 'session', '--permission-mode', 'acceptEdits', '--model', 'fixture'], env: {}, sdkQuery: args => {
+    options = args.options;
+    void (async () => { for await (const p of args.prompt) prompts++; })();
+    return { initializationResult: async () => ({ account: { subscriptionType: 'max', apiProvider: 'firstParty' }, models: [{ value: 'fixture', supportsAutoMode: false }] }),
+      setPermissionMode: async () => { throw Error('Auto mode unavailable'); }, close() {}, async *[Symbol.asyncIterator]() {} };
+  } });
+  input.write(JSON.stringify({ type: 'control_request', request_id: 'init', request: { subtype: 'initialize' } }) + '\n'); await tick();
+  assert.equal(options.permissionMode, 'acceptEdits');
+  assert.equal(options.model, 'fixture');
+  assert.deepEqual(options.settingSources, ['user', 'project', 'local']);
+  input.write(JSON.stringify({ type: 'control_request', request_id: 'mode', request: { subtype: 'set_permission_mode', mode: 'auto' } }) + '\n'); await tick();
+  assert.equal(events.find(e => e.response?.request_id === 'mode').response.subtype, 'error');
+  assert.equal(prompts, 0);
+  server.close(); input.end();
+});

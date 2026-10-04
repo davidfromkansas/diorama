@@ -64,6 +64,7 @@ import Testing
 extension WorkspaceNavigationTests {
     @Test func shellRendersAtSupportedWidthsWithApprovalAndLongTitles() async throws {
         let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
         defer { try? FileManager.default.removeItem(at: root) }
         let projects = ProjectModel(storageURL: root.appendingPathComponent("projects.json"))
         let controller = ExecutionController(transport: WorkspaceFixtureTransport())
@@ -173,5 +174,108 @@ extension WorkspaceNavigationTests {
             try #require(bitmap.representation(using: .png, properties: [:])).write(to: URL(fileURLWithPath: "/tmp/diorama-workspace-\(name).png"))
             window.orderOut(nil)
         }
+    }
+}
+
+extension WorkspaceNavigationTests {
+    @Test func longRetainedTranscriptHasBoundedViewportDuringUpdates() async throws {
+        let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        defer { try? FileManager.default.removeItem(at: root) }
+        let controller = ExecutionController(transport: WorkspaceFixtureTransport())
+        var task = ExecutedTask(id: "layout-stress", title: "Writing tab", folder: root.path, turnID: "turn", attached: true)
+        task.phase = .working
+        task.transcript.entries = (0..<120).map { index in
+            Entry(id: "row-\(index)", kind: index % 3 == 0 ? "You" : "Assistant",
+                  text: "## Step \(index)\n\n" + String(repeating: "- Verify the article importer and preserve existing content.\n", count: 12), timestamp: nil)
+        }
+        controller.tasks[task.id] = task
+        let model = LibraryModel(execution: controller, projects: ProjectModel(storageURL: root.appendingPathComponent("projects.json")), navigation: WorkspaceNavigation(defaults: defaults()))
+        model.sessions = [task.session]; model.selectedID = task.session.id
+        model.transcriptSessionID = task.session.id; model.viewMode = .conversation; model.paused = true
+        let host = NSHostingView(rootView: WorkspacePaneStack {
+            SessionView(session: task.session, model: model, hasLocalReview: true)
+        })
+        host.frame = NSRect(x: 0, y: 0, width: 900, height: 700)
+        let window = NSWindow(contentRect: host.frame, styleMask: [.borderless], backing: .buffered, defer: false)
+        window.contentView = host
+        defer { window.contentView = nil; window.orderOut(nil) }
+        let started = Date()
+        for index in 0..<4 {
+            host.frame.size.width = index % 2 == 0 ? 760 : 1100
+            controller.tasks[task.id]?.transcript.entries.append(Entry(id: "live-\(index)", kind: "Assistant", text: "Incoming progress \(index)", timestamp: nil))
+            try await Task.sleep(for: .milliseconds(100))
+            host.layoutSubtreeIfNeeded()
+            #expect(host.frame.height == 700)
+        }
+        #expect(Date().timeIntervalSince(started) < 15, "Conversation layout must yield to the main run loop")
+    }
+    @Test(arguments: [false, true]) func conversationSettlesAfterResize(kitchen: Bool) async throws {
+        let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: root) }
+        let controller = ExecutionController(transport: WorkspaceFixtureTransport())
+        var task = ExecutedTask(id: "layout-stress", title: "Writing tab", folder: root.path, turnID: "turn", attached: true)
+        task.phase = .working
+        task.transcript.entries = (0..<120).map { index in
+            Entry(id: "row-\(index)", kind: index % 3 == 0 ? "You" : "Assistant",
+                  text: "## Step \(index)\n\n" + String(repeating: "- Verify the article importer and preserve existing content.\n", count: 12), timestamp: nil)
+        }
+        if let path = ProcessInfo.processInfo.environment["DIORAMA_FREEZE_TRANSCRIPT"] {
+            task.provider = Provider(rawValue: ProcessInfo.processInfo.environment["DIORAMA_REPLAY_PROVIDER"] ?? "Codex") ?? .codex
+            task.transcript = SessionLibrary.readTranscript(url: URL(fileURLWithPath: path), provider: task.provider, limit: 300)
+        }
+        controller.tasks[task.id] = task
+        let model = LibraryModel(execution: controller, projects: ProjectModel(storageURL: root.appendingPathComponent("projects.json")), navigation: WorkspaceNavigation(defaults: defaults()))
+        model.sessions = [task.session]; model.selectedID = task.session.id
+        model.transcriptSessionID = task.session.id; model.viewMode = .conversation; model.paused = true
+        model.navigation.projectTabs.conversationBookmarks[task.session.id] = ConversationViewBookmark(
+            followsLatest: false, anchor: task.transcript.entries.first.map { ConversationViewportAnchor(id: $0.id, offset: 0) },
+            oldestID: task.transcript.entries.first?.id, window: 300, entryLimit: 300)
+        let storage = defaults()
+        storage.set("Conversation", forKey: "conversationHistoryDisplayMode")
+        var project = DioramaProject(name: "Freeze fixture", folder: root.path, commonDirectory: root.path, base: "main", remote: nil)
+        project.selectedSession = task.session.id
+        model.projects.projects = [project]; model.projects.selectedID = project.id
+        model.navigation.projectTabs.select(.project(project.id))
+        model.projectNavigation = true
+        model.spatial.sceneKind = kitchen ? .kitchen : .office
+        let agent = try #require(model.spatialWorld(showArchived: false).projects.first?.teams.first?.agents.first)
+        model.spatial.focus = .agent(project: project.id, conversation: task.session.id, agent: agent.id, expanded: true)
+        model.spatial.conversationPanelVisible = true
+        model.spatial.conversationWidth = 410.58203125
+        model.captureProjectPresentation()
+        let updates = AppUpdateCoordinator()
+        let host = NSHostingView(rootView: WorkspaceShell(library: model) { Text("Open project") }.defaultAppStorage(storage)
+            .overlayPreferenceValue(UpdateComposerAnchor.self) { anchor in AppUpdateOverlay(updates: updates, composer: anchor) })
+        host.frame = NSRect(x: 0, y: 0, width: 900, height: 700)
+        let window = NSWindow(contentRect: host.frame, styleMask: [.borderless], backing: .buffered, defer: false)
+        window.contentView = host
+        window.makeKeyAndOrderFront(nil)
+        defer { window.contentView = nil; window.orderOut(nil) }
+        try await Task.sleep(for: .milliseconds(250))
+        func editors(_ view: NSView) -> [ComposerNSTextView] {
+            (view as? ComposerNSTextView).map { [$0] } ?? view.subviews.flatMap(editors)
+        }
+        #expect(!editors(host).isEmpty, "The fixture must mount the conversation, not an empty project view")
+        let started = Date()
+        for index in 0..<40 {
+            host.frame.size.width = index % 2 == 0 ? 800 : 1160
+            controller.tasks[task.id]?.transcript.entries.append(Entry(id: "live-\(index)", kind: "Assistant", text: "Incoming progress \(index)", timestamp: nil))
+            try await Task.sleep(for: .milliseconds(250))
+            host.layoutSubtreeIfNeeded()
+            #expect(host.frame.height == 700)
+            func scrolls(_ view: NSView) -> [NSScrollView] {
+                (view as? NSScrollView).map { [$0] } ?? view.subviews.flatMap(scrolls)
+            }
+            let scroll = try #require(scrolls(host).max(by: { ($0.documentView?.bounds.height ?? 0) < ($1.documentView?.bounds.height ?? 0) }))
+            NotificationCenter.default.post(name: NSScrollView.willStartLiveScrollNotification, object: scroll)
+            let limit = max(0, (scroll.documentView?.bounds.height ?? 0) - scroll.contentView.bounds.height)
+            let delta: CGFloat = index % 20 < 10 ? 240 : -240
+            scroll.contentView.scroll(to: NSPoint(x: 0, y: max(0, min(limit, scroll.contentView.bounds.minY + delta))))
+            scroll.reflectScrolledClipView(scroll.contentView)
+            NotificationCenter.default.post(name: NSScrollView.didLiveScrollNotification, object: scroll)
+            NotificationCenter.default.post(name: NSScrollView.didEndLiveScrollNotification, object: scroll)
+        }
+        #expect(Date().timeIntervalSince(started) < 25, "Conversation layout must yield to the main run loop")
     }
 }

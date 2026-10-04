@@ -7,72 +7,190 @@ struct SpatialWorkspaceView: View {
     var visible: Bool
     @Environment(\.scenePhase) private var scenePhase
     @Environment(\.accessibilityReduceMotion) private var reduced
+    @State private var panelDrag: Double?
+    @State private var rosterDrag: Double?
+    @State private var editStatus: String?
+    @State private var inspection: AgentInspectionDestination?
+    @State private var avatarPopovers = AvatarPopoverDismissals()
+    @State private var returnToAgentList = false
+    @FocusState private var planFocus: AgentInspectionDestination?
+    private var inboxExpanded: Bool { get { state.inboxExpanded } nonmutating set { state.inboxExpanded = newValue } }
+    private var serversExpanded: Bool { get { state.serversExpanded } nonmutating set { state.serversExpanded = newValue } }
+    private var inboxSelection: InboxThread? { get { state.inboxSelection } nonmutating set { state.inboxSelection = newValue } }
+    @State private var creationProject: AgentCreationDestination?
     @State private var explore = false
     @State private var attention = false
     @State private var allConversations = false
     @State private var screenAnchor = CGPoint(x: 0.5, y: 0.5)
     @State private var screenActivity = false
     @State private var cachedWorld: SpatialWorld?
+    @State private var cachedProject: String?
+    @State private var projectWorlds: [String: SpatialWorld] = [:]
+    @State private var projectRecency: [String] = []
+    private var kitchenSelected: Bool { state.sceneKind == .kitchen }
     private var state: SpatialWorkspaceState { library.spatial }
-    private var world: SpatialWorld { cachedWorld ?? library.spatialWorld(showArchived: state.showArchived) }
+    private var world: SpatialWorld {
+        if !visible { return cachedWorld ?? SpatialWorld() }
+        if cachedProject == state.focus.projectID, let cachedWorld { return cachedWorld }
+        if let id = state.focus.projectID {
+            return projectWorlds[id] ?? SpatialWorld(projects: library.projects.projects.map { SpatialProject(id: $0.id, name: $0.name, teams: []) })
+        }
+        return cachedWorld ?? SpatialWorld()
+    }
 
     var body: some View {
         let snapshot = world
         let focus = snapshot.resolved(state.focus)
+        let roster = state.roster(for: focus.projectID ?? focus.conversationID ?? "portfolio")
         GeometryReader { geometry in
+            let officeWidth = geometry.size.width - (state.conversationPanelVisible ? resolvedPanelWidth(available: geometry.size.width) : 0)
+            let narrow = officeWidth < 760
             ZStack(alignment: .topLeading) {
-                SpatialSceneSurface(world: snapshot, focus: focus, active: visible && scenePhase == .active && focus != .portfolio,
+                HStack(spacing: 0) {
+                if visible, focus != .portfolio, !roster.collapsed, !narrow {
+                    rosterPanel(snapshot, focus: focus, model: roster, narrow: false).frame(width: library.navigation.layout.sidebarWidth)
+                        .disabled(inspection != nil).accessibilityHidden(inspection != nil)
+                    Rectangle().fill(DioramaStyle.border).frame(width: 1).overlay {
+                        Color.clear.frame(width: 7).contentShape(Rectangle()).gesture(DragGesture().onChanged { value in
+                            if rosterDrag == nil { rosterDrag = library.navigation.layout.sidebarWidth }
+                            library.navigation.layout.sidebarWidth = min(360, max(190, (rosterDrag ?? 240) + value.translation.width))
+                        }.onEnded { _ in rosterDrag = nil })
+                    }.accessibilityLabel("Resize agent panel")
+                }
+                ZStack(alignment: .topLeading) {
+                SpatialSceneSurface(world: snapshot, focus: focus, active: !kitchenSelected && visible && (scenePhase == .active && library.windowIsActive) && focus != .portfolio,
                     reducedMotion: reduced, reset: state.resetGeneration, page: state.page, select: go,
-                    screenAnchor: { screenAnchor = $0 })
-                    .opacity(focus == .portfolio ? 0 : 1)
-                    .allowsHitTesting(focus != .portfolio).accessibilityHidden(focus == .portfolio)
-                PortfolioHomeView(library: library, projects: snapshot.projects,
-                    active: visible && scenePhase == .active && focus == .portfolio, select: go)
-                    .opacity(focus == .portfolio ? 1 : 0)
-                    .accessibilityElement(children: focus == .portfolio ? .contain : .ignore)
-                    .allowsHitTesting(focus == .portfolio).accessibilityHidden(focus != .portfolio)
-                if focus != .portfolio && !ScenePerformance.disabled("OVERLAYS") {
+                    screenAnchor: { screenAnchor = $0 }, openInspection: { showPlan($0) },
+                    dismissPlan: inspection == nil ? nil : { closePlan() }, editStatus: { editStatus = $0 }, cameraStore: library.navigation.projectTabs, presented: !kitchenSelected)
+                    .opacity(focus == .portfolio || kitchenSelected ? 0 : 1)
+                    .allowsHitTesting(!kitchenSelected && focus != .portfolio && inspection == nil).accessibilityHidden(kitchenSelected || focus == .portfolio || inspection != nil)
+                if kitchenSelected { KitchenSceneSurface() }
+                if !kitchenSelected && focus != .portfolio && !ScenePerformance.disabled("OVERLAYS") {
                     VStack(alignment: .leading, spacing: 12) {
                         toolbar(snapshot, focus: focus)
                         if let notice = state.notice {
-                            HStack { Text(notice); Button("Dismiss") { state.notice = nil } }
+                            HStack { Text(notice); Button("Dismiss") { state.notice = nil }.pointingHand() }
                                 .font(.caption).padding(10).background(.regularMaterial, in: RoundedRectangle(cornerRadius: 10))
                         }
                         Spacer()
-                        if !focus.expanded { scopeCard(snapshot, focus: focus) }
+                        if editStatus == nil && !focus.expanded && !inboxExpanded && !serversExpanded { scopeCard(snapshot, focus: focus).padding(.bottom, 46) }
                         HStack {
-                            Text("Click to focus · Drag to orbit · Scroll to frame").font(.caption)
+                            Text(editStatus ?? "Click to focus · Drag to orbit · Scroll to frame · E to edit furniture").font(.caption)
                             Spacer()
-                            Text(library.paused ? "Observation paused" : "Live connections · reported state").font(.caption)
+                            if editStatus == nil { Text(library.paused ? "Observation paused" : "Live connections · reported state").font(.caption) }
                         }.foregroundStyle(.secondary)
                     }.padding(16).environment(\.colorScheme, .light).tint(.blue)
+                        .disabled(inspection != nil).accessibilityHidden(inspection != nil)
                 }
-                if visible && focus.expanded, let agent = snapshot.agent(focus), let team = snapshot.team(focus) {
-                    workScreen(agent, team: team)
-                        .frame(width: geometry.size.width < 850 ? max(280, geometry.size.width - 24) : geometry.size.width * 0.70,
-                               height: max(240, geometry.size.height - 88))
-                        .background(DioramaStyle.canvas, in: RoundedRectangle(cornerRadius: 16))
-                        .overlay(RoundedRectangle(cornerRadius: 16).stroke(.gray.opacity(0.3)))
-                        .shadow(color: .black.opacity(0.18), radius: 22, y: 8)
-                        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .trailing)
-                        .padding(.top, 58).padding(.trailing, 12).padding(.bottom, 12)
-                        .transition(.opacity.combined(with: .scale(scale: reduced ? 1 : 0.12,
-                            anchor: UnitPoint(x: min(1, max(0, screenAnchor.x)), y: min(1, max(0, screenAnchor.y))))))
+                if !kitchenSelected, visible, focus != .portfolio, let project = focus.projectID, inspection == nil {
+                    GeometryReader { office in
+                        VStack {
+                            Spacer()
+                            HStack {
+                                Spacer(minLength: 0)
+                                ProjectOfficeInbox(library: library, project: project, height: max(120, office.size.height * 0.6),
+                                    active: (scenePhase == .active && library.windowIsActive) && !library.paused,
+                                    inboxExpanded: Binding(get: { inboxExpanded }, set: { inboxExpanded = $0 }), serversExpanded: Binding(get: { serversExpanded }, set: { serversExpanded = $0 }), selected: Binding(get: { inboxSelection }, set: { inboxSelection = $0 }),
+                                    reply: { thread in openInboxConversation(thread, world: snapshot) },
+                                    canReply: { thread in snapshot.teams.first { $0.session.id == thread.conversation }?.session.observationOnly == false })
+                                    .id(project)
+                                    .frame(width: max(100, min(400, office.size.width - 32)))
+                            }
+                        }.padding(.horizontal, 16).padding(.bottom, 40)
+                    }
+                }
+                if visible, focus != .portfolio, !roster.collapsed, narrow, inspection == nil {
+                    rosterPanel(snapshot, focus: focus, model: roster, narrow: true)
+                        .frame(width: max(180, min(300, officeWidth - 32)))
+                        .clipShape(RoundedRectangle(cornerRadius: 12))
+                        .overlay(RoundedRectangle(cornerRadius: 12).stroke(.black.opacity(0.1)))
+                        .shadow(color: .black.opacity(0.12), radius: 12, y: 4)
+                        .padding(.top, 76).padding(.bottom, 16).padding(.leading, 16)
+                }
+                }.frame(minWidth: 0, maxWidth: .infinity, maxHeight: .infinity).clipped()
+                if visible && state.conversationPanelVisible {
+                    Rectangle().fill(.black.opacity(0.12)).frame(width: 1).overlay {
+                        Color.clear.frame(width: 7).contentShape(Rectangle()).gesture(DragGesture().onChanged { value in
+                            if panelDrag == nil { panelDrag = resolvedPanelWidth(available: geometry.size.width) }
+                            state.conversationWidth = min(700, max(340, (panelDrag ?? 500) - value.translation.width))
+                        }.onEnded { _ in panelDrag = nil })
+                    }.accessibilityLabel("Resize conversation panel")
+                    conversationPanel(snapshot, focus: focus)
+                        .frame(width: resolvedPanelWidth(available: geometry.size.width))
+                        .frame(maxHeight: .infinity)
+                        .background(Color.white)
+                        .environment(\.colorScheme, .light).environment(\.avatarMessages, true).tint(.blue)
+                        .disabled(inspection != nil).accessibilityHidden(inspection != nil)
+                }
+                }
+                if visible, let selection = inspection, let agent = snapshot.teams.flatMap(\.agents).first(where: { $0.id == selection.agentID }) {
+                    ZStack {
+                        Color.black.opacity(0.12).contentShape(Rectangle()).onTapGesture { closePlan() }
+                        AgentPlanModal(agent: agent.value, kind: selection.kind, paused: library.paused, close: closePlan).id(selection)
+                            .frame(width: min(440, max(180, geometry.size.width - 32)), height: max(160, geometry.size.height * 0.7))
+                    }.frame(maxWidth: .infinity, maxHeight: .infinity)
                 }
             }
+            .onChange(of: state.conversationPanelVisible) { _, shown in
+                if shown && narrow { roster.collapsed = true }
+            }
         }
-        .animation(reduced ? nil : .easeInOut(duration: 0.18), value: focus == .portfolio)
+        .sheet(item: $creationProject) { destination in
+            NewAgentModal(library: library, projectID: destination.id)
+        }
+        .environment(\.avatarPopoverDismissals, avatarPopovers)
+        // Let native menus and popovers consume Escape before spatial navigation.
+        .onExitCommand {
+            guard visible else { return }
+            if avatarPopovers.dismissTop() { return }
+            if inspection != nil { closePlan() }
+            else if serversExpanded { serversExpanded = false }
+            else if inboxExpanded && inboxSelection != nil { inboxSelection = nil }
+            else if inboxExpanded { inboxExpanded = false }
+            else if state.conversationPanelVisible { state.conversationPanelVisible = false }
+            else if !roster.collapsed && focus != .portfolio { roster.collapsed = true }
+            else if focus != .portfolio { go(focus.officeReturn) }
+        }
+        .onChange(of: state.focus) { _, new in
+            inspection = nil
+            if new.expanded { state.conversationPanelVisible = true }
+        }
+        .onChange(of: visible) { _, new in if !new { inspection = nil } }
+        .task(id: "projection-\(visible)-\(state.focus.projectID ?? "")") {
+            guard visible, state.focus != .portfolio else { return }
+            // Cached presentation paints before fresh observation data is reconciled.
+            do { try await Task.sleep(for: .milliseconds(16)) } catch { return }
+            refreshWorld()
+        }
         .onChange(of: state.showArchived) { _, _ in refreshWorld() }
         .onChange(of: snapshot) { _, new in
-            guard !library.isScanning else { return }
+            guard visible, cachedProject == state.focus.projectID, !library.isScanning, library.scannedAt != nil else { return }
+            if let selection = inspection, !new.teams.flatMap(\.agents).contains(where: { $0.id == selection.agentID }) { inspection = nil }
             let resolved = new.resolved(state.focus)
             if resolved != state.focus {
                 go(resolved)
                 state.notice = "The selected item is no longer available in this view. Showing its nearest available parent."
             }
         }
-        .task(id: "\(visible)-\(scenePhase == .active)-\(state.focus.conversationID ?? "")") {
-            guard visible, scenePhase == .active else { return }
+        .task(id: "plans-\(visible)-\((scenePhase == .active && library.windowIsActive))-\(library.paused)-\(state.focus)-\(inspection?.nodeName ?? "")") {
+            guard visible, (scenePhase == .active && library.windowIsActive), !library.paused, state.focus != .portfolio else { return }
+            while !Task.isCancelled {
+                let current = world
+                var teams = current.teams.filter { state.focus.projectID != nil ? $0.projectID == state.focus.projectID : $0.session.id == state.focus.conversationID }
+                if state.focus.projectID != nil {
+                    let roster = OfficeRoster(teams: teams, now: library.observationClock, including: state.focus.agentID, conversation: state.focus.conversationID)
+                    let visibleConversations = Set(roster.occupants.map { $0.agent.conversationID })
+                    teams = teams.filter { visibleConversations.contains($0.session.id) }
+                }
+                let prioritized = teams.sorted { $0.agents.contains { $0.id == inspection?.agentID } && !$1.agents.contains { $0.id == inspection?.agentID } }
+                await library.planDiscovery.refresh(prioritized.flatMap { library.planSources($0.session) })
+                guard !Task.isCancelled else { return }
+                refreshWorld()
+                do { try await Task.sleep(for: .seconds(2)) } catch { return }
+            }
+        }
+        .task(id: "\(visible)-\((scenePhase == .active && library.windowIsActive))-\(state.focus.conversationID ?? "")") {
+            guard visible, (scenePhase == .active && library.windowIsActive) else { return }
             while !Task.isCancelled {
                 library.observationClock = Date()
                 refreshWorld()
@@ -86,30 +204,52 @@ struct SpatialWorkspaceView: View {
         }
     }
 
+    private func rosterPanel(_ snapshot: SpatialWorld, focus: SpatialFocus, model: LiveAgentRosterModel, narrow: Bool) -> some View {
+        let teams = focus.projectID.flatMap { id in snapshot.projects.first { $0.id == id }?.teams } ?? snapshot.team(focus).map { [$0] } ?? []
+        return LiveAgentRosterPanel(model: model, agents: teams.flatMap(\.agents),
+            active: !kitchenSelected && visible && (scenePhase == .active && library.windowIsActive) && inspection == nil, paused: library.paused) { destination in
+                if narrow { model.collapsed = true }
+                go(destination)
+            } archive: { row in
+                if let session = library.sessions.first(where: { $0.id == row.agent.conversationID }), session.classification != .internalReview {
+                    library.archiveSession = session
+                }
+            } create: {
+                creationProject = AgentCreationDestination(id: focus.projectID ?? "")
+            }
+    }
+
     /// Camera/monitor updates may arrive every frame. Project the library once per observation
     /// tick instead of repeating provider and membership lookups during those view updates.
     private func refreshWorld() {
-        let next = library.spatialWorld(showArchived: state.showArchived)
+        guard visible, state.focus != .portfolio else { return }
+        let next = library.spatialWorld(showArchived: state.showArchived, projectScope: state.focus.projectID)
+        cachedProject = state.focus.projectID
+        if let id = cachedProject {
+            projectWorlds[id] = next
+            projectRecency.removeAll { $0 == id }; projectRecency.append(id)
+            while projectRecency.count > 24 { projectWorlds.removeValue(forKey: projectRecency.removeFirst()) }
+        }
         if cachedWorld != next { cachedWorld = next }
     }
 
     private func toolbar(_ world: SpatialWorld, focus: SpatialFocus) -> some View {
         HStack(spacing: 8) {
-            Button { go(focus.officeReturn) } label: { Image(systemName: "chevron.left") }.disabled(focus == .portfolio || !visible).help("Up one layer (Escape)")
+            Button { go(focus.officeReturn) } label: { Image(systemName: "chevron.left") }.pointingHand().disabled(focus == .portfolio || !visible).help("Up one layer (Escape)")
             ScrollView(.horizontal) {
                 HStack(spacing: 6) {
-                    Button("Portfolio") { go(.portfolio) }
+                    Button("Portfolio") { go(.portfolio) }.pointingHand()
                     if let id = focus.projectID, let project = world.projects.first(where: { $0.id == id }) {
                         Image(systemName: "chevron.right").font(.caption2)
-                        Button(project.name) { go(.project(id)) }
+                        Button(project.name) { go(.project(id)) }.pointingHand()
                     }
                     if let team = world.team(focus) {
                         Image(systemName: "chevron.right").font(.caption2)
-                        Button(team.title) { go(team.focus) }.lineLimit(1)
+                        Button(team.title) { go(team.focus) }.pointingHand().lineLimit(1).help(TaskTitle.full(team.session.title)).accessibilityLabel(TaskTitle.full(team.session.title))
                     }
                     if let agent = world.agent(focus) {
                         Image(systemName: "chevron.right").font(.caption2)
-                        Button(agent.value.name) { go(agent.focus) }.lineLimit(1)
+                        Button(agent.value.name) { go(agent.focus) }.pointingHand().lineLimit(1)
                     }
                 }
             }.scrollIndicators(.hidden)
@@ -117,14 +257,17 @@ struct SpatialWorkspaceView: View {
             let count = world.team(focus)?.agents.count ?? world.projects.first(where: { $0.id == focus.projectID })?.teams.count ?? 0
             let size = focus.conversationID == nil ? 12 : 24
             if focus.projectID == nil && focus.agentID == nil && focus != .portfolio && count > size {
-                Button { state.page = max(0, state.page - 1) } label: { Image(systemName: "arrow.left") }.disabled(state.page == 0).help("Previous group")
+                Button { state.page = max(0, state.page - 1) } label: { Image(systemName: "arrow.left") }.pointingHand().disabled(state.page == 0).help("Previous group")
                 Text("\(state.page + 1)/\(max(1, (count + size - 1) / size))").font(.caption.monospacedDigit())
-                Button { state.page += 1 } label: { Image(systemName: "arrow.right") }.disabled((state.page + 1) * size >= count).help("Next group")
+                Button { state.page += 1 } label: { Image(systemName: "arrow.right") }.pointingHand().disabled((state.page + 1) * size >= count).help("Next group")
             }
-            Button("Agents", systemImage: "list.bullet") { explore.toggle() }
+            Button("Agents", systemImage: "person.2") {
+                state.roster(for: focus.projectID ?? focus.conversationID ?? "portfolio").collapsed.toggle()
+            }.pointingHand().help("Show or hide live agent panel")
+            Button("Explore", systemImage: "list.bullet") { explore.toggle() }.pointingHand()
                 .popover(isPresented: $explore) { entityList(world, focus: focus).frame(width: 350, height: 440) }
             if let project = world.projects.first(where: { $0.id == focus.projectID }) {
-                Button("All conversations") { allConversations.toggle() }
+                Button("All conversations") { allConversations.toggle() }.pointingHand()
                     .popover(isPresented: $allConversations) {
                         ScrollView {
                             LazyVStack(alignment: .leading) {
@@ -135,21 +278,21 @@ struct SpatialWorkspaceView: View {
                         }.frame(width: 350, height: 440)
                     }
             }
-            Button("Attention", systemImage: "bell") { attention.toggle() }
+            Button("Attention", systemImage: "bell") { attention.toggle() }.pointingHand()
                 .popover(isPresented: $attention) { attentionList(world).frame(width: 350, height: 380) }
             Menu {
-                Toggle("Show archived conversations", isOn: Binding(get: { state.showArchived }, set: { state.showArchived = $0 }))
-                Button("Reset View") { state.resetGeneration += 1 }
+                Toggle("Show archived conversations", isOn: Binding(get: { state.showArchived }, set: { state.showArchived = $0 })).pointingHand()
+                Button("Reset View") { state.resetGeneration += 1 }.pointingHand()
                 if focus.projectID != nil {
-                    Button("Project tools") { openTools(.context) }
+                    Button("Project tools") { openTools(.context) }.pointingHand()
                 }
                 if focus.conversationID != nil {
-                    Button("Conversation") { openTools(.conversation) }
-                    Button("Activity") { openTools(.activity) }
-                    Button("HTML view") { openTools(.html) }
+                    Button("Conversation") { openTools(.conversation) }.pointingHand()
+                    Button("Activity") { openTools(.activity) }.pointingHand()
+                    Button("HTML view") { openTools(.html) }.pointingHand()
                 }
-            } label: { Image(systemName: "ellipsis.circle") }.menuStyle(.borderlessButton).fixedSize()
-        }.buttonStyle(.borderless).font(.system(size: 13, weight: .medium))
+            } label: { Image(systemName: "ellipsis.circle") }.pointingHand().menuStyle(.borderlessButton).fixedSize()
+        }.buttonStyle(.borderless).font(.system(size: 13, weight: .medium)).lineLimit(1)
             .padding(12).background(.regularMaterial, in: RoundedRectangle(cornerRadius: 12))
     }
 
@@ -160,13 +303,12 @@ struct SpatialWorkspaceView: View {
                 LazyVStack(alignment: .leading, spacing: 4) {
                     if let team = world.team(focus) {
                         ForEach(team.agents) { agent in
-                            entityRow(agent.value.name, detail: agent.value.statusLabel, icon: "person", focus: OfficeOccupant(agent: agent, assignment: team.title).destination)
+                            agentRow(agent, title: agent.value.name, destination: OfficeOccupant(agent: agent, assignment: team.title).destination)
                         }
                     } else if let id = focus.projectID, let project = world.projects.first(where: { $0.id == id }) {
                         let roster = OfficeRoster(teams: project.teams, now: library.observationClock)
                         ForEach(roster.occupants) { occupant in
-                            entityRow(occupant.assignment, detail: occupant.agent.value.name + " · " + occupant.agent.value.statusLabel,
-                                      icon: "person", focus: occupant.destination)
+                            agentRow(occupant.agent, title: occupant.assignment, destination: occupant.destination)
                         }
                         if roster.occupants.isEmpty { Text("No agents on the floor. Older work is in All conversations.").padding(12) }
                         if project.teams.isEmpty { Text("No conversations in this project.").padding(12) }
@@ -178,6 +320,36 @@ struct SpatialWorkspaceView: View {
             }
         }
     }
+    private func showPlan(_ id: AgentInspectionDestination, fromList: Bool = false) {
+        returnToAgentList = fromList; explore = false; inspection = id
+    }
+    private func closePlan() {
+        let id = inspection; inspection = nil
+        if returnToAgentList {
+            explore = true
+            Task { @MainActor in
+                do { try await Task.sleep(for: .milliseconds(200)) } catch { return }
+                planFocus = id
+            }
+        }
+    }
+    private func agentRow(_ agent: SpatialAgent, title: String, destination: SpatialFocus) -> some View {
+        VStack(alignment: .leading, spacing: 2) {
+            entityRow(title, detail: agent.value.statusLabel, icon: "person", focus: destination)
+            HStack {
+                ForEach(AgentInspectionKind.allCases, id: \.self) { kind in
+                    if kind.available(in: agent.value.plan) {
+                        let selection = AgentInspectionDestination(agentID: agent.id, kind: kind)
+                        Button(kind.label(for: agent.value.plan)) { showPlan(selection, fromList: true) }.pointingHand()
+                            .focusable().focused($planFocus, equals: selection)
+                            .onKeyPress(.space) { showPlan(selection, fromList: true); return .handled }
+                            .onKeyPress(.return) { showPlan(selection, fromList: true); return .handled }
+                            .accessibilityLabel(kind.label(for: agent.value.plan) + " for " + agent.value.name)
+                    }
+                }
+            }.padding(.leading, 42)
+        }
+    }
     private func entityRow(_ title: String, detail: String, icon: String, focus: SpatialFocus) -> some View {
         Button {
             explore = false; attention = false; allConversations = false; go(focus)
@@ -187,7 +359,7 @@ struct SpatialWorkspaceView: View {
                 VStack(alignment: .leading, spacing: 5) { Text(title).lineLimit(2); Text(detail).font(.caption).foregroundStyle(.secondary) }
                 Spacer(minLength: 0)
             }.padding(10).frame(maxWidth: .infinity, alignment: .leading).contentShape(Rectangle())
-        }.buttonStyle(.plain)
+        }.pointingHand().buttonStyle(.plain)
     }
     private func attentionList(_ world: SpatialWorld) -> some View {
         let agents = world.teams.flatMap(\.agents).filter { (state.focus.projectID == nil || $0.projectID == state.focus.projectID) && ($0.needsAttention || $0.value.status == .failed) }
@@ -211,23 +383,23 @@ struct SpatialWorkspaceView: View {
             if let agent = world.agent(focus) {
                 Text(agent.value.name).font(.title2.bold())
                 Text(agent.value.statusLabel).font(.callout.weight(.medium))
-                Text(agent.value.task).font(.callout).lineLimit(3)
+                Text(TaskTitle.compact(agent.value.task)).help(TaskTitle.full(agent.value.task)).accessibilityLabel(TaskTitle.full(agent.value.task)).font(.callout).lineLimit(3)
                 Text(agent.value.action).font(.caption).foregroundStyle(.secondary).lineLimit(2)
                 Button("Open work screen", systemImage: "desktopcomputer") {
                     go(.agent(project: agent.projectID, conversation: agent.conversationID, agent: agent.id, expanded: true))
-                }.buttonStyle(.borderedProminent)
+                }.pointingHand().buttonStyle(.borderedProminent)
             } else if let team = world.team(focus) {
-                Text(team.title).font(.title2.bold()).lineLimit(2)
+                Text(team.title).help(TaskTitle.full(team.session.title)).accessibilityLabel(TaskTitle.full(team.session.title)).font(.title2.bold()).lineLimit(2)
                 Text(team.summary.text).font(.callout)
                 Text("\(team.agents.count) agents · Select a desk to inspect its assignment").font(.caption).foregroundStyle(.secondary)
                 if team.projectID == nil && team.agents.count > 24 { Text("Use Explore to reach every agent; detailed desks load in groups of 24.").font(.caption) }
-                Button("Open conversation") { openTools(.conversation) }
+                Button("Open conversation") { openTools(.conversation) }.pointingHand()
             } else if let id = focus.projectID, let project = world.projects.first(where: { $0.id == id }) {
                 Text(project.name).font(.title2.bold())
                 Text(project.summary.text).font(.callout)
                 Text("\(OfficeRoster(teams: project.teams, now: library.observationClock).occupants.count) agents on the shared floor").font(.caption).foregroundStyle(.secondary)
-                Text("Finished turns remain for 30 minutes. Desk proximity does not imply collaboration.").font(.caption).foregroundStyle(.secondary)
-                Button("New session", systemImage: "plus") { newSession(id) }
+                Text("Up to 16 desk agents and 18 leisure agents are shown. All agents remain available in the agent panel.").font(.caption).foregroundStyle(.secondary)
+                Button("New session", systemImage: "plus") { newSession(id) }.pointingHand()
             } else {
                 Text("Your project campus").font(.title2.bold())
                 Text("\(world.projects.count) connected projects · \(world.projects.flatMap(\.teams).count) teams").font(.callout)
@@ -236,15 +408,50 @@ struct SpatialWorkspaceView: View {
         }.padding(18).frame(maxWidth: 420, alignment: .leading)
             .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 14))
     }
+    private func resolvedPanelWidth(available: CGFloat) -> CGFloat {
+        min(available, state.conversationWidth.map { min(max(340, $0), max(340, available - 260)) } ?? Self.conversationPanelWidth(available: available))
+    }
+    static func conversationPanelWidth(available: CGFloat) -> CGFloat {
+        min(max(0, available), min(600, max(340, available * 0.46)))
+    }
+    @ViewBuilder private func conversationPanel(_ snapshot: SpatialWorld, focus: SpatialFocus) -> some View {
+        if let team = snapshot.team(focus), let agent = snapshot.agent(focus) ?? team.agents.first(where: { $0.value.isMain }) {
+            workScreen(agent, team: team)
+        } else {
+            VStack(spacing: 0) {
+                HStack {
+                    Text("Conversation").font(.headline)
+                    Spacer()
+                    Button { state.conversationPanelVisible = false } label: { Image(systemName: "xmark") }.pointingHand()
+                        .buttonStyle(.plain).accessibilityLabel("Close conversation")
+                }.padding(20)
+                Divider()
+                ContentUnavailableView("Select an agent", systemImage: "bubble.left.and.bubble.right",
+                    description: Text("Click an avatar to open its conversation here."))
+                    .frame(maxHeight: .infinity)
+            }
+        }
+    }
     private func workScreen(_ agent: SpatialAgent, team: SpatialTeam) -> some View {
         VStack(spacing: 0) {
             HStack {
-                Image(systemName: "desktopcomputer")
-                Text(agent.value.name).fontWeight(.semibold)
-                Text(team.session.observationOnly ? "Observation only" : agent.value.freshness.rawValue).font(.caption).foregroundStyle(.secondary)
-                Spacer()
-                Button { screenActivity = false; go(agent.focus.projectID.map(SpatialFocus.project) ?? agent.focus) } label: { Image(systemName: "arrow.down.right.and.arrow.up.left") }.help("Return to office")
-            }.padding(14)
+                VStack(alignment: .leading, spacing: 3) {
+                    Text(agent.value.name).font(.headline).foregroundStyle(.primary)
+                    Text(agent.value.isMain ? team.title : TaskTitle.compact(agent.value.task))
+                        .font(.subheadline).foregroundStyle(.secondary).lineLimit(1)
+                        .help(TaskTitle.full(agent.value.isMain ? team.session.title : agent.value.task))
+                        .accessibilityLabel(TaskTitle.full(agent.value.isMain ? team.session.title : agent.value.task))
+                    let workspaces = library.projects.projects.first(where: { $0.id == team.projectID })?.workspaces ?? []
+                    Label(AvatarMessagePresentation.branch(session: team.session, workspaces: workspaces), systemImage: "arrow.triangle.branch")
+                        .font(.caption).foregroundStyle(.secondary).lineLimit(1)
+                }
+                Spacer(minLength: 12)
+                Button { screenActivity = false; state.conversationPanelVisible = false } label: {
+                    Image(systemName: "xmark").font(.system(size: 12, weight: .semibold))
+                        .foregroundStyle(.secondary).frame(width: 28, height: 28)
+                        .background(Color.black.opacity(0.06), in: Circle())
+                }.pointingHand().buttonStyle(.plain).help("Close conversation").accessibilityLabel("Close conversation")
+            }.padding(.horizontal, 20).padding(.vertical, 12).background(Color(white: 0.97))
             Divider()
             if agent.value.isMain {
                 if screenActivity {
@@ -259,7 +466,18 @@ struct SpatialWorkspaceView: View {
             }
         }.id(agent.id)
     }
+    private func openInboxConversation(_ thread: InboxThread, world: SpatialWorld) {
+        let available = library.spatialWorld(showArchived: true)
+        guard let team = available.teams.first(where: { $0.session.id == thread.conversation }),
+              let agent = team.agents.first(where: { $0.value.isMain }) else {
+            state.notice = "The originating conversation is not currently available."; return
+        }
+        if team.session.archived { state.showArchived = true }
+        go(.agent(project: team.projectID, conversation: team.session.id, agent: agent.id, expanded: true))
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.15) { ComposerNSTextView.focusVisible() }
+    }
     private func go(_ focus: SpatialFocus) {
+        if focus.expanded { state.conversationPanelVisible = true }
         state.page = 0
         if focus.projectID != state.focus.projectID || focus.conversationID != state.focus.conversationID {
             let destination: WorkspaceDestination = focus.projectID.map { .project($0, focus.conversationID) }
@@ -291,6 +509,7 @@ private struct SpatialChildWorkScreen: View {
     @Environment(\.scenePhase) private var phase
     @State private var transcript: Transcript?
     @State private var error: String?
+    @State private var loadedCompletionKey: String?
     var body: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 14) {
@@ -299,13 +518,21 @@ private struct SpatialChildWorkScreen: View {
                 Text("Observed subagent work · controls remain with the parent conversation").font(.caption)
                 if let error { Text(error).foregroundStyle(.orange) }
                 if let transcript {
-                    ForEach(transcript.entries) { entry in EntryView(entry: entry) }
+                    let finalEntry = transcript.entries.last { $0.kind == "Assistant" || ConversationHistory.needsAttention($0) || $0.image != nil || !($0.tool?.outputs.isEmpty ?? true) }?.id
+                    ForEach(Array(transcript.entries.enumerated()), id: \.element.id) { index, entry in
+                        if let date = AvatarMessagePresentation.separator(before: index, entries: transcript.entries) {
+                            Text(date.formatted(date: .abbreviated, time: .shortened)).font(.caption).foregroundStyle(.secondary).frame(maxWidth: .infinity)
+                        }
+                        EntryView(entry: entry).environment(\.avatarBubbleTail, AvatarMessagePresentation.tail(after: index, entries: transcript.entries))
+                            .background(AgentCompletionVisibility(key: entry.id == finalEntry && [.done, .failed, .stopped].contains(agent.status) ? loadedCompletionKey : nil, active: library.windowIsActive))
+                    }
                     if let error = transcript.error { Text(error).foregroundStyle(.orange) }
                 } else if error == nil { ProgressView("Reading agent work…") }
             }.padding(18).frame(maxWidth: .infinity, alignment: .leading)
         }
-        .task(id: "\(agent.activityRecordID ?? "")-\(phase == .active)") {
+        .task(id: "\(agent.activityRecordID ?? "")-\(agent.completionKey ?? "")-\(phase == .active)") {
             guard phase == .active else { return }
+            loadedCompletionKey = nil
             guard let record = library.activitySnapshot(session).records.first(where: { $0.id == agent.activityRecordID }) else {
                 error = "No detailed activity record is available for this agent."; return
             }
@@ -315,7 +542,7 @@ private struct SpatialChildWorkScreen: View {
                         let observed = try await library.execution.inspectChild(provider: Provider(rawValue: record.provider) ?? session.provider,
                             parentID: record.sessionID, childID: record.nativeID, folder: session.project)
                         guard !Task.isCancelled else { return }
-                        transcript = observed; error = nil
+                        transcript = observed; loadedCompletionKey = agent.completionKey; error = nil
                     } catch { self.error = error.localizedDescription }
                 }
                 do { try await Task.sleep(for: .seconds(3)) } catch { return }
@@ -323,3 +550,5 @@ private struct SpatialChildWorkScreen: View {
         }
     }
 }
+
+private struct AgentCreationDestination: Identifiable { let id: String }

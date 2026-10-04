@@ -1,24 +1,46 @@
 import SwiftUI
 import MarkdownUI
 
+/// Parsing is independent of theme and width. Keep a bounded set across row
+/// recreation and project switches; layout still uses the current environment.
+private final class ParsedConversationMarkdown {
+    let content: MarkdownContent
+    init(_ text: String) { content = MarkdownContent(text) }
+}
+private let conversationMarkdownCache: NSCache<NSString, ParsedConversationMarkdown> = {
+    let cache = NSCache<NSString, ParsedConversationMarkdown>()
+    cache.countLimit = 512
+    cache.totalCostLimit = 8 * 1024 * 1024
+    return cache
+}()
+private func conversationMarkdown(_ text: String) -> MarkdownContent {
+    if let value = conversationMarkdownCache.object(forKey: text as NSString) { return value.content }
+    let value = ParsedConversationMarkdown(text)
+    conversationMarkdownCache.setObject(value, forKey: text as NSString, cost: text.utf8.count * 4)
+    return value.content
+}
+
 /// Shared by every transcript category. Raw records remain available alongside the preview.
 struct MarkdownText: View {
+    @Environment(\.avatarMessages) private var avatarMessages
+    @Environment(\.avatarOutgoing) private var avatarOutgoing
+    @Environment(\.conversationImageBaseURL) private var imageBaseURL
     let text: String
     var literal = false
 
     var body: some View {
-        Markdown {
+        Markdown(imageBaseURL: imageBaseURL) {
             if literal {
                 CodeBlock(content: text)
             } else {
-                MarkdownContent(text)
+                conversationMarkdown(text)
             }
         }
-            .markdownTheme(Self.transcriptTheme)
+            .markdownTheme(transcriptTheme)
             .markdownImageProvider(TranscriptImageProvider())
             .markdownInlineImageProvider(TranscriptInlineImageProvider())
             .textSelection(.enabled)
-            .frame(maxWidth: .infinity, alignment: .leading)
+            .frame(maxWidth: avatarMessages ? nil : .infinity, alignment: .leading)
             .environment(\.openURL, OpenURLAction { url in
                 // Imported text must not dispatch arbitrary application commands.
                 guard ["https", "http", "mailto"].contains(url.scheme?.lowercased() ?? "") else { return .discarded }
@@ -26,24 +48,30 @@ struct MarkdownText: View {
             })
     }
 
-    private static var transcriptTheme: Theme {
+    private var transcriptTheme: Theme {
         Theme.gitHub
             .text {
                 FontSize(14)
-                ForegroundColor(.primary)
+                ForegroundColor(avatarMessages && avatarOutgoing ? .white : .primary)
                 BackgroundColor(nil)
             }
-            .link { ForegroundColor(.mint) }
+            .link { ForegroundColor(avatarMessages ? (avatarOutgoing ? .white : .blue) : .mint) }
             .codeBlock { configuration in
                 VStack(alignment: .leading, spacing: 8) {
                     if let language = configuration.language, !language.isEmpty {
                         Text(language).font(.caption2).foregroundStyle(.secondary)
                     }
+                    if avatarMessages {
+                        ScrollView(.horizontal) {
+                            Text(verbatim: configuration.content).font(.system(size: 12, design: .monospaced)).textSelection(.enabled).fixedSize()
+                        }
+                    } else {
                     Text(verbatim: configuration.content)
                         .font(.system(size: 12, design: .monospaced))
                         .textSelection(.enabled)
                         .fixedSize(horizontal: false, vertical: true)
                         .frame(maxWidth: .infinity, alignment: .leading)
+                    }
                 }
                 .padding(12)
                 .background(Color.white.opacity(0.05), in: RoundedRectangle(cornerRadius: 6))
@@ -52,17 +80,17 @@ struct MarkdownText: View {
     }
 }
 
-// Do not contact third-party image hosts just because a transcript was selected.
 private struct TranscriptImageProvider: ImageProvider {
     nonisolated func makeImage(url: URL?) -> some View {
-        Label("Image attachment · \(url?.lastPathComponent ?? "unavailable")", systemImage: "photo")
-            .font(.caption).foregroundStyle(.secondary)
+        ConversationImageView(output: ConversationImageSource.output(url))
     }
 }
 
 private struct TranscriptInlineImageProvider: InlineImageProvider {
     nonisolated func image(with url: URL, label: String) async throws -> Image {
-        Image(systemName: "photo")
+        let data = try await ConversationImageLoader.load(ConversationImageSource.output(url))
+        let image = try await ConversationImageLoader.thumbnail(data, pixels: 320)
+        return Image(nsImage: image)
     }
 }
 
@@ -76,12 +104,12 @@ struct TranscriptContent: View {
             MarkdownText(text: text, literal: literal || isStructuredRecord(text))
         }
         .contextMenu {
-            Button("Copy message") { NSPasteboard.general.clearContents(); NSPasteboard.general.setString(text, forType: .string) }
-            Button("Show raw text") { showSource = true }
+            Button("Copy message") { NSPasteboard.general.clearContents(); NSPasteboard.general.setString(text, forType: .string) }.pointingHand()
+            Button("Show raw text") { showSource = true }.pointingHand()
         }
         .sheet(isPresented: $showSource) {
             VStack(alignment: .leading, spacing: 16) {
-                HStack { Text("Raw message").font(.headline); Spacer(); Button("Done") { showSource = false }.keyboardShortcut(.cancelAction) }
+                HStack { Text("Raw message").font(.headline); Spacer(); Button("Done") { showSource = false }.pointingHand().keyboardShortcut(.cancelAction) }
                 ScrollView { Text(verbatim: text).font(.system(size: 12, design: .monospaced)).textSelection(.enabled).frame(maxWidth: .infinity, alignment: .leading) }
             }.padding(24).frame(minWidth: 520, idealWidth: 640, minHeight: 360)
 

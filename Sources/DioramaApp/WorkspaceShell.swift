@@ -9,116 +9,118 @@ struct WorkspaceShell<AddActions: View>: View {
     @Environment(\.openSettings) private var openSettings
     private var navigation: WorkspaceNavigation { library.navigation }
     var body: some View {
-        GeometryReader { geometry in
-            HStack(spacing: 0) {
-                if navigation.layout.sidebarVisible {
-                    sidebar.frame(width: navigation.layout.sidebarWidth)
-                    Rectangle().fill(DioramaStyle.border).frame(width: 1).overlay {
-                        Color.clear.frame(width: 7).contentShape(Rectangle()).gesture(DragGesture().onChanged { value in
-                            if sidebarDrag == nil { sidebarDrag = navigation.layout.sidebarWidth }
-                            navigation.layout.sidebarWidth = min(360, max(190, (sidebarDrag ?? 240) + value.translation.width))
-                        }.onEnded { _ in sidebarDrag = nil })
+        @Bindable var tabs = navigation.projectTabs
+        VStack(spacing: 0) {
+            DesktopProjectTabs(library: library)
+            GeometryReader { geometry in
+                VStack(spacing: 0) {
+                    if tabs.selected != .home && !tabs.pickerPresented {
+                        HStack(spacing: 14) {
+                            Button { if let roster = library.spatial.focus.projectID { library.spatial.roster(for: roster).collapsed.toggle() } } label: { Image(systemName: "sidebar.left") }.pointingHand().help("Toggle agents")
+                            Button { if let route = navigation.back() { library.navigate(route, record: false) } } label: { Image(systemName: "chevron.left") }.pointingHand().disabled(navigation.backStack.isEmpty)
+                            Button { if let route = navigation.forward() { library.navigate(route, record: false) } } label: { Image(systemName: "chevron.right") }.pointingHand().disabled(navigation.forwardStack.isEmpty)
+                            Menu {
+                                ForEach(WorkspaceSceneKind.allCases, id: \.self) { kind in
+                                    Button { library.spatial.sceneKind = kind } label: {
+                                        if library.spatial.sceneKind == kind { Label(kind.rawValue, systemImage: "checkmark") }
+                                        else { Text(kind.rawValue) }
+                                    }
+                                }
+                            } label: {
+                                HStack(spacing: 5) { Text(library.spatial.sceneKind.rawValue); Image(systemName: "chevron.down").font(.caption2) }
+                            }.menuStyle(.borderlessButton).fixedSize().pointingHand()
+                                .accessibilityLabel("Scene: " + library.spatial.sceneKind.rawValue)
+                            Spacer()
+                            Button { library.showNewTask = true } label: { Label("New agent", systemImage: "plus") }.pointingHand()
+                            Button { library.toggleWorkspaceInspector() } label: { Image(systemName: "sidebar.right") }.pointingHand().help("Toggle conversation panel")
+                        }.buttonStyle(.plain).foregroundStyle(.secondary).padding(.horizontal, 16).frame(height: 32).background(DioramaStyle.sidebar)
+                    }
+                    WorkspacePaneStack {
+                        // One native renderer per window; tabs store no scene graphs.
+                        SpatialWorkspaceView(library: library, visible: spatialVisible)
+                            .opacity(spatialVisible ? 1 : 0).allowsHitTesting(spatialVisible).accessibilityHidden(!spatialVisible)
+                        DesktopHome(library: library, visible: tabs.selected == .home && !tabs.pickerPresented, addActions: addActions)
+                            .opacity(tabs.selected == .home && !tabs.pickerPresented ? 1 : 0)
+                            .allowsHitTesting(tabs.selected == .home && !tabs.pickerPresented).accessibilityHidden(tabs.selected != .home || tabs.pickerPresented)
+                        if tabs.selected != .home && !spatialVisible && !tabs.pickerPresented {
+                            if let project = library.projects.selected {
+                                if folderAvailable {
+                                    ProjectDetailView(projectID: project.id, projects: library.projects, library: library).id(project.id)
+                                        .environment(\.workspaceWide, WorkspaceNavigation.inlineInspector(width: geometry.size.width))
+                                        .environment(\.workspaceContentWidth, geometry.size.width)
+                                } else { unavailable(project.name) }
+                            } else { unavailable("Project") }
+                        }
+                        if tabs.pickerPresented { DesktopProjectPicker(library: library, addActions: addActions) }
                     }
                 }
-                VStack(spacing: 0) {
-                    HStack(spacing: 14) {
-                        Button { library.navigation.layout.sidebarVisible.toggle() } label: { Image(systemName: "sidebar.left") }.help("Toggle sidebar (⌘B)")
-                        Button { if let route = navigation.back() { library.navigate(route, record: false) } } label: { Image(systemName: "chevron.left") }.disabled(navigation.backStack.isEmpty).help("Back (⌘[)")
-                        Button { if let route = navigation.forward() { library.navigate(route, record: false) } } label: { Image(systemName: "chevron.right") }.disabled(navigation.forwardStack.isEmpty).help("Forward (⌘])")
-                        Spacer()
-                        if library.isScanning { ProgressView().controlSize(.mini) }
-                        Button { navigation.layout.inspectorVisible.toggle() } label: { Image(systemName: "sidebar.right") }.help("Toggle inspector (⌘⌥B)").disabled(library.projects.selected == nil && library.selected == nil)
-                    }.buttonStyle(.plain).foregroundStyle(.secondary).padding(.horizontal, 16).frame(height: 32).background(DioramaStyle.sidebar)
-                    ZStack {
-                        SpatialWorkspaceView(library: library, visible: spatialVisible)
-                            .opacity(spatialVisible ? 1 : 0)
-                            .allowsHitTesting(spatialVisible).accessibilityHidden(!spatialVisible)
-                        if !spatialVisible {
-                            if let project = library.projects.selected {
-                                ProjectDetailView(projectID: project.id, projects: library.projects, library: library).id(project.id)
-                                    .environment(\.workspaceWide, WorkspaceNavigation.inlineInspector(width: geometry.size.width))
-                                    .environment(\.workspaceContentWidth, geometry.size.width - (navigation.layout.sidebarVisible ? navigation.layout.sidebarWidth + 1 : 0))
-                            } else if library.projects.selectedID == "imported", let session = library.selected {
-                                WorkspaceImportedSession(session: session, library: library)
-                                    .environment(\.workspaceWide, WorkspaceNavigation.inlineInspector(width: geometry.size.width))
-                            } else {
-                                WorkspaceHome(library: library, imported: library.projects.selectedID == "imported")
-                            }
-                        }
-                    }
-                }.frame(maxWidth: .infinity, maxHeight: .infinity)
-            }.background(DioramaStyle.canvas).tint(DioramaStyle.accent)
-        }
+            }
+        }.background(DioramaStyle.canvas).tint(DioramaStyle.accent)
+        .background(DesktopKeyboardMonitor(library: library))
         .sheet(isPresented: Binding(get: { navigation.searchPresented }, set: { navigation.searchPresented = $0 })) {
             VStack(spacing: 0) {
-                HStack { Text("Find a session").font(.headline); Spacer(); Button("Done") { navigation.searchPresented = false } }.padding(20)
+                HStack { Text("Find a session").font(.headline); Spacer(); Button("Done") { navigation.searchPresented = false }.pointingHand() }.padding(20)
                 WorkspaceHome(library: library, imported: false, searching: true)
             }.frame(width: 720, height: 550)
         }
-        .onReceive(NotificationCenter.default.publisher(for: NSApplication.willTerminateNotification)) { _ in navigation.flushPersistence() }
-         .onChange(of: library.workspaceDestination) {
-            let destination = library.workspaceDestination
-            navigation.visit(destination)
-            let expected: SpatialFocus
-            switch destination {
-            case .home: expected = .portfolio
-            case .project(let project, let session): expected = session.map { .team(project: project, conversation: $0) } ?? .project(project)
-            case .imported(let session): expected = session.map { .team(project: nil, conversation: $0) } ?? .portfolio
-            }
-            if expected.projectID != library.spatial.focus.projectID || expected.conversationID != library.spatial.focus.conversationID {
-                library.spatial.focus = expected; library.spatial.page = 0
-            }
+        .onReceive(NotificationCenter.default.publisher(for: NSApplication.willTerminateNotification)) { _ in
+            library.flushDrafts(); library.captureProjectPresentation(); navigation.flushPersistence()
+        }
+        .onChange(of: library.workspaceDestination) {
+            // Existing connection and session-creation flows may set ProjectModel selection.
+            // Route those through the same outer tabs without changing execution ownership.
+            if let id = library.projects.selectedID, id != "imported", tabs.selected != .project(id) { library.selectProjectTab(id) }
+            navigation.visit(library.workspaceDestination)
         }
         .onAppear {
-            if navigation.hadSavedLayout { library.navigate(navigation.layout.destination, record: false) }
-            else { navigation.visit(library.workspaceDestination) }
-        }
-    }
-    private var spatialVisible: Bool {
-        if let project = library.projects.selected {
-            return (navigation.tabs[project.id + ":" + (project.selectedSession ?? "draft")] ?? .workspace) == .workspace
-        }
-        if library.projects.selectedID == "imported" { return library.selected != nil && library.viewMode == .workspace }
-        return true
-    }
-    private var sidebar: some View {
-        VStack(alignment: .leading, spacing: 0) {
-            HStack { Image(systemName: "square.stack.3d.up.fill").foregroundStyle(DioramaStyle.accent); Text("Diorama").fontWeight(.semibold); Spacer() }.padding(16)
-            navRow("Home", icon: "house", selected: library.projects.selectedID == nil) { library.navigate(.home) }
-            navRow("New Session", icon: "plus", selected: false) { library.showNewTask = true }
-            navRow("Search", icon: "magnifyingglass", selected: false) { navigation.searchPresented = true }
-            Divider().padding(.vertical, 12)
-            HStack {
-                Text("Projects").font(.system(size: 11, weight: .medium)).foregroundStyle(.secondary)
-                Spacer()
-                Menu { Toggle("Show archived", isOn: $showArchived); Toggle("Show internal sessions", isOn: $library.showInternal); Divider(); addActions() } label: { Image(systemName: "plus") }.menuStyle(.borderlessButton).fixedSize().help("Project and sidebar options")
-            }.padding(.horizontal, 16).padding(.bottom, 8)
-            ScrollView {
-                LazyVStack(alignment: .leading, spacing: 3) {
-                    ForEach(library.projects.projects) { project in
-                        WorkspaceProjectGroup(project: project, library: library, showArchived: showArchived)
-                    }
-                    if library.projects.projects.isEmpty {
-                        Menu("Add a project") { addActions() }.padding(12)
-                    }
-                }.padding(.horizontal, 6)
+            if !navigation.hadSavedLayout, tabs.selected == .home, let id = library.projects.selected?.id {
+                tabs.select(.project(id)); library.captureProjectPresentation()
             }
-            Divider()
-            navRow("Imported Activity", icon: "tray.full", selected: library.projects.selectedID == "imported") { library.navigate(.imported(nil)) }
-            navRow("Attention inbox" + (library.attentionSessions.isEmpty ? "" : " · \(library.attentionSessions.count)"), icon: "bell", selected: false) { library.showInbox = true }
-            HStack {
-                Button { library.showConnections = true } label: { Image(systemName: "externaldrive.connected.to.line.below") }.help("Connections")
-                Button { library.paused.toggle() } label: { Image(systemName: library.paused ? "play" : "pause") }.help(library.paused ? "Resume observation" : "Pause observation; agents keep working")
-                Spacer()
-                Button { openSettings() } label: { Image(systemName: "gearshape") }.help("Settings")
-            }.buttonStyle(.plain).foregroundStyle(.secondary).padding(16)
-        }.font(.system(size: 12)).background(DioramaStyle.sidebar)
+            library.scrollPositions.merge(tabs.historyAnchors) { _, saved in saved }; library.restoreDesktopSelection(); checkFolder() }
+        .onChange(of: tabs.selected) { checkFolder() }
+        .onChange(of: library.spatial.focus) { library.captureProjectPresentation() }
+        .onChange(of: library.projects.presentation) { library.captureProjectPresentation() }
+        .onChange(of: library.spatial.conversationPanelVisible) { library.captureProjectPresentation() }
+        .onChange(of: library.spatial.conversationWidth) { library.captureProjectPresentation() }
+        .onChange(of: library.spatial.inboxExpanded) { library.captureProjectPresentation() }
+        .onChange(of: library.spatial.serversExpanded) { library.captureProjectPresentation() }
+        .onChange(of: library.viewMode) { library.captureProjectPresentation() }
+        .onDisappear { library.flushDrafts(); library.captureProjectPresentation(); navigation.flushPersistence() }
     }
-    private func navRow(_ title: String, icon: String, selected: Bool, action: @escaping () -> Void) -> some View {
-        Button(action: action) { Label(title, systemImage: icon).frame(maxWidth: .infinity, alignment: .leading).padding(.horizontal, 10).frame(height: 32).background(selected ? DioramaStyle.selection : .clear, in: RoundedRectangle(cornerRadius: 5)) }
-            .buttonStyle(.plain).padding(.horizontal, 6)
+    @State private var folderAvailable = true
+    private func checkFolder() {
+        guard let project = library.projects.selected else { folderAvailable = false; return }
+        let id = project.id, generation = navigation.projectTabs.generation, path = project.folder
+        Task {
+            let exists = await Task.detached { var directory: ObjCBool = false; return FileManager.default.fileExists(atPath: path, isDirectory: &directory) && directory.boolValue }.value
+            guard library.projects.selectedID == id, navigation.projectTabs.generation == generation else { return }
+            folderAvailable = exists
+        }
     }
- }
+    private func unavailable(_ name: String) -> some View {
+        ContentUnavailableView {
+            Label(name + " unavailable", systemImage: "folder.badge.questionmark")
+        } description: { Text("The project folder is not available. Its conversations and drafts are retained.") }
+        actions: {
+            Button("Retry") { checkFolder() }.pointingHand()
+            Button("Locate folder…") {
+                let panel = NSOpenPanel(); panel.canChooseDirectories = true; panel.canChooseFiles = false
+                let id = library.projects.selectedID
+                panel.begin { response in
+                    guard response == .OK, let url = panel.url, let id else { return }
+                    Task {
+                        do {
+                            let found = try await ProjectFolder.open(url.path)
+                            library.projects.update(id) { $0.folder = found.folder; $0.commonDirectory = found.commonDirectory }
+                            checkFolder()
+                        } catch { library.projects.error = error.localizedDescription }
+                    }
+                }
+            }.pointingHand()
+        }
+    }
+    private var spatialVisible: Bool { !navigation.projectTabs.pickerPresented && navigation.projectTabs.selected != .home && folderAvailable && library.spatialWorkspaceVisible }
+}
 
 /// Keep disclosure changes inside the project group rather than re-evaluating the entire shell.
 struct WorkspaceProjectGroup: View {
@@ -132,24 +134,24 @@ struct WorkspaceProjectGroup: View {
                 Button {
                     if navigation.layout.collapsedProjects.contains(project.id) { navigation.layout.collapsedProjects.remove(project.id) }
                     else { navigation.layout.collapsedProjects.insert(project.id) }
-                } label: { Image(systemName: navigation.layout.collapsedProjects.contains(project.id) ? "chevron.right" : "chevron.down").font(.system(size: 9)).frame(width: 22, height: 30).contentShape(Rectangle()) }.help("Expand or collapse \(project.name)")
+                } label: { Image(systemName: navigation.layout.collapsedProjects.contains(project.id) ? "chevron.right" : "chevron.down").font(.system(size: 9)).frame(width: 22, height: 30).contentShape(Rectangle()) }.pointingHand().help("Expand or collapse \(project.name)")
                 Button { library.navigate(.project(project.id, nil)) } label: {
                     Label(project.name, systemImage: "folder").fontWeight(.medium).lineLimit(1).frame(maxWidth: .infinity, alignment: .leading)
-                }.help(project.folder)
-                Button { library.navigate(.project(project.id, nil)); library.focusWorkspaceComposer() } label: { Image(systemName: "plus").foregroundStyle(.secondary) }.help("New session in \(project.name)")
+                }.pointingHand().help(project.folder)
+                Button { library.navigate(.project(project.id, nil)); library.focusWorkspaceComposer() } label: { Image(systemName: "plus").foregroundStyle(.secondary) }.pointingHand().help("New session in \(project.name)")
             }.buttonStyle(.plain).padding(.horizontal, 8).frame(height: 34)
             if !navigation.layout.collapsedProjects.contains(project.id) {
                 ForEach(SessionPresentation.rows(orderedSessions, showInternal: library.showInternal)) { row in
                     Button { library.openInWorkspace(row.session) } label: {
                         HStack(spacing: 7) {
                             Image(systemName: library.pinned.contains(row.session.id) ? "pin.fill" : "arrow.triangle.branch").font(.system(size: 11)).foregroundStyle(library.needsAttention(row.session) ? .orange : library.isWorking(row.session) ? .mint : DioramaStyle.accent)
-                            Text(markdownTitle(row.session.title)).lineLimit(1)
+                            Text(row.session.displayTitle).help(TaskTitle.full(row.session.title)).accessibilityLabel(TaskTitle.full(row.session.title)).lineLimit(1)
                             Spacer(minLength: 0)
                             Text(row.session.observationOnly ? "Desktop" : row.session.provider == .codex ? "C" : "A").font(.system(size: 9, weight: .medium)).foregroundStyle(.secondary)
                             if row.session.archived { Image(systemName: "archivebox").font(.system(size: 10)) }
                         }.padding(.leading, 18 + CGFloat(min(row.depth, 4)) * 10).padding(.trailing, 8).frame(height: 32)
                             .background(project.id == library.projects.selectedID && project.selectedSession == row.session.id ? DioramaStyle.selection : .clear, in: RoundedRectangle(cornerRadius: 5)).contentShape(Rectangle())
-                    }.buttonStyle(.plain).help(markdownTitle(row.session.title) + " · " + row.session.sourceLabel + " · " + row.label)
+                    }.pointingHand().buttonStyle(.plain).help(markdownTitle(row.session.title) + " · " + row.session.sourceLabel + " · " + row.label)
                         .contextMenu { ConversationActions(model: library, session: row.session) }
                 }
             }
@@ -200,19 +202,19 @@ struct WorkspaceHome: View {
                         Text(imported ? "Your local Codex and Claude Code conversations" : "Pick up where you left off").foregroundStyle(.secondary)
                     }
                     Spacer()
-                    Button("New Session") { library.showNewTask = true }
+                    Button("New Session") { library.showNewTask = true }.pointingHand()
                 }
             }
             HStack {
                 Image(systemName: "magnifyingglass").foregroundStyle(.secondary)
                 TextField("Search sessions", text: $query).textFieldStyle(.plain).focused($searchFocused)
-                if !searching { Button("Search messages") { library.showMessageSearch = true }.font(.caption) }
+                if !searching { Button("Search messages") { library.showMessageSearch = true }.pointingHand().font(.caption) }
             }
             HStack {
-                Picker("Project", selection: $projectID) { Text("All projects").tag("all"); ForEach(library.projects.projects) { Text($0.name).tag($0.id) } }
-                Picker("Provider", selection: $provider) { Text("All providers").tag("All"); ForEach(Provider.allCases, id: \.rawValue) { Text($0.rawValue).tag($0.rawValue) } }
-                Picker("Archive", selection: $archive) { Text("Active").tag("Active"); Text("Archived").tag("Archived"); Text("All").tag("All") }
-                Picker("Activity", selection: $activity) { Text("All activity").tag("All"); Text("Working").tag("Working"); Text("Needs attention").tag("Needs attention") }
+                Picker("Project", selection: $projectID) { Text("All projects").tag("all"); ForEach(library.projects.projects) { Text($0.name).tag($0.id) } }.pointingHand()
+                Picker("Provider", selection: $provider) { Text("All providers").tag("All"); ForEach(Provider.allCases, id: \.rawValue) { Text($0.rawValue).tag($0.rawValue) } }.pointingHand()
+                Picker("Archive", selection: $archive) { Text("Active").tag("Active"); Text("Archived").tag("Archived"); Text("All").tag("All") }.pointingHand()
+                Picker("Activity", selection: $activity) { Text("All activity").tag("All"); Text("Working").tag("Working"); Text("Needs attention").tag("Needs attention") }.pointingHand()
             }.labelsHidden().controlSize(.small)
             Divider()
             if visibleSessions.isEmpty {
@@ -231,7 +233,7 @@ struct WorkspaceHome: View {
                                         HStack(spacing: 12) {
                                             Image(systemName: library.pinned.contains(session.id) ? "pin.fill" : "arrow.triangle.branch").foregroundStyle(DioramaStyle.accent)
                                             VStack(alignment: .leading, spacing: 4) {
-                                                Text(markdownTitle(session.title)).lineLimit(1)
+                                                Text(session.displayTitle).help(TaskTitle.full(session.title)).accessibilityLabel(TaskTitle.full(session.title)).lineLimit(1)
                                                 Text(URL(fileURLWithPath: session.project).lastPathComponent + " · " + session.sourceLabel).font(.caption).foregroundStyle(.secondary)
                                             }
                                             Spacer()
@@ -239,7 +241,7 @@ struct WorkspaceHome: View {
                                             if library.isWorking(session) { Text("Working").foregroundStyle(.mint).font(.caption) }
                                             Text(session.modified, style: .relative).font(.caption).foregroundStyle(.secondary)
                                         }.padding(12).background(DioramaStyle.raised.opacity(0.6), in: RoundedRectangle(cornerRadius: 6)).contentShape(Rectangle())
-                                    }.buttonStyle(.plain).contextMenu { ConversationActions(model: library, session: session) }
+                                    }.pointingHand().buttonStyle(.plain).contextMenu { ConversationActions(model: library, session: session) }
                                 }
                             }
                         }
@@ -273,12 +275,13 @@ struct WorkspaceImportedSession: View {
         }
         .overlay(alignment: .trailing) {
             if !wide && overlay && session.provider == .codex {
-                VStack { HStack { Spacer(); Button("Close") { overlay = false } }.padding(12); inspector }
+                VStack { HStack { Spacer(); Button("Close") { overlay = false }.pointingHand() }.padding(12); inspector }
                     .frame(width: 340).background(DioramaStyle.sidebar).shadow(radius: 12)
             }
         }
         .onChange(of: library.navigation.layout.inspectorVisible) { if !wide { overlay.toggle() } }
-        .task(id: session.id) {
+        .task(id: session.id + String(library.windowIsActive)) {
+            guard library.windowIsActive else { return }
             while !Task.isCancelled {
                 if !library.paused { await library.readSelected() }
                 do { try await Task.sleep(for: .seconds(2)) } catch { return }

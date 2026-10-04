@@ -48,7 +48,24 @@ struct WorkspaceAgent: Identifiable, Equatable {
     var parentName: String?
     var activityRecordID: String?
     var observedAt: Date?
+    var plan: AgentPlan? = nil
+    var planUnavailable = false
     var attentionReason: WorkspaceAttentionReason = .other
+    var branch: String?
+    var worktree: String?
+    var reportedModel: String?
+    var completionKey: String?
+    var latestActivity = ""
+    var meaningfulUpdatedAt: Date?
+    var meaningfulEventID = ""
+    var meaningfulUpdateID: String { [meaningfulEventID, reportedStatus, latestActivity].joined(separator: "\u{1E}") }
+    mutating func retainMeaningfulState(from previous: WorkspaceAgent) {
+        status = previous.status; reportedStatus = previous.reportedStatus
+        action = previous.action; latestActivity = previous.latestActivity
+        meaningfulUpdatedAt = previous.meaningfulUpdatedAt; meaningfulEventID = previous.meaningfulEventID
+        attentionReason = previous.attentionReason
+        completionKey = previous.completionKey
+    }
     var overheadMessage: String? {
         if freshness == .unverified { return "Connection lost" }
         if freshness == .lastKnown { return "Last known" }
@@ -124,7 +141,6 @@ enum WorkspaceAgentPresentation {
         // Active turns also set requiresReconciliation; only disconnection is uncertain.
         let uncertain = task?.phase == .disconnected
         let phase = task?.phase.rawValue ?? current.fallbackStatus
-        let latestPrompt = task?.transcript.entries.last(where: { $0.kind == "You" })?.text
         let mainAction = current.snapshot.records.last {
             $0.kind == "tool" && ($0.parentID == nil || $0.parentID == current.sessionID)
                 && WorkspaceAgentStatus(reported: $0.status) == .working
@@ -132,7 +148,7 @@ enum WorkspaceAgentPresentation {
         }
         let mainStatus = uncertain ? WorkspaceAgentStatus.unknown : WorkspaceAgentStatus(reported: phase)
         var result = [WorkspaceAgent(id: "main", name: "Main agent", provider: current.provider.rawValue,
-            task: latestPrompt ?? title,
+            task: title,
             action: mainStatus == .working ? action(mainAction) ?? "Working on the conversation" : phase,
             status: mainStatus, reportedStatus: phase,
             freshness: uncertain ? .unverified : current.hasLiveExecution ? .live : current.externalFreshness,
@@ -159,7 +175,7 @@ enum WorkspaceAgentPresentation {
                 let reportedAction = status == .working
                     ? action(ownedTool) ?? record.data["lastTool"].string : nil
                 result.append(WorkspaceAgent(id: id,
-                    name: record.title.isEmpty ? "Subagent" : record.title, provider: record.provider,
+                    name: record.reportedAgentName, provider: record.provider,
                     task: record.detail.isEmpty ? record.title : record.detail,
                     action: reportedAction ?? (record.title.isEmpty ? status.rawValue : record.title),
                     status: status, reportedStatus: record.status,
@@ -170,9 +186,49 @@ enum WorkspaceAgentPresentation {
                     attentionReason: WorkspaceAttentionReason(reported: record.status)))
             }
         }
+        for index in result.indices {
+            let agent = result[index]
+            let parts = agent.id.components(separatedBy: "\u{1F}")
+            guard let source = agent.isMain ? sources.last : sources.first(where: { parts.count == 3 && $0.provider.rawValue == parts[0] && $0.sessionID == parts[1] }) else { continue }
+            let owner = agent.isMain ? source.sessionID : (parts.last ?? "")
+            let delegation = source.snapshot.records.first { $0.id == agent.activityRecordID }?.data["delegationID"].string
+            let available = source.snapshot.events.isEmpty ? source.snapshot.records : source.snapshot.events
+            let relevant = available.filter { event in
+                ["tool", "agent", "state", "proposal", "checklist", "step"].contains(event.kind) &&
+                    (agent.isMain ? event.parentID == nil || event.parentID == owner : event.nativeID == owner || event.parentID == owner || (delegation != nil && event.parentID == delegation))
+            }
+            // Preserve event order for untimestamped reports; explicit older events never win.
+            var latest: SessionActivityRecord?
+            for event in relevant {
+                if let time = event.recordedAt, let previous = latest?.recordedAt, time < previous { continue }
+                latest = event
+            }
+            let activity = agent.isMain ? (source.task?.attached == true ? source.task?.activity.last : source.observation?.activity.events.last) : nil
+            let useActivity = activity != nil && (latest == nil || (activity?.recordedAt ?? .distantPast) >= (latest?.recordedAt ?? .distantPast))
+            result[index].latestActivity = useActivity ? [activity?.label, activity?.detail].compactMap { $0 }.filter { !$0.isEmpty }.joined(separator: " · ") : latest.map { [$0.title, $0.detail].filter { !$0.isEmpty }.joined(separator: " · ") } ?? agent.action
+            result[index].latestActivity = String(result[index].latestActivity.prefix(500))
+            result[index].meaningfulUpdatedAt = useActivity ? activity?.recordedAt : latest?.recordedAt
+            result[index].meaningfulEventID = useActivity ? (activity.map(activityIdentity) ?? "") : latest.map { [$0.nativeID, $0.turnID ?? "", $0.kind, $0.status].joined(separator: ":") } ?? (source.task?.turnID ?? "")
+            let record = source.snapshot.records.first { $0.id == agent.activityRecordID }
+            let turn = agent.isMain ? (source.task?.turnID ?? source.task?.work.turnID ?? activity?.turnID ?? latest?.turnID) : record?.turnID
+            if let turn, !turn.isEmpty {
+                result[index].completionKey = source.provider.rawValue + ":" + source.sessionID + ":" + turn + (agent.isMain ? "" : ":agent:" + agent.id)
+            }
+            let reported = agent.isMain ? nil : record?.data["model"].string
+            result[index].reportedModel = reported.flatMap { $0.isEmpty ? nil : $0 }
+                ?? (agent.isMain ? source.snapshot.records.reversed().compactMap { $0.data["model"].string }.first : nil)
+
+        }
         return result
     }
 
+    static func activityIdentity(_ event: ActivityEvent) -> String {
+        // Some history adapters assign a new UUID on every read. Use source evidence,
+        // never that adapter UUID or observation time, to identify a meaningful report.
+        [event.provider, event.sessionID, event.turnID ?? "", event.callID ?? "", event.kind,
+         event.tool ?? "", event.state?.rawValue ?? "", event.detail ?? "",
+         event.recordedAt.map { String($0.timeIntervalSince1970) } ?? ""].joined(separator: "\u{1F}")
+    }
     private static func identity(_ record: SessionActivityRecord) -> String {
         [record.provider, record.sessionID, record.nativeID].joined(separator: "\u{1F}")
     }
@@ -191,6 +247,15 @@ enum WorkspaceAgentPresentation {
 }
 
 extension LibraryModel {
+    func planSources(_ session: Session) -> [Session] {
+        let segments = conversations.record(session.id)?.segments ?? [ConversationSegment(nativeID: session.sessionID, provider: session.provider, model: "")]
+        var result = segments.flatMap { segment -> [Session] in
+            guard let provider = Provider(rawValue: segment.provider) else { return [] }
+            return portfolio.planSources(provider: provider, nativeID: segment.nativeID)
+        }
+        if !result.contains(where: { $0.url == session.url }) { result.append(session) }
+        return result
+    }
     func workspaceAgents(_ session: Session?) -> [WorkspaceAgent] {
         guard let session else { return [.ready] }
         let segments = conversations.record(session.id)?.segments
@@ -208,6 +273,9 @@ extension LibraryModel {
                     if (child.recordedAt ?? .distantPast) > (previous.recordedAt ?? .distantPast) {
                         var latest = child
                         latest.id = previous.id
+                        if AgentDisplayNames.meaningful(previous.reportedAgentName) {
+                            latest.data = .object(["agentNickname": .string(previous.reportedAgentName)])
+                        }
                         snapshot.apply(latest)
                     }
                 } else { snapshot.apply(child) }
@@ -216,7 +284,51 @@ extension LibraryModel {
                 task: task?.provider == provider ? task : nil, fallbackStatus: observation?.activity.state.rawValue ?? summary(session).state.rawValue,
                 observation: observation, now: observationClock, paused: paused)
         }
-        return workspaceProjectionCache.agents(id: session.id, title: session.title, sources: sources)
+        var agents = workspaceProjectionCache.agents(id: session.id, title: session.title, sources: sources)
+        for index in agents.indices {
+            let agent = agents[index]
+            let parts = agent.id.components(separatedBy: "\u{1F}")
+            guard let source = agent.isMain ? sources.last : sources.first(where: { parts.count == 3 && $0.provider.rawValue == parts[0] && $0.sessionID == parts[1] }) else { continue }
+            let discovered = planSources(session).filter { $0.provider == source.provider }
+            let native = parts.last ?? ""
+            let child = agent.isMain ? nil : discovered.first { $0.classification == .subagent && ($0.provider == .claude ? $0.id == native : $0.sessionID == native) }
+            let file = child ?? discovered.first { $0.classification != .subagent && $0.sessionID == source.sessionID }
+            var snapshot = file.flatMap { planDiscovery.snapshots[AgentPlanDiscovery.key($0)] } ?? .init()
+            // Merge current evidence by record identity; never let saved history overwrite newer events.
+            let separateCodexChild = !agent.isMain && source.provider == .codex
+            let live = separateCodexChild ? execution.activitySnapshot(provider: .codex, id: native) : source.snapshot
+            if child?.provider != .claude { // Claude child files share their parent's native session ID.
+                snapshot = AgentPlan.merging(snapshot, live)
+            }
+            let record = source.snapshot.records.first { $0.id == agent.activityRecordID }
+            let owners = agent.isMain || child != nil || separateCodexChild ? Set<String>() : Set([record?.nativeID, record?.data["delegationID"].string].compactMap { $0 })
+            if !agent.isMain && child == nil && !separateCodexChild && owners.isEmpty { continue }
+            let plan = AgentPlan.reported(in: snapshot, provider: source.provider.rawValue,
+                sessionID: child?.sessionID ?? (separateCodexChild ? native : source.sessionID), owners: owners, currentTurn: agent.isMain ? source.task?.turnID : nil)
+            agents[index].plan = plan
+            agents[index].planUnavailable = !source.hasLiveExecution && (file.map { planDiscovery.unavailable.contains(AgentPlanDiscovery.key($0)) } ?? false)
+        }
+        let metadataSources = planSources(session)
+        let workspaces = projects.projects.flatMap(\.workspaces)
+        for index in agents.indices {
+            agents[index].name = agentDisplayName(session, agent: agents[index].id, reported: agents[index].name)
+            let agent = agents[index], parts = agent.id.components(separatedBy: "\u{1F}")
+            let child = agent.isMain ? nil : metadataSources.first { $0.classification == .subagent && ($0.provider == .claude ? $0.id == parts.last : $0.sessionID == parts.last) }
+            let native = agent.isMain ? session.sessionID : (parts.last ?? "")
+            let runtime = execution.tasks.values.first { $0.id == native && $0.provider.rawValue == agent.provider }
+            let folder = runtime?.folder ?? (agent.isMain ? session.project : child?.project)
+            if agent.isMain, (agent.provider == Provider.claude.rawValue || agent.completionKey == nil), [.done, .failed, .stopped].contains(agent.status),
+               let completion = AgentCompletionViews.shared.latest[agent.provider + ":" + native] {
+                agents[index].completionKey = completion.id
+            }
+            agents[index].worktree = folder.flatMap { $0.isEmpty ? nil : $0 }
+            agents[index].branch = workspaces.first { !$0.cleaned && $0.folder == folder && !$0.branch.isEmpty }?.branch
+        }
+        let displayNames = Dictionary(agents.map { ($0.id, $0.name) }, uniquingKeysWith: { first, _ in first })
+        for index in agents.indices where !agents[index].isMain {
+            agents[index].parentName = agents[index].parentID.flatMap { displayNames[$0] } ?? displayNames["main"]
+        }
+        return agents
     }
 }
 
@@ -231,6 +343,7 @@ struct WorkspaceProjectionSource: Equatable {
     let turnID: String?
     let prompt: String?
     let eventTime: Date?
+    let lastActivity: ActivityEvent?
     let observationState: String?
     let observationTime: Date?
     let freshness: WorkspaceAgentFreshness
@@ -243,6 +356,7 @@ struct WorkspaceProjectionSource: Equatable {
         attached = source.hasLiveExecution; turnID = source.task?.turnID
         prompt = source.task?.transcript.entries.last(where: { $0.kind == "You" })?.text
         eventTime = source.task?.activity.last(where: { $0.state != nil })?.time
+        lastActivity = source.task?.attached == true ? source.task?.activity.last : source.observation?.activity.events.last
         observationState = source.observation?.activity.state.rawValue
         observationTime = source.observation?.activity.latestState?.time
         freshness = source.externalFreshness
@@ -260,6 +374,7 @@ final class WorkspaceProjectionCache {
         var title: String
         var sources: [WorkspaceProjectionSource]
         var agents: [WorkspaceAgent]
+        var history: [String: [String]] = [:]
     }
     var entries: [String: Entry] = [:]
     private(set) var rebuilds = 0
@@ -267,8 +382,31 @@ final class WorkspaceProjectionCache {
         let keys = sources.map(WorkspaceProjectionSource.init)
         if let cached = entries[id], cached.title == title, cached.sources == keys { return cached.agents }
         rebuilds += 1
-        let agents = WorkspaceAgentPresentation.agents(title: title, sources: sources)
-        entries[id] = Entry(title: title, sources: keys, agents: agents)
+        var agents = WorkspaceAgentPresentation.agents(title: title, sources: sources)
+        var history = entries[id]?.history ?? [:]
+        if let previous = entries[id] {
+            for index in agents.indices {
+                if let old = previous.agents.first(where: { $0.id == agents[index].id }) {
+                    let key = agents[index].meaningfulUpdateID
+                    let replay = key != old.meaningfulUpdateID && (history[old.id] ?? []).contains(key)
+                    let older = agents[index].meaningfulUpdatedAt.map { time in old.meaningfulUpdatedAt.map { time < $0 } ?? false } ?? false
+                    let runtimeChanged = agents[index].freshness == .live && (agents[index].status != old.status || agents[index].attentionReason != old.attentionReason)
+                    if (replay || older) && !runtimeChanged { agents[index].retainMeaningfulState(from: old) }
+                }
+            }
+        }
+        // Bounded snapshots omit older subagent records. Keep their last known state
+        // until the owning conversation leaves project membership/archive filtering.
+        let present = Set(agents.map(\.id))
+        for var old in entries[id]?.agents ?? [] where !present.contains(old.id) {
+            old.freshness = .lastKnown
+            agents.append(old)
+        }
+        for agent in agents where !(history[agent.id] ?? []).contains(agent.meaningfulUpdateID) {
+            history[agent.id, default: []].append(agent.meaningfulUpdateID)
+            if history[agent.id, default: []].count > 128 { history[agent.id]?.removeFirst() }
+        }
+        entries[id] = Entry(title: title, sources: keys, agents: agents, history: history)
         return agents
     }
 }

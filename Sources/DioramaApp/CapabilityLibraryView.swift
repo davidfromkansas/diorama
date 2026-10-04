@@ -81,13 +81,13 @@ struct CapabilityLibraryView: View {
                     Text("Big ideas. Little books.").font(.system(size: 12, design: .rounded)).foregroundStyle(.secondary)
                 }
                 Spacer()
-                Button(action: close) { Image(systemName: "xmark").frame(width: 26, height: 26) }
+                Button(action: close) { Image(systemName: "xmark").frame(width: 26, height: 26) }.pointingHand()
                     .buttonStyle(.plain).accessibilityLabel("Close library").help("Close library (Escape)")
             }
             HStack {
                 Picker("Provider", selection: $provider) {
                     Text("Codex").tag(Provider.codex); Text("Claude").tag(Provider.claude)
-                }.pickerStyle(.segmented).frame(maxWidth: 230)
+                }.pointingHand().pickerStyle(.segmented).frame(maxWidth: 230)
                 Spacer()
                 if model.loading { ProgressView().controlSize(.small).accessibilityLabel("Loading capabilities") }
             }
@@ -98,7 +98,7 @@ struct CapabilityLibraryView: View {
             HStack {
                 Image(systemName: "magnifyingglass").foregroundStyle(.secondary)
                 TextField("Find a book…", text: $query).textFieldStyle(.plain).focused($searchFocused).accessibilityLabel("Search capabilities")
-                if !query.isEmpty { Button { query = "" } label: { Image(systemName: "xmark.circle.fill") }.buttonStyle(.plain).accessibilityLabel("Clear search") }
+                if !query.isEmpty { Button { query = "" } label: { Image(systemName: "xmark.circle.fill") }.pointingHand().buttonStyle(.plain).accessibilityLabel("Clear search") }
             }.padding(10).background(.white.opacity(0.7), in: RoundedRectangle(cornerRadius: 10)).padding(.horizontal, 20)
             ScrollView(.horizontal) {
                 HStack(spacing: 6) {
@@ -124,7 +124,7 @@ struct CapabilityLibraryView: View {
                                     Text(item.name).font(.system(size: 12, weight: .semibold, design: .rounded)).lineLimit(2).frame(height: 32, alignment: .topLeading)
                                     Text(item.availability.rawValue).font(.system(size: 9)).foregroundStyle(.secondary)
                                 }.frame(maxWidth: .infinity, alignment: .leading).contentShape(Rectangle())
-                            }.buttonStyle(.plain).accessibilityLabel("\(item.name), \(item.kind.rawValue), \(item.availability.rawValue)").help(item.description)
+                            }.pointingHand().buttonStyle(.plain).accessibilityLabel("\(item.name), \(item.kind.rawValue), \(item.availability.rawValue)").help(item.description)
                         }
                     }.padding(20)
                 }
@@ -136,12 +136,12 @@ struct CapabilityLibraryView: View {
             Text(label).font(.system(size: 11, weight: kind == value ? .semibold : .regular))
                 .padding(.horizontal, 12).padding(.vertical, 7)
                 .background(kind == value ? Color(red: 0.85, green: 0.89, blue: 0.81) : .white.opacity(0.5), in: Capsule())
-        }.buttonStyle(.plain).accessibilityAddTraits(kind == value ? .isSelected : [])
+        }.pointingHand().buttonStyle(.plain).accessibilityAddTraits(kind == value ? .isSelected : [])
     }
     private func detail(_ item: CapabilityLibraryItem) -> some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 18) {
-                Button { selected = nil; searchFocused = true } label: { Label("All books", systemImage: "chevron.left") }.buttonStyle(.plain)
+                Button { selected = nil; searchFocused = true } label: { Label("All books", systemImage: "chevron.left") }.pointingHand().buttonStyle(.plain)
                 LibraryBookCover(item: item).frame(width: 160, height: 185).frame(maxWidth: .infinity)
                 Text(item.name).font(.system(size: 23, weight: .bold, design: .rounded)).textSelection(.enabled)
                 HStack { Text(item.kind.rawValue); Text("·"); Text(item.availability.rawValue) }.font(.caption).foregroundStyle(.secondary)
@@ -157,7 +157,7 @@ struct CapabilityLibraryView: View {
                         Button { selected = child } label: {
                             HStack { Image(systemName: child.emblem); Text(child.name); Spacer(); Image(systemName: "chevron.right") }
                                 .font(.callout).padding(10).background(.white.opacity(0.6), in: RoundedRectangle(cornerRadius: 8))
-                        }.buttonStyle(.plain)
+                        }.pointingHand().buttonStyle(.plain)
                     }
                 }
                 Text("Workspace availability may differ for individual agents. Using tools can still require approval.").font(.caption).foregroundStyle(.secondary)
@@ -167,16 +167,16 @@ struct CapabilityLibraryView: View {
     private var footer: some View {
         VStack(alignment: .leading, spacing: 8) {
             if let snapshot = model.snapshot, !snapshot.errors.isEmpty {
-                DisclosureGroup("\(snapshot.errors.count) discovery issue(s)") {
+                DisclosureGroup {
                     ForEach(snapshot.errors.keys.sorted(), id: \.self) { key in
                         Text(key + ": " + (snapshot.errors[key] ?? "")).font(.caption).textSelection(.enabled)
                     }
-                }.font(.caption)
+                } label: { Text("\(snapshot.errors.count) discovery issue(s)").disclosurePointingHand() }.font(.caption)
             }
             HStack {
                 Text("\(model.snapshot?.items.count ?? 0) books · Read-only").font(.caption).foregroundStyle(.secondary)
                 Spacer()
-                Button { Task { await reload(force: true) } } label: { Label("Refresh", systemImage: "arrow.clockwise") }
+                Button { Task { await reload(force: true) } } label: { Label("Refresh", systemImage: "arrow.clockwise") }.pointingHand()
                     .font(.caption).buttonStyle(.plain).disabled(model.loading)
             }
         }.padding(16).background(Color(red: 0.93, green: 0.90, blue: 0.83))
