@@ -49,6 +49,25 @@ struct ProjectViewSelection: Codable, Equatable {
     var storageReadable: Bool { get { repository.storageReadable } set { repository.storageReadable = newValue } }
     var storageURL: URL { repository.storageURL }
     @ObservationIgnored private var sessionCache: [String: ProjectSessionCache] = [:]
+    @ObservationIgnored private var sessionIndex: ProjectSessionIndex?
+    private struct ProjectSessionIndex {
+        let libraryID: ObjectIdentifier
+        let revision: UInt64
+        let rows: [Session]
+        let folders: [String: [Int]]
+        let threads: [String: [Int]]
+        var resolvedFolders: [String: String] = [:]
+        init(library: LibraryModel) {
+            libraryID = ObjectIdentifier(library); revision = library.sessionsRevision
+            rows = library.sessions
+            var folders: [String: [Int]] = [:], threads: [String: [Int]] = [:]
+            for (index, row) in rows.enumerated() {
+                folders[row.project, default: []].append(index)
+                threads[row.sessionID, default: []].append(index)
+            }
+            self.folders = folders; self.threads = threads
+        }
+    }
     private struct ProjectSessionCache {
         let libraryID: ObjectIdentifier
         let sessionsRevision: UInt64
@@ -89,7 +108,9 @@ struct ProjectViewSelection: Codable, Equatable {
         projects.append(project); selectedID = project.id; save()
     }
     func sessions(_ project: DioramaProject, library: LibraryModel) -> [Session] {
-        let paths = Set(([project.folder] + project.workspaces.map(\.folder)).map { URL(fileURLWithPath: $0).standardizedFileURL.resolvingSymlinksInPath().path })
+        // Check raw membership inputs before doing any filesystem work. Scroll-driven
+        // view updates usually need exactly the same rows as the previous frame.
+        let paths = Set([project.folder] + project.workspaces.map(\.folder))
         let ids = Set(project.workspaces.compactMap(\.threadID))
         let revision = library.sessionsRevision
         if let cached = sessionCache[project.id], cached.libraryID == ObjectIdentifier(library),
@@ -97,19 +118,32 @@ struct ProjectViewSelection: Codable, Equatable {
            cached.commonDirectory == project.commonDirectory, cached.paths == paths, cached.threadIDs == ids {
             return cached.sessions
         }
-        let knownAssociations = associations
-        var resolvedFolders: [String: String] = [:]
-        func resolved(_ folder: String) -> String {
-            if let path = resolvedFolders[folder] { return path }
-            let path = URL(fileURLWithPath: folder).standardizedFileURL.resolvingSymlinksInPath().path
-            resolvedFolders[folder] = path
-            return path
+        if sessionIndex?.libraryID != ObjectIdentifier(library) || sessionIndex?.revision != revision {
+            sessionIndex = ProjectSessionIndex(library: library)
         }
-        let rows = library.sessions.filter { ids.contains($0.sessionID) || paths.contains(resolved($0.project)) || (project.isGitBacked && knownAssociations[$0.project] == project.commonDirectory) }
+        let canonicalPaths = Set(paths.map { URL(fileURLWithPath: $0).standardizedFileURL.resolvingSymlinksInPath().path })
+        let knownAssociations = associations
+        var matches = Set<Int>()
+        // Resolve membership once per distinct folder, not once per conversation.
+        // The same index serves every tab and agent-name lookup for this roster.
+        for (folder, indices) in sessionIndex!.folders {
+            let direct = paths.contains(folder) || (project.isGitBacked && knownAssociations[folder] == project.commonDirectory)
+            if direct { matches.formUnion(indices); continue }
+            let resolved: String
+            if let cached = sessionIndex!.resolvedFolders[folder] { resolved = cached }
+            else {
+                resolved = URL(fileURLWithPath: folder).standardizedFileURL.resolvingSymlinksInPath().path
+                sessionIndex!.resolvedFolders[folder] = resolved
+            }
+            if canonicalPaths.contains(resolved) { matches.formUnion(indices) }
+        }
+        for id in ids { matches.formUnion(sessionIndex!.threads[id] ?? []) }
+        let rows = matches.sorted().map { sessionIndex!.rows[$0] }
         sessionCache[project.id] = ProjectSessionCache(libraryID: ObjectIdentifier(library), sessionsRevision: revision,
             associationsRevision: associationsRevision, commonDirectory: project.commonDirectory, paths: paths, threadIDs: ids, sessions: rows)
         return rows
     }
+
     func associate(_ sessions: [Session]) async {
         for path in Set(sessions.map(\.project)).filter({ $0.hasPrefix("/") && associations[$0] == nil }) {
             guard !Task.isCancelled else { return }
@@ -231,7 +265,7 @@ struct AddProjectView: View {
     @Environment(\.dismiss) private var dismiss
     @State private var name = ""
     @State private var repository = ""
-    @State private var parent = UserDefaults.standard.string(forKey: "projectParent") ?? FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent("Documents/ChatGPT").path
+    @State private var parent = ProjectStorage.newProjectsDirectory.path
     @State private var publish = false
     @State private var visibility = "private"
     @State private var error: String?
@@ -334,7 +368,6 @@ struct AddProjectView: View {
                     project.remote = discovered.remote
                     projects.update(project.id) { $0.remote = project.remote; $0.base = project.base }
                 }
-                UserDefaults.standard.set(parent, forKey: "projectParent")
                 projects.add(project); dismiss()
             } catch is CancellationError { }
             catch { self.error = error.localizedDescription }
@@ -521,6 +554,7 @@ struct ProjectDraftView: View {
                 Text("Linked from \(source). The handoff below is editable. Starts from the source’s committed revision; uncommitted changes stay in the original session.").font(.caption).foregroundStyle(.secondary)
             }
             HStack(spacing: 12) {
+                HStack(spacing: 12) {
                 if compact { creationProjectPicker }
                 if !compact {
                     Button { projects.update(projectID) { $0.section = "Context" } } label: { Label("Project context", systemImage: "doc.text") }.pointingHand()
@@ -560,9 +594,9 @@ struct ProjectDraftView: View {
                     branchPicker
                     worktreeToggle
                 }
+                }.disabled(projects.busy.contains(projectID) || loadingStart)
                 if compact { Spacer(minLength: 0); creationClose }
-            }.font(.caption).disabled(projects.busy.contains(projectID) || loadingStart)
-            if compact { Divider().padding(.horizontal, -20) }
+            }.font(.caption)
             if !compact && start.createWorktree && prepared == nil { branchNameField }
             if projects.busy.contains(projectID) { ProgressView("Preparing session…").controlSize(.small) }
             if let error {

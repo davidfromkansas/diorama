@@ -45,8 +45,8 @@ final class ComposerNSTextView: NSTextView {
     var sendMessage: (() -> Void)?
     var hasSendableContent: () -> Bool = { false }
     override func validateUserInterfaceItem(_ item: any NSValidatedUserInterfaceItem) -> Bool {
-        if item.action == #selector(paste(_:)), clipboard().types?.contains(.fileURL) != true,
-           clipboard().availableType(from: [.png, .tiff]) != nil { return isEditable }
+        if item.action == #selector(paste(_:)),
+           clipboard().availableType(from: [.fileURL, .png, .tiff]) != nil { return isEditable }
         return super.validateUserInterfaceItem(item)
     }
     override func paste(_ sender: Any?) {
@@ -119,7 +119,14 @@ struct ComposerTextEditor: NSViewRepresentable {
         }
         func pasteImage(_ pasteboard: NSPasteboard) -> Bool {
             guard !parent.disabled else { return true }
-            guard pasteboard.types?.contains(.fileURL) != true, pasteboard.availableType(from: [.png, .tiff]) != nil else { return false }
+            if pasteboard.types?.contains(.fileURL) == true {
+                let urls = pasteboard.readObjects(forClasses: [NSURL.self], options: [.urlReadingFileURLsOnly: true]) as? [URL] ?? []
+                guard !urls.isEmpty else { return false }
+                do { try addAttachments(urls, to: &parent.attachments); parent.error = nil }
+                catch { parent.error = error.localizedDescription }
+                return true
+            }
+            guard pasteboard.availableType(from: [.png, .tiff]) != nil else { return false }
             do {
                 guard parent.attachments.count < 20 else { throw AppServerFailure("Attach up to 20 files per message.") }
                 if let attachment = try ClipboardImageStore.attachment(from: pasteboard) { parent.attachments.append(attachment) }

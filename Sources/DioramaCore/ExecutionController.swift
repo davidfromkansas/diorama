@@ -331,9 +331,6 @@ public final class ExecutionController {
             if !selectedEffort.isEmpty { settings["reasoning_effort"] = .string(selectedEffort) }
             params["collaborationMode"] = .object(["mode": .string(mode), "settings": .object(settings)])
         }
-        let permissionOverrides: [String: WireValue] = task.provider == .claude
-            ? ["permissionMode": .string(mode == "plan" ? "plan" : (task.permissionPreference?.claudeMode ?? task.approvalPolicy.string ?? "default"))] : [:]
-        params.merge(permissionOverrides) { _, override in override }
         do {
             let reply = try await transport.request("turn/start", .object(params))
             guard let turn = reply["turn"]["id"].string else { throw AppServerFailure("Turn submission outcome unknown") }

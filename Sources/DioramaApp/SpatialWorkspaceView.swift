@@ -27,6 +27,7 @@ struct SpatialWorkspaceView: View {
     @State private var cachedProject: String?
     @State private var projectWorlds: [String: SpatialWorld] = [:]
     @State private var projectRecency: [String] = []
+    private var kitchenSelected: Bool { state.sceneKind == .kitchen }
     private var state: SpatialWorkspaceState { library.spatial }
     private var world: SpatialWorld {
         if !visible { return cachedWorld ?? SpatialWorld() }
@@ -57,13 +58,14 @@ struct SpatialWorkspaceView: View {
                     }.accessibilityLabel("Resize agent panel")
                 }
                 ZStack(alignment: .topLeading) {
-                SpatialSceneSurface(world: snapshot, focus: focus, active: visible && (scenePhase == .active && library.windowIsActive) && focus != .portfolio,
+                SpatialSceneSurface(world: snapshot, focus: focus, active: !kitchenSelected && visible && (scenePhase == .active && library.windowIsActive) && focus != .portfolio,
                     reducedMotion: reduced, reset: state.resetGeneration, page: state.page, select: go,
                     screenAnchor: { screenAnchor = $0 }, openInspection: { showPlan($0) },
-                    dismissPlan: inspection == nil ? nil : { closePlan() }, editStatus: { editStatus = $0 }, cameraStore: library.navigation.projectTabs)
-                    .opacity(focus == .portfolio ? 0 : 1)
-                    .allowsHitTesting(focus != .portfolio && inspection == nil).accessibilityHidden(focus == .portfolio || inspection != nil)
-                if focus != .portfolio && !ScenePerformance.disabled("OVERLAYS") {
+                    dismissPlan: inspection == nil ? nil : { closePlan() }, editStatus: { editStatus = $0 }, cameraStore: library.navigation.projectTabs, presented: !kitchenSelected)
+                    .opacity(focus == .portfolio || kitchenSelected ? 0 : 1)
+                    .allowsHitTesting(!kitchenSelected && focus != .portfolio && inspection == nil).accessibilityHidden(kitchenSelected || focus == .portfolio || inspection != nil)
+                if kitchenSelected { KitchenSceneSurface() }
+                if !kitchenSelected && focus != .portfolio && !ScenePerformance.disabled("OVERLAYS") {
                     VStack(alignment: .leading, spacing: 12) {
                         toolbar(snapshot, focus: focus)
                         if let notice = state.notice {
@@ -80,7 +82,7 @@ struct SpatialWorkspaceView: View {
                     }.padding(16).environment(\.colorScheme, .light).tint(.blue)
                         .disabled(inspection != nil).accessibilityHidden(inspection != nil)
                 }
-                if visible, focus != .portfolio, let project = focus.projectID, inspection == nil {
+                if !kitchenSelected, visible, focus != .portfolio, let project = focus.projectID, inspection == nil {
                     GeometryReader { office in
                         VStack {
                             Spacer()
@@ -205,7 +207,7 @@ struct SpatialWorkspaceView: View {
     private func rosterPanel(_ snapshot: SpatialWorld, focus: SpatialFocus, model: LiveAgentRosterModel, narrow: Bool) -> some View {
         let teams = focus.projectID.flatMap { id in snapshot.projects.first { $0.id == id }?.teams } ?? snapshot.team(focus).map { [$0] } ?? []
         return LiveAgentRosterPanel(model: model, agents: teams.flatMap(\.agents),
-            active: visible && (scenePhase == .active && library.windowIsActive) && inspection == nil, paused: library.paused) { destination in
+            active: !kitchenSelected && visible && (scenePhase == .active && library.windowIsActive) && inspection == nil, paused: library.paused) { destination in
                 if narrow { model.collapsed = true }
                 go(destination)
             } archive: { row in

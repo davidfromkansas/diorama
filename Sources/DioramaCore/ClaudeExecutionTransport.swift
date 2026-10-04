@@ -294,9 +294,6 @@ public actor ClaudeExecutionTransport: ExecutionTransport {
             } catch let error as ExecutionRPCRejection { queueSending = .null; try saveQueue(); throw error }
         case "turn/start":
             guard turn == nil else { throw ExecutionRPCRejection("Wait for Claude to finish or stop it first.") }
-            if permissionConfirmed, permissionMode != "plan", permissionMode != executionPermissionMode {
-                throw ExecutionRPCRejection("Claude permissions changed externally. Review them before continuing.")
-            }
             var content = try Self.input(p["input"].array)
             if let selected = p["model"].string, selected.hasPrefix("claude/") {
                 _ = try await control(["subtype": .string("set_model"), "model": .string(String(selected.dropFirst(7)))]); model = selected
@@ -389,7 +386,7 @@ public actor ClaudeExecutionTransport: ExecutionTransport {
             }
         case "system":
             if let reported = e["permissionMode"].string {
-                if !permissionConfirmed, reported != "plan" { executionPermissionMode = reported }
+                if reported != "plan" { executionPermissionMode = reported }
                 permissionMode = reported; permissionConfirmed = true
                 emit("diorama/permissions/changed", ["permissionMode": .string(reported), "model": .string(model)])
             }

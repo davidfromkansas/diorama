@@ -25,6 +25,7 @@ trap 'rm -rf "$stage"' EXIT
 /usr/bin/ditto "$app_path" "$stage/Diorama.app"
 xattr -cr "$stage/Diorama.app"
 if [[ -n "${DIORAMA_SIGN_IDENTITY:-}" ]]; then
+  bash scripts/sign-sparkle.sh "$stage/Diorama.app" "$DIORAMA_SIGN_IDENTITY"
   if [[ -f "$stage/Diorama.app/Contents/Resources/ClaudeHelper/node" ]]; then
     codesign ${signing_args[@]+"${signing_args[@]}"} --force --options runtime --timestamp --entitlements "$stage/Diorama.app/Contents/Resources/ClaudeHelper/node-entitlements.plist" --sign "$DIORAMA_SIGN_IDENTITY" "$stage/Diorama.app/Contents/Resources/ClaudeHelper/node"
   fi

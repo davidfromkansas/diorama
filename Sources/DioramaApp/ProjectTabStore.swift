@@ -203,7 +203,7 @@ extension LibraryModel {
         }
         projectNavigation = projects.selectedID != "imported"
         entryLimit = selectedID.flatMap { navigation.projectTabs.conversationBookmarks[$0]?.entryLimit } ?? 300
-        transcript = Transcript(); transcriptSessionID = nil
+        // Selection restores its last snapshot immediately; readSelected refreshes it.
     }
     func closeProjectTab(_ id: String) {
         captureProjectPresentation()

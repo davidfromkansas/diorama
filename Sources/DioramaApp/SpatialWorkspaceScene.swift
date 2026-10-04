@@ -30,6 +30,7 @@ struct SpatialSceneSurface: NSViewRepresentable {
     var dismissPlan: (() -> Void)? = nil
     var editStatus: ((String?) -> Void)? = nil
     var cameraStore: ProjectTabStore? = nil
+    var presented = true
     func makeNSView(context: Context) -> SpatialSceneView {
         let view = SpatialSceneView(); view.placementDefaults = .standard
         view.editor.defaults = .standard
@@ -40,6 +41,8 @@ struct SpatialSceneSurface: NSViewRepresentable {
         return view
     }
     func updateNSView(_ view: SpatialSceneView, context: Context) {
+        view.scenePresented = presented
+        if !presented && view.editor.enabled { view.editor.finish() }
         view.cameraStore = cameraStore
         view.editStatus = editStatus
         view.select = select
@@ -54,6 +57,7 @@ struct SpatialSceneSurface: NSViewRepresentable {
 }
 
 final class SpatialSceneView: SCNView {
+    var scenePresented = true
     weak var cameraStore: ProjectTabStore?
     let editor = OfficeLayoutEditor()
     private var selectionStart: CGPoint?
@@ -723,7 +727,7 @@ final class SpatialSceneView: SCNView {
     }
     override func layout() { super.layout(); guard focus != .portfolio else { return }; updateCamera(); updateAgents() }
     private func handleEditKey(_ event: NSEvent) -> Bool {
-        guard event.window === window, active, focus?.projectID != nil, focus != .portfolio,
+        guard scenePresented, event.window === window, active, focus?.projectID != nil, focus != .portfolio,
               dismissPlan == nil, window?.attachedSheet == nil,
               !(window?.firstResponder is NSTextInputClient),
               event.modifierFlags.intersection([.command, .control, .option]).isEmpty else { return false }
@@ -853,7 +857,7 @@ final class SpatialSceneView: SCNView {
         if !visibleRect.isEmpty { addCursorRect(visibleRect, cursor: .arrow) }
     }
     private func updatePointer(_ event: NSEvent) {
-        guard !pointerDragging else { return }
+        guard scenePresented, !pointerDragging else { return }
         // Tracking areas also receive events underneath sibling SwiftUI overlays.
         // Only own the cursor when the scene actually owns the click destination.
         if let content = window?.contentView,

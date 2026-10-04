@@ -79,3 +79,77 @@ import Testing
         #expect(atBottom(), "Sending from earlier history must resume follow mode: offset \(scroll.contentView.bounds.minY), content \(scroll.documentView!.bounds.height), viewport \(scroll.contentView.bounds.height)")
     }
 }
+
+
+extension ConversationAutoscrollTests {
+    @Test func nativeScrollCallbacksAreDeferredAndCancelledOnDetach() async throws {
+        let scroll = NSScrollView(frame: NSRect(x: 0, y: 0, width: 400, height: 300))
+        let document = NSView(frame: NSRect(x: 0, y: 0, width: 400, height: 2000))
+        scroll.documentView = document
+        let probe = ConversationScrollTracking.Probe(onUserScroll: { _ in })
+        document.addSubview(probe)
+        let window = NSWindow(contentRect: scroll.frame, styleMask: [.borderless], backing: .buffered, defer: false)
+        window.contentView = scroll
+        defer { window.contentView = nil; window.orderOut(nil) }
+        var began = 0
+        var following: [Bool] = []
+        probe.onScrollBegan = {
+            #expect(probe.userIsScrolling, "Native state must settle before publishing to SwiftUI")
+            began += 1
+            // SwiftUI layout may cause another native notification while handling a callback.
+            if began == 1 { NotificationCenter.default.post(name: NSScrollView.didLiveScrollNotification, object: scroll) }
+        }
+        probe.onUserScroll = { following.append($0) }
+        NotificationCenter.default.post(name: NSScrollView.willStartLiveScrollNotification, object: scroll)
+        #expect(probe.userIsScrolling)
+        #expect(!probe.followsLatest, "Bottom pinning must stop before the first wheel delta")
+        #expect(began == 0 && following.isEmpty, "Native event dispatch must not mutate SwiftUI state")
+        try await Task.sleep(for: .milliseconds(30))
+        #expect(began == 1)
+        #expect(following == [false])
+        probe.stopObserving()
+        try await Task.sleep(for: .milliseconds(250))
+        #expect(following == [false], "Detached views must not publish a pending scroll completion")
+    }
+}
+
+extension ConversationAutoscrollTests {
+    @Test func olderHistoryLoadsDuringScrollWithoutDuplicateRequests() async throws {
+        let scroll = NSScrollView(frame: NSRect(x: 0, y: 0, width: 400, height: 300))
+        let document = NSView(frame: NSRect(x: 0, y: 0, width: 400, height: 4000))
+        scroll.documentView = document
+        let probe = ConversationScrollTracking.Probe(onUserScroll: { _ in })
+        probe.followsLatest = false
+        document.addSubview(probe)
+        let window = NSWindow(contentRect: scroll.frame, styleMask: [.borderless], backing: .buffered, defer: false)
+        window.contentView = scroll
+        defer { window.contentView = nil; window.orderOut(nil) }
+        var requests = 0
+        probe.onOlderHistory = { requests += 1 }
+        func move(_ y: CGFloat) {
+            scroll.contentView.scroll(to: NSPoint(x: 0, y: y))
+            NotificationCenter.default.post(name: NSScrollView.didLiveScrollNotification, object: scroll)
+        }
+        move(900)
+        try await Task.sleep(for: .milliseconds(25))
+        #expect(requests == 0)
+        move(450)
+        #expect(requests == 0, "Loading must be deferred out of native event dispatch")
+        try await Task.sleep(for: .milliseconds(25))
+        #expect(requests == 1 && probe.userIsScrolling, "Fetch before scrolling ends")
+        for _ in 0..<10 { move(400) }
+        try await Task.sleep(for: .milliseconds(25))
+        #expect(requests == 1, "Momentum must not duplicate a page request")
+        move(2000) // The preserved anchor moves down after older rows are inserted.
+        try await Task.sleep(for: .milliseconds(25))
+        move(450)
+        try await Task.sleep(for: .milliseconds(25))
+        #expect(requests == 2, "Continuing into another page must load again")
+        move(2000)
+        try await Task.sleep(for: .milliseconds(25))
+        move(400)
+        probe.stopObserving()
+        try await Task.sleep(for: .milliseconds(25))
+        #expect(requests == 2, "Switching conversations cancels queued pagination")
+    }
+}

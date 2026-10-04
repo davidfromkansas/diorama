@@ -3,6 +3,27 @@ import Testing
 @testable import DioramaCore
 
 struct ProjectTests {
+    @Test func newProjectsUseDurableHomeAndExistingFoldersStayInPlace() async throws {
+        #expect(ProjectStorage.newProjectsDirectory == FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent("Diorama", isDirectory: true))
+        let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        defer { try? FileManager.default.removeItem(at: root) }
+        let destination = root.appendingPathComponent("Diorama/new-project")
+        let project = try await ProjectGit.initialize(destination.path, githubIdentity: GitHubIdentity(login: "fixture", id: 1))
+        #expect(project.folderIdentity == destination.resolvingSymlinksInPath().path)
+        let head = try await ProjectCommand.git(project.folder, ["rev-parse", "HEAD"])
+        await #expect(throws: (any Error).self) { try await ProjectGit.initialize(destination.path) }
+        #expect(try await ProjectCommand.git(project.folder, ["rev-parse", "HEAD"]) == head)
+        for provider in ["ChatGPT", "Claude"] {
+            let external = root.appendingPathComponent(provider + "/existing")
+            try FileManager.default.createDirectory(at: external, withIntermediateDirectories: true)
+            let file = external.appendingPathComponent("notes.txt")
+            try Data("keep in place".utf8).write(to: file)
+            let imported = try await ProjectFolder.open(external.path)
+            #expect(imported.folderIdentity == external.resolvingSymlinksInPath().path)
+            #expect(try String(contentsOf: file, encoding: .utf8) == "keep in place")
+        }
+    }
+
     @Test func plainFolderOpensAndListsWithoutChangingFiles() async throws {
         let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
         defer { try? FileManager.default.removeItem(at: root) }

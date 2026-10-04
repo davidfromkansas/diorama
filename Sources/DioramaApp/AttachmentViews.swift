@@ -2,7 +2,7 @@ import SwiftUI
 import DioramaCore
 
 @MainActor
-private func addAttachments(_ urls: [URL], to attachments: inout [ConversationAttachment]) throws {
+func addAttachments(_ urls: [URL], to attachments: inout [ConversationAttachment]) throws {
     var result = attachments
     for url in urls {
         let attachment = try ConversationAttachment(url: url)
@@ -50,25 +50,7 @@ struct AttachmentPicker: View {
                 if !iconOnly && !attachments.isEmpty { Text("\(attachments.count)/20").foregroundStyle(.secondary) }
             }.font(.caption) }
             if showsAttachments && !attachments.isEmpty {
-                ScrollView(.horizontal) {
-                    HStack(spacing: 8) {
-                        ForEach(attachments) { attachment in
-                            HStack(spacing: 8) {
-                                Image(systemName: attachment.kind == .image ? "photo" : "doc")
-                                VStack(alignment: .leading, spacing: 2) {
-                                    Text(attachment.name).lineLimit(1)
-                                    Text(attachment.kind == .image ? "Image" : "Local file reference").font(.caption2).foregroundStyle(.secondary)
-                                }
-                                Button { attachments.removeAll { $0.id == attachment.id } } label: { Image(systemName: "xmark.circle.fill") }.pointingHand()
-                                    .buttonStyle(.plain).disabled(disabled).accessibilityLabel("Remove \(attachment.name)")
-                            }.font(.caption).padding(8).background(.quaternary, in: RoundedRectangle(cornerRadius: 8)).help(attachment.url.path)
-                        }
-                    }
-                }
-                .frame(height: 54)
-                if attachments.contains(where: { $0.kind == .file }) {
-                    Text("Files are shared by path. The agent reads them using its existing tools and permissions.").font(.caption2).foregroundStyle(.secondary)
-                }
+                ComposerAttachmentTray(attachments: $attachments, disabled: disabled)
             }
             if let error { Text(error).font(.caption).foregroundStyle(.orange) }
         }

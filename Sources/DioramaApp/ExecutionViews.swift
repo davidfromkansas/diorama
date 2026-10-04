@@ -361,7 +361,7 @@ struct ExecutionControls: View {
             approvalReview = .inherit; capabilities = []; queueNext = false
         }
         sending = true; retryingWriter = retrying; error = nil
-        let perform: () async -> Void = {
+        let perform: (ApprovalReviewChoice) async -> Void = { attemptReview in
             sending = true
             library.outgoing[message.id]?.state = .pending
             library.outgoing[message.id]?.error = nil
@@ -373,7 +373,7 @@ struct ExecutionControls: View {
                 if crossProvider {
                     guard submittedCapabilities.isEmpty else { throw AppServerFailure("Remove selected provider-specific skills or connectors before switching providers.") }
                     guard !submittedQueue else { throw AppServerFailure("Turn Queue off before switching providers. Existing queued messages will stay paused.") }
-                    let review = submittedReview
+                    let review = attemptReview
                     let target = try await library.switchProvider(from: session, model: submittedModel, permission: review)
                     let outgoing = OutgoingMessage(sessionID: target.sessionID, text: submittedPrompt, attachmentPaths: submittedAttachments.map { $0.url.path }, baselineIDs: [])
                     switchedMessage = outgoing.id
@@ -397,7 +397,7 @@ struct ExecutionControls: View {
                     await library.execution.loadModes()
                     try await library.execution.resumeImported(session)
                     submitting = true
-                    try await library.execution.sendWithGoal(id: session.sessionID, prompt: submittedPrompt, model: submittedModel, effort: submittedEffort, attachments: submittedAttachments, approvalReview: submittedReview, mode: submittedMode, capabilities: submittedCapabilities, goal: submittedGoal)
+                    try await library.execution.sendWithGoal(id: session.sessionID, prompt: submittedPrompt, model: submittedModel, effort: submittedEffort, attachments: submittedAttachments, approvalReview: attemptReview, mode: submittedMode, capabilities: submittedCapabilities, goal: submittedGoal)
                 }
                 if optimistic {
                     library.outgoing[message.id]?.state = .accepted
@@ -416,7 +416,7 @@ struct ExecutionControls: View {
                 } else if optimistic {
                     if error is ExecutionRPCRejection, prompt.isEmpty {
                         prompt = submittedPrompt; attachments = submittedAttachments
-                        approvalReview = library.execution.tasks[session.sessionID]?.reportedPermissionChoice == submittedReview ? .inherit : submittedReview
+                        approvalReview = library.execution.tasks[session.sessionID]?.reportedPermissionChoice == attemptReview ? .inherit : attemptReview
                         library.saveDraft(session.id, text: submittedPrompt, attachments: submittedAttachments)
                     }
                     let uncertain = submitting && !(error is ExecutionRPCRejection)
@@ -430,10 +430,11 @@ struct ExecutionControls: View {
             library.retryOutgoing[message.id] = {
                 guard !sending, library.outgoing[message.id]?.state == .failed else { return }
                 sending = true
-                Task { await perform() }
+                let retryReview = approvalReview
+                Task { await perform(retryReview) }
             }
         }
-        Task { await perform() }
+        Task { await perform(submittedReview) }
     }
 }
 
@@ -508,6 +509,13 @@ struct ConversationComposer: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
+            if let notice = composerPermissionNotice, approvalReview == .inherit {
+                VStack(alignment: .leading, spacing: 6) {
+                    Text(notice).font(.caption).foregroundStyle(.orange).textSelection(.enabled)
+                    permissionControl
+                }.padding(.bottom, 4)
+            }
+
             if creationPresentation {
                 creationComposer
             } else if avatarMessages {
@@ -586,7 +594,6 @@ struct ConversationComposer: View {
 
     private var messagesComposer: some View {
         VStack(alignment: .leading, spacing: 8) {
-            if !attachments.isEmpty { AttachmentPicker(attachments: $attachments, disabled: sending, showsButton: false) }
             let modes = [mode.wrappedValue == "plan" ? "Plan Mode" : nil, goalMode.wrappedValue ? "Goal" : nil, queueMode.wrappedValue ? "Queue" : nil].compactMap { $0 }
             if !modes.isEmpty { Text(modes.joined(separator: " · ")).font(.caption).foregroundStyle(.secondary) }
             HStack(alignment: .bottom, spacing: 10) {
@@ -609,11 +616,16 @@ struct ConversationComposer: View {
                             .onAppear { optionsFocused = true }
                     .avatarPopoverDismissal(isPresented: $showingOptions)
                     }
-                ZStack(alignment: .topLeading) {
+                VStack(alignment: .leading, spacing: 8) {
+                    if !attachments.isEmpty {
+                        ComposerAttachmentTray(attachments: $attachments, disabled: sending).padding(.top, 6)
+                    }
+                    ZStack(alignment: .topLeading) {
                     if prompt.isEmpty { Text("Message").foregroundStyle(.tertiary).padding(.leading, 5).padding(.top, 4).allowsHitTesting(false) }
                     ComposerTextEditor(text: $prompt, attachments: $attachments, error: $pasteError, disabled: false, measuredHeight: $messageHeight) {
                         if !sending && (!active || canSteer) && (!prompt.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || !attachments.isEmpty) { send() }
                     }.frame(height: max(28, min(128, messageHeight)))
+                }
                 }
                 .padding(.horizontal, 10).padding(.vertical, 4)
                 .background(.white, in: RoundedRectangle(cornerRadius: 19))
@@ -625,6 +637,11 @@ struct ConversationComposer: View {
     }
 
     private var switchingPermissionProvider: Bool { !model.isEmpty && model.hasPrefix("claude/") != effectiveModel.hasPrefix("claude/") }
+    private var composerPermissionNotice: String? {
+        guard !switchingPermissionProvider, let threadID, let task = controller.tasks[threadID] else { return nil }
+        if let notice = task.permissionNotice, notice != "Provider permissions differ from your saved choice. Select a mode before sending." { return notice }
+        return nil
+    }
     private var leadingControls: some View {
         let layout = (avatarMessages || creationPresentation) ? AnyLayout(VStackLayout(alignment: .leading, spacing: 12)) : AnyLayout(HStackLayout(spacing: 12))
         return layout {
@@ -728,15 +745,18 @@ final class DioramaApplicationDelegate: NSObject, NSApplicationDelegate {
     var execution: ExecutionController?
     var developmentReload: DevelopmentReload?
     func applicationDidFinishLaunching(_ notification: Notification) { NSWindow.allowsAutomaticWindowTabbing = false }
+    var updates: AppUpdateCoordinator?
     func applicationShouldTerminateAfterLastWindowClosed(_ sender: NSApplication) -> Bool { false }
     func applicationShouldTerminate(_ sender: NSApplication) -> NSApplication.TerminateReply {
+        if updates?.approvedShutdown == true { return .terminateNow }
         if let developmentReload, developmentReload.isRequestingQuit {
             return .terminateNow // Development reload has already completed idle shutdown.
         }
         guard let execution else { return .terminateNow }
-        guard execution.connected || execution.hasUncertainWork else { return .terminateNow }
+
         Task {
             do {
+                try await updates?.cancelForOrdinaryQuit()
                 if try await execution.requiresQuitConfirmation() {
                     let alert = NSAlert(); alert.messageText = "Stop Diorama tasks before quitting?"
                     alert.informativeText = "Closing a window keeps work running. Quitting stops Diorama tasks and their remaining terminal commands. Tasks in other clients are unaffected."

@@ -2,11 +2,14 @@ import SwiftUI
 
 struct DesktopWindow: View {
     let services: LibraryModel
+    let updates: AppUpdateCoordinator
     @State private var library: LibraryModel?
     var body: some View {
         Group {
             if let library { ProjectsRootView(library: library).focusedSceneValue(\.desktopLibrary, library) }
             else { Color.clear }
+        }.overlayPreferenceValue(UpdateComposerAnchor.self) { anchor in
+            AppUpdateOverlay(updates: updates, composer: anchor)
         }.onAppear { if library == nil { library = services.makeWindowModel() } }
     }
 }

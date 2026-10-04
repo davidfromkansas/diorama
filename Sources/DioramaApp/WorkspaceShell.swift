@@ -19,6 +19,17 @@ struct WorkspaceShell<AddActions: View>: View {
                             Button { if let roster = library.spatial.focus.projectID { library.spatial.roster(for: roster).collapsed.toggle() } } label: { Image(systemName: "sidebar.left") }.pointingHand().help("Toggle agents")
                             Button { if let route = navigation.back() { library.navigate(route, record: false) } } label: { Image(systemName: "chevron.left") }.pointingHand().disabled(navigation.backStack.isEmpty)
                             Button { if let route = navigation.forward() { library.navigate(route, record: false) } } label: { Image(systemName: "chevron.right") }.pointingHand().disabled(navigation.forwardStack.isEmpty)
+                            Menu {
+                                ForEach(WorkspaceSceneKind.allCases, id: \.self) { kind in
+                                    Button { library.spatial.sceneKind = kind } label: {
+                                        if library.spatial.sceneKind == kind { Label(kind.rawValue, systemImage: "checkmark") }
+                                        else { Text(kind.rawValue) }
+                                    }
+                                }
+                            } label: {
+                                HStack(spacing: 5) { Text(library.spatial.sceneKind.rawValue); Image(systemName: "chevron.down").font(.caption2) }
+                            }.menuStyle(.borderlessButton).fixedSize().pointingHand()
+                                .accessibilityLabel("Scene: " + library.spatial.sceneKind.rawValue)
                             Spacer()
                             Button { library.showNewTask = true } label: { Label("New agent", systemImage: "plus") }.pointingHand()
                             Button { library.toggleWorkspaceInspector() } label: { Image(systemName: "sidebar.right") }.pointingHand().help("Toggle conversation panel")
@@ -53,7 +64,7 @@ struct WorkspaceShell<AddActions: View>: View {
             }.frame(width: 720, height: 550)
         }
         .onReceive(NotificationCenter.default.publisher(for: NSApplication.willTerminateNotification)) { _ in
-            library.captureProjectPresentation(); navigation.flushPersistence()
+            library.flushDrafts(); library.captureProjectPresentation(); navigation.flushPersistence()
         }
         .onChange(of: library.workspaceDestination) {
             // Existing connection and session-creation flows may set ProjectModel selection.
@@ -74,7 +85,7 @@ struct WorkspaceShell<AddActions: View>: View {
         .onChange(of: library.spatial.inboxExpanded) { library.captureProjectPresentation() }
         .onChange(of: library.spatial.serversExpanded) { library.captureProjectPresentation() }
         .onChange(of: library.viewMode) { library.captureProjectPresentation() }
-        .onDisappear { library.captureProjectPresentation(); navigation.flushPersistence() }
+        .onDisappear { library.flushDrafts(); library.captureProjectPresentation(); navigation.flushPersistence() }
     }
     @State private var folderAvailable = true
     private func checkFolder() {

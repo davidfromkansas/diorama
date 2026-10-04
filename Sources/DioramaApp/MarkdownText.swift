@@ -1,6 +1,25 @@
 import SwiftUI
 import MarkdownUI
 
+/// Parsing is independent of theme and width. Keep a bounded set across row
+/// recreation and project switches; layout still uses the current environment.
+private final class ParsedConversationMarkdown {
+    let content: MarkdownContent
+    init(_ text: String) { content = MarkdownContent(text) }
+}
+private let conversationMarkdownCache: NSCache<NSString, ParsedConversationMarkdown> = {
+    let cache = NSCache<NSString, ParsedConversationMarkdown>()
+    cache.countLimit = 512
+    cache.totalCostLimit = 8 * 1024 * 1024
+    return cache
+}()
+private func conversationMarkdown(_ text: String) -> MarkdownContent {
+    if let value = conversationMarkdownCache.object(forKey: text as NSString) { return value.content }
+    let value = ParsedConversationMarkdown(text)
+    conversationMarkdownCache.setObject(value, forKey: text as NSString, cost: text.utf8.count * 4)
+    return value.content
+}
+
 /// Shared by every transcript category. Raw records remain available alongside the preview.
 struct MarkdownText: View {
     @Environment(\.avatarMessages) private var avatarMessages
@@ -14,7 +33,7 @@ struct MarkdownText: View {
             if literal {
                 CodeBlock(content: text)
             } else {
-                MarkdownContent(text)
+                conversationMarkdown(text)
             }
         }
             .markdownTheme(transcriptTheme)

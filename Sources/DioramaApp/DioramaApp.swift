@@ -41,6 +41,7 @@ final class LibraryModel {
         }
     }
     func flushWindowPresentation() {
+        flushDrafts()
         for item in windowModels { item.value?.captureProjectPresentation(); item.value?.navigation.flushPersistence() }
         navigation.flushPersistence()
     }
@@ -114,16 +115,15 @@ final class LibraryModel {
     }
     var historyRevealTargets: [String: String] = [:]
     var scrollPositions: [String: String] = UserDefaults.standard.dictionary(forKey: "conversationScrollPositions") as? [String: String] ?? [:]
-    private var ownedDrafts: [String: ConversationDraft] = {
-        guard let data = UserDefaults.standard.data(forKey: "conversationDrafts") else { return [:] }
-        return (try? JSONDecoder().decode([String: ConversationDraft].self, from: data)) ?? [:]
-    }()
+    private var ownedDrafts: [String: ConversationDraft] = [:]
+    @ObservationIgnored private let draftPersistence: ConversationDraftPersistence
+    func flushDrafts() { draftPersistence.flush() }
     func saveDraft(_ session: String, text: String, attachments: [ConversationAttachment], mode: String? = nil) {
         var draft = drafts[session] ?? ConversationDraft();
         if let mode { draft.mode = mode }
          draft.text = text; draft.attachments = attachments.map { $0.url.path }
         drafts[session] = draft
-        if let data = try? JSONEncoder().encode(drafts) { UserDefaults.standard.set(data, forKey: "conversationDrafts") }
+        draftPersistence.schedule(drafts)
     }
     private var ownedOutgoing: [String: OutgoingMessage] = {
         guard let data = UserDefaults.standard.data(forKey: "outgoingMessages"),
@@ -145,9 +145,11 @@ final class LibraryModel {
     var developmentReload: DevelopmentReload?
     let execution: ExecutionController
     let observationHookDirectory: URL?
-    init(execution: ExecutionController? = nil, projects: ProjectModel? = nil, conversations: DioramaConversationModel? = nil, navigation: WorkspaceNavigation? = nil, observationHookDirectory: URL? = HookStore.directory, sharedOwner: LibraryModel? = nil) {
+    init(execution: ExecutionController? = nil, projects: ProjectModel? = nil, conversations: DioramaConversationModel? = nil, navigation: WorkspaceNavigation? = nil, observationHookDirectory: URL? = HookStore.directory, sharedOwner: LibraryModel? = nil, draftDefaults: UserDefaults = .standard) {
         _ = AgentCompletionViews.shared
         self.sharedOwner = sharedOwner
+        self.draftPersistence = sharedOwner?.draftPersistence ?? ConversationDraftPersistence(defaults: draftDefaults)
+        self.ownedDrafts = sharedOwner == nil ? draftPersistence.load() : [:]
         self.library = sharedOwner?.library ?? ImportedSessionLibrary(titleCacheURL: ProjectStorage.directory.appendingPathComponent("provider-task-titles.json"))
         self.localDiscovery = sharedOwner?.localDiscovery ?? SessionLibrary()
         self.reviews = sharedOwner?.reviews ?? SessionReviewStore()
@@ -192,17 +194,14 @@ final class LibraryModel {
         return value
     }
     var nativeTranscript: Transcript {
-        var saved = transcriptSessionID == selected?.id ? transcript : Transcript()
-        if showingLiveTurn, let id = selected?.sessionID, let task = execution.tasks[id] {
-            if task.provider == .claude, let started = task.liveStartedAt {
-                let parser = ISO8601DateFormatter(); parser.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
-                saved.entries.removeAll { entry in
-                    guard let value = entry.timestamp, let date = parser.date(from: value) ?? ISO8601DateFormatter().date(from: value) else { return false }
-                    return date >= started
-                }
-            }
-            saved = saved.mergingLive(task.transcript)
-        }
+        let session = selected
+        let savedHistory = transcriptSessionID == session?.id ? transcript : Transcript()
+        let task = session.flatMap { execution.tasks[$0.sessionID] }
+        let useLive = session?.observationOnly != true && task?.attached == true && task?.transcript.entries.isEmpty == false
+        var saved = conversationPresentation.merger(for: session?.id ?? "").merged(
+            saved: savedHistory,
+            live: useLive ? task?.transcript : nil,
+            claudeCutoff: useLive && task?.provider == .claude ? task?.liveStartedAt : nil)
         if let id = selected?.sessionID {
             if outgoing.values.contains(where: { $0.sessionID == id }), let error = saved.error {
                 saved.notice = "Saved history unavailable: " + error; saved.error = nil
@@ -239,7 +238,18 @@ final class LibraryModel {
     private var ownedSessionsRevision: UInt64 = 0
     var sessionsRevision: UInt64 { sharedOwner?.sessionsRevision ?? ownedSessionsRevision }
     private var ownedNotices: [String] = []
-    var selectedID: String?
+    @ObservationIgnored let conversationPresentation = ConversationPresentationCache()
+    var selectedID: String? {
+        didSet {
+            guard selectedID != oldValue else { return }
+            if let id = transcriptSessionID { conversationPresentation.save(transcript, for: id) }
+            if let id = selectedID, let saved = conversationPresentation.transcript(for: id) {
+                transcript = saved; transcriptSessionID = id
+            } else {
+                transcript = Transcript(); transcriptSessionID = nil
+            }
+        }
+    }
     var selectedFolderID: String?
     var query = ""
     private var ownedPinned = Set(UserDefaults.standard.stringArray(forKey: "pinnedConversations") ?? [])
@@ -520,6 +530,7 @@ final class WeakLibraryWindow {
 @main
 struct DioramaApp: App {
     @State private var model = LibraryModel()
+    @State private var updates = AppUpdateCoordinator()
     @AppStorage("agentOnboardingComplete") private var onboarded = false
     @NSApplicationDelegateAdaptor(DioramaApplicationDelegate.self) private var delegate
     var body: some Scene {
@@ -532,9 +543,11 @@ struct DioramaApp: App {
                 WorkspaceSceneView(startInMovementLab: true)
                     .frame(minWidth: 760, minHeight: 600).preferredColorScheme(.dark)
             } else {
-            DesktopWindow(services: model)
+            DesktopWindow(services: model, updates: updates)
                 .onAppear {
                     delegate.execution = model.execution
+                    delegate.updates = updates
+                    updates.configure(library: model)
                     if model.developmentReload == nil { model.developmentReload = DevelopmentReload.configured(library: model) }
                     delegate.developmentReload = model.developmentReload
                     model.syncOwnedSessions()
@@ -549,6 +562,17 @@ struct DioramaApp: App {
         .windowStyle(.hiddenTitleBar)
         .commands {
             DesktopCommands()
+            CommandGroup(after: .appInfo) {
+                Button("Check for Updates…") { updates.check() }
+                if updates.isDevelopment {
+                    Menu("Preview update notification") {
+                        Button("Available") { updates.showPreview(.available) }
+                        Button("Downloading") { updates.showPreview(.downloading) }
+                        Button("Ready to restart") { updates.showPreview(.ready) }
+                        Button("Download failed") { updates.showPreview(.failed) }
+                    }
+                }
+            }
             CommandGroup(after: .newItem) {
                 Button("Refresh sessions") { Task { await model.refresh() } }.pointingHand().keyboardShortcut("r")
                 if let reload = model.developmentReload {
@@ -734,9 +758,9 @@ struct SessionView: View {
             blocked: model.execution.requests.values.contains { $0.threadID == session.sessionID && $0.isBlocking }
         )
     }
-    @State private var rowCache = ConversationRowCache()
+    private var rowCache: ConversationRowCache { model.conversationPresentation.rows(for: session.id) }
     @State private var historyViewport = ConversationHistoryViewport()
-    @State private var historyWindow = 100
+    @State private var historyWindow = ConversationHistoryPage.size
     @State private var historyReadLimit = 300
     @State private var oldestVisibleID: String?
     @State private var loadingOlder = false
@@ -751,6 +775,9 @@ struct SessionView: View {
         guard start > 0 || model.displayedTranscript.earlierContentOmitted else { return }
         loadingOlder = true; olderError = nil
         defer { loadingOlder = false }
+        // Publish the loading state before reading or preparing the next page.
+        await Task.yield()
+        guard !Task.isCancelled, model.selectedID == session.id else { return }
         if start == 0 {
             guard !model.paused else { olderError = "Resume observation to load older history."; return }
             let oldLimit = model.entryLimit
@@ -764,7 +791,7 @@ struct SessionView: View {
         }
         let updated = preparedRows
         let previousStart = before.indices.contains(start) ? updated.firstIndex { $0.id == before[start].id } : nil
-        let newStart = max(0, (previousStart ?? updated.count - historyWindow) - 100)
+        let newStart = max(0, (previousStart ?? updated.count - historyWindow) - ConversationHistoryPage.size)
         guard let first = updated.dropFirst(newStart).first,
               first.id != before.dropFirst(start).first?.id else {
             olderError = "No additional history is available from this source."; return
@@ -779,21 +806,24 @@ struct SessionView: View {
     }
     private func saveHistoryBookmark() {
         historyViewport.capture()
-        model.navigation.projectTabs.conversationBookmarks[session.id] = ConversationViewBookmark(
+        let bookmark = ConversationViewBookmark(
             followsLatest: followsLatest, anchor: historyViewport.checkpoint,
             oldestID: oldestVisibleID, window: historyWindow, entryLimit: historyReadLimit)
+        if model.navigation.projectTabs.conversationBookmarks[session.id] != bookmark {
+            model.navigation.projectTabs.conversationBookmarks[session.id] = bookmark
+        }
     }
     private var failureReview: (key: String, label: String)? {
         guard let agent = model.workspaceAgents(session).first(where: \.isMain),
               [.failed, .stopped].contains(agent.status), let key = agent.completionKey else { return nil }
         return (key, agent.status == .failed ? "This turn failed." : "This turn was interrupted.")
     }
-    private var completionVisibilityKeys: [String: String] {
+    private func completionVisibilityKeys(entries: [Entry]) -> [String: String] {
         let tracker = AgentCompletionViews.shared
         let sources = model.conversations.record(session.id)?.segments
             ?? [ConversationSegment(nativeID: session.sessionID, provider: session.provider, model: "")]
         var last: [String: String] = [:]
-        for entry in model.displayedTranscript.entries where entry.claude?.agentID == nil {
+        for entry in entries where entry.claude?.agentID == nil {
             guard entry.kind == "Assistant" || entry.kind == "Proposed plan" || entry.image != nil || !(entry.tool?.outputs.isEmpty ?? true) || ConversationHistory.needsAttention(entry),
                   let turn = entry.completionMessageID ?? entry.turnID else { continue }
             let matches = sources.compactMap { source -> String? in
@@ -905,7 +935,14 @@ struct SessionView: View {
     }
 
     private var conversationContent: some View {
-        VStack(alignment: .leading, spacing: 0) {
+        // Capture derived history outside ScrollViewReader's deferred layout closure.
+        // Lazy row discovery re-evaluates that closure during native scrolling.
+        let transcript = model.displayedTranscript
+        let prepared = rowCache.prepare(transcript.entries, mode: displayMode)
+        let completionKeys = completionVisibilityKeys(entries: transcript.entries)
+        let indicator = workingIndicator
+        let failure = failureReview
+        return VStack(alignment: .leading, spacing: 0) {
             if !avatarMessages {
             VStack(alignment: .leading, spacing: 10) {
                 HStack(alignment: .top, spacing: 12) {
@@ -936,7 +973,7 @@ struct SessionView: View {
                                     Text("Last observer read: " + observation.synchronizedAt.formatted())
                                     Text("Last successful synchronization: " + (observation.lastSuccessfulSynchronization?.formatted() ?? "Not yet synchronized"))
                                 }
-                                Text("\(model.displayedTranscript.source) · \(model.displayedTranscript.malformed) unrecognized records")
+                                Text("\(transcript.source) · \(transcript.malformed) unrecognized records")
                                 Text("Recorded status may be stale. Claude Code Desktop conversations are view-only.").foregroundStyle(.secondary)
                                 if let url = session.url { Button("Reveal transcript") { NSWorkspace.shared.activateFileViewerSelecting([url]) }.pointingHand() }
                             }.font(.caption).textSelection(.enabled).padding(20).frame(width: 380)
@@ -988,38 +1025,36 @@ struct SessionView: View {
                             .id(session.id)
                     } else if effectiveMode == .activity {
                         SessionActivityPanel(session: session, library: model, state: activityState, close: { model.viewMode = .conversation })
-                    } else if model.historyIsLoading(session) && model.displayedTranscript.entries.isEmpty {
+                    } else if model.historyIsLoading(session) && transcript.entries.isEmpty {
                         ConversationHistoryLoader().frame(maxWidth: .infinity, maxHeight: .infinity)
                     } else if model.paused && model.transcriptSessionID != session.id {
                         ContentUnavailableView("Observation paused", systemImage: "pause.circle", description: Text("Resume observation to load conversation history."))
-                    } else if !model.historyIsLoading(session), let error = model.displayedTranscript.error {
+                    } else if !model.historyIsLoading(session), let error = transcript.error {
                         ContentUnavailableView("Transcript unavailable", systemImage: "exclamationmark.triangle", description: Text(error))
                     } else {
                         ScrollViewReader { scroll in
-                        ScrollView {
-                            LazyVStack(alignment: .leading, spacing: 18) {
+                        List {
+                            Group {
                                 if model.historyIsLoading(session) {
                                     ConversationHistoryLoader(compact: true)
-                                } else if let notice = model.displayedTranscript.notice {
+                                } else if let notice = transcript.notice {
                                     Text(notice).font(.caption).foregroundStyle(.orange).textSelection(.enabled)
                                 }
-                                if !model.displayedTranscript.unrecognizedTypes.isEmpty {
+                                if !transcript.unrecognizedTypes.isEmpty {
                                     DisclosureGroup {
-                                        ForEach(model.displayedTranscript.unrecognizedTypes.keys.sorted(), id: \.self) { type in
-                                            Text("\(type): \(model.displayedTranscript.unrecognizedTypes[type] ?? 0)").font(.caption.monospaced())
+                                        ForEach(transcript.unrecognizedTypes.keys.sorted(), id: \.self) { type in
+                                            Text("\(type): \(transcript.unrecognizedTypes[type] ?? 0)").font(.caption.monospaced())
                                         }
                                     } label: { Text("Some source record types are not displayed").disclosurePointingHand() }.font(.caption).foregroundStyle(.secondary)
                                 }
-                                if model.displayedTranscript.entries.isEmpty { Text(model.execution.tasks[session.sessionID]?.phase.active == true ? "Your conversation will appear here." : "No messages yet.").foregroundStyle(.secondary) }
-                                let prepared = preparedRows
-                                let completionKeys = completionVisibilityKeys
+                                if transcript.entries.isEmpty { Text(model.execution.tasks[session.sessionID]?.phase.active == true ? "Your conversation will appear here." : "No messages yet.").foregroundStyle(.secondary) }
                                 let start = oldestVisibleID.flatMap { id in prepared.firstIndex { $0.id == id } } ?? max(0, prepared.count - historyWindow)
-                                if start > 0 || model.displayedTranscript.earlierContentOmitted {
+                                if start > 0 || transcript.earlierContentOmitted {
                                     HStack {
-                                        if loadingOlder { ProgressView().controlSize(.small); Text("Loading older messages…") }
-                                        else { Button("Load older messages") { olderRequest += 1 }.pointingHand() }
+                                        if loadingOlder { OlderHistoryLoader() }
+                                        else if olderError != nil { Button("Retry") { olderError = nil; olderRequest += 1 }.pointingHand() }
                                         if let olderError { Text(olderError).foregroundStyle(.secondary) }
-                                    }.font(.caption).id("older-history")
+                                    }.font(.caption).frame(minHeight: 24).frame(maxWidth: .infinity).id("older-history")
                                 }
                                 ForEach(Array(prepared.dropFirst(start))) { item in
                                     let row = item.row
@@ -1033,37 +1068,41 @@ struct SessionView: View {
                                     } else if let entry = row.entries.first {
                                         historyEntry(entry).environment(\.avatarBubbleTail, item.tail)
                                     }
-                                    }.background(ConversationHistoryRowAnchor(id: item.id, viewport: historyViewport))
+                                    }.id(item.id)
+                                    .background(ConversationHistoryRowAnchor(id: item.id, viewport: historyViewport))
                                     .background(AgentCompletionVisibility(key: row.entries.last.flatMap { completionKeys[$0.id] }, active: model.windowIsActive && model.selectedID == session.id && effectiveMode == .conversation))
                                 }
-                                if let failure = failureReview {
+                                if let failure {
                                     Text(failure.label).font(.callout).foregroundStyle(.secondary)
                                         .background(AgentCompletionVisibility(key: failure.key, active: model.windowIsActive && model.selectedID == session.id))
                                 }
-                                if let workingIndicator {
-                                    ConversationWorkingIndicator(state: workingIndicator, active: effectiveMode == .conversation)
+                                if let indicator {
+                                    ConversationWorkingIndicator(state: indicator, active: effectiveMode == .conversation)
                                 }
                                 Color.clear.frame(height: 1).id("conversation-bottom")
-                            }.padding(24).frame(maxWidth: 800, alignment: .leading).frame(maxWidth: .infinity)
-                                .background(ConversationScrollTracking(followsLatest: followsLatest, revealRevision: bottomRevealRevision, onOlderHistory: { if !loadingOlder && olderError == nil { olderRequest += 1 } }, onScrollBegan: { historyViewport.cancel(); if oldestVisibleID == nil { oldestVisibleID = preparedRows.suffix(historyWindow).first?.id } }) { followsLatest = $0; saveHistoryBookmark() })
-                        }.frame(minHeight: 0, maxHeight: .infinity).layoutPriority(-1)
+                            }
+                            .listRowSeparator(.hidden)
+                            .listRowBackground(Color.clear)
+                            .listRowInsets(EdgeInsets(top: 9, leading: 24, bottom: 9, trailing: 24))
+                        }
+                        .listStyle(.plain)
+                        .scrollContentBackground(.hidden)
+                        .environment(\.defaultMinListRowHeight, 1)
+                        .background(ConversationScrollTracking(followsLatest: followsLatest, revealRevision: bottomRevealRevision, onOlderHistory: { if !loadingOlder && olderError == nil { olderRequest += 1 } }, onScrollBegan: { historyViewport.cancel(); if oldestVisibleID == nil { oldestVisibleID = preparedRows.suffix(historyWindow).first?.id } }) { followsLatest = $0; saveHistoryBookmark() })
+                        .frame(minHeight: 0, maxHeight: .infinity).layoutPriority(-1)
                         .task(id: olderRequest) { if olderRequest > 0 { await loadOlder(scroll: scroll) } }
-                        .onChange(of: session.id) { historyWindow = 100; oldestVisibleID = nil; olderError = nil; historyViewport.cancel() }
-                        .onChange(of: historyMode) { historyWindow = 100; oldestVisibleID = nil; historyViewport.cancel() }
+                        .onChange(of: session.id) { historyWindow = ConversationHistoryPage.size; oldestVisibleID = nil; olderError = nil; historyViewport.cancel() }
+                        .onChange(of: historyMode) { historyWindow = ConversationHistoryPage.size; oldestVisibleID = nil; historyViewport.cancel() }
                         .onChange(of: model.execution.tasks[session.sessionID]?.transcript) { model.reconcileOutgoing(session.sessionID) }
                         .onAppear {
-                            let saved = model.navigation.projectTabs.conversationBookmarks[session.id]
-                            followsLatest = saved?.followsLatest ?? true
-                            historyReadLimit = saved?.entryLimit ?? model.entryLimit
-                            historyWindow = saved?.window ?? 100
-                            oldestVisibleID = saved?.oldestID
-                            if !followsLatest, let anchor = saved?.anchor {
-                                historyViewport.checkpoint = anchor
-                                DispatchQueue.main.async {
-                                    scroll.scrollTo(anchor.id, anchor: .top)
-                                    historyViewport.restore()
-                                }
-                            } else { bottomRevealRevision += 1 }
+                            // Reopening a conversation always starts with a small recent page.
+                            // Older pages are requested only while the reader scrolls back.
+                            followsLatest = true
+                            historyReadLimit = model.entryLimit
+                            historyWindow = ConversationHistoryPage.size
+                            oldestVisibleID = nil
+                            historyViewport.cancel()
+                            bottomRevealRevision += 1
                         }
                         .onDisappear { saveHistoryBookmark() }
                         .task(id: bottomRevealRevision) {
@@ -1091,13 +1130,14 @@ struct SessionView: View {
                             guard let value else { return }
                             followsLatest = false
                             historyWindow = preparedRows.count; oldestVisibleID = preparedRows.first?.id
-                            let target = ConversationHistory.anchor(value, in: historyRows, original: model.displayedTranscript.entries) ?? value
+                            let target = ConversationHistory.anchor(value, in: historyRows, original: transcript.entries) ?? value
                             scroll.scrollTo(target, anchor: .top)
                         }
                         }
                     }
                     Divider()
                     ExecutionControls(library: model, session: session).id(session.id)
+                        .anchorPreference(key: UpdateComposerAnchor.self, value: .bounds) { $0 }
                         .environment(\.avatarConversationTools, AnyView(avatarTools))
                         .frame(maxWidth: 800).frame(maxWidth: .infinity)
                 }
@@ -1182,37 +1222,104 @@ struct EntryView: View {
     }
 }
 
+enum ConnectionTab: String, CaseIterable {
+    case codex = "Codex", claude = "Claude Code", desktop = "Claude Desktop"
+    var provider: Provider { self == .codex ? .codex : .claude }
+    var icon: String { self == .desktop ? "desktopcomputer" : "terminal" }
+}
+
 struct ConnectionsView: View {
     @Bindable var model: LibraryModel
     @Environment(\.dismiss) private var dismiss
+    @State private var selection: ConnectionTab = .codex
     var body: some View {
-        ScrollView {
-        VStack(alignment: .leading, spacing: 16) {
-            Text("Local connections").font(.title2.weight(.semibold))
-            Text(model.health + " · current activity unverified").font(.caption)
-            if let checked = model.scannedAt { Text("Last check: " + checked.formatted()).font(.caption) }
-            if let history = model.notices.first(where: { $0.hasPrefix("Codex history:") }) {
-                Text(history).font(.callout).textSelection(.enabled)
-            }
-            Text("Codex execution: " + (model.execution.connected ? "Connected" : "Disconnected")).font(.headline)
-            Text("New tasks run directly in your chosen folder. Closing a window keeps work running; quitting requires confirmed interruption of active Diorama tasks. Eligible imported conversations can continue here after the other client releases them.").font(.caption)
-            if let error = model.execution.error { Text(error).font(.caption).foregroundStyle(.orange) }
-            HookConnections(model: model)
-            Text("Diorama reads Codex history through a local App Server with explicit local-file fallbacks. Claude Code and activity use local records. History observation never starts tasks. Execution occurs only through explicit new-task or owned-task controls. App Server may maintain its own runtime metadata.").foregroundStyle(.secondary)
-            ForEach(StorageRoot.defaults(), id: \.url) { root in
-                VStack(alignment: .leading, spacing: 4) {
-                    Text(root.provider.rawValue + (root.archived ? " · Archived" : "")).font(.headline)
-                    Text(root.url.path).font(.system(size: 11, design: .monospaced)).textSelection(.enabled)
+        VStack(spacing: 0) {
+            VStack(alignment: .leading, spacing: 20) {
+                HStack {
+                    Text("Connections").font(.title2.weight(.semibold))
+                    Spacer()
+                    Button { dismiss() } label: { Image(systemName: "xmark").frame(width: 24, height: 24) }
+                        .pointingHand().buttonStyle(HoverButtonStyle()).accessibilityLabel("Close connections")
+                        .keyboardShortcut(.cancelAction)
                 }
+                HStack(spacing: 20) {
+                    ForEach(ConnectionTab.allCases, id: \.self) { tab in
+                        Button { selection = tab } label: {
+                            Label(tab.rawValue, systemImage: tab.icon)
+                                .font(.system(size: 13, weight: selection == tab ? .semibold : .regular))
+                                .foregroundStyle(selection == tab ? Color.primary : Color.secondary)
+                                .padding(.vertical, 10)
+                                .overlay(alignment: .bottom) {
+                                    Rectangle().fill(selection == tab ? Color.accentColor : .clear).frame(height: 2)
+                                }
+                        }.pointingHand().buttonStyle(HoverButtonStyle(inset: 0))
+                            .accessibilityAddTraits(selection == tab ? .isSelected : [])
+                    }
+                    Spacer(minLength: 0)
+                }
+            }.padding(.horizontal, 24).padding(.top, 24)
+            Divider()
+            ScrollView {
+                VStack(alignment: .leading, spacing: 24) {
+                    if selection == .codex {
+                        VStack(alignment: .leading, spacing: 10) {
+                            HStack {
+                                Text("Agent execution").font(.headline)
+                                Spacer()
+                                Label(model.execution.connected ? "Connected" : "Disconnected", systemImage: model.execution.connected ? "checkmark.circle.fill" : "minus.circle")
+                                    .font(.callout).foregroundStyle(model.execution.connected ? Color.green : Color.secondary)
+                            }
+                            Text("Connection used to run agent tasks in Diorama.").font(.callout).foregroundStyle(.secondary)
+                            if let error = model.execution.error { Text(error).font(.callout).foregroundStyle(.orange).textSelection(.enabled) }
+                        }
+                        Divider()
+                    } else if selection == .desktop {
+                        Label("View-only integration", systemImage: "eye").font(.headline)
+                    } else {
+                        VStack(alignment: .leading, spacing: 8) {
+                            Text("Local activity & history").font(.headline)
+                            Text("Observe Claude Code sessions from local records. Activity reporting is configured below.")
+                                .font(.callout).foregroundStyle(.secondary)
+                        }
+                    }
+                    HookConnections(model: model, selection: selection)
+                }.padding(24).frame(maxWidth: .infinity, alignment: .leading)
             }
             Divider()
-            Text("Claude Chat / Cowork: not connected").font(.headline)
-            Text("Local Claude Code Desktop history is observed through session metadata and transcripts. Chat, Cowork, cloud and SSH sessions are outside this integration.").font(.callout).foregroundStyle(.secondary)
-            if !model.notices.isEmpty {
-                ScrollView { Text(model.notices.joined(separator: "\n")).font(.caption).textSelection(.enabled).frame(maxWidth: .infinity, alignment: .leading) }.frame(maxHeight: 130)
+            HStack {
+                Text("Local to this Mac").font(.caption).foregroundStyle(.secondary)
+                Spacer()
+                Button("Done") { dismiss() }.pointingHand().keyboardShortcut(.defaultAction)
+            }.padding(.horizontal, 24).padding(.vertical, 16)
+        }.frame(width: 680, height: 640)
+            .background(Color(nsColor: .windowBackgroundColor))
+    }
+}
+
+struct ConnectionDiagnostics: View {
+    @Bindable var model: LibraryModel
+    let selection: ConnectionTab
+    var body: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            Text(model.health + " · current activity unverified")
+            if let checked = model.scannedAt { Text("Last check: " + checked.formatted()) }
+            if selection == .codex {
+                if let history = model.notices.first(where: { $0.hasPrefix("Codex history:") }) { Text(history) }
+                Text("New tasks run directly in your chosen folder. Closing a window keeps work running; quitting requires confirmed interruption of active Diorama tasks. Eligible imported conversations can continue here after the other client releases them.")
             }
-            HStack { Spacer(); Button("Done") { dismiss() }.pointingHand().keyboardShortcut(.defaultAction) }
-        }.padding(28)
-        }.frame(width: 680, height: 740)
+            Text("History observation never starts tasks. Execution occurs only through explicit new-task or owned-task controls.")
+            Text("Diorama reads Codex history through a local App Server with explicit local-file fallbacks. Claude Code and activity use local records. App Server may maintain its own runtime metadata.")
+            ForEach(StorageRoot.defaults().filter { $0.provider == selection.provider }, id: \.url) { root in
+                VStack(alignment: .leading, spacing: 4) {
+                    Text(root.provider.rawValue + (root.archived ? " · Archived" : "")).fontWeight(.medium)
+                    Text(root.url.path).font(.system(.caption, design: .monospaced))
+                }
+            }
+            if selection == .desktop {
+                Text("Claude Chat / Cowork: not connected")
+                Text("Local Claude Code Desktop history is observed through session metadata and transcripts. Chat, Cowork, cloud and SSH sessions are outside this integration.")
+            }
+            if !model.notices.isEmpty { Text(model.notices.joined(separator: "\n")) }
+        }.font(.caption).foregroundStyle(.secondary).textSelection(.enabled)
     }
 }

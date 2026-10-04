@@ -53,23 +53,20 @@ extension ExecutionController {
         let moved = task.permissionFolder.map { URL(fileURLWithPath: $0).standardizedFileURL != URL(fileURLWithPath: task.folder).standardizedFileURL } ?? false
         if moved && choice == .inherit { throw ExecutionRPCRejection("The working folder changed. Choose permissions for the new workspace before sending.") }
         let selected = model.isEmpty ? task.model : model
-        let desired = choice == .inherit ? task.permissionPreference : choice
+        // Inherit keeps live provider settings. A bookmark is not a request to change them.
+        // Leaving Claude Plan Mode retains the existing explicit execution-mode transition.
+        let leavingClaudePlan = task.provider == .claude && task.approvalPolicy.string == "plan" && mode != "plan"
+        let desired = choice == .inherit ? (leavingClaudePlan ? task.permissionPreference : nil) : choice
         if let desired, let reason = permissionUnavailable(desired, model: selected) { throw ExecutionRPCRejection(reason) }
-        if task.provider == .claude, desired == .autoReview,
-           models.first(where: { $0.id == selected })?.supportsAutoMode == false {
-            throw ExecutionRPCRejection("Automatic review is unavailable for this Claude model. Choose Accept edits or Ask for approval. No message was sent.")
-        }
-        if choice == .inherit, let desired, let effective = task.reportedPermissionChoice,
-           effective != desired, task.approvalPolicy.string != "plan" {
-            tasks[id]?.permissionNotice = "Provider permissions differ from your saved choice. Select a mode before sending."
-            throw ExecutionRPCRejection(tasks[id]!.permissionNotice!)
-        }
         guard let desired else {
             if task.provider == .claude, task.approvalPolicy.string == "plan", mode != "plan" {
                 throw ExecutionRPCRejection("Choose execution permissions before leaving this imported Plan Mode session.")
             }
             guard task.approvalPolicy != .null, task.provider == .claude || task.sandbox != .null || task.activePermissionProfile != .null else {
                 throw ExecutionRPCRejection("Permissions unconfirmed. Choose a permission mode before sending.")
+            }
+            if task.permissionNotice == "Provider permissions differ from your saved choice. Select a mode before sending." {
+                tasks[id]?.permissionNotice = nil
             }
             return // Preserve known custom settings without replacing them with a preset.
         }

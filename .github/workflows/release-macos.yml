@@ -4,6 +4,12 @@ on:
   push:
     tags: ['v*']
   workflow_dispatch:
+    inputs:
+      channel:
+        description: Release channel
+        type: choice
+        options: [prerelease, stable]
+        default: prerelease
 
 permissions:
   contents: read
@@ -19,7 +25,7 @@ jobs:
     timeout-minutes: 60
     env:
       RELEASE_REPOSITORY: davidfromkansas/diorama-releases
-      RELEASE_PRERELEASE: 'true'
+      RELEASE_PRERELEASE: ${{ inputs.channel != 'stable' }}
       DEVELOPER_DIR: /Applications/Xcode_26.2.app/Contents/Developer
     steps:
       - uses: actions/checkout@v4
@@ -65,9 +71,11 @@ jobs:
           APPLE_API_KEY_BASE64: ${{ secrets.APPLE_API_KEY_BASE64 }}
           APPLE_API_KEY_ID: ${{ secrets.APPLE_API_KEY_ID }}
           APPLE_API_ISSUER: ${{ secrets.APPLE_API_ISSUER }}
+          DIORAMA_UPDATE_PRIVATE_KEY: ${{ secrets.DIORAMA_UPDATE_PRIVATE_KEY }}
+          DIORAMA_UPDATE_PUBLIC_KEY: ${{ vars.DIORAMA_UPDATE_PUBLIC_KEY }}
         run: |
           set -euo pipefail
-          for name in MAC_CSC_LINK MAC_CSC_KEY_PASSWORD APPLE_API_KEY_BASE64 APPLE_API_KEY_ID APPLE_API_ISSUER; do
+          for name in MAC_CSC_LINK MAC_CSC_KEY_PASSWORD APPLE_API_KEY_BASE64 APPLE_API_KEY_ID APPLE_API_ISSUER DIORAMA_UPDATE_PRIVATE_KEY DIORAMA_UPDATE_PUBLIC_KEY; do
             if [[ -z "${!name}" ]]; then echo "::error::Missing GitHub secret: $name"; exit 1; fi
           done
       - name: Run Swift regression tests
@@ -76,6 +84,10 @@ jobs:
           # Native UI suites share AppKit/WebKit process state; avoid CI contention.
           # Optimize timing-sensitive tests; a PTY streams each test result even on a stall.
           script -q /dev/null swift test -c release --no-parallel --scratch-path "$RUNNER_TEMP/diorama-build" 2>&1 | tee "$RUNNER_TEMP/swift-tests.log"
+      - name: Validate update feed contract
+        run: |
+          python3 scripts/test-update-feed.py
+          swift scripts/verify-update-signature.swift --self-test
       - name: Run Claude helper tests
         run: |
           set -o pipefail
@@ -83,6 +95,7 @@ jobs:
           npm test --prefix helpers/claude 2>&1 | tee "$RUNNER_TEMP/helper-tests.log"
       - name: Build app
         env:
+          DIORAMA_UPDATE_PUBLIC_KEY: ${{ vars.DIORAMA_UPDATE_PUBLIC_KEY }}
           DIORAMA_BUILD_PATH: ${{ runner.temp }}/diorama-build
           DIORAMA_APP_PATH: ${{ runner.temp }}/output/Diorama.app
         run: |
@@ -104,6 +117,12 @@ jobs:
           bash scripts/package-release.sh "$RUNNER_TEMP/output/Diorama.app" "$RUNNER_TEMP/output" 2>&1 | tee "$RUNNER_TEMP/package.log"
       - name: Verify packaged installer
         run: bash scripts/verify-release.sh "$RUNNER_TEMP/output/Diorama-${{ steps.version.outputs.version }}-${{ steps.version.outputs.build }}-arm64.dmg"
+      - name: Generate signed update feed
+        env:
+          DIORAMA_UPDATE_PRIVATE_KEY: ${{ secrets.DIORAMA_UPDATE_PRIVATE_KEY }}
+          RELEASE_VERSION: ${{ steps.version.outputs.version }}
+          RELEASE_BUILD: ${{ steps.version.outputs.build }}
+        run: bash scripts/generate-update-feed.sh "$RUNNER_TEMP/output" "$RUNNER_TEMP/diorama-build/artifacts/sparkle/Sparkle/bin"
       - name: Publish verified download
         env:
           GH_TOKEN: ${{ secrets.RELEASES_GITHUB_TOKEN }}

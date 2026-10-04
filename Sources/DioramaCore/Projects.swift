@@ -77,6 +77,8 @@ public struct DioramaProject: Codable, Identifiable, Equatable, Sendable {
 }
 
 public enum ProjectStorage {
+    /// New repositories live here; imported projects retain their original locations.
+    public static var newProjectsDirectory: URL { FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent("Diorama", isDirectory: true) }
     public static var directory: URL { FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent("Library/Application Support/Diorama/Projects", isDirectory: true) }
     public static var file: URL { directory.appendingPathComponent("projects.json") }
     public static func load(from url: URL = file) throws -> [DioramaProject] {

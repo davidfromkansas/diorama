@@ -22,7 +22,6 @@ struct NewAgentModal: View {
                 }.id(projectID)
             } else {
                 HStack { projectPicker; Spacer(); closeButton }.padding(20)
-                Divider()
                 ContentUnavailableView("Choose a Git project", systemImage: "folder", description: Text("Starting an agent requires a Git repository with at least one commit."))
                     .frame(height: 260)
             }
@@ -31,8 +30,8 @@ struct NewAgentModal: View {
         .environment(\.avatarPopoverDismissals, popovers)
         .environment(\.opaqueMessagesPopovers, true)
         .presentationBackground(Color.white).preferredColorScheme(.light)
-        .interactiveDismissDisabled(busy)
-        .onExitCommand { if !popovers.dismissTop(), !busy { dismiss() } }
+        .background(NewAgentOutsideDismissal { dismiss() })
+        .onExitCommand { if !popovers.dismissTop() { dismiss() } }
     }
     private var projectPicker: some View {
                 Button { selectingProject.toggle() } label: {
@@ -73,6 +72,37 @@ struct NewAgentModal: View {
                     Image(systemName: "xmark").font(.system(size: 12, weight: .semibold))
                         .foregroundStyle(.secondary).frame(width: 28, height: 28)
                         .background(Color.black.opacity(0.05), in: Circle())
-                }.pointingHand().buttonStyle(HoverButtonStyle(inset: 0, radius: 14)).accessibilityLabel("Close new conversation").disabled(busy)
+                }.pointingHand().buttonStyle(HoverButtonStyle(inset: 0, radius: 14)).accessibilityLabel("Close new conversation")
+    }
+}
+
+/// Sheets do not dismiss on backdrop clicks by default. Consume the click so
+/// dismissing this sheet cannot also activate the workspace underneath it.
+struct NewAgentOutsideDismissal: NSViewRepresentable {
+    var dismiss: () -> Void
+    func makeNSView(context: Context) -> Probe { Probe() }
+    func updateNSView(_ view: Probe, context: Context) { view.dismiss = dismiss }
+    static func dismantleNSView(_ view: Probe, coordinator: ()) { view.stop() }
+
+    final class Probe: NSView {
+        var dismiss: () -> Void = {}
+        private var monitor: Any?
+        override func hitTest(_ point: NSPoint) -> NSView? { nil }
+        override func viewDidMoveToWindow() {
+            super.viewDidMoveToWindow()
+            stop()
+            guard window != nil else { return }
+            monitor = NSEvent.addLocalMonitorForEvents(matching: .leftMouseDown) { [weak self] event in
+                guard let self, let sheet = self.window, let parent = sheet.sheetParent,
+                      event.window === parent, sheet.attachedSheet == nil,
+                      !(sheet.childWindows ?? []).contains(where: { $0.isVisible }),
+                      !sheet.frame.contains(parent.convertPoint(toScreen: event.locationInWindow)) else { return event }
+                self.dismiss()
+                return nil
+            }
+        }
+        func stop() {
+            if let monitor { NSEvent.removeMonitor(monitor); self.monitor = nil }
+        }
     }
 }

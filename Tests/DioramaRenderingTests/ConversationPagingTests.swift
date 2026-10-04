@@ -3,22 +3,22 @@ import Testing
 @testable import DioramaApp
 @testable import DioramaCore
 
-@MainActor @Observable private final class PagingFixture { var start = 100 }
+@MainActor @Observable private final class PagingFixture { var start = 150 }
 
 @MainActor private struct PagingFixtureView: View {
     @Bindable var fixture: PagingFixture
     let viewport: ConversationHistoryViewport
     var body: some View {
         ScrollViewReader { proxy in
-        ScrollView {
-            LazyVStack(spacing: 0) {
+        List {
+            Group {
                 ForEach(fixture.start..<200, id: \.self) { index in
                     Text("Message \(index)").frame(height: 40)
                         .background(ConversationHistoryRowAnchor(id: "row-\(index)", viewport: viewport))
                         .id("row-\(index)")
                 }
-            }
-        }.onChange(of: fixture.start) {
+            }.listRowInsets(EdgeInsets()).listRowSeparator(.hidden)
+        }.listStyle(.plain).environment(\.defaultMinListRowHeight, 1).onChange(of: fixture.start) {
             Task { @MainActor in
                 await Task.yield()
                 if let id = viewport.anchorID { proxy.scrollTo(id, anchor: .top) }
@@ -61,8 +61,12 @@ import Testing
         scroll.contentView.scroll(to: NSPoint(x: 0, y: 120))
         let captured = viewport.capture()
         #expect(captured != nil, "Must capture a visible row")
-        fixture.start = 0
+        let before = try #require(viewport.checkpoint)
+        fixture.start -= ConversationHistoryPage.size
         try await settle()
-        #expect(abs(scroll.contentView.bounds.minY - 4120) < 3, "Document: \(scroll.documentView!.bounds), anchor: \(captured ?? "none")")
+        viewport.capture()
+        let after = try #require(viewport.checkpoint)
+        #expect(after.id == before.id, "The same message must stay at the top after prepending")
+        #expect(abs(after.offset - before.offset) < 3, "Native List estimates offscreen heights; compare the visible message offset, not total document height")
     }
 }

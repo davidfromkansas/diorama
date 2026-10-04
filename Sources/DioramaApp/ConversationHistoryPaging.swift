@@ -1,5 +1,9 @@
 import SwiftUI
 
+enum ConversationHistoryPage {
+    static let size = 50
+}
+
 struct ConversationViewportAnchor: Codable, Equatable { var id: String; var offset: Double }
 
 /// Native row coordinates preserve the same text under the reader when rows prepend.

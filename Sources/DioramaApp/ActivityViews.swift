@@ -115,6 +115,7 @@ struct AttentionInbox: View {
 
 struct HookConnections: View {
     @Bindable var model: LibraryModel
+    var selection: ConnectionTab = .codex
     @State private var setup: Provider?
     @State private var removing = false
     @State private var desktopSetup = false
@@ -142,52 +143,84 @@ struct HookConnections: View {
         let capability = HookCapability.desktopProfile(version: version)
         let sessions = model.sessions.filter { $0.origin == .claudeDesktop }
         let installed = HookConfiguration(provider: .claude).installed()
-        return VStack(alignment: .leading, spacing: 4) {
-            Text("Claude Code Desktop · " + version).font(.headline)
-            Text("\(sessions.count) session records · \(sessions.filter { $0.url != nil }.count) with readable history · view-only").font(.caption)
-            Text(installed ? "Reporter configured · delivery depends on workspace trust" : "Activity reporting not configured · readable history still refreshes").font(.caption)
-            if let last = sessions.compactMap(\.lastObservedHook).max() {
-                Text("Last Desktop session hook: " + last.formatted()).font(.caption)
-            } else {
-                Text("No Desktop session hook observed yet").font(.caption)
+        return VStack(alignment: .leading, spacing: 16) {
+            connectionRow("Version", value: version)
+            connectionRow("History", value: "\(sessions.count) sessions · \(sessions.filter { $0.url != nil }.count) readable")
+            Divider()
+            Text("Activity reporting").font(.headline)
+            Text(installed ? "Reporter configured · delivery unverified" : "Not configured")
+                .font(.callout).foregroundStyle(.secondary)
+            if !capability.canInstall {
+                Text("Setup is unavailable for this version. Readable history remains available.").font(.callout).foregroundStyle(.secondary)
             }
-            Text(capability.explanation).font(.caption).foregroundStyle(.secondary)
-            Text("Chat, Cowork, cloud and SSH sessions are not connected.").font(.caption).foregroundStyle(.secondary)
-            HStack {
-                Button("Enable Desktop activity reporting…") { prepare(.claude, remove: false, desktop: true) }.pointingHand().disabled(!capability.canInstall)
-                if installed { Button("Remove shared Claude reporter hooks…") { prepare(.claude, remove: true, desktop: true) }.pointingHand() }
-            }.font(.caption)
+            Button("Enable Desktop activity reporting…") { prepare(.claude, remove: false, desktop: true) }
+                .pointingHand().disabled(!capability.canInstall)
+            DisclosureGroup {
+                VStack(alignment: .leading, spacing: 14) {
+                    Text(capability.explanation)
+                    Text(installed ? "Reporter configured · delivery depends on workspace trust" : "Activity reporting not configured · readable history still refreshes")
+                    if let last = sessions.compactMap(\.lastObservedHook).max() { Text("Last Desktop session hook: " + last.formatted()) }
+                    else { Text("No Desktop session hook observed yet") }
+                    Text("Chat, Cowork, cloud and SSH sessions are not connected.")
+                    if installed { Button("Remove shared Claude reporter hooks…") { prepare(.claude, remove: true, desktop: true) }.pointingHand() }
+                    diagnostics
+                }.font(.caption).foregroundStyle(.secondary).textSelection(.enabled).padding(.top, 14)
+            } label: { Text("Advanced & diagnostics").disclosurePointingHand() }
         }
     }
-    var body: some View {
-        VStack(alignment: .leading, spacing: 10) {
-            ForEach(Provider.allCases, id: \.rawValue) { provider in
-                let capability = profile(provider)
-                let installed = HookConfiguration(provider: provider).installed()
-                VStack(alignment: .leading, spacing: 4) {
-                    Text(provider.rawValue + " · " + capability.version).font(.headline)
-                    Text(installed ? "Reporter configured · trust/delivery not verified" : "Reporter not configured").font(.caption)
-                    Text(capability.explanation).font(.caption).foregroundStyle(.secondary)
-                    if let last = model.activity.values.flatMap(\.events).filter({ $0.provider == provider.rawValue && $0.source.hasPrefix("Hook") }).max(by: { $0.observedAt < $1.observedAt }) {
-                        Text("Last hook observed: " + last.observedAt.formatted()).font(.caption)
-                    }
-                    HStack {
-                        Button("Enable activity reporting…") { prepare(provider, remove: false) }.pointingHand().disabled(!capability.canInstall)
-                        if installed { Button("Remove reporter hooks…") { prepare(provider, remove: true) }.pointingHand() }
-                        Link("Documentation", destination: URL(string: provider == .codex ? "https://learn.chatgpt.com/docs/hooks" : "https://code.claude.com/docs/en/hooks")!).pointingHand()
-                    }.font(.caption)
-                }
-            }
+    private func connectionRow(_ title: String, value: String) -> some View {
+        HStack(alignment: .firstTextBaseline, spacing: 16) {
+            Text(title).foregroundStyle(.secondary).frame(width: 90, alignment: .leading)
+            Text(value).textSelection(.enabled)
+            Spacer(minLength: 0)
+        }.font(.callout)
+    }
+    private var diagnostics: some View {
+        VStack(alignment: .leading, spacing: 16) {
+            ConnectionDiagnostics(model: model, selection: selection)
             Divider()
-            desktopConnection
-            HStack {
+            VStack(alignment: .leading, spacing: 6) {
                 Button("Clear activity history") {
                     do { try HookStore.clear(); Task { await model.refresh() } }
                     catch { message = error.localizedDescription }
                 }.pointingHand()
-                Text("Hook records only · 7 days / 50 MiB").font(.caption).foregroundStyle(.secondary)
+                Text("All providers · hook records only · 7 days / 50 MiB").font(.caption).foregroundStyle(.secondary)
             }
-            if !message.isEmpty { Text(message).font(.caption).foregroundStyle(.orange) }
+        }
+    }
+    var body: some View {
+        VStack(alignment: .leading, spacing: 16) {
+            if selection == .desktop { desktopConnection }
+            else {
+                let provider = selection.provider
+                let capability = profile(provider)
+                let installed = HookConfiguration(provider: provider).installed()
+                connectionRow("Version", value: capability.version)
+                Divider()
+                Text("Activity reporting").font(.headline)
+                Text(installed ? "Reporter configured · delivery unverified" : "Not configured")
+                    .font(.callout).foregroundStyle(.secondary)
+                Text("Show activity from agents running outside Diorama.").font(.callout).foregroundStyle(.secondary)
+                if !capability.canInstall {
+                    Text("Setup is unavailable for this version. Local history observation remains available.").font(.callout).foregroundStyle(.secondary)
+                }
+                HStack(spacing: 16) {
+                    Button("Enable activity reporting…") { prepare(provider, remove: false) }.pointingHand().disabled(!capability.canInstall)
+                    Link("Documentation", destination: URL(string: provider == .codex ? "https://learn.chatgpt.com/docs/hooks" : "https://code.claude.com/docs/en/hooks")!).pointingHand()
+                }
+                DisclosureGroup {
+                    VStack(alignment: .leading, spacing: 14) {
+                        Text(capability.explanation)
+                        Text(installed ? "Reporter configured · trust/delivery not verified" : "Reporter not configured")
+                        if let last = model.activity.values.flatMap(\.events).filter({ $0.provider == provider.rawValue && $0.source.hasPrefix("Hook") }).max(by: { $0.observedAt < $1.observedAt }) {
+                            Text("Last hook observed: " + last.observedAt.formatted())
+                        }
+                        if installed { Button("Remove reporter hooks…") { prepare(provider, remove: true) }.pointingHand() }
+                        diagnostics
+                    }.font(.caption).foregroundStyle(.secondary).textSelection(.enabled).padding(.top, 14)
+                } label: { Text("Advanced & diagnostics").disclosurePointingHand() }
+            }
+            if !message.isEmpty { Text(message).font(.callout).foregroundStyle(.orange).textSelection(.enabled) }
         }
         .task { versions = await ProviderVersions.read() }
         .sheet(isPresented: Binding(get: { setup != nil }, set: { if !$0 { setup = nil } })) {

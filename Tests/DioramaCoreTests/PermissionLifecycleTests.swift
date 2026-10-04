@@ -1,4 +1,5 @@
 import Foundation
+import AppKit
 import Testing
 @testable import DioramaCore
 
@@ -80,13 +81,14 @@ private actor PermissionTransport: ExecutionTransport {
         controller.tasks[task.id]?.approvalPolicy = .string("plan")
         do { try await controller.preparePermissions(id: task.id, mode: "default"); Issue.record("Imported Plan Mode guessed an execution preference") } catch {}
     }
-    @Test func externalMismatchNeedsExplicitChoice() async throws {
+    @Test func externalMismatchPreservesConfirmedSettings() async throws {
         let c = ExecutionController(transport: PermissionTransport())
         var task = ExecutedTask(id: "test", title: "Test", folder: "/tmp", attached: true)
         task.permissionPreference = .autoReview; task.approvalReviewer = "user"
         task.approvalPolicy = .string("on-request"); task.sandbox = .object(["type": .string("workspaceWrite")])
         c.tasks[task.id] = task
-        do { try await c.preparePermissions(id: task.id); Issue.record("Mismatch accepted") } catch {}
+        try await c.preparePermissions(id: task.id)
+        #expect(c.tasks[task.id]?.approvalReviewer == "user")
     }
     @Test func movedWorkspaceRequiresChoiceAndReplacedApprovalCannotBeAnswered() async throws {
         let c = ExecutionController(transport: PermissionTransport())
@@ -113,5 +115,59 @@ private actor PermissionTransport: ExecutionTransport {
         #expect(ApprovalReviewChoice.claude("acceptEdits") == .acceptEdits)
         #expect(ApprovalReviewChoice.claude("dontAsk") == nil)
         #expect(ApprovalReviewChoice.autoReview.claudeMode == "auto")
+    }
+}
+
+
+extension PermissionLifecycleTests {
+    @Test(arguments: [false, true], [0, 1, 2])
+    func inheritedSendIgnoresStalePreset(claude: Bool, images: Int) async throws {
+        let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: root) }
+        let stub = PermissionTransport(), c = ExecutionController(transport: stub)
+        await c.connect()
+        var task = ExecutedTask(id: "image-inherit", provider: claude ? .claude : .codex, title: "Test", folder: root.path, attached: true)
+        task.permissionPreference = .autoReview
+        task.approvalPolicy = .string(claude ? "default" : "on-request")
+        task.approvalReviewer = "user"
+        task.sandbox = claude ? .null : .object(["type": .string("workspaceWrite"), "networkAccess": .bool(false), "writableRoots": .array([.string(root.path)])])
+        let boundaries = task.sandbox
+        c.tasks[task.id] = task
+        var attachments: [ConversationAttachment] = []
+        for index in 0..<images {
+            let url = root.appendingPathComponent("image-\(index).png")
+            let bitmap = try #require(NSBitmapImageRep(bitmapDataPlanes: nil, pixelsWide: 16, pixelsHigh: 16, bitsPerSample: 8, samplesPerPixel: 4, hasAlpha: true, isPlanar: false, colorSpaceName: .deviceRGB, bytesPerRow: 0, bitsPerPixel: 0))
+            try #require(bitmap.representation(using: .png, properties: [:])).write(to: url)
+            attachments.append(try ConversationAttachment(url: url))
+        }
+        try await c.send(id: task.id, prompt: images == 1 ? "" : "Describe the images", attachments: attachments)
+        let calls = await stub.calls
+        #expect(calls.filter { $0.0 == "turn/start" }.count == 1)
+        #expect(!calls.contains { $0.0 == "diorama/permissions/set" || $0.0 == "thread/resume" })
+        let turn = try #require(calls.first { $0.0 == "turn/start" }?.1)
+        #expect(turn["permissionMode"] == .null)
+        #expect(turn["input"].array.filter { $0["type"].string == "localImage" }.count == images)
+        #expect(c.tasks[task.id]?.sandbox == boundaries)
+        #expect(c.tasks[task.id]?.approvalPolicy == task.approvalPolicy)
+        if claude {
+            let content = try ClaudeExecutionTransport.input(turn["input"].array)
+            #expect(content.filter { $0["type"].string == "image" }.count == images)
+        }
+    }
+
+    @Test func inheritPreservesCustomProfileAndRejectsUnconfirmedChange() async throws {
+        let stub = PermissionTransport(), c = ExecutionController(transport: stub)
+        var task = ExecutedTask(id: "custom", title: "Custom", folder: "/tmp", attached: true)
+        task.permissionPreference = .fullAccess
+        task.approvalPolicy = .string("on-request")
+        task.activePermissionProfile = .object(["id": .string("managed-custom")])
+        c.tasks[task.id] = task
+        try await c.preparePermissions(id: task.id)
+        #expect(await stub.calls.isEmpty)
+        #expect(c.tasks[task.id]?.activePermissionProfile == task.activePermissionProfile)
+        c.tasks[task.id]?.permissionsUnconfirmed = true
+        await #expect(throws: ExecutionRPCRejection.self) { try await c.preparePermissions(id: task.id) }
+        #expect(await stub.calls.isEmpty)
     }
 }

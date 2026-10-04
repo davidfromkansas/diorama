@@ -199,6 +199,7 @@ struct DesktopHome<AddActions: View>: View {
                     }.pointingHand().buttonStyle(.plain).padding(.horizontal, 8)
                 }
                 Spacer()
+                SidebarGitHubStatus(visible: visible)
                 Button { library.showConnections = true } label: { Label("Connections", systemImage: "externaldrive.connected.to.line.below") }.pointingHand().padding(10)
                 Button { openSettings() } label: { Label("Settings", systemImage: "gearshape") }.pointingHand().padding(10)
             }.buttonStyle(.plain).padding(.bottom, 12).frame(width: 205).frame(maxHeight: .infinity).background(DioramaStyle.sidebar)
