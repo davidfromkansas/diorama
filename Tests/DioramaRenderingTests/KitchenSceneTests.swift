@@ -23,8 +23,9 @@ import Testing
         // Measure the visible kitchen, including the floor between and around stations.
         let projected = (view.floorCorners + view.framingPoints).map(view.projectPoint)
         let occupiedHeight = min(650, projected.map(\.y).max()!) - max(0, projected.map(\.y).min()!)
-        // Allow one pixel for projection rounding at the 75% coverage target.
-        #expect(occupiedHeight >= 650 * 0.75 - 1)
+        // Worktops now follow the chef's reach (KitchenLayout.heightScale), so stations project
+        // shorter than the original 1.36 m counters. Allow one pixel for projection rounding.
+        #expect(occupiedHeight >= 650 * 0.7 - 1)
         for connector in KitchenLayout.connectors {
             #expect(KitchenLayout.floor.contains(connector))
             #expect(!connector.intersects(CGRect(x: -4.5, y: -3.25, width: 9, height: 6.5)))
