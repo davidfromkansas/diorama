@@ -49,11 +49,11 @@ import Testing
             try #require(bitmap.representation(using: .png, properties: [:])).write(to: URL(fileURLWithPath: "/tmp/diorama-kitchen-filled-\(Int(size.width)).png"))
         }
     }
-    @Test func sceneChoiceDefaultsToOfficeAndIsWindowLocal() {
+    @Test func sceneChoiceDefaultsToKitchenAndIsWindowLocal() {
         let first = SpatialWorkspaceState(), second = SpatialWorkspaceState()
-        #expect(first.sceneKind == .office)
-        first.sceneKind = .kitchen
-        #expect(second.sceneKind == .office)
+        #expect(first.sceneKind == .kitchen)
+        first.sceneKind = .office
+        #expect(second.sceneKind == .kitchen)
         #expect(first.focus == .portfolio)
     }
 }
