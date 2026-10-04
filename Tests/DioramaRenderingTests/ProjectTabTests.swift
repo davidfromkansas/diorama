@@ -244,7 +244,7 @@ extension ProjectTabTests {
 }
 
 extension DesktopShellRenderingTests {
-    @Test func remountRestoresHistoryAnchorInsteadOfJumpingToBottom() async throws {
+    @Test func remountOpensLatestInsteadOfRestoringHistoryAnchor() async throws {
         let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
         defer { try? FileManager.default.removeItem(at: root) }
         let nav = WorkspaceNavigation(defaults: UserDefaults(suiteName: UUID().uuidString)!)
@@ -277,7 +277,9 @@ extension DesktopShellRenderingTests {
         host.rootView = content()
         try await settle()
         let restored = try #require(scrolls(host).max { ($0.documentView?.bounds.height ?? 0) < ($1.documentView?.bounds.height ?? 0) })
-        #expect(abs(restored.contentView.bounds.minY - 700) < 30, "History should restore its visible row and offset, actual \(restored.contentView.bounds.minY)")
+        let document = try #require(restored.documentView)
+        #expect(abs(document.bounds.maxY - restored.contentView.bounds.maxY) < 30,
+                "Reopening should show the latest message even when an older reading bookmark exists")
     }
 }
 
