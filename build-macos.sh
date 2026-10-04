@@ -69,6 +69,7 @@ else
 fi
 # Generated bundles inside synced folders can acquire Finder/file-provider metadata.
 # Strip extended attributes from this build output before signing (never source files).
+chmod -R u+w "$app_path"
 xattr -cr "$app_path"
 codesign --force --sign - "$app_path"
 codesign --verify --deep --strict "$app_path"
