@@ -98,4 +98,17 @@ struct TurnWorkTests {
         #expect(work.commands == 1 && work.failedCommands == 1)
         #expect(work.tests == [.init(command: "npm test", outcome: .passed)])
     }
+
+    @Test func codexStreamsCountTheNativeCommandOnce() {
+        let work = TurnWork.from([
+            event("started"),
+            event("toolStarted", tool: "exec_command", detail: "npm test", call: "a"), event("toolFinished", call: "a"),
+            event("toolStarted", tool: "commandExecution", detail: "/bin/zsh -lc 'npm test'", call: "b"), event("toolFinished", call: "b"),
+            event("toolStarted", tool: "exec_command", detail: "npm run build", call: "c"), event("toolFinished", call: "c"),
+            event("toolStarted", tool: "commandExecution", detail: "/bin/zsh -lc 'npm run build'", call: "d"), event("toolFinished", call: "d"),
+            event("toolStarted", tool: "apply_patch", detail: "/r/a.js", call: "e"), event("toolStarted", tool: "fileChange", detail: "/r/a.js", call: "f"),
+            event("finished"),
+        ])
+        #expect(work.commands == 1 && work.tests == [.init(command: "npm test", outcome: .passed)] && work.files == ["/r/a.js"])
+    }
 }
