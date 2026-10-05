@@ -34,8 +34,8 @@ import Testing
         for (i, a) in footprints.enumerated() { for b in footprints.dropFirst(i + 1) { #expect(!a.insetBy(dx: 0.01, dy: 0.01).intersects(b)) } }
         #expect(!view.allowsCameraControl)
         #expect(!view.isPlaying && !view.rendersContinuously)
-        #expect(KitchenLayout.areas.map(\.id) == ["elevator", "order", "prep", "stove", "island", "tasting", "bell", "serving", "break"])
-        #expect(KitchenLayout.areas.map(\.spots) == [1, 3, 4, 6, 8, 3, 6, 5, 10])
+        #expect(KitchenLayout.areas.map(\.id) == ["elevator", "order", "prep", "cooking", "stove", "tasting", "bell", "serving", "break"])
+        #expect(KitchenLayout.areas.map(\.spots) == [1, 3, 6, 6, 6, 3, 6, 5, 10])
     }
     @Test func captureKitchenViewportSizes() throws {
         guard ProcessInfo.processInfo.environment["DIORAMA_KITCHEN_CAPTURE"] == "1" else { return }

@@ -31,7 +31,7 @@ import SceneKit
         let ceramic = material(NSColor(red: 0.96, green: 0.94, blue: 0.86, alpha: 1))
         let steel = material(NSColor(white: 0.48, alpha: 1), metal: 0.8)
         let paper = material(NSColor(red: 0.98, green: 0.97, blue: 0.93, alpha: 1))
-        let paint = ["stove", "island", "serving"].contains(area.id) ? green : ivory
+        let paint = ["stove", "cooking", "serving"].contains(area.id) ? green : ivory
         @discardableResult func box(_ name: String, _ w: CGFloat, _ h: CGFloat, _ d: CGFloat,
                                    _ x: CGFloat, _ y: CGFloat, _ z: CGFloat, _ mat: SCNMaterial) -> SCNNode {
             let shape = SCNBox(width: w, height: h, length: d, chamferRadius: min(0.065, min(w, min(h, d)) / 4))
@@ -104,39 +104,26 @@ import SceneKit
             box("recipe board", width * 0.4, 0.62, 0.04, width * 0.22, 2.0, -depth / 2 + 0.52, oak)
             for i in 0..<3 { box("recipe card", 0.3, 0.4, 0.012, width * 0.22 + CGFloat(i - 1) * 0.42, 2.0, -depth / 2 + 0.55, paper) }
         case "stove":
-            // Enamel range with oven doors and a row of cast-iron burners.
+            // One clear burner per chef, centred on its working spot; flames are lit by the view.
             box("range front", width - 0.2, 0.7, 0.055, 0, 0.52, depth / 2 - 0.015, green)
-            let ovens = max(2, Int(width / 2.4))
-            for i in 0..<ovens {
-                let x = -width / 2 + (CGFloat(i) + 0.5) * width / CGFloat(ovens)
-                let w = width / CGFloat(ovens) * 0.8
-                box("oven brass frame", w, 0.49, 0.04, x, 0.45, depth / 2 + 0.002, brass)
-                box("oven enamel door", w - 0.06, 0.43, 0.03, x, 0.45, depth / 2 + 0.025, green)
-                box("oven window", w * 0.72, 0.22, 0.025, x, 0.43, depth / 2 + 0.043, dark)
-                box("oven rail", w * 0.7, 0.04, 0.065, x, 0.65, depth / 2 - 0.015, brass)
-            }
             box("enameled cooktop", width - 0.2, 0.025, depth - 0.12, 0, 1.01, 0, dark)
-            let burners = max(2, Int((width - 0.6) / 1.5))
-            for i in 0..<burners {
-                let x = -width / 2 + 0.3 + (CGFloat(i) + 0.5) * (width - 0.6) / CGFloat(burners)
+            for i in 0..<area.spots {
+                let x = -width / 2 + (CGFloat(i) + 0.5) * width / CGFloat(area.spots)
                 cylinder("brass burner", 0.13, 0.04, x, 1.04, 0, brass)
                 ring(0.23, x, 1.08, 0, dark)
                 box("burner grate", 0.6, 0.055, 0.045, x, 1.08, 0, steel)
                 box("burner grate", 0.045, 0.055, 0.55, x, 1.08, 0, steel)
+                box("oven brass frame", width / CGFloat(area.spots) * 0.8, 0.49, 0.04, x, 0.45, depth / 2 + 0.002, brass)
+                box("oven window", width / CGFloat(area.spots) * 0.55, 0.22, 0.025, x, 0.43, depth / 2 + 0.03, dark)
                 let knob = cylinder("range knob", 0.055, 0.04, x, 0.83, depth / 2 - 0.015, brass)
                 knob.eulerAngles.x = .pi / 2
-                if i % 2 == 0 { cylinder("stock pot", 0.26, 0.34, x, 1.27, 0, steel) }
             }
-            // Low backguard instead of a suspended hood that would hide the burners.
-            box("range backguard", width - 0.14, 0.32, 0.08, 0, 1.14, -depth / 2 + 0.055, green)
-            box("backguard brass trim", width - 0.1, 0.035, 0.1, 0, 1.31, -depth / 2 + 0.055, brass)
-        case "island":
-            for x in [-width / 4, width / 4] {
-                box("butcher block", 1.5, 0.09, 1.1, x, 1.045, 0, oak)
+        case "cooking":
+            // One clear cutting board per chef, on the chef's side of the island.
+            for i in 0..<area.spots {
+                let x = -width / 2 + (CGFloat(i) + 0.5) * width / CGFloat(area.spots)
+                box("cutting board", 0.9, 0.05, 0.55, x, 1.025, -depth / 2 + 0.38, oak)
             }
-            cylinder("mixing bowl", 0.32, 0.19, 0, 1.09, -0.3, ceramic)
-            cylinder("bowl interior", 0.26, 0.012, 0, 1.19, -0.3, ivory)
-            box("folded linen", 0.56, 0.035, 0.6, 0, 1.02, 0.35, ivory)
         case "tasting":
             box("sink basin bottom", 1.2, 0.055, 0.88, -0.2, 0.69, 0, steel)
             for x in [-0.8, 0.4] { box("sink basin wall", 0.055, 0.32, 0.94, x, 0.85, 0, steel) }
