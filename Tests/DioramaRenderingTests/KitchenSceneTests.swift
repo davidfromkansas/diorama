@@ -23,22 +23,19 @@ import Testing
         // Measure the visible kitchen, including the floor between and around stations.
         let projected = (view.floorCorners + view.framingPoints).map(view.projectPoint)
         let occupiedHeight = min(650, projected.map(\.y).max()!) - max(0, projected.map(\.y).min()!)
-        // Worktops now follow the chef's reach (KitchenLayout.heightScale), so stations project
-        // shorter than the original 1.36 m counters. Allow one pixel for projection rounding.
-        #expect(occupiedHeight >= 650 * 0.7 - 1)
-        for connector in KitchenLayout.connectors {
-            #expect(KitchenLayout.floor.contains(connector))
-            #expect(!connector.intersects(CGRect(x: -4.5, y: -3.25, width: 9, height: 6.5)))
+        // The 24×16 lifecycle room is wider than tall, so a square view is width-limited; low,
+        // chef-height worktops add little projected height. Allow one pixel for rounding.
+        #expect(occupiedHeight >= 650 * 0.6 - 1)
+        for fixture in KitchenLayout.connectors + KitchenLayout.breakRoomWalls + KitchenLayout.elevatorWalls {
+            #expect(KitchenLayout.floor.contains(fixture))
         }
+        // Stations never overlap one another or the connecting cabinets.
+        let footprints = KitchenLayout.areas.map(\.footprint) + KitchenLayout.connectors
+        for (i, a) in footprints.enumerated() { for b in footprints.dropFirst(i + 1) { #expect(!a.insetBy(dx: 0.01, dy: 0.01).intersects(b)) } }
         #expect(!view.allowsCameraControl)
         #expect(!view.isPlaying && !view.rendersContinuously)
-        #expect(KitchenLayout.areas.count == 6)
-        for area in KitchenLayout.areas { #expect(KitchenLayout.floor.contains(area.footprint)) }
-        let island = KitchenLayout.areas.first { $0.id == "prep" }!.footprint
-        #expect(island.size == CGSize(width: 5, height: 2.5))
-        for area in KitchenLayout.areas where area.id != "prep" {
-            #expect(!island.insetBy(dx: -2, dy: -2).intersects(area.footprint))
-        }
+        #expect(KitchenLayout.areas.map(\.id) == ["elevator", "order", "prep", "stove", "island", "tasting", "bell", "serving", "break"])
+        #expect(KitchenLayout.areas.map(\.spots) == [1, 3, 4, 6, 8, 3, 6, 5, 10])
     }
     @Test func captureKitchenViewportSizes() throws {
         guard ProcessInfo.processInfo.environment["DIORAMA_KITCHEN_CAPTURE"] == "1" else { return }

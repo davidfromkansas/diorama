@@ -6,11 +6,12 @@ import simd
 @testable import DioramaApp
 
 @MainActor struct ChefKitchenTests {
-    private func agent(_ id: String, _ status: WorkspaceAgentStatus, tool: String = "", detail: String = "", attention: WorkspaceAttentionReason = .other) -> SpatialAgent {
-        var value = WorkspaceAgent(id: id, name: "Agent \(id)", provider: "Claude", task: "Task", action: "", status: status, reportedStatus: status.rawValue, freshness: .live)
-        value.latestTool = tool; value.latestToolDetail = detail; value.attentionReason = attention
+    private func agent(_ id: String, _ status: WorkspaceAgentStatus, tool: String = "", detail: String = "", attention: WorkspaceAttentionReason = .other,
+                       edits: Bool = false, freshness: WorkspaceAgentFreshness = .live, conversation: String = "c") -> SpatialAgent {
+        var value = WorkspaceAgent(id: id, name: "Agent \(id)", provider: "Claude", task: "Task", action: "", status: status, reportedStatus: status.rawValue, freshness: freshness)
+        value.latestTool = tool; value.latestToolDetail = detail; value.attentionReason = attention; value.turnHasEdits = edits
         value.completionKey = "turn-1"
-        return SpatialAgent(projectID: "p", conversationID: "c", value: value)
+        return SpatialAgent(projectID: "p", conversationID: conversation, value: value)
     }
     private func director() throws -> ChefDirector {
         let assets = try ChefAssets.shared.get()
@@ -53,86 +54,147 @@ import simd
         #expect(!clip.tracks.contains { $0.path == "scale" })
     }
 
-    @Test func agentStatesMapToStations() {
-        #expect(KitchenLayout.work(for: agent("a", .working, tool: "Read").value).area == "context")
-        #expect(KitchenLayout.work(for: agent("a", .working, tool: "Edit").value) == .init(area: "prep", loop: "working_chop", hand: .knife))
-        #expect(KitchenLayout.work(for: agent("a", .working, tool: "Bash", detail: "make").value).area == "build")
-        #expect(KitchenLayout.work(for: agent("a", .working, tool: "Bash", detail: "swift test").value).hand == .spoon)
-        #expect(KitchenLayout.work(for: agent("a", .waiting, attention: .approval).value).area == "attention")
+    @Test func lifecycleMapsToStations() {
+        func area(_ a: SpatialAgent) -> String? { KitchenLayout.work(for: a.value).area }
+        // Before the first edit everything is prep, except tests.
+        #expect(KitchenLayout.work(for: agent("a", .working, tool: "Read").value) == .init(area: "prep", loop: "researching_book", hand: .book))
+        #expect(KitchenLayout.work(for: agent("a", .working, tool: "TaskCreate").value).hand == .card)
+        #expect(area(agent("a", .working, tool: "Bash", detail: "make")) == "prep")
+        #expect(area(agent("a", .working, tool: "Bash", detail: "swift test")) == "tasting")
+        // After it: editing at the island, commands at the stove, reads keep chopping.
+        #expect(KitchenLayout.work(for: agent("a", .working, tool: "Edit", edits: true).value) == .init(area: "island", loop: "working_chop", hand: .knife))
+        #expect(area(agent("a", .working, tool: "Read", edits: true)) == "island")
+        #expect(area(agent("a", .working, tool: "Bash", detail: "make", edits: true)) == "stove")
+        #expect(area(agent("a", .working, tool: "Bash", detail: "npm test", edits: true)) == "tasting")
+        #expect(area(agent("a", .waiting, attention: .approval)) == "bell")
+        #expect(area(agent("a", .failed)) == "bell")
         #expect(KitchenLayout.work(for: agent("a", .done).value).deliversPlate)
-        #expect(KitchenLayout.work(for: agent("a", .unknown).value).area == nil)
-        #expect(KitchenLayout.work(for: agent("a", .ready).value).area == "home")
+        #expect(area(agent("a", .done)) == "serving")
+        #expect(area(agent("a", .done, freshness: .lastKnown)) == "break")
+        #expect(area(agent("a", .working, tool: "Edit", freshness: .lastKnown)) == "break")
+        #expect(area(agent("a", .stopped)) == "break")
+        #expect(area(agent("a", .ready, freshness: .ready)) == "order")
+        #expect(area(agent("a", .unknown)) == nil)
+        #expect(KitchenLayout.work(for: agent("a", .waiting).value).urgent)
+        #expect(!KitchenLayout.work(for: agent("a", .working, tool: "Edit", edits: true).value).urgent)
     }
 
-    @Test func slotsStayOnWalkableFloorAndAreKeptPerArea() {
+    @Test func roomFitsTenChefsPerStationOnWalkableFloor() {
         let navigation = KitchenLayout.chefNavigation, table = KitchenLayout.chefSlots
-        for area in KitchenLayout.areas.map(\.id) + ["home"] {
-            let slots = table[area] ?? []
-            #expect(!slots.isEmpty, "\(area) has no slots")
+        #expect(KitchenLayout.areas.count == 9)
+        for area in KitchenLayout.areas {
+            #expect(KitchenLayout.floor.contains(area.footprint), "\(area.id) leaves the floor")
+            let slots = table[area.id] ?? []
+            #expect(slots.count >= area.spots, "\(area.id) has \(slots.count) of \(area.spots) spots")
             for slot in slots { #expect(navigation.isFree(slot.stand), "\(slot.id) is blocked") }
+            // Ten chefs sent to one station get distinct, walkable places.
+            let crowd = KitchenLayout.assignSlots((0..<10).map { ("c\($0)", Optional(area.id)) }, previous: [:])
+            let stands = crowd.values.map(\.stand)
+            for (i, a) in stands.enumerated() { for b in stands.dropFirst(i + 1) { #expect(simd_distance(a, b) > 0.5, "\(area.id) stacks chefs") } }
         }
-        let first = KitchenLayout.assignSlots([("a", "prep"), ("b", "prep")], previous: [:])
+        // Every station reaches every other one.
+        let all = KitchenLayout.areas.compactMap { table[$0.id]?.first }
+        for a in all { for b in all where a.id != b.id { #expect(navigation.route(from: a.stand, to: b.stand) != nil, "\(a.id) → \(b.id)") } }
+        let first = KitchenLayout.assignSlots([("a", "island"), ("b", "island")], previous: [:])
         #expect(first["a"] != first["b"])
-        let second = KitchenLayout.assignSlots([("b", "prep"), ("a", "prep")], previous: first)
-        #expect(second == first)
-        // A full area queues extra chefs behind its slots instead of stacking them.
-        let crowd = (0..<8).map { ("c\($0)", Optional("test")) }
-        let crowded = KitchenLayout.assignSlots(crowd, previous: [:])
-        #expect(Set(crowded.values.map(\.stand.x)).count + Set(crowded.values.map(\.stand.y)).count > 2)
+        #expect(KitchenLayout.assignSlots([("b", "island"), ("a", "island")], previous: first) == first)
     }
 
     @Test func workingChefWalksAroundFixturesGrabsKnifeAndChops() throws {
         let d = try director(), table = KitchenLayout.chefSlots
-        let home = try #require(table["home"]?.first), prep = try #require(table["prep"]?.first)
-        d.place(home.stand)
-        d.setIntent(KitchenLayout.intent(for: agent("a", .working, tool: "Edit").value, at: prep, pickup: nil, restored: false))
-        var maxBlocked = 0
-        for _ in 0..<(60 * 12) {
+        let start = try #require(table["order"]?.first), island = try #require(table["island"]?.last)
+        d.place(start.stand)
+        d.setIntent(KitchenLayout.intent(for: agent("a", .working, tool: "Edit", edits: true).value, at: island, pickup: nil, restored: false))
+        // Corners may graze the walking margin, but the chef's root never enters a fixture.
+        let fixtures = KitchenLayout.areas.filter { $0.id != "elevator" }.map(\.footprint) + KitchenLayout.connectors + KitchenLayout.breakRoomWalls
+        var blocked = 0
+        for _ in 0..<(60 * 20) {
             d.update(1 / 60)
-            if !d.navigation.obstacles.allSatisfy({ !$0.contains(d.position) }) { maxBlocked += 1 }
+            if fixtures.contains(where: { $0.insetBy(dx: -0.1, dy: -0.1).contains(CGPoint(x: CGFloat(d.position.x), y: CGFloat(d.position.y))) }) { blocked += 1 }
         }
-        #expect(maxBlocked == 0)
-        #expect(simd_distance(d.position, prep.stand) < 0.01)
+        #expect(blocked == 0)
+        #expect(simd_distance(d.position, island.stand) < 0.01)
         #expect(d.held == [.knife])
         #expect(d.clip.name == "working_chop")
         #expect(d.settled)
     }
 
-    @Test func finishedTurnDeliversPlateToReviewOnce() throws {
+    @Test func finishedTurnCarriesPlateFromIslandToServingOnce() throws {
         let d = try director(), table = KitchenLayout.chefSlots
-        let prep = try #require(table["prep"]?.first), review = try #require(table["review"]?.first), test = try #require(table["test"]?.first)
-        d.place(prep.stand, heading: prep.facing)
-        let done = KitchenLayout.intent(for: agent("a", .done).value, at: review, pickup: test, restored: false)
+        let island = try #require(table["island"]?.first), serving = try #require(table["serving"]?.first)
+        d.place(island.stand, heading: island.facing)
+        let done = KitchenLayout.intent(for: agent("a", .done).value, at: serving, pickup: island, restored: false)
         d.setIntent(done)
-        #expect(d.stepNames.first == "goto:test")
+        #expect(d.stepNames.first == "goto:island")
         var carried = false
-        for _ in 0..<(60 * 25) { d.update(1 / 60); carried = carried || d.held.contains(.plate) }
+        for _ in 0..<(60 * 30) { d.update(1 / 60); carried = carried || d.held.contains(.plate) }
         #expect(carried)
         #expect(d.held.isEmpty)
-        #expect(d.placedPlate == review)
+        #expect(d.placedPlate == serving)
         #expect(d.clip.name == "wait_review")
-        // Re-delivering the same state never replays the delivery.
-        d.setIntent(KitchenLayout.intent(for: agent("a", .working, tool: "Read").value, at: table["context"]?.first, pickup: nil, restored: false))
+        d.setIntent(KitchenLayout.intent(for: agent("a", .working, tool: "Read").value, at: table["prep"]?.first, pickup: nil, restored: false))
         d.setIntent(done)
         #expect(!d.stepNames.contains("once:pickup") && !d.stepNames.contains("once:present_review"))
     }
 
     @Test func restoredAndReducedMotionStatesSkipGestures() throws {
         let d = try director(), table = KitchenLayout.chefSlots
-        let attention = try #require(table["attention"]?.first)
-        d.place(attention.stand, heading: attention.facing)
-        d.setIntent(KitchenLayout.intent(for: agent("a", .waiting, attention: .approval).value, at: attention, pickup: nil, restored: true))
+        let bell = try #require(table["bell"]?.first)
+        d.place(bell.stand, heading: bell.facing)
+        d.setIntent(KitchenLayout.intent(for: agent("a", .waiting, attention: .approval).value, at: bell, pickup: nil, restored: true))
         #expect(!d.stepNames.contains("once:request_input"))
         run(d, seconds: 1)
         #expect(d.clip.name == "wait_input")
         let reduced = try director(); reduced.reducedMotion = true
-        reduced.place(attention.stand, heading: attention.facing)
-        reduced.setIntent(KitchenLayout.intent(for: agent("b", .failed).value, at: attention, pickup: nil, restored: false))
+        reduced.place(bell.stand, heading: bell.facing)
+        reduced.setIntent(KitchenLayout.intent(for: agent("b", .failed).value, at: bell, pickup: nil, restored: false))
         #expect(!reduced.stepNames.contains("once:error_react"))
         let live = try director()
-        live.place(attention.stand, heading: attention.facing)
-        live.setIntent(KitchenLayout.intent(for: agent("c", .failed).value, at: attention, pickup: nil, restored: false))
+        live.place(bell.stand, heading: bell.facing)
+        live.setIntent(KitchenLayout.intent(for: agent("c", .failed).value, at: bell, pickup: nil, restored: false))
         #expect(live.stepNames.contains("once:error_react"))
+    }
+
+    @Test func chefsStayAtLeastThreeSecondsButNeedsYouIsImmediate() throws {
+        let view = KitchenSceneView(frame: CGRect(x: 0, y: 0, width: 1000, height: 700))
+        var clock = 100.0
+        func step(_ seconds: Double) {
+            for _ in 0..<Int(seconds * 30) { clock += 1 / 30; for chef in view.chefs.values { chef.update(1 / 30) }; view.pace(now: clock) }
+        }
+        view.apply(agents: [agent("a", .working, tool: "Edit", edits: true)], active: false, reducedMotion: false, now: clock)
+        step(0.5)
+        let chef = try #require(view.chefs.values.first)
+        #expect(chef.director.intent?.station?.area == "island")
+        // A quick command and a read within three seconds don't move the chef.
+        view.apply(agents: [agent("a", .working, tool: "Bash", detail: "make", edits: true)], active: false, reducedMotion: false, now: clock)
+        step(1)
+        #expect(chef.director.intent?.station?.area == "island")
+        view.apply(agents: [agent("a", .working, tool: "Bash", detail: "make", edits: true)], active: false, reducedMotion: false, now: clock)
+        step(2.5)
+        #expect(chef.director.intent?.station?.area == "stove")
+        // Needing you moves it at once.
+        view.apply(agents: [agent("a", .waiting, attention: .approval, edits: true)], active: false, reducedMotion: false, now: clock)
+        step(0.1)
+        #expect(chef.director.intent?.station?.area == "bell")
+    }
+
+    @Test func onlyNewAgentsArriveByElevator() throws {
+        let view = KitchenSceneView(frame: CGRect(x: 0, y: 0, width: 1000, height: 700))
+        let old = agent("old", .working, tool: "Edit", edits: true), new = agent("new", .working, tool: "Read")
+        view.apply(agents: [old], active: false, reducedMotion: false, now: 0)
+        #expect(view.chefs[old.id]?.director.intent?.station?.area == "island")
+        view.apply(agents: [old, new], active: false, reducedMotion: false, now: 1)
+        let newcomer = try #require(view.chefs[new.id])
+        let door = try #require(KitchenLayout.chefSlots["elevator"]?.first)
+        #expect(simd_distance(newcomer.director.position, door.stand) < 0.01)
+        #expect(newcomer.director.intent?.key.hasPrefix("arrival") == true)
+        var clock = 1.0
+        for _ in 0..<(30 * 12) { clock += 1 / 30; newcomer.update(1 / 30); view.pace(now: clock) }
+        #expect(newcomer.director.intent?.station?.area == "prep")
+        // A different conversation shown for the first time is history, not an arrival.
+        let other = agent("other", .working, tool: "Read", conversation: "d")
+        view.apply(agents: [other], active: false, reducedMotion: false, now: clock)
+        #expect(view.chefs[other.id]?.director.intent?.key.hasPrefix("arrival") == false)
     }
 
     @Test func kitchenViewReconcilesChefsAndPlaysOnlyWhileActive() throws {
@@ -154,15 +216,19 @@ import simd
 
     @Test func captureKitchenWithChefs() throws {
         guard ProcessInfo.processInfo.environment["DIORAMA_KITCHEN_CAPTURE"] == "1" else { return }
-        let view = KitchenSceneView(frame: CGRect(x: 0, y: 0, width: 1200, height: 800))
-        let agents = [agent("plan", .working, tool: "TodoWrite"), agent("read", .working, tool: "Read"), agent("edit", .working, tool: "Edit"),
-                      agent("cmd", .working, tool: "Bash", detail: "make"), agent("test", .working, tool: "Bash", detail: "swift test"),
-                      agent("ask", .waiting, attention: .approval), agent("done", .done), agent("idle", .ready)]
-        view.apply(agents: agents, active: false, reducedMotion: false)
-        for chef in view.chefs.values { for _ in 0..<30 { chef.update(1 / 30) } }
-        view.layoutSubtreeIfNeeded(); view.fitFloor()
-        let tiff = try #require(view.snapshot().tiffRepresentation)
-        let bitmap = try #require(NSBitmapImageRep(data: tiff))
-        try #require(bitmap.representation(using: .png, properties: [:])).write(to: URL(fileURLWithPath: "/tmp/diorama-kitchen-chefs.png"))
+        func capture(_ agents: [SpatialAgent], _ name: String) throws {
+            let view = KitchenSceneView(frame: CGRect(x: 0, y: 0, width: 1400, height: 900))
+            view.apply(agents: agents, active: false, reducedMotion: false)
+            for chef in view.chefs.values { for _ in 0..<30 { chef.update(1 / 30) } }
+            view.layoutSubtreeIfNeeded(); view.fitFloor()
+            let tiff = try #require(view.snapshot().tiffRepresentation)
+            let bitmap = try #require(NSBitmapImageRep(data: tiff))
+            try #require(bitmap.representation(using: .png, properties: [:])).write(to: URL(fileURLWithPath: "/tmp/\(name).png"))
+        }
+        try capture([agent("plan", .working, tool: "TaskCreate"), agent("read", .working, tool: "Read"), agent("edit", .working, tool: "Edit", edits: true),
+                     agent("cmd", .working, tool: "Bash", detail: "make", edits: true), agent("test", .working, tool: "Bash", detail: "swift test"),
+                     agent("ask", .waiting, attention: .approval), agent("done", .done), agent("rest", .done, freshness: .lastKnown),
+                     agent("new", .ready, freshness: .ready)], "diorama-kitchen-stages")
+        try capture((0..<10).map { agent("e\($0)", .working, tool: "Edit", edits: true) }, "diorama-kitchen-ten-cooking")
     }
 }

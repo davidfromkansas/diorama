@@ -3,32 +3,55 @@ import SwiftUI
 
 enum WorkspaceSceneKind: String, CaseIterable { case office = "Office", kitchen = "Kitchen" }
 
+/// Which side of a station the chefs work from; fixtures face the room accordingly.
+enum KitchenWall { case back, left, right, front, island, freestanding }
+
 struct KitchenArea: Identifiable {
     let id: String
     let label: String
+    let short: String
     let footprint: CGRect // X/Z coordinates on the floor.
+    let wall: KitchenWall
+    /// Agreed number of chefs working here at once; more queue behind.
+    let spots: Int
     let accent: NSColor
     var center: SCNVector3 { SCNVector3(footprint.midX, 0.6, footprint.midY) }
 }
+/// The kitchen follows an agent's journey: elevator → order rail → prep → cooking (island for
+/// editing, stove for commands) → tasting → serving window, with the service bell in the middle
+/// and the break room for finished chefs. Sized for 10 agents in parallel.
 enum KitchenLayout {
-    static let floor = CGRect(x: -8, y: -6, width: 16, height: 12)
-    // Connect the working stations without crossing the island's circulation aisle.
+    static let floor = CGRect(x: -12, y: -8, width: 24, height: 16)
+    /// Cabinets that close the gaps between wall stations.
     static let connectors: [CGRect] = [
-        .init(x: -2.1, y: -5.1, width: 3.3, height: 1.4),
-        .init(x: -6.9, y: -3.7, width: 1.4, height: 7.4),
-        .init(x: 6, y: -5.1, width: 1.05, height: 1.4),
-        .init(x: 5.55, y: -3.7, width: 1.5, height: 2.2),
-        .init(x: 5.55, y: 1.5, width: 1.5, height: 2.2),
-        .init(x: 5.85, y: 3.7, width: 1.2, height: 1.4),
-        .init(x: -6.9, y: 3.7, width: 0.4, height: 1.4)
+        .init(x: -9.2, y: -7.8, width: 0.8, height: 1.2),
+        .init(x: -3.6, y: -7.8, width: 2.4, height: 1.2),
+        .init(x: 8.0, y: -7.8, width: 3.8, height: 1.2),
+        .init(x: -11.8, y: -5.8, width: 1.2, height: 1.4),
+        .init(x: -11.8, y: 1.6, width: 1.2, height: 1.6),
+        .init(x: 10.6, y: -6.6, width: 1.2, height: 2.2),
+        .init(x: 10.6, y: 0.4, width: 1.2, height: 7.2)
     ]
     static let areas: [KitchenArea] = [
-        .init(id: "context", label: "Context Storage", footprint: .init(x: -6.9, y: -5.1, width: 4.8, height: 1.4), accent: .init(red: 0.56, green: 0.67, blue: 0.61, alpha: 1)),
-        .init(id: "build", label: "Builds / Commands", footprint: .init(x: 1.2, y: -5.1, width: 4.8, height: 1.4), accent: .init(red: 0.69, green: 0.59, blue: 0.47, alpha: 1)),
-        .init(id: "prep", label: "Prep / Planning / Editing", footprint: .init(x: -2.5, y: -1.25, width: 5, height: 2.5), accent: .init(red: 0.57, green: 0.64, blue: 0.72, alpha: 1)),
-        .init(id: "test", label: "Test / QA", footprint: .init(x: 5.55, y: -1.5, width: 1.5, height: 3), accent: .init(red: 0.64, green: 0.59, blue: 0.72, alpha: 1)),
-        .init(id: "attention", label: "Human Attention", footprint: .init(x: -6.5, y: 3.7, width: 3.6, height: 1.4), accent: .init(red: 0.75, green: 0.58, blue: 0.47, alpha: 1)),
-        .init(id: "review", label: "Ready for Review", footprint: .init(x: 1.35, y: 3.7, width: 4.5, height: 1.4), accent: .init(red: 0.51, green: 0.67, blue: 0.66, alpha: 1))
+        .init(id: "elevator", label: "Elevator: new agents arrive", short: "Elevator", footprint: .init(x: -11.6, y: -7.8, width: 2.4, height: 2.0), wall: .freestanding, spots: 1, accent: .init(red: 0.55, green: 0.52, blue: 0.68, alpha: 1)),
+        .init(id: "order", label: "Order rail: read the request", short: "Orders", footprint: .init(x: -8.4, y: -7.8, width: 4.8, height: 1.2), wall: .back, spots: 3, accent: .init(red: 0.56, green: 0.67, blue: 0.61, alpha: 1)),
+        .init(id: "prep", label: "Prep: planning and research", short: "Prep", footprint: .init(x: -11.8, y: -4.4, width: 1.2, height: 6.0), wall: .left, spots: 4, accent: .init(red: 0.56, green: 0.67, blue: 0.61, alpha: 1)),
+        .init(id: "stove", label: "Stove: running commands", short: "Stove", footprint: .init(x: -1.2, y: -7.8, width: 9.2, height: 1.2), wall: .back, spots: 6, accent: .init(red: 0.69, green: 0.59, blue: 0.47, alpha: 1)),
+        .init(id: "island", label: "Cooking island: editing code", short: "Cooking", footprint: .init(x: -3.5, y: -2.6, width: 7.0, height: 2.0), wall: .island, spots: 8, accent: .init(red: 0.57, green: 0.64, blue: 0.72, alpha: 1)),
+        .init(id: "tasting", label: "Tasting: tests and QA", short: "Tasting", footprint: .init(x: 10.6, y: -4.4, width: 1.2, height: 4.8), wall: .right, spots: 3, accent: .init(red: 0.64, green: 0.59, blue: 0.72, alpha: 1)),
+        .init(id: "bell", label: "Service bell: needs you", short: "Needs you", footprint: .init(x: -0.5, y: 3.3, width: 1.0, height: 1.0), wall: .freestanding, spots: 6, accent: .init(red: 0.75, green: 0.58, blue: 0.47, alpha: 1)),
+        .init(id: "serving", label: "Serving window: ready for review", short: "Serving", footprint: .init(x: 3.2, y: 6.4, width: 7.4, height: 1.2), wall: .front, spots: 5, accent: .init(red: 0.51, green: 0.67, blue: 0.66, alpha: 1)),
+        .init(id: "break", label: "Break room: finished agents", short: "Break room", footprint: .init(x: -11.0, y: 5.4, width: 6.6, height: 1.0), wall: .island, spots: 10, accent: .init(red: 0.55, green: 0.52, blue: 0.68, alpha: 1))
+    ]
+    /// Low partial walls enclosing the break room, with a doorway toward the kitchen.
+    static let breakRoomWalls: [CGRect] = [
+        .init(x: -12, y: 3.125, width: 6.6, height: 0.15),
+        .init(x: -3.475, y: 3.125, width: 0.15, height: 4.875)
+    ]
+    /// The elevator car's side and back walls; its interior and doorway stay walkable.
+    static let elevatorWalls: [CGRect] = [
+        .init(x: -11.6, y: -7.8, width: 0.12, height: 2.0),
+        .init(x: -9.32, y: -7.8, width: 0.12, height: 2.0)
     ]
 }
 struct KitchenSceneSurface: NSViewRepresentable {
@@ -56,7 +79,7 @@ private final class KitchenLabel: NSTextField {
 /// matches their state. It only observes agent state; it never controls provider execution.
 final class KitchenSceneView: SCNView {
     static let maxChefs = 12
-    let floorSize = SIMD3<Float>(16, 0.2, 12)
+    let floorSize = SIMD3<Float>(Float(KitchenLayout.floor.width), 0.2, Float(KitchenLayout.floor.height))
     var select: ((SpatialFocus) -> Void)?
     private(set) var chefs: [String: ChefAvatar] = [:]
     private var chefAgents: [String: SpatialAgent] = [:]
@@ -86,12 +109,11 @@ final class KitchenSceneView: SCNView {
             let node = SCNNode(geometry: shape); node.name = name; node.position = position
             world.rootNode.addChildNode(node); return node
         }
-        _ = box("Kitchen floor", width: 16, height: 0.2, depth: 12, at: SCNVector3Zero, material: material(.init(white: 0.71, alpha: 1)))
+        _ = box("Kitchen floor", width: KitchenLayout.floor.width, height: 0.2, depth: KitchenLayout.floor.height, at: SCNVector3Zero, material: material(.init(white: 0.71, alpha: 1)))
         world.rootNode.addChildNode(KitchenRoomGeometry.make())
-        for (index, area) in KitchenLayout.areas.enumerated() {
+        for area in KitchenLayout.areas {
             world.rootNode.addChildNode(KitchenStationGeometry.make(area))
-            let shortNames = ["Context", "Build", "Prep", "QA", "Attention", "Review"]
-            let label = KitchenLabel(labelWithString: "\(index + 1) · \(shortNames[index])")
+            let label = KitchenLabel(labelWithString: area.short)
             label.toolTip = area.label; label.setAccessibilityLabel(area.label)
             label.font = .systemFont(ofSize: 11, weight: .medium); label.textColor = .init(white: 0.18, alpha: 1)
             label.alignment = .center; label.maximumNumberOfLines = 3; label.lineBreakMode = .byWordWrapping
@@ -130,15 +152,22 @@ final class KitchenSceneView: SCNView {
         allowsCameraControl = false; isPlaying = false; rendersContinuously = false
         wantsLayer = true; leaders.strokeColor = NSColor.darkGray.withAlphaComponent(0.25).cgColor
         leaders.fillColor = nil; leaders.lineWidth = 1; layer?.addSublayer(leaders)
-        setAccessibilityLabel("Kitchen layout. Context Storage, Builds and Commands, central Prep Planning Editing island, Test and QA, Human Attention, Ready for Review.")
+        setAccessibilityLabel("Kitchen layout. " + KitchenLayout.areas.map(\.label).joined(separator: ", ") + ".")
     }
     required init?(coder: NSCoder) { fatalError("init(coder:) has not been implemented") }
     override func layout() { super.layout(); fitFloor() }
 
     // MARK: Chefs
 
+    /// Per-chef pacing: the latest wanted intent, when the chef arrived where it stands, and
+    /// whether it is still reading its order after arriving by elevator.
+    private struct Pacing { var desired: ChefIntent; var arrivedAt: Double?; var arriving = false }
+    private var pacing: [String: Pacing] = [:]
+    /// Conversations already shown here: only agents joining one of these ride the elevator in.
+    private var seenConversations: Set<String> = []
+
     /// Reconcile chefs with agents: attention first, then working, capped at `maxChefs`.
-    func apply(agents: [SpatialAgent], active: Bool, reducedMotion: Bool) {
+    func apply(agents: [SpatialAgent], active: Bool, reducedMotion: Bool, now: Double = CACurrentMediaTime()) {
         self.active = active; reduced = reducedMotion
         let ranked = agents.enumerated().sorted { a, b in
             let ra = a.element.needsAttention ? 0 : a.element.value.status == .working ? 1 : 2
@@ -149,23 +178,34 @@ final class KitchenSceneView: SCNView {
         for id in chefs.keys where !ids.contains(id) {
             chefs.removeValue(forKey: id)?.root.removeFromParentNode()
             chefLabels.removeValue(forKey: id)?.removeFromSuperview()
-            chefAgents[id] = nil; slots[id] = nil
+            chefAgents[id] = nil; slots[id] = nil; pacing[id] = nil
         }
         guard !ranked.isEmpty, case let .success(assets) = ChefAssets.shared, let world = scene else { updatePlayback(); return }
-        slots = KitchenLayout.assignSlots(ranked.map { ($0.id, KitchenLayout.work(for: $0.value).area) }, previous: slots)
-        let table = KitchenLayout.chefSlots, pickup = table["test"]?.first, home = table["home"] ?? []
+        let table = KitchenLayout.chefSlots, pickup = table["island"]?.first
+        let arriving = ranked.filter { chefs[$0.id] == nil && seenConversations.contains($0.conversationID) && [.live, .recentlyObserved].contains($0.value.freshness) }.map(\.id)
+        slots = KitchenLayout.assignSlots(ranked.map { agent in
+            (agent.id, pacing[agent.id]?.arriving == true || arriving.contains(agent.id) ? "order" : KitchenLayout.work(for: agent.value).area)
+        }, previous: slots)
         for agent in ranked {
             chefAgents[agent.id] = agent
-            if let chef = chefs[agent.id] {
-                chef.director.reducedMotion = reduced
-                chef.director.setIntent(KitchenLayout.intent(for: agent.value, at: slots[agent.id], pickup: pickup, restored: false))
-            } else {
-                // New chefs start at their station in their current state: no walk-in, no replayed gesture.
+            let desired = KitchenLayout.intent(for: agent.value, at: slots[agent.id], pickup: pickup, restored: false)
+            if chefs[agent.id] == nil {
                 let chef = ChefAvatar(id: agent.id, assets: assets, scale: KitchenLayout.chefScale, navigation: navigation)
                 chef.director.reducedMotion = reduced
-                let spawn = slots[agent.id] ?? (home.isEmpty ? nil : home[chefs.count % home.count])
-                if let spawn { chef.director.place(spawn.stand, heading: spawn.facing) }
-                chef.director.setIntent(KitchenLayout.intent(for: agent.value, at: slots[agent.id], pickup: pickup, restored: true))
+                if arriving.contains(agent.id), let door = table["elevator"]?.first, let order = slots[agent.id] {
+                    // A new agent joins: it rides the elevator in and reads its order first.
+                    chef.director.place(door.stand, heading: door.facing)
+                    chef.director.setIntent(KitchenLayout.arrivalIntent(at: order))
+                    pacing[agent.id] = Pacing(desired: desired, arriving: true)
+                    openElevator()
+                } else {
+                    // Chefs shown from history start in place: no walk-in, no replayed gesture.
+                    let home = table["break"] ?? []
+                    let spawn = slots[agent.id] ?? (home.isEmpty ? nil : home[chefs.count % home.count])
+                    if let spawn { chef.director.place(spawn.stand, heading: spawn.facing) }
+                    chef.director.setIntent(KitchenLayout.intent(for: agent.value, at: slots[agent.id], pickup: pickup, restored: true))
+                    pacing[agent.id] = Pacing(desired: chef.director.intent ?? desired)
+                }
                 chef.update(0)
                 world.rootNode.addChildNode(chef.root); chefs[agent.id] = chef
                 let label = KitchenLabel(labelWithString: "")
@@ -173,25 +213,75 @@ final class KitchenSceneView: SCNView {
                 label.wantsLayer = true; label.layer?.cornerRadius = 4
                 label.layer?.backgroundColor = NSColor.white.withAlphaComponent(0.9).cgColor
                 chefLabels[agent.id] = label; addSubview(label)
+            } else {
+                chefs[agent.id]?.director.reducedMotion = reduced
+                pacing[agent.id]?.desired = desired
             }
+            // The label always shows the live action, even while the chef stays put.
+            let doing = agent.value.status == .working && !agent.value.latestActivity.isEmpty ? agent.value.latestActivity : agent.value.statusLabel
             let label = chefLabels[agent.id]
-            label?.stringValue = agent.value.name + " · " + agent.value.statusLabel
+            label?.stringValue = agent.value.name + " · " + (doing.count > 48 ? String(doing.prefix(47)) + "…" : doing)
             label?.textColor = agent.needsAttention ? .systemOrange : .init(white: 0.2, alpha: 1)
         }
+        seenConversations.formUnion(ranked.map(\.conversationID))
+        pace(now: now)
         placeChefLabels()
         updatePlayback()
         needsDisplay = true
+    }
+    /// Applies wanted intents: urgent ones at once, others after the chef has worked at its
+    /// station for `minimumDwell` (or read its order for `orderReading` after arriving).
+    func pace(now: Double) {
+        for (id, chef) in chefs {
+            guard var state = pacing[id] else { continue }
+            let director = chef.director
+            if director.station != nil, state.arrivedAt == nil { state.arrivedAt = now }
+            let settledFor = state.arrivedAt.map { now - $0 } ?? 0
+            var apply = false
+            if state.arriving {
+                apply = state.arrivedAt != nil && settledFor >= KitchenLayout.orderReading
+                if apply, let agent = chefAgents[id] {
+                    // Done reading: claim a place at the station its work calls for.
+                    state.arriving = false; pacing[id]?.arriving = false
+                    slots = KitchenLayout.assignSlots(chefAgents.values.map { a in
+                        (a.id, pacing[a.id]?.arriving == true ? "order" : KitchenLayout.work(for: a.value).area)
+                    }.sorted { $0.0 < $1.0 }, previous: slots)
+                    state.desired = KitchenLayout.intent(for: agent.value, at: slots[id], pickup: KitchenLayout.chefSlots["island"]?.first, restored: false)
+                }
+            } else if state.desired.key != director.intent?.key {
+                // Redirect at once when urgent, while still walking, or after the minimum stay.
+                apply = state.desired.urgent || director.intent?.station == nil || director.station == nil || settledFor >= KitchenLayout.minimumDwell
+            }
+            if apply {
+                director.setIntent(state.desired)
+                state.arrivedAt = nil
+            }
+            pacing[id] = state
+        }
+    }
+    private var pacingPending: Bool {
+        pacing.contains { id, state in state.arriving || state.desired.key != chefs[id]?.director.intent?.key }
+    }
+    private func openElevator() {
+        guard let car = scene?.rootNode.childNode(withName: "elevator", recursively: false) else { return }
+        let width = CGFloat(KitchenLayout.areas.first { $0.id == "elevator" }?.footprint.width ?? 2.4)
+        for (name, direction) in [("elevator door left", -1.0), ("elevator door right", 1.0)] {
+            guard let door = car.childNode(withName: name, recursively: false), door.action(forKey: "doors") == nil else { continue }
+            let slide = CGFloat(direction) * (width / 2 - 0.2)
+            door.runAction(.sequence([.moveBy(x: slide, y: 0, z: 0, duration: 0.6), .wait(duration: 2.4), .moveBy(x: -slide, y: 0, z: 0, duration: 0.6)]), forKey: "doors")
+        }
     }
     func frameStep(at time: TimeInterval) {
         let delta = lastFrame.map { Float(min(0.05, max(0, time - $0))) } ?? 0
         lastFrame = time
         for chef in chefs.values { chef.update(delta) }
+        pace(now: CACurrentMediaTime())
         placeChefLabels()
         updatePlayback()
     }
     private var effectiveActive: Bool { active && (window == nil || window?.occlusionState.contains(.visible) == true) }
     func updatePlayback() {
-        let moving = effectiveActive && chefs.values.contains(where: \.animating)
+        let moving = effectiveActive && (chefs.values.contains(where: \.animating) || pacingPending)
         if isPlaying != moving { isPlaying = moving }
         if rendersContinuously != moving { rendersContinuously = moving }
         if frameLink?.isPaused != !moving { frameLink?.isPaused = !moving }
@@ -243,7 +333,8 @@ final class KitchenSceneView: SCNView {
     var floorCorners: [SCNVector3] {
         var result: [SCNVector3] = []
         let signs: [Float] = [-1, 1]
-        for x in signs { for y in signs { for z in signs { result.append(SCNVector3(x * 8, y * 0.1, z * 6)) } } }
+        let half = SIMD2(Float(KitchenLayout.floor.width / 2), Float(KitchenLayout.floor.height / 2))
+        for x in signs { for y in signs { for z in signs { result.append(SCNVector3(x * half.x, y * 0.1, z * half.y)) } } }
         return result
     }
     var framingPoints: [SCNVector3] {
@@ -294,7 +385,7 @@ final class KitchenSceneView: SCNView {
         var occupied: [CGRect] = []
         let path = CGMutablePath()
         for (index, area) in KitchenLayout.areas.enumerated() {
-            let point = projectPoint(SCNVector3(area.footprint.midX, area.id == "context" ? 3.5 : 2.3, area.footprint.minY))
+            let point = projectPoint(SCNVector3(area.footprint.midX, 2.6, area.footprint.minY))
             let anchor = CGPoint(x: CGFloat(point.x), y: isFlipped ? bounds.height - CGFloat(point.y) : CGFloat(point.y))
             let width: CGFloat = min(110, labels[index].attributedStringValue.size().width + 14)
             let size = labels[index].cell?.cellSize(forBounds: CGRect(x: 0, y: 0, width: width - 8, height: 100)) ?? CGSize(width: width, height: 32)

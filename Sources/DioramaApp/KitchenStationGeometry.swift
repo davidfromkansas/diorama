@@ -4,14 +4,25 @@ import SceneKit
 /// Small, static architectural models. Every fixture stays inside its station footprint.
 @MainActor enum KitchenStationGeometry {
     static func make(_ area: KitchenArea) -> SCNNode {
+        switch area.id {
+        case "elevator": return elevator(area)
+        case "bell": return bell(area)
+        case "break": return breakTable(area)
+        default: return counter(area)
+        }
+    }
+
+    private static func counter(_ area: KitchenArea) -> SCNNode {
         let root = SCNNode()
         root.name = area.id
         root.scale.y = 1.25 * CGFloat(KitchenLayout.heightScale)
-        root.position = SCNVector3(area.footprint.midX, 0.112, area.footprint.midY)
-        let sideways = area.id == "test"
+        root.position = SCNVector3(area.footprint.midX, KitchenLayout.floorTop, area.footprint.midY)
+        // Fixtures are modelled with their working face toward local +Z (the room).
+        let sideways = area.wall == .left || area.wall == .right
         let width = sideways ? area.footprint.height : area.footprint.width
         let depth = sideways ? area.footprint.width : area.footprint.height
-        if sideways { root.eulerAngles.y = -.pi / 2 }
+        if area.wall == .left { root.eulerAngles.y = .pi / 2 }
+        if area.wall == .right { root.eulerAngles.y = -.pi / 2 }
         let green = material(NSColor(red: 0.15, green: 0.25, blue: 0.23, alpha: 1))
         let ivory = material(NSColor(red: 0.84, green: 0.82, blue: 0.74, alpha: 1))
         let brass = material(NSColor(red: 0.66, green: 0.47, blue: 0.23, alpha: 1), metal: 0.7)
@@ -19,7 +30,8 @@ import SceneKit
         let oak = material(NSColor(red: 0.43, green: 0.26, blue: 0.13, alpha: 1))
         let ceramic = material(NSColor(red: 0.96, green: 0.94, blue: 0.86, alpha: 1))
         let steel = material(NSColor(white: 0.48, alpha: 1), metal: 0.8)
-        let paint = ["build", "prep", "review"].contains(area.id) ? green : ivory
+        let paper = material(NSColor(red: 0.98, green: 0.97, blue: 0.93, alpha: 1))
+        let paint = ["stove", "island", "serving"].contains(area.id) ? green : ivory
         @discardableResult func box(_ name: String, _ w: CGFloat, _ h: CGFloat, _ d: CGFloat,
                                    _ x: CGFloat, _ y: CGFloat, _ z: CGFloat, _ mat: SCNMaterial) -> SCNNode {
             let shape = SCNBox(width: w, height: h, length: d, chamferRadius: min(0.065, min(w, min(h, d)) / 4))
@@ -40,7 +52,7 @@ import SceneKit
             let node = SCNNode(geometry: shape); node.position = SCNVector3(x, y, z); root.addChildNode(node)
         }
         box("recessed plinth", width - 0.30, 0.18, depth - 0.30, 0, 0.07, 0, dark)
-        if area.id == "test" {
+        if area.id == "tasting" {
             // A real opening through the worktop; the basin sits below its rim.
             box("sink cabinet base", width - 0.18, 0.44, depth - 0.18, 0, 0.40, 0, paint)
             for (x, w) in [((-width / 2 - 0.8) / 2, width / 2 - 0.8), ((width / 2 + 0.4) / 2, width / 2 - 0.4)] {
@@ -56,19 +68,27 @@ import SceneKit
         }
         let count = max(2, Int(width / 0.85))
         let bay = (width - 0.16) / CGFloat(count)
-        // Framed doors, inset panels, and brass pulls on both island elevations.
-        for side in (area.id == "prep" ? [-1.0, 1.0] : [1.0]) {
+        // Framed doors, inset panels, and brass pulls on the room-facing elevations.
+        for side in (area.wall == .island ? [-1.0, 1.0] : [1.0]) {
             let face = CGFloat(side) * (depth / 2 - 0.08)
             for i in 0..<count {
                 let x = -width / 2 + 0.08 + bay * (CGFloat(i) + 0.5)
                 box("framed door", bay - 0.035, 0.66, 0.035, x, 0.51, face, paint)
-                box("inset panel", bay - 0.15, 0.47, 0.025, x, 0.49, face - CGFloat(side) * 0.012, ivoryIfNeeded(paint, area: area, ivory: ivory))
+                box("inset panel", bay - 0.15, 0.47, 0.025, x, 0.49, face - CGFloat(side) * 0.012, paint === green ? ivory : paint)
                 box("brass pull", 0.28, 0.055, 0.075, x, 0.76, face + CGFloat(side) * 0.043, brass)
             }
         }
         switch area.id {
-        case "context":
-            // Open French dresser: shallow shelves leave the lower worktop useful.
+        case "order":
+            // A steel ticket rail on the wall with the incoming orders clipped to it.
+            box("ticket rail", width - 0.3, 0.05, 0.06, 0, 1.9, -depth / 2 + 0.08, steel)
+            for i in 0..<Int((width - 0.6) / 0.42) {
+                let ticket = box("order ticket", 0.26, 0.36, 0.012, -width / 2 + 0.45 + CGFloat(i) * 0.42, 1.68, -depth / 2 + 0.1, paper)
+                ticket.eulerAngles.z = CGFloat(i % 3 - 1) * 0.06
+            }
+            box("ticket spike", 0.04, 0.22, 0.04, width / 2 - 0.5, 1.11, 0, steel)
+        case "prep":
+            // Open French dresser for the cookbooks, and a recipe board for planning.
             box("dresser back", width - 0.12, 1.4, 0.07, 0, 1.7, -depth / 2 + 0.07, paint)
             for x in [-width / 2 + 0.1, width / 2 - 0.1] {
                 box("dresser stile", 0.12, 1.46, 0.44, x, 1.73, -depth / 2 + 0.24, paint)
@@ -77,43 +97,47 @@ import SceneKit
                 box("oak shelf", width - 0.12, 0.065, 0.48, 0, y, -depth / 2 + 0.27, oak)
             }
             box("dresser cornice", width, 0.09, 0.54, 0, 2.48, -depth / 2 + 0.27, ivory)
-            for i in 0..<7 {
-                let x = -width / 2 + 0.42 + CGFloat(i) * 0.62
-                cylinder("pantry jar", 0.13, 0.27, x, 1.56, -0.35, ceramic)
-                cylinder("jar lid", 0.14, 0.035, x, 1.71, -0.35, brass)
-                for j in 0..<3 { cylinder("stacked bowl", 0.17, 0.05, x, 1.96 + CGFloat(j) * 0.045, -0.35, ceramic) }
+            for i in 0..<max(1, Int((width / 2 - 0.4) / 0.42)) {
+                let x = -width / 2 + 0.4 + CGFloat(i) * 0.42
+                box("cookbook", 0.09, 0.34, 0.3, x, 1.58, -0.35, i % 2 == 0 ? green : oak)
             }
-        case "build":
-            // Enamel range with two oven doors and six cast-iron burners.
+            box("recipe board", width * 0.4, 0.62, 0.04, width * 0.22, 2.0, -depth / 2 + 0.52, oak)
+            for i in 0..<3 { box("recipe card", 0.3, 0.4, 0.012, width * 0.22 + CGFloat(i - 1) * 0.42, 2.0, -depth / 2 + 0.55, paper) }
+        case "stove":
+            // Enamel range with oven doors and a row of cast-iron burners.
             box("range front", width - 0.2, 0.7, 0.055, 0, 0.52, depth / 2 - 0.015, green)
-            for x in [-width * 0.24, width * 0.24] {
-                box("oven brass frame", width * 0.4, 0.49, 0.04, x, 0.45, depth / 2 + 0.002, brass)
-                box("oven enamel door", width * 0.4 - 0.06, 0.43, 0.03, x, 0.45, depth / 2 + 0.025, green)
-                box("oven window", width * 0.29, 0.22, 0.025, x, 0.43, depth / 2 + 0.043, dark)
-                box("oven rail", width * 0.28, 0.04, 0.065, x, 0.65, depth / 2 - 0.015, brass)
+            let ovens = max(2, Int(width / 2.4))
+            for i in 0..<ovens {
+                let x = -width / 2 + (CGFloat(i) + 0.5) * width / CGFloat(ovens)
+                let w = width / CGFloat(ovens) * 0.8
+                box("oven brass frame", w, 0.49, 0.04, x, 0.45, depth / 2 + 0.002, brass)
+                box("oven enamel door", w - 0.06, 0.43, 0.03, x, 0.45, depth / 2 + 0.025, green)
+                box("oven window", w * 0.72, 0.22, 0.025, x, 0.43, depth / 2 + 0.043, dark)
+                box("oven rail", w * 0.7, 0.04, 0.065, x, 0.65, depth / 2 - 0.015, brass)
             }
             box("enameled cooktop", width - 0.2, 0.025, depth - 0.12, 0, 1.01, 0, dark)
-            for x in [-1.5, 0.0, 1.5] { for z in [-0.34, 0.34] {
-                cylinder("brass burner", 0.13, 0.04, x, 1.04, z, brass)
-                ring(0.23, x, 1.08, z, dark)
-                box("burner grate", 0.6, 0.055, 0.045, x, 1.08, z, steel)
-                box("burner grate", 0.045, 0.055, 0.55, x, 1.08, z, steel)
-            } }
-            for i in 0..<6 {
-                let knob = cylinder("range knob", 0.055, 0.04, -1.65 + CGFloat(i) * 0.66, 0.83, depth / 2 - 0.015, brass)
+            let burners = max(2, Int((width - 0.6) / 1.5))
+            for i in 0..<burners {
+                let x = -width / 2 + 0.3 + (CGFloat(i) + 0.5) * (width - 0.6) / CGFloat(burners)
+                cylinder("brass burner", 0.13, 0.04, x, 1.04, 0, brass)
+                ring(0.23, x, 1.08, 0, dark)
+                box("burner grate", 0.6, 0.055, 0.045, x, 1.08, 0, steel)
+                box("burner grate", 0.045, 0.055, 0.55, x, 1.08, 0, steel)
+                let knob = cylinder("range knob", 0.055, 0.04, x, 0.83, depth / 2 - 0.015, brass)
                 knob.eulerAngles.x = .pi / 2
+                if i % 2 == 0 { cylinder("stock pot", 0.26, 0.34, x, 1.27, 0, steel) }
             }
             // Low backguard instead of a suspended hood that would hide the burners.
             box("range backguard", width - 0.14, 0.32, 0.08, 0, 1.14, -depth / 2 + 0.055, green)
             box("backguard brass trim", width - 0.1, 0.035, 0.1, 0, 1.31, -depth / 2 + 0.055, brass)
-        case "prep":
-            box("butcher block", 1.7, 0.09, 1.25, -1.05, 1.045, 0, oak)
-            cylinder("mixing bowl", 0.32, 0.19, 0.45, 1.09, -0.35, ceramic)
-            cylinder("bowl interior", 0.26, 0.012, 0.45, 1.19, -0.35, ivory)
-            let pin = cylinder("rolling pin", 0.055, 0.8, -1.1, 1.13, 0.22, oak)
-            pin.eulerAngles.z = .pi / 2
-            box("folded linen", 0.56, 0.035, 0.65, 1.55, 1.02, 0.28, ivory)
-        case "test":
+        case "island":
+            for x in [-width / 4, width / 4] {
+                box("butcher block", 1.5, 0.09, 1.1, x, 1.045, 0, oak)
+            }
+            cylinder("mixing bowl", 0.32, 0.19, 0, 1.09, -0.3, ceramic)
+            cylinder("bowl interior", 0.26, 0.012, 0, 1.19, -0.3, ivory)
+            box("folded linen", 0.56, 0.035, 0.6, 0, 1.02, 0.35, ivory)
+        case "tasting":
             box("sink basin bottom", 1.2, 0.055, 0.88, -0.2, 0.69, 0, steel)
             for x in [-0.8, 0.4] { box("sink basin wall", 0.055, 0.32, 0.94, x, 0.85, 0, steel) }
             for z in [-0.44, 0.44] { box("sink basin wall", 1.25, 0.32, 0.055, -0.2, 0.85, z, steel) }
@@ -122,28 +146,85 @@ import SceneKit
             box("tap spout", 0.075, 0.07, 0.42, -0.2, 1.49, -0.35, brass)
             cylinder("tap outlet", 0.045, 0.12, -0.2, 1.43, -0.14, brass)
             for i in 0..<5 { box("drainer groove", 0.025, 0.012, 0.7, 0.8 + CGFloat(i) * 0.1, 1.01, 0, brass) }
-        case "attention":
-            box("espresso machine", 1.05, 0.58, 0.63, -0.75, 1.29, -0.15, green)
-            box("espresso brass fascia", 0.96, 0.12, 0.045, -0.75, 1.43, 0.19, brass)
-            box("drip tray", 0.97, 0.045, 0.3, -0.75, 1.04, 0.25, steel)
-            for x in [-0.98, -0.52] { cylinder("espresso cup", 0.075, 0.11, x, 1.12, 0.25, ceramic) }
-            cylinder("cup saucer", 0.18, 0.025, 0.65, 1.02, 0.1, ceramic)
-            cylinder("coffee cup", 0.10, 0.16, 0.65, 1.11, 0.1, ceramic)
-        default:
-            for x in [-1.35, 0.0, 1.35] {
-                cylinder("serving platter", 0.42, 0.03, x, 1.025, 0, ceramic)
-                let dome = SCNSphere(radius: 0.34); dome.segmentCount = 20; dome.materials = [steel]
-                let node = SCNNode(geometry: dome); node.name = "silver cloche"
-                node.scale = SCNVector3(1, 0.65, 1); node.position = SCNVector3(x, 1.045, 0); root.addChildNode(node)
-                cylinder("cloche handle", 0.045, 0.075, x, 1.29, 0, brass)
+            for i in 0..<3 { cylinder("tasting spoon cup", 0.08, 0.16, width / 2 - 0.4 - CGFloat(i) * 0.3, 1.08, -0.3, ceramic) }
+        case "serving":
+            // The pass: a framed window with heat lamps over the counter.
+            for x in [-width / 2 + 0.08, width / 2 - 0.08] { box("window post", 0.12, 1.9, 0.12, x, 1.95, 0, green) }
+            box("window header", width, 0.22, 0.3, 0, 2.95, 0, green)
+            let lamps = max(2, Int(width / 1.5))
+            for i in 0..<lamps {
+                let x = -width / 2 + (CGFloat(i) + 0.5) * width / CGFloat(lamps)
+                cylinder("heat lamp", 0.16, 0.18, x, 2.75, 0, brass)
+                cylinder("serving platter", 0.3, 0.03, x, 1.025, 0.15, ceramic)
             }
+        default:
+            break
         }
         return root
     }
 
-    private static func ivoryIfNeeded(_ paint: SCNMaterial, area: KitchenArea, ivory: SCNMaterial) -> SCNMaterial {
-        area.id == "context" || area.id == "attention" || area.id == "test" ? ivory : paint
+    /// Elevator car opening onto the kitchen; doors are named so arrivals can slide them open.
+    private static func elevator(_ area: KitchenArea) -> SCNNode {
+        let root = SCNNode(); root.name = area.id
+        root.position = SCNVector3(area.footprint.midX, KitchenLayout.floorTop, area.footprint.midY)
+        let w = area.footprint.width, d = area.footprint.height, h: CGFloat = 2.9
+        let frame = material(NSColor(red: 0.25, green: 0.27, blue: 0.3, alpha: 1), metal: 0.5)
+        let steel = material(NSColor(white: 0.66, alpha: 1), metal: 0.85)
+        let lamp = material(NSColor(red: 1, green: 0.78, blue: 0.4, alpha: 1)); lamp.emission.contents = NSColor(red: 1, green: 0.7, blue: 0.3, alpha: 1)
+        func box(_ name: String, _ bw: CGFloat, _ bh: CGFloat, _ bd: CGFloat, _ x: CGFloat, _ y: CGFloat, _ z: CGFloat, _ mat: SCNMaterial) {
+            let shape = SCNBox(width: bw, height: bh, length: bd, chamferRadius: 0.02); shape.materials = [mat]
+            let node = SCNNode(geometry: shape); node.name = name; node.position = SCNVector3(x, y, z); root.addChildNode(node)
+        }
+        box("elevator back", w, h, 0.12, 0, h / 2, -d / 2 + 0.06, frame)
+        for x in [-w / 2 + 0.06, w / 2 - 0.06] { box("elevator side", 0.12, h, d, x, h / 2, 0, frame) }
+        box("elevator header", w, 0.42, 0.16, 0, h - 0.21, d / 2 - 0.08, frame)
+        box("floor indicator", 0.5, 0.12, 0.03, 0, h - 0.2, d / 2 + 0.01, lamp)
+        box("elevator floor", w - 0.24, 0.03, d - 0.12, 0, 0.015, 0, steel)
+        for (name, x) in [("elevator door left", -w / 4 + 0.03), ("elevator door right", w / 4 - 0.03)] {
+            box(name, w / 2 - 0.12, h - 0.46, 0.06, x, (h - 0.42) / 2, d / 2 - 0.05, steel)
+        }
+        return root
     }
+
+    /// Brass service bell on a pedestal in the open middle of the room.
+    private static func bell(_ area: KitchenArea) -> SCNNode {
+        let root = SCNNode(); root.name = area.id
+        root.position = SCNVector3(area.footprint.midX, KitchenLayout.floorTop, area.footprint.midY)
+        let top = CGFloat(KitchenLayout.worktopHeight) - KitchenLayout.floorTop
+        let green = material(NSColor(red: 0.15, green: 0.25, blue: 0.23, alpha: 1))
+        let brass = material(NSColor(red: 0.78, green: 0.58, blue: 0.27, alpha: 1), metal: 0.85)
+        let pedestal = SCNCylinder(radius: 0.32, height: top); pedestal.materials = [green]
+        let column = SCNNode(geometry: pedestal); column.position.y = top / 2; root.addChildNode(column)
+        let dome = SCNSphere(radius: 0.26); dome.materials = [brass]
+        let bell = SCNNode(geometry: dome); bell.name = "service bell"; bell.scale = SCNVector3(1, 0.7, 1); bell.position.y = top + 0.04
+        root.addChildNode(bell)
+        let knob = SCNSphere(radius: 0.06); knob.materials = [brass]
+        let button = SCNNode(geometry: knob); button.position.y = top + 0.24; root.addChildNode(button)
+        return root
+    }
+
+    /// The break room's long table; seats are the chefs' slots on both sides.
+    private static func breakTable(_ area: KitchenArea) -> SCNNode {
+        let root = SCNNode(); root.name = area.id
+        root.position = SCNVector3(area.footprint.midX, KitchenLayout.floorTop, area.footprint.midY)
+        let top = CGFloat(KitchenLayout.worktopHeight) - KitchenLayout.floorTop
+        let oak = material(NSColor(red: 0.5, green: 0.32, blue: 0.17, alpha: 1))
+        let ceramic = material(NSColor(red: 0.96, green: 0.94, blue: 0.86, alpha: 1))
+        let w = area.footprint.width, d = area.footprint.height
+        let slab = SCNBox(width: w, height: 0.07, length: d, chamferRadius: 0.03); slab.materials = [oak]
+        let table = SCNNode(geometry: slab); table.name = "break table"; table.position.y = top; root.addChildNode(table)
+        for x in [-w / 2 + 0.2, w / 2 - 0.2] { for z in [-d / 2 + 0.15, d / 2 - 0.15] {
+            let legShape = SCNBox(width: 0.08, height: top, length: 0.08, chamferRadius: 0.01); legShape.materials = [oak]
+            let leg = SCNNode(geometry: legShape); leg.position = SCNVector3(x, top / 2, z); root.addChildNode(leg)
+        } }
+        for i in 0..<5 { for z in [-0.25, 0.25] {
+            let mug = SCNCylinder(radius: 0.07, height: 0.13); mug.materials = [ceramic]
+            let node = SCNNode(geometry: mug); node.position = SCNVector3(-w / 2 + 0.66 + CGFloat(i) * (w - 1.32) / 4, top + 0.1, z)
+            root.addChildNode(node)
+        } }
+        return root
+    }
+
     private static func material(_ color: NSColor, metal: CGFloat = 0) -> SCNMaterial {
         let result = SCNMaterial()
         result.diffuse.contents = color; result.lightingModel = .physicallyBased

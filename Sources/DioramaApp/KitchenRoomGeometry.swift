@@ -46,31 +46,39 @@ import SceneKit
             }
         }
         // Staggered oak boards, with shared materials and deliberate, visible seams.
-        for row in 0..<24 {
+        let floor = KitchenLayout.floor
+        let rows = Int(floor.height / 0.5), cols = Int(floor.width / 2) + 1
+        for row in 0..<rows {
             let offset: CGFloat = row % 2 == 0 ? 0 : -1
-            for col in 0..<9 {
-                let start = max(-8, -8 + CGFloat(col) * 2 + offset)
-                let end = min(8, -6 + CGFloat(col) * 2 + offset)
+            for col in 0..<cols {
+                let start = max(floor.minX, floor.minX + CGFloat(col) * 2 + offset)
+                let end = min(floor.maxX, floor.minX + 2 + CGFloat(col) * 2 + offset)
                 guard end > start else { continue }
-                box("oak board", end - start - 0.018, 0.018, 0.48, (start + end) / 2, 0.11, -5.75 + CGFloat(row) * 0.5, oak[(row * 3 + col) % 4])
+                box("oak board", end - start - 0.018, 0.018, 0.48, (start + end) / 2, 0.11, floor.minY + 0.25 + CGFloat(row) * 0.5, oak[(row * 3 + col) % 4])
             }
         }
-        box("back wall", 16, 2.9, 0.22, 0, 1.55, -5.87, plaster)
-        box("back cornice", 16, 0.14, 0.28, 0, 3.04, -5.85, trim)
-        box("back skirting", 16, 0.2, 0.28, 0, 0.24, -5.85, trim)
+        let back = floor.minY + 0.13
+        box("back wall", floor.width, 2.9, 0.22, floor.midX, 1.55, back, plaster)
+        box("back cornice", floor.width, 0.14, 0.28, floor.midX, 3.04, back + 0.02, trim)
+        box("back skirting", floor.width, 0.2, 0.28, floor.midX, 0.24, back + 0.02, trim)
         // Large backsplash tiles give the wall scale without busy surface detail.
-        for row in 0..<4 { for col in 0..<16 {
-            box("backsplash tile", 0.97, 0.34, 0.025, -7.5 + CGFloat(col), 0.55 + CGFloat(row) * 0.37, -5.745, stone)
+        for row in 0..<4 { for col in 0..<Int(floor.width) {
+            box("backsplash tile", 0.97, 0.34, 0.025, floor.minX + 0.5 + CGFloat(col), 0.55 + CGFloat(row) * 0.37, back + 0.125, stone)
         } }
-        for x: CGFloat in [-7.85, 7.85] {
-            box("low side wall", 0.26, 0.75, 11.7, x, 0.49, 0, plaster)
-            box("side coping", 0.30, 0.09, 11.7, x, 0.91, 0, trim)
+        for x: CGFloat in [floor.minX + 0.15, floor.maxX - 0.15] {
+            box("low side wall", 0.26, 0.75, floor.height - 0.3, x, 0.49, floor.midY, plaster)
+            box("side coping", 0.30, 0.09, floor.height - 0.3, x, 0.91, floor.midY, trim)
         }
-        box("window frame", 2.65, 1.8, 0.12, -0.4, 1.96, -5.68, trim)
-        box("window glass", 2.39, 1.54, 0.035, -0.4, 1.96, -5.595, glass)
-        box("window mullion", 0.075, 1.58, 0.06, -0.4, 1.96, -5.56, trim)
-        box("window crossbar", 2.42, 0.065, 0.06, -0.4, 1.96, -5.56, trim)
-        box("window sill", 2.8, 0.12, 0.32, -0.4, 1.05, -5.55, stone)
+        let window: CGFloat = 3.4
+        box("window frame", 2.65, 1.8, 0.12, window, 1.96, back + 0.19, trim)
+        box("window glass", 2.39, 1.54, 0.035, window, 1.96, back + 0.275, glass)
+        box("window mullion", 0.075, 1.58, 0.06, window, 1.96, back + 0.31, trim)
+        box("window crossbar", 2.42, 0.065, 0.06, window, 1.96, back + 0.31, trim)
+        // Break room: low partial walls keep it visible from above, with a doorway to the kitchen.
+        for wall in KitchenLayout.breakRoomWalls {
+            box("break room wall", wall.width, 1.0, wall.height, wall.midX, 0.6, wall.midY, plaster)
+            box("break room coping", wall.width + 0.04, 0.07, wall.height + 0.04, wall.midX, 1.12, wall.midY, trim)
+        }
         return root
     }
 }
