@@ -18,8 +18,8 @@ struct AgentCommandBar: View {
     var body: some View {
         HStack(alignment: .top, spacing: 8) {
             card.frame(minWidth: 250, maxWidth: .infinity).layoutPriority(1)
+            // Skills live in the pantry now (armed from there for the selected chef).
             activity.frame(minWidth: 180, maxWidth: .infinity)
-            CommandBarSkills(agent: agent, library: library).frame(width: CommandBarSkills.width)
         }
         .padding(8)
         .frame(height: Self.height)
@@ -229,85 +229,7 @@ enum CommandBarPalette {
 }
 private typealias Palette = CommandBarPalette
 
-/// The agent's skills as a 4-column grid; clicking a tile (or dragging it onto the composer)
-/// arms the skill for the next message to this agent.
-struct CommandBarSkills: View {
-    let agent: SpatialAgent
-    @Bindable var library: LibraryModel
-    @State private var model = CapabilityLibraryModel()
-    private let columns = Array(repeating: GridItem(.fixed(56), spacing: 6), count: 4)
-    static let width: CGFloat = 4 * 56 + 3 * 6 + 22
-
-    private var session: Session? { library.sessions.first { $0.id == agent.conversationID } }
-    private var context: CapabilityLibraryContext? {
-        guard let session, let provider = Provider(rawValue: agent.value.provider) ?? Optional(session.provider) else { return nil }
-        // A finished task's worktree may be gone; its project folder still has the same skills.
-        let folder = agent.value.worktree.flatMap { FileManager.default.fileExists(atPath: $0) ? $0 : nil } ?? session.project
-        return CapabilityLibraryContext(provider: provider, folder: folder, sessionID: session.sessionID)
-    }
-    private var skills: [CapabilityLibraryItem] { (model.snapshot?.items ?? []).filter { $0.kind == .skill } }
-    private var armed: Set<String> { Set((session.map { library.armedCapabilities[$0.id] ?? [] } ?? []).map(\.path)) }
-
-    var body: some View {
-        CommandBarPanel(title: "Skills") {
-            if skills.isEmpty {
-                VStack(spacing: 4) {
-                    Text(model.loading ? "Loading skills…" : "No skills found for this agent.")
-                    if !model.loading, let error = model.snapshot?.errors.values.first { Text(error).font(.caption2).lineLimit(3).foregroundStyle(.orange.opacity(0.85)) }
-                }
-                .font(.caption).multilineTextAlignment(.center)
-                .foregroundStyle(CommandBarPalette.paper.opacity(0.6)).frame(maxWidth: .infinity, maxHeight: .infinity)
-            } else {
-                ScrollView {
-                    LazyVGrid(columns: columns, alignment: .leading, spacing: 6) {
-                        ForEach(skills) { item in
-                            SkillTile(item: item, armed: armed.contains(item.source)) { arm(item) }
-                                .draggable(ArmedSkill(name: item.name, path: item.source))
-                        }
-                    }
-                }
-            }
-        }
-        .task(id: context) {
-            guard let context else { return }
-            await model.load(context) { await library.execution.capabilityLibrary($0) }
-        }
-    }
-    private func arm(_ item: CapabilityLibraryItem) {
-        guard let session else { return }
-        library.arm(CapabilityInput(name: item.name, path: item.source, kind: "skill"), for: session.id)
-    }
-}
-
-private struct SkillTile: View {
-    let item: CapabilityLibraryItem
-    let armed: Bool
-    let action: () -> Void
-    private static let covers: [Color] = [
-        Color(red: 0.86, green: 0.36, blue: 0.24), Color(red: 0.22, green: 0.55, blue: 0.62), Color(red: 0.55, green: 0.42, blue: 0.75),
-        Color(red: 0.78, green: 0.6, blue: 0.2), Color(red: 0.32, green: 0.6, blue: 0.36),
-    ]
-    var body: some View {
-        Button(action: action) {
-            VStack(spacing: 3) {
-                Image(systemName: item.emblem).font(.system(size: 17, weight: .semibold))
-                Text(item.name.split(separator: ":").last.map(String.init) ?? item.name)
-                    .font(.system(size: 8.5, weight: .semibold)).lineLimit(2).multilineTextAlignment(.center).minimumScaleFactor(0.8)
-            }
-            .foregroundStyle(.white)
-            .padding(3)
-            .frame(width: 56, height: 56)
-            .background(RoundedRectangle(cornerRadius: 9).fill(Self.covers[item.coverIndex % Self.covers.count].gradient))
-            .overlay(RoundedRectangle(cornerRadius: 9).stroke(armed ? CommandBarPalette.ring : .black.opacity(0.35), lineWidth: armed ? 2.5 : 1))
-            .opacity(item.availability == .disabled || item.availability == .connectionNeeded ? 0.4 : 1)
-        }
-        .buttonStyle(.plain).pointingHand()
-        .help(item.name + (item.description.isEmpty ? "" : "\n" + item.description) + (armed ? "\nArmed for your next message" : "\nClick or drag to the message box to arm"))
-        .accessibilityLabel((armed ? "Armed skill " : "Skill ") + item.name)
-    }
-}
-
-/// A skill dragged from the command bar onto the composer.
+/// A skill dragged from the pantry onto the composer.
 struct ArmedSkill: Codable, Transferable {
     let name: String
     let path: String
