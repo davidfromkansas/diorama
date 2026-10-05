@@ -154,6 +154,9 @@ public enum ActivityParser {
     public static func exitCode(_ output: String) -> Int? {
         first(exitPattern, in: output).flatMap { Int($0) }
     }
+    /// The session a code-mode `write_stdin` call polls (`session_id: 17775`).
+    public static func polledSession(_ script: String) -> String? { first(polledPattern, in: script) }
+    private static let polledPattern = try! NSRegularExpression(pattern: #"session_id\s*:\s*(\d+)"#)
     /// The session a still-running Codex command continues in.
     public static func sessionID(_ output: String) -> String? { first(sessionPattern, in: output) }
     private static func first(_ pattern: NSRegularExpression, in text: String) -> String? {
@@ -191,11 +194,14 @@ public enum ActivityParser {
                 // Code-mode calls wrap the real tool in JavaScript: `tools.exec_command({cmd:"…"})`.
                 if let input = p["input"] as? String, let inner = codeModeCall(input) {
                     // A wrapped patch keeps its newlines escaped inside the script's string literal.
-                    let detail = inner.tool == "apply_patch" ? patchFiles(input.replacingOccurrences(of: "\\n", with: "\n")).joined(separator: "\n") : inner.detail
+                    let detail = inner.tool == "apply_patch" ? patchFiles(input.replacingOccurrences(of: "\\n", with: "\n")).joined(separator: "\n")
+                        : inner.tool == "write_stdin" ? polledSession(input).map { "session=" + $0 } : inner.detail
                     return [event("toolStarted", .working, call: call, tool: inner.tool, detail: detail.map { String($0.prefix(1000)) }, turn: turn)]
                 }
                 let args = (p["arguments"] as? String).flatMap { try? JSONSerialization.jsonObject(with: Data($0.utf8)) } as? [String: Any]
-                let command = (args?["command"] as? [String])?.joined(separator: " ") ?? args?["command"] ?? args?["cmd"] ?? args?["file_path"]
+                // A poll names the session it reads, so its exit settles the command running there.
+                let polled = p["name"] as? String == "write_stdin" ? (args?["session_id"]).map { "session=\($0)" } : nil
+                let command = polled ?? (args?["command"] as? [String])?.joined(separator: " ") ?? args?["command"] ?? args?["cmd"] ?? args?["file_path"]
                 return [event("toolStarted", .working, call: call, tool: p["name"] as? String, detail: clipped(command), turn: turn)]
             }
             if ["function_call_output", "custom_tool_call_output"].contains(type) {

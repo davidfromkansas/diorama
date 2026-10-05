@@ -8,13 +8,16 @@ struct AgentProgressSections: View {
     let agent: WorkspaceAgent
     /// Show at most this many edited files before summarizing the rest.
     var fileLimit = 8
+    /// Smaller type and spacing for the kitchen's command bar.
+    var compact = false
+    private var heading: Font { compact ? .subheadline.weight(.semibold) : .headline }
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 14) {
+        VStack(alignment: .leading, spacing: compact ? 8 : 14) {
             if let plan = agent.plan, plan.hasTasks {
                 VStack(alignment: .leading, spacing: 6) {
                     Text("Checklist · \(plan.completedTaskCount) of \(plan.checklist.count) done" + (plan.tasksPreviousTurn ? " · previous turn" : ""))
-                        .font(.headline)
+                        .font(heading)
                     ForEach(Array(plan.checklist.enumerated()), id: \.offset) { _, step in
                         HStack(alignment: .top, spacing: 8) {
                             Image(systemName: Self.icon(step.status)).foregroundStyle(step.status == "completed" ? .green : .secondary)
@@ -27,7 +30,7 @@ struct AgentProgressSections: View {
                 }
             }
             VStack(alignment: .leading, spacing: 6) {
-                Text(agent.status == .working ? "This turn so far" : "This turn").font(.headline)
+                Text(agent.status == .working ? "This turn so far" : "This turn").font(heading)
                 let work = agent.turnWork
                 if work.isEmpty {
                     Text(agent.status == .working ? "No file edits, commands or tests yet." : "No file edits, commands or tests in this turn.")

@@ -20,6 +20,11 @@ public struct TurnWork: Equatable, Sendable {
     /// Commands still running in a shell session, resolved by a later poll of that session.
     private var sessions: [String: Call] = [:]
     private enum Call: Equatable, Sendable { case command, test(Int), poll }
+    /// The session each poll reads, when its call named it.
+    private var polled: [String: String] = [:]
+    static func session(_ detail: String) -> String? {
+        detail.split(separator: " ").first { $0.hasPrefix("session=") }.map { String($0.dropFirst(8)) }
+    }
 
     public init() {}
     public var isEmpty: Bool { files.isEmpty && commands == 0 && tests.isEmpty }
@@ -27,7 +32,7 @@ public struct TurnWork: Equatable, Sendable {
     /// A tool call started. `call` pairs it with its result.
     public mutating func started(tool: String, detail: String, call: String?) {
         // Polling a running command's session is not a new command.
-        if tool.lowercased() == "write_stdin" { if let call { calls[call] = .poll }; return }
+        if tool.lowercased() == "write_stdin" { if let call { calls[call] = .poll; polled[call] = Self.session(detail) }; return }
         if KitchenActivity.isEditing(tool: tool) {
             for path in detail.split(whereSeparator: \.isNewline).map({ $0.trimmingCharacters(in: .whitespaces) }) where !path.isEmpty && !files.contains(path) {
                 files.append(path)
@@ -54,7 +59,7 @@ public struct TurnWork: Equatable, Sendable {
         var target = kind
         if case .poll = kind {
             // A poll that reports an exit settles the command running in its session.
-            guard let session = fields["session"], fields["exit"] != nil, let running = sessions.removeValue(forKey: session) else { return }
+            guard let session = fields["session"] ?? polled.removeValue(forKey: call), fields["exit"] != nil, let running = sessions.removeValue(forKey: session) else { return }
             target = running
         } else if let session = fields["session"], fields["exit"] == nil {
             sessions[session] = kind; return

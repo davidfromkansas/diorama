@@ -354,6 +354,17 @@ import simd
         #expect(KitchenSceneView.tagText(value, doing: "Editing a file") == "Leo · Editing a file")
     }
 
+    @Test func armedSkillsGoAsStructuredCodexSkillsOrAsNamesInTheText() {
+        let deploy = CapabilityInput(name: "diorama-release", path: "/skills/diorama-release/SKILL.md", kind: "skill")
+        let plugin = CapabilityInput(name: "figma:figma-use", path: "/plugins/figma/SKILL.md", kind: "skill")
+        let known: [WireValue] = [.object(["name": .string("diorama-release"), "path": .string(deploy.path), "enabled": .bool(true)])]
+        let codex = ArmedSkillsRow.split([deploy, plugin], provider: .codex, known: known)
+        #expect(codex.structured == [deploy] && codex.text == "$figma-use")
+        // Claude has no structured skill input: it runs them as slash commands.
+        let claude = ArmedSkillsRow.split([deploy, plugin], provider: .claude, known: known)
+        #expect(claude.structured.isEmpty && claude.text == "/diorama-release /figma:figma-use")
+    }
+
     @Test func selectingAChefRingsItFollowsItAndHidesOtherTags() throws {
         let view = KitchenSceneView(frame: CGRect(x: 0, y: 0, width: 1000, height: 700))
         let cook = agent("a", .working, tool: "Edit", edits: true, conversation: "c1")

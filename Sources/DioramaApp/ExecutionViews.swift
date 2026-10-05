@@ -201,6 +201,8 @@ struct ExecutionControls: View {
     @State private var retryingWriter = false
     @State private var sending = false
     @State private var recoveredGoal: WireValue = .null
+    /// Skills armed from the kitchen's command bar (or dropped here), sent with the next message.
+    @State private var armed: [CapabilityInput] = []
     var body: some View {
         Group {
         if session.observationOnly {
@@ -242,6 +244,7 @@ struct ExecutionControls: View {
                 }
                 if task.parentID == nil {
                     WorkflowControls(controller: library.execution, task: task, mode: $mode, capabilities: $capabilities, queueNext: $queueNext)
+                        ArmedSkillsRow(skills: $armed, provider: session.provider)
                         ConversationComposer(controller: library.execution, model: $model, effort: $effort, prompt: $prompt, attachments: $attachments, approvalReview: $approvalReview,
                                              effectiveModel: task.model, effectiveEffort: task.effort, reviewer: task.approvalReviewer, policy: task.approvalPolicy, sandbox: task.sandbox, sending: sending, active: task.phase.active, canSteer: library.execution.canSteer(id: task.id) || (queueNext && !library.execution.workflowBusy.contains(task.id) && !task.workflow.queueUncertain), queued: queueNext, capabilities: $capabilities, folder: task.folder, threadID: task.id, mode: $mode, goalMode: $goalMode, queueMode: $queueNext) {
                             submit()
@@ -299,6 +302,7 @@ struct ExecutionControls: View {
                         }
                     }.pointingHand().disabled(library.execution.resuming.contains(session.sessionID))
                 } else {
+                    ArmedSkillsRow(skills: $armed, provider: session.provider)
                     ConversationComposer(controller: library.execution, model: $model, effort: $effort, prompt: $prompt, attachments: $attachments, approvalReview: $approvalReview,
                                          effectiveModel: session.provider == .claude ? "claude/default" : "", sending: sending, active: false, queued: queueNext, capabilities: $capabilities, folder: session.project, threadID: session.sessionID, mode: $mode, goalMode: $goalMode, queueMode: $queueNext) { submit() }
                 }
@@ -313,6 +317,12 @@ struct ExecutionControls: View {
         }
         .task(id: session.id) {
             recoveredGoal = session.provider == .claude ? ClaudeExecutionTransport.savedGoal(sessionID: session.sessionID) : .null
+        }
+        .onAppear { takeArmed() }
+        .onChange(of: library.armedCapabilities[session.id]) { takeArmed() }
+        .dropDestination(for: ArmedSkill.self) { items, _ in
+            for skill in items.map(\.input) where !armed.contains(where: { $0.id == skill.id }) { armed.append(skill) }
+            return !items.isEmpty
         }
         .onAppear {
             mode = library.drafts[session.id]?.mode ?? library.execution.tasks[session.sessionID]?.workflow.mode ?? "default"
@@ -332,6 +342,12 @@ struct ExecutionControls: View {
         .onChange(of: attachments) { library.saveDraft(session.id, text: prompt, attachments: attachments) }
     }
 
+    /// Moves skills armed from the command bar into this composer.
+    private func takeArmed() {
+        guard let incoming = library.armedCapabilities[session.id], !incoming.isEmpty else { return }
+        for skill in incoming where !armed.contains(where: { $0.id == skill.id }) { armed.append(skill) }
+        library.armedCapabilities[session.id] = nil
+    }
     private func submit(retrying: Bool = false) {
         guard !sending else { return }
         let command = prompt.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -343,9 +359,11 @@ struct ExecutionControls: View {
         }
         let submittedMode = mode.isEmpty ? "default" : mode
         let submittedGoal = goalMode
-        let submittedCapabilities = capabilities
+        let skills = ArmedSkillsRow.split(armed, provider: session.provider, known: library.execution.skills)
+        let submittedCapabilities = capabilities + skills.structured
         let submittedQueue = queueNext
-        let submittedPrompt = prompt
+        let submittedPrompt = skills.text.isEmpty ? prompt : skills.text + " " + prompt
+        armed = []
         let submittedAttachments = attachments
         let submittedModel = model
         let submittedEffort = effort
@@ -838,5 +856,46 @@ struct ComposerToolbarLayout: Layout {
         let fits = leading.width + spacing + trailing.width <= bounds.width
         subviews[0].place(at: CGPoint(x: bounds.minX, y: fits ? bounds.midY - leading.height / 2 : bounds.minY), proposal: ProposedViewSize(leading))
         subviews[1].place(at: CGPoint(x: max(bounds.minX, bounds.maxX - trailing.width), y: fits ? bounds.midY - trailing.height / 2 : bounds.maxY - trailing.height), proposal: ProposedViewSize(trailing))
+    }
+}
+
+
+/// Skills armed for the next message, as removable chips.
+struct ArmedSkillsRow: View {
+    @Binding var skills: [CapabilityInput]
+    let provider: Provider
+    var body: some View {
+        if !skills.isEmpty {
+            HStack(spacing: 6) {
+                Image(systemName: "sparkles").foregroundStyle(.secondary)
+                ForEach(skills) { skill in
+                    HStack(spacing: 4) {
+                        Text(Self.token(skill, provider: provider)).font(.caption.weight(.semibold))
+                        Button { skills.removeAll { $0.id == skill.id } } label: { Image(systemName: "xmark").font(.system(size: 8, weight: .bold)) }
+                            .buttonStyle(.plain).pointingHand().accessibilityLabel("Remove skill " + skill.name)
+                    }
+                    .padding(.horizontal, 8).padding(.vertical, 3)
+                    .background(Capsule().fill(Color.green.opacity(0.15))).overlay(Capsule().stroke(Color.green.opacity(0.6)))
+                    .help("Armed for your next message")
+                }
+                Spacer(minLength: 0)
+            }
+        }
+    }
+    /// How a skill is named in a message: Claude runs `/skill`, Codex mentions `$skill`.
+    static func token(_ skill: CapabilityInput, provider: Provider) -> String {
+        provider == .claude ? "/" + skill.name : "$" + (skill.name.split(separator: ":").last.map(String.init) ?? skill.name)
+    }
+    /// Codex skills it lists go as structured input; everything else is named in the text.
+    static func split(_ skills: [CapabilityInput], provider: Provider, known: [WireValue]) -> (text: String, structured: [CapabilityInput]) {
+        var text: [String] = [], structured: [CapabilityInput] = []
+        for skill in skills {
+            if provider == .codex, known.contains(where: { $0["path"].string == skill.path && $0["name"].string == skill.name && $0["enabled"].bool }) {
+                structured.append(skill)
+            } else {
+                text.append(token(skill, provider: provider))
+            }
+        }
+        return (text.joined(separator: " "), structured)
     }
 }

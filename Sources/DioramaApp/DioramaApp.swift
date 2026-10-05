@@ -59,6 +59,14 @@ final class LibraryModel {
     var portfolio: PortfolioStore
     var activityPanels: [String: ActivityPanelState] = [:]
     let conversations: DioramaConversationModel
+    /// Skills armed from the kitchen's command bar, by conversation, until its composer picks
+    /// them up for the next message.
+    var armedCapabilities: [String: [CapabilityInput]] = [:]
+    func arm(_ capability: CapabilityInput, for conversation: String) {
+        var list = armedCapabilities[conversation] ?? []
+        guard !list.contains(where: { $0.id == capability.id }) else { return }
+        list.append(capability); armedCapabilities[conversation] = list
+    }
     var drafts: [String: ConversationDraft] {
         get { sharedOwner?.drafts ?? ownedDrafts }
         set { if let sharedOwner { sharedOwner.drafts = newValue } else { ownedDrafts = newValue } }

@@ -73,10 +73,18 @@ struct SpatialWorkspaceView: View {
                 if kitchenSelected {
                     let cooks = kitchenAgents(snapshot, focus: focus)
                     let _ = KitchenReviews.shared.observe(cooks)
-                    KitchenSceneSurface(agents: cooks, scope: focus == .portfolio ? nil : focus.projectID ?? focus.conversationID,
-                                        reviews: KitchenReviews.shared.states, active: visible,
-                                        reducedMotion: reduced, select: go, review: { reviewing = $0 }, progress: { progressAgent = $0.id },
-                                        selectedAgentID: focus.agentID, deselect: { deselectAgent(focus) })
+                    VStack(spacing: 0) {
+                        KitchenSceneSurface(agents: cooks, scope: focus == .portfolio ? nil : focus.projectID ?? focus.conversationID,
+                                            reviews: KitchenReviews.shared.states, active: visible,
+                                            reducedMotion: reduced, select: go, review: { reviewing = $0 }, progress: { progressAgent = $0.id },
+                                            selectedAgentID: focus.agentID, deselect: { deselectAgent(focus) })
+                        // The selected chef's command bar sits under the kitchen, down to the window's edge.
+                        if let selected = cooks.first(where: { $0.id == focus.agentID }) {
+                            AgentCommandBar(agent: selected, library: library) { deselectAgent(focus) }
+                                .transition(.move(edge: .bottom).combined(with: .opacity))
+                        }
+                    }
+                    .animation(reduced ? nil : .easeOut(duration: 0.22), value: focus.agentID)
                 }
                 if !kitchenSelected && focus != .portfolio && !ScenePerformance.disabled("OVERLAYS") {
                     VStack(alignment: .leading, spacing: 12) {
