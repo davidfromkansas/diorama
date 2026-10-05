@@ -26,6 +26,9 @@ struct SpatialWorkspaceView: View {
     @State private var commandBarAgent: String?
     /// The pantry card (skills, plugins, MCP) floating under the agents card.
     @State private var pantryOpen = false
+    /// The kitchen camera left its home view (zoomed or turned), and a request to send it back.
+    @State private var kitchenCameraAway = false
+    @State private var kitchenCameraResets = 0
     @State private var explore = false
     @State private var attention = false
     @State private var allConversations = false
@@ -82,7 +85,20 @@ struct SpatialWorkspaceView: View {
                         KitchenSceneSurface(agents: cooks, scope: focus == .portfolio ? nil : focus.projectID ?? focus.conversationID,
                                             reviews: KitchenReviews.shared.states, active: visible,
                                             reducedMotion: reduced, select: go, review: { reviewing = $0 }, progress: { progressAgent = $0.id },
-                                            selectedAgentID: focus.agentID, deselect: { deselectAgent(focus) }, openPantry: { pantryOpen = true })
+                                            selectedAgentID: focus.agentID, deselect: { deselectAgent(focus) }, openPantry: { pantryOpen = true },
+                                            cameraMoved: { away in DispatchQueue.main.async { kitchenCameraAway = away } }, resetCamera: kitchenCameraResets)
+                            .overlay(alignment: .bottomLeading) {
+                                if visible, focus.agentID == nil {
+                                    HStack(spacing: 10) {
+                                        if kitchenCameraAway {
+                                            Button("Reset View") { kitchenCameraResets += 1 }.controlSize(.small).pointingHand().help("Back to the whole kitchen (R)")
+                                        }
+                                        Text(KitchenSceneView.controlsHint).font(.caption2).foregroundStyle(.secondary)
+                                    }
+                                    .padding(.horizontal, 10).padding(.vertical, 6)
+                                    .background(Capsule().fill(.regularMaterial)).padding(12)
+                                }
+                            }
                             .overlay(alignment: .topLeading) {
                                 if visible, focus != .portfolio {
                                     GeometryReader { scene in kitchenHUD(snapshot, focus: focus, model: roster, height: scene.size.height - 24) }
