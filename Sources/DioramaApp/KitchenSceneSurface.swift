@@ -178,10 +178,18 @@ final class KitchenSceneView: SCNView {
 
     // MARK: Chefs
 
-    /// Per-chef pacing: the latest wanted intent, when the chef arrived where it stands, and
-    /// whether it is still reading its order after arriving by elevator.
-    private struct Pacing { var desired: ChefIntent; var arrivedAt: Double?; var arriving = false }
+    /// Per-chef pacing: the agent state the chef should reflect, the intent that calls for (with
+    /// the chef's current spot, or a placeholder when it needs a new one), when it arrived where
+    /// it stands, and whether it is still reading its order after arriving by elevator.
+    private struct Pacing {
+        var agent: WorkspaceAgent
+        var review: KitchenReviews.State?
+        var want: ChefIntent?
+        var arrivedAt: Double?
+        var arriving = false
+    }
     private var pacing: [String: Pacing] = [:]
+    private let slotTable = KitchenLayout.chefSlots
     /// Chefs are stepped on SceneKit's render thread (`renderer(_:updateAtTime:)`) so their
     /// animation never waits for the main thread; main-thread steering takes the same lock.
     nonisolated let chefLock = NSRecursiveLock()
@@ -192,9 +200,47 @@ final class KitchenSceneView: SCNView {
     /// their project is on screen ride the elevator in; everything else appears in place.
     private var seenScopes: Set<String> = []
 
+    /// Spots are owned: a chef keeps its spot until it actually sets off, and claims a free spot
+    /// (the station's first unused one, else a queue place behind it) only when it leaves.
+    private func claimSlot(_ id: String, area: String) -> ChefStation? {
+        if let current = slots[id], current.area == area { return current }
+        let taken = Set(slots.filter { $0.key != id }.map(\.value.id))
+        let options = slotTable[area] ?? []
+        if let free = options.first(where: { !taken.contains($0.id) }) { slots[id] = free; return free }
+        guard !options.isEmpty else { return nil }
+        var n = 0
+        while taken.contains("\(options[n % options.count].id)~\(n)") { n += 1 }
+        let base = options[n % options.count], back = Float(n / options.count + 1) * 0.95 * KitchenLayout.chefScale
+        let queued = ChefStation(id: "\(base.id)~\(n)", area: area, stand: base.stand - SIMD2(sin(base.facing), cos(base.facing)) * back, facing: base.facing)
+        slots[id] = queued
+        return queued
+    }
+    /// The intent this chef's agent calls for. It keeps the chef's spot when the area is the
+    /// same; otherwise it claims a new spot (`claim`) or uses a placeholder for comparison.
+    private func wanted(_ id: String, claim: Bool) -> ChefIntent? {
+        guard let state = pacing[id], let chef = chefs[id] else { return nil }
+        let work = KitchenLayout.work(for: state.agent, review: state.review)
+        var slot: ChefStation?
+        if let area = work.area {
+            if let current = slots[id], current.area == area { slot = current }
+            else if claim { slot = claimSlot(id, area: area) }
+            else { slot = ChefStation(id: "pending:" + area, area: area, stand: .zero, facing: 0) }
+        }
+        // Finished chefs pick their plate up where they already work, never at a shared spot.
+        let pickup = chef.director.station.flatMap { ["cooking", "stove", "prep", "tasting"].contains($0.area) ? $0 : nil }
+        return KitchenLayout.intent(for: state.agent, at: slot, pickup: pickup, restored: false, review: state.review)
+    }
+    private func queuedWithFreeSpot(_ id: String) -> Bool {
+        guard let slot = slots[id], slot.id.contains("~") else { return false }
+        let taken = Set(slots.filter { $0.key != id }.map(\.value.id))
+        return (slotTable[slot.area] ?? []).contains { !taken.contains($0.id) }
+    }
+
     /// Reconcile chefs with agents: attention first, then working, capped at `maxChefs`.
     func apply(agents: [SpatialAgent], scope: String? = nil, active: Bool, reducedMotion: Bool, now: Double = CACurrentMediaTime()) {
-        chefLock.lock(); defer { chefLock.unlock(); publishChefs() }
+        // The render thread only sees published chefs, so new chefs are built outside the lock;
+        // the lock covers just the short steering steps below (a long hold froze every chef).
+        defer { publishChefs() }
         let applyStart = CACurrentMediaTime()
         defer { if CACurrentMediaTime() - applyStart > 0.02 { Self.trace(String(format: "slow apply %.0f ms", (CACurrentMediaTime() - applyStart) * 1000)) } }
         if active != self.active { Self.trace("active -> \(active)") }
@@ -207,46 +253,50 @@ final class KitchenSceneView: SCNView {
         }.prefix(Self.maxChefs).map(\.element)
         let ids = Set(ranked.map(\.id))
         for id in chefs.keys where !ids.contains(id) {
+            chefLock.lock(); renderChefs.removeAll { $0.id == id }; chefLock.unlock()
             chefs.removeValue(forKey: id)?.root.removeFromParentNode()
             chefLabels.removeValue(forKey: id)?.removeFromSuperview()
             chefAgents[id] = nil; slots[id] = nil; pacing[id] = nil
         }
         guard !ranked.isEmpty, case let .success(assets) = ChefAssets.shared, let world = scene else { updatePlayback(); return }
-        let table = KitchenLayout.chefSlots, pickup = table["cooking"]?.first
-        let arriving = ranked.filter { chefs[$0.id] == nil && seenScopes.contains($0.projectID ?? $0.conversationID) && [.live, .recentlyObserved].contains($0.value.freshness) }.map(\.id)
-        slots = KitchenLayout.assignSlots(ranked.map { agent in
-            (agent.id, pacing[agent.id]?.arriving == true || arriving.contains(agent.id) ? "order" : KitchenLayout.work(for: agent.value, review: reviews[agent.conversationID]).area)
-        }, previous: slots)
         for agent in ranked {
             chefAgents[agent.id] = agent
-            let desired = KitchenLayout.intent(for: agent.value, at: slots[agent.id], pickup: pickup, restored: false, review: reviews[agent.conversationID])
+            let review = reviews[agent.conversationID]
             if chefs[agent.id] == nil {
                 let chef = ChefAvatar(id: agent.id, assets: assets, scale: KitchenLayout.chefScale, navigation: navigation)
                 chef.director.reducedMotion = reduced
-                if arriving.contains(agent.id), let door = table["elevator"]?.first, let order = slots[agent.id] {
+                chefs[agent.id] = chef
+                let arriving = seenScopes.contains(agent.projectID ?? agent.conversationID) && [.live, .recentlyObserved].contains(agent.value.freshness)
+                if arriving, let door = slotTable["elevator"]?.first, let order = claimSlot(agent.id, area: "order") {
                     // A new agent joins: it rides the elevator in and reads its order first.
                     chef.director.place(door.stand, heading: door.facing)
                     chef.director.setIntent(KitchenLayout.arrivalIntent(at: order))
-                    pacing[agent.id] = Pacing(desired: desired, arriving: true)
+                    pacing[agent.id] = Pacing(agent: agent.value, review: review, arriving: true)
                     openElevator()
                 } else {
                     // Chefs shown from history start in place: no walk-in, no replayed gesture.
-                    let home = table["break"] ?? []
-                    let spawn = slots[agent.id] ?? (home.isEmpty ? nil : home[chefs.count % home.count])
-                    if let spawn { chef.director.place(spawn.stand, heading: spawn.facing) }
-                    chef.director.setIntent(KitchenLayout.intent(for: agent.value, at: slots[agent.id], pickup: pickup, restored: true, review: reviews[agent.conversationID]))
-                    pacing[agent.id] = Pacing(desired: chef.director.intent ?? desired)
+                    let area = KitchenLayout.work(for: agent.value, review: review).area
+                    let slot = area.flatMap { claimSlot(agent.id, area: $0) }
+                    let home = slotTable["break"] ?? []
+                    if let spawn = slot ?? (home.isEmpty ? nil : home[chefs.count % home.count]) { chef.director.place(spawn.stand, heading: spawn.facing) }
+                    chef.director.setIntent(KitchenLayout.intent(for: agent.value, at: slot, pickup: nil, restored: true, review: review))
+                    pacing[agent.id] = Pacing(agent: agent.value, review: review)
+                    pacing[agent.id]?.want = chef.director.intent
                 }
                 chef.update(0)
-                world.rootNode.addChildNode(chef.root); chefs[agent.id] = chef
+                world.rootNode.addChildNode(chef.root)
                 let label = KitchenLabel(labelWithString: "")
                 label.font = .systemFont(ofSize: 10, weight: .semibold); label.alignment = .center
                 label.wantsLayer = true; label.layer?.cornerRadius = 4
                 label.layer?.backgroundColor = NSColor.white.withAlphaComponent(0.9).cgColor
                 chefLabels[agent.id] = label; addSubview(label)
             } else {
+                chefLock.lock()
                 chefs[agent.id]?.director.reducedMotion = reduced
-                pacing[agent.id]?.desired = desired
+                pacing[agent.id]?.agent = agent.value
+                pacing[agent.id]?.review = review
+                if pacing[agent.id]?.arriving == false { let want = wanted(agent.id, claim: false); pacing[agent.id]?.want = want }
+                chefLock.unlock()
             }
             // The label always shows the live action, even while the chef stays put.
             let doing = agent.value.status == .working && !agent.value.latestActivity.isEmpty ? agent.value.latestActivity : agent.value.statusLabel
@@ -255,44 +305,46 @@ final class KitchenSceneView: SCNView {
             label?.textColor = agent.needsAttention ? .systemOrange : .init(white: 0.2, alpha: 1)
         }
         seenScopes.formUnion(ranked.map { $0.projectID ?? $0.conversationID })
+        chefLock.lock()
         pace(now: now)
         updateFlames()
         placeChefLabels()
+        chefLock.unlock()
         updatePlayback()
         needsDisplay = true
     }
-    /// Applies wanted intents: urgent ones at once, others after the chef has worked at its
-    /// station for `minimumDwell` (or read its order for `orderReading` after arriving).
+    /// Applies wanted intents: urgent ones at once, others after the chef has arrived and worked
+    /// at its station for `minimumDwell` (or read its order for `orderReading` after arriving).
     func pace(now: Double) {
-        for (id, chef) in chefs {
-            guard var state = pacing[id] else { continue }
+        for id in chefs.keys.sorted() {
+            guard let chef = chefs[id], var state = pacing[id] else { continue }
             let director = chef.director
             if director.station != nil, state.arrivedAt == nil { state.arrivedAt = now }
             let settledFor = state.arrivedAt.map { now - $0 } ?? 0
-            var apply = false
+            let walking = director.intent?.station != nil && director.station == nil
+            var apply = false, promote = false
             if state.arriving {
                 apply = state.arrivedAt != nil && settledFor >= KitchenLayout.orderReading
-                if apply, let agent = chefAgents[id] {
-                    // Done reading: claim a place at the station its work calls for.
-                    state.arriving = false; pacing[id]?.arriving = false
-                    slots = KitchenLayout.assignSlots(chefAgents.values.map { a in
-                        (a.id, pacing[a.id]?.arriving == true ? "order" : KitchenLayout.work(for: a.value, review: reviews[a.conversationID]).area)
-                    }.sorted { $0.0 < $1.0 }, previous: slots)
-                    state.desired = KitchenLayout.intent(for: agent.value, at: slots[id], pickup: KitchenLayout.chefSlots["cooking"]?.first, restored: false, review: reviews[agent.conversationID])
-                }
-            } else if state.desired.key != director.intent?.key {
+                if apply { state.arriving = false }
+            } else if let want = state.want, want.key != director.intent?.key {
                 // Urgent changes apply at once. Otherwise a walking chef finishes its trip (agents
                 // switch tools several times a second; re-routing mid-walk made chefs stop, turn
                 // and restart) and then works at least the minimum dwell before moving on.
-                let walking = director.intent?.station != nil && director.station == nil
-                apply = state.desired.urgent || director.intent?.station == nil || (!walking && settledFor >= KitchenLayout.minimumDwell)
+                apply = want.urgent || director.intent?.station == nil || (!walking && settledFor >= KitchenLayout.minimumDwell)
+            } else if !walking, settledFor >= KitchenLayout.minimumDwell, queuedWithFreeSpot(id) {
+                // A chef queued behind a full station steps into a spot once one frees up.
+                apply = true; promote = true
             }
             if apply {
-                var next = state.desired
-                // Work that leaves the serving window for the break room was accepted: celebrate.
-                if next.station?.area == "break", director.intent?.station?.area == "serving" { next.prelude = "celebrate_done" }
-                director.setIntent(next)
-                state.arrivedAt = nil
+                pacing[id] = state
+                if promote { slots[id] = nil }
+                if var next = wanted(id, claim: true) {
+                    // Work that leaves the serving window for the break room was accepted: celebrate.
+                    if next.station?.area == "break", director.intent?.station?.area == "serving" { next.prelude = "celebrate_done" }
+                    director.setIntent(next)
+                    state.arrivedAt = nil
+                }
+                state.want = wanted(id, claim: false)
             }
             pacing[id] = state
         }
@@ -342,7 +394,7 @@ final class KitchenSceneView: SCNView {
         return image
     }()
     private var pacingPending: Bool {
-        pacing.contains { id, state in state.arriving || state.desired.key != chefs[id]?.director.intent?.key }
+        pacing.contains { id, state in state.arriving || (state.want != nil && state.want?.key != chefs[id]?.director.intent?.key) || slots[id]?.id.contains("~") == true }
     }
     private func openElevator() {
         guard let car = scene?.rootNode.childNode(withName: "elevator", recursively: false) else { return }
@@ -380,6 +432,7 @@ final class KitchenSceneView: SCNView {
         let moving = effectiveActive && (chefs.values.contains(where: \.animating) || pacingPending)
         if isPlaying != moving { isPlaying = moving }
         if rendersContinuously != moving { rendersContinuously = moving }
+        if !moving { lastRenderTime = nil } // a pause is not a stall
         if frameLink?.isPaused != !moving {
             Self.trace("playback \(moving ? "running" : "paused") active=\(active) window=\(window?.occlusionState.contains(.visible) ?? false)")
             frameLink?.isPaused = !moving
