@@ -75,6 +75,10 @@ struct KitchenSceneSurface: NSViewRepresentable {
     var deselect: (() -> Void)? = nil
     /// A click on the pantry wall opens the pantry card.
     var openPantry: (() -> Void)? = nil
+    /// Whether the free camera left the home view (zoomed or turned), for the Reset View button.
+    var cameraMoved: ((Bool) -> Void)? = nil
+    /// Incremented to send the camera home.
+    var resetCamera = 0
     func makeNSView(context: Context) -> KitchenStage { KitchenStage() }
     func updateNSView(_ stage: KitchenStage, context: Context) {
         let view = stage.show(scope ?? "")
@@ -84,6 +88,8 @@ struct KitchenSceneSurface: NSViewRepresentable {
         view.reviews = reviews
         view.deselect = deselect
         view.openPantry = openPantry
+        view.cameraMoved = cameraMoved
+        if stage.cameraResets != resetCamera { stage.cameraResets = resetCamera; view.resetCamera() }
         view.apply(agents: agents, scope: scope, active: active, reducedMotion: reducedMotion)
         view.setSelection(selectedAgentID)
         view.fitFloor()
@@ -98,6 +104,7 @@ final class KitchenStage: NSView {
     private(set) var kitchens: [String: KitchenSceneView] = [:]
     private var recency: [String] = []
     private(set) var current: String?
+    var cameraResets = 0
 
     /// The kitchen for `scope`, now the only one on screen.
     @discardableResult func show(_ scope: String) -> KitchenSceneView {
@@ -233,6 +240,7 @@ final class KitchenSceneView: SCNView {
         wantsLayer = true; leaders.strokeColor = NSColor.darkGray.withAlphaComponent(0.25).cgColor
         leaders.fillColor = nil; leaders.lineWidth = 1; layer?.addSublayer(leaders)
         setAccessibilityLabel("Kitchen layout. " + KitchenLayout.areas.map(\.label).joined(separator: ", ") + ".")
+        setAccessibilityHelp(Self.controlsHint)
     }
     required init?(coder: NSCoder) { fatalError("init(coder:) has not been implemented") }
     override func layout() { super.layout(); fitFloor() }
@@ -266,6 +274,71 @@ final class KitchenSceneView: SCNView {
     nonisolated(unsafe) private var mainStepQueued = false
     /// Keeps macOS from throttling Diorama while chefs move in a visible kitchen.
     private var motionActivity: NSObjectProtocol?
+
+    static let controlsHint = "Scroll to zoom · Arrow keys to move · Q/W rotate · R reset"
+    // MARK: Free camera
+    /// Scroll to zoom, arrow keys to move, Q/W to turn, R to reset (see `KitchenCameraController`).
+    private(set) var freeCamera = KitchenCameraController()
+    /// Told whether the camera has left the home view, so the Reset View button can show.
+    var cameraMoved: ((Bool) -> Void)?
+    private var keyMonitor: Any?
+    private var reportedAway = false
+    /// Hands the free camera's pose to the render thread, which eases toward it.
+    private func applyFreeCamera() {
+        chefLock.lock()
+        overviewPose = CameraPose(eye: freeCamera.eye, look: freeCamera.look)
+        cameraMoving = true; snapCamera = reduced
+        chefLock.unlock()
+        let away = !freeCamera.isHome
+        if away != reportedAway { reportedAway = away; cameraMoved?(away) }
+        syncSelection()
+    }
+    func resetCamera() {
+        freeCamera.reset(); applyFreeCamera()
+    }
+    /// Scroll zooms the free camera in and back out to home (not while a chef is followed, a
+    /// modifier is held, or a sheet is open).
+    override func scrollWheel(with event: NSEvent) {
+        guard selectedID == nil, window?.attachedSheet == nil,
+              event.modifierFlags.intersection([.command, .control, .option, .shift]).isEmpty else { super.scrollWheel(with: event); return }
+        let delta = Float(event.hasPreciseScrollingDeltas ? event.scrollingDeltaY : event.scrollingDeltaY * 8)
+        guard delta != 0 else { return }
+        freeCamera.scroll(delta)
+        applyFreeCamera()
+    }
+    /// Arrow keys, Q/W and R while the kitchen is on screen and nothing that types has focus.
+    private func handleKey(_ event: NSEvent) -> Bool {
+        guard let window, window.isKeyWindow, observed, window.attachedSheet == nil,
+              event.modifierFlags.intersection([.command, .control, .option]).isEmpty else { return false }
+        // Typing, or arrowing through a list, keeps the keys.
+        if let responder = window.firstResponder, responder is NSText || responder is NSTableView || responder is NSTextField {
+            if !freeCamera.held.isEmpty { freeCamera.releaseAll() }
+            return false
+        }
+        let down = event.type == .keyDown
+        let key: KitchenCameraController.Key?
+        switch event.keyCode {
+        case 126: key = .up
+        case 125: key = .down
+        case 123: key = .left
+        case 124: key = .right
+        default:
+            switch event.charactersIgnoringModifiers?.lowercased() {
+            case "q": key = .turnLeft
+            case "w": key = .turnRight
+            case "r":
+                if down, !event.isARepeat, !freeCamera.isHome { resetCamera(); return true }
+                return false
+            default: key = nil
+            }
+        }
+        guard let key, selectedID == nil else { return false }
+        // Arrows only matter zoomed in; at home they stay with whatever else uses them.
+        if [.up, .down, .left, .right].contains(key), !freeCamera.isZoomedIn { return false }
+        if down { freeCamera.press(key) } else { freeCamera.release(key) }
+        updatePlayback()
+        return true
+    }
 
     // MARK: Selection and camera
     /// The selected chef: it wears the selection ring, the camera follows it, and only its name
@@ -596,7 +669,12 @@ final class KitchenSceneView: SCNView {
         defer { if CACurrentMediaTime() - stepStart > 0.02 { Self.trace(String(format: "slow frameStep %.0f ms", (CACurrentMediaTime() - stepStart) * 1000)) } }
         let delta = lastFrame.map { Float(min(0.05, max(0, time - $0))) } ?? 0
         lastFrame = time
-        _ = delta // chefs advance on the render thread; this loop only paces and places tags
+        // Chefs advance on the render thread; this loop paces them, places tags and moves the
+        // free camera while keys are held.
+        if !freeCamera.held.isEmpty, selectedID == nil {
+            freeCamera.step(delta)
+            applyFreeCamera()
+        }
         chefLock.lock(); pace(now: CACurrentMediaTime()); chefLock.unlock()
         updateFlames()
         updateBoards()
@@ -614,7 +692,7 @@ final class KitchenSceneView: SCNView {
     private var catchingUp: Bool { observedSince.map { CACurrentMediaTime() - $0 < Self.catchUpWindow } ?? true }
     static let catchUpWindow = 1.5
     private func noteObservation() {
-        if !observed { observedSince = nil }
+        if !observed { observedSince = nil; if !freeCamera.held.isEmpty { freeCamera.releaseAll() } }
         else if observedSince == nil { observedSince = CACurrentMediaTime(); catchUp() }
     }
     /// Jump every chef to where its agent's current state puts it: no walk, no replayed gesture,
@@ -642,7 +720,7 @@ final class KitchenSceneView: SCNView {
         // Only chef state is read under the lock: SceneKit playback setters can wait on the
         // renderer, which may itself be waiting for the lock in renderer(_:updateAtTime:).
         chefLock.lock()
-        let animating = chefs.values.contains(where: \.animating) || pacingPending || cameraMoving
+        let animating = chefs.values.contains(where: \.animating) || pacingPending || cameraMoving || !freeCamera.held.isEmpty
         chefLock.unlock()
         let moving = effectiveActive && animating
         if isPlaying != moving { isPlaying = moving }
@@ -670,6 +748,18 @@ final class KitchenSceneView: SCNView {
         windowObservers.append(NotificationCenter.default.addObserver(forName: NSWindow.didChangeOcclusionStateNotification, object: window, queue: .main) { [weak self] _ in
             MainActor.assumeIsolated { self?.updatePlayback() }
         })
+        // Keys held when the window loses focus would otherwise keep the camera moving.
+        windowObservers.append(NotificationCenter.default.addObserver(forName: NSWindow.didResignKeyNotification, object: window, queue: .main) { [weak self] _ in
+            MainActor.assumeIsolated { self?.freeCamera.releaseAll() }
+        })
+        if keyMonitor == nil {
+            keyMonitor = NSEvent.addLocalMonitorForEvents(matching: [.keyDown, .keyUp]) { [weak self] event in
+                // Local monitors run on the main thread.
+                nonisolated(unsafe) let event = event
+                let handled = MainActor.assumeIsolated { self?.handleKey(event) == true }
+                return handled ? nil : event
+            }
+        }
         updatePlayback()
     }
     /// Select a chef (nil clears it): ring it, follow it, and hide the other name tags. Clearing
@@ -703,6 +793,8 @@ final class KitchenSceneView: SCNView {
         followID = chef == nil ? nil : selectedID
         if followID != previous { cameraMoving = true; snapCamera = reduced }
         chefLock.unlock()
+        // Flying to a chef takes the camera; keys held for the free camera are let go.
+        if chef != nil, !freeCamera.held.isEmpty { freeCamera.releaseAll() }
         if let chef {
             let ring = selectionRing ?? Self.makeSelectionRing(reducedMotion: reduced)
             selectionRing = ring
@@ -712,7 +804,7 @@ final class KitchenSceneView: SCNView {
         }
         // Station signs and their leaders are drawn for the overview; they step aside while the
         // camera is anywhere else.
-        let overview = chef == nil && !cameraMoving
+        let overview = chef == nil && !cameraMoving && freeCamera.isHome
         for label in labels where label.isHidden == overview { label.isHidden = !overview }
         if leaders.isHidden == overview { leaders.isHidden = !overview }
         if overview { placeLabels() }
@@ -783,6 +875,7 @@ final class KitchenSceneView: SCNView {
         return image
     }()
     func tearDown() {
+        if let keyMonitor { NSEvent.removeMonitor(keyMonitor); self.keyMonitor = nil }
         if let activity = motionActivity { ProcessInfo.processInfo.endActivity(activity); motionActivity = nil }
         frameLink?.invalidate(); frameLink = nil; frameDriver = nil
         windowObservers.forEach(NotificationCenter.default.removeObserver); windowObservers = []
@@ -904,10 +997,11 @@ final class KitchenSceneView: SCNView {
                        towardCamera + abs(Double(point.x)) / (tangentX * availableX),
                        towardCamera + abs(cameraY) / (tangentY * availableY))
         }
-        let eye = SIMD3<Float>(0, Float(0.65 + distance * sin(elevation)), Float(distance * cos(elevation)))
+        freeCamera.setHome(center: SIMD2(Float(target.x), Float(target.z)), distance: Float(distance))
         chefLock.lock()
-        overviewPose = CameraPose(eye: eye, look: SIMD3(Float(target.x), Float(target.y), Float(target.z)))
-        let following = followID != nil || cameraMoving
+        overviewPose = CameraPose(eye: freeCamera.eye, look: freeCamera.look)
+        // Zoomed or turned, the render thread eases the camera; only the home view is placed here.
+        let following = followID != nil || cameraMoving || !freeCamera.isHome
         if !following { cameraPose = overviewPose }
         chefLock.unlock()
         // While a chef is followed the render thread owns the camera; it returns here on deselect.
