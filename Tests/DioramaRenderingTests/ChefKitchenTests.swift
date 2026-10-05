@@ -354,6 +354,37 @@ import simd
         #expect(KitchenSceneView.tagText(value, doing: "Editing a file") == "Leo · Editing a file")
     }
 
+    @Test func eachProjectKeepsItsKitchenWhileYouLookElsewhere() throws {
+        let stage = KitchenStage(frame: CGRect(x: 0, y: 0, width: 800, height: 600))
+        let a = stage.show("A")
+        let cook = agent("a1", .working, tool: "Edit", edits: true, project: "A")
+        a.apply(agents: [cook], scope: "A", active: true, reducedMotion: false)
+        let chef = try #require(a.chefs[cook.id])
+        let b = stage.show("B")
+        #expect(a.isHidden && !b.isHidden && a !== b)
+        // Coming back shows the same kitchen and the same chef, not a rebuilt room.
+        #expect(stage.show("A") === a && a.chefs[cook.id] === chef && b.isHidden)
+        for scope in ["C", "D", "E", "F", "G"] { stage.show(scope) }
+        #expect(stage.kitchens.count == KitchenStage.maxKitchens && stage.kitchens["B"] == nil && stage.kitchens["A"] != nil)
+    }
+
+    @Test func catchingUpPutsChefsWhereTheirAgentsAreWithoutReplaying() throws {
+        let view = KitchenSceneView(frame: CGRect(x: 0, y: 0, width: 1000, height: 700))
+        var cook = agent("a", .working, tool: "Edit", edits: true)
+        view.apply(agents: [cook], active: false, reducedMotion: false, now: 0)
+        let chef = try #require(view.chefs[cook.id])
+        #expect(chef.director.intent?.station?.area == "cooking")
+        // While nobody watched, the agent finished its turn.
+        cook.value.status = .done
+        view.apply(agents: [cook], active: false, reducedMotion: false, now: 10)
+        view.catchUp()
+        let director = chef.director
+        let station = try #require(director.intent?.station)
+        #expect(station.area == "serving" && simd_distance(director.position, station.stand) < 0.01)
+        // The dish is already on the pass: no walk over and no presenting gesture to replay.
+        #expect(director.placedPlate == station && !director.held.contains(.plate))
+    }
+
     @Test func dishesWaitingForReviewQueueWithPlatesInsteadOfDisappearing() throws {
         let view = KitchenSceneView(frame: CGRect(x: 0, y: 0, width: 1000, height: 700))
         let resting = (0..<6).map { agent("r\($0)", .done, freshness: .lastKnown, conversation: "rest\($0)") }

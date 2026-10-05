@@ -112,8 +112,9 @@ nonisolated final class ChefDirector: @unchecked Sendable {
         position = point; self.heading = heading; speed = 0; path = []; pathGoal = nil
     }
 
-    func setIntent(_ requested: ChefIntent) {
-        guard intent?.key != requested.key else { return }
+    /// `force` re-plans even an unchanged intent (catching up skips a trip already under way).
+    func setIntent(_ requested: ChefIntent, force: Bool = false) {
+        guard force || intent?.key != requested.key else { return }
         var next = requested
         // A one-shot id plays at most once per chef, whatever re-plans happen afterwards.
         if let shot = next.oneShot {

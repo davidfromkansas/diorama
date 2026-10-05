@@ -31,6 +31,9 @@ struct SpatialWorkspaceView: View {
     @State private var projectWorlds: [String: SpatialWorld] = [:]
     @State private var projectRecency: [String] = []
     private var kitchenSelected: Bool { state.sceneKind == .kitchen }
+    /// Agent state keeps refreshing while the window is active, and also in the kitchen whenever
+    /// it is on screen, so chefs keep working while you use another app beside it.
+    private var liveRefresh: Bool { (scenePhase == .active && library.windowIsActive) || kitchenSelected }
     private var state: SpatialWorkspaceState { library.spatial }
     private var world: SpatialWorld {
         if !visible { return cachedWorld ?? SpatialWorld() }
@@ -71,7 +74,7 @@ struct SpatialWorkspaceView: View {
                     let cooks = kitchenAgents(snapshot, focus: focus)
                     let _ = KitchenReviews.shared.observe(cooks)
                     KitchenSceneSurface(agents: cooks, scope: focus == .portfolio ? nil : focus.projectID ?? focus.conversationID,
-                                        reviews: KitchenReviews.shared.states, active: visible && scenePhase == .active && library.windowIsActive,
+                                        reviews: KitchenReviews.shared.states, active: visible,
                                         reducedMotion: reduced, select: go, review: { reviewing = $0 }, progress: { progressAgent = $0.id })
                 }
                 if !kitchenSelected && focus != .portfolio && !ScenePerformance.disabled("OVERLAYS") {
@@ -193,8 +196,8 @@ struct SpatialWorkspaceView: View {
                 state.notice = "The selected item is no longer available in this view. Showing its nearest available parent."
             }
         }
-        .task(id: "plans-\(visible)-\((scenePhase == .active && library.windowIsActive))-\(library.paused)-\(state.focus)-\(inspection?.nodeName ?? "")") {
-            guard visible, (scenePhase == .active && library.windowIsActive), !library.paused, state.focus != .portfolio else { return }
+        .task(id: "plans-\(visible)-\(liveRefresh)-\(library.paused)-\(state.focus)-\(inspection?.nodeName ?? "")") {
+            guard visible, liveRefresh, !library.paused, state.focus != .portfolio else { return }
             while !Task.isCancelled {
                 let current = world
                 var teams = current.teams.filter { state.focus.projectID != nil ? $0.projectID == state.focus.projectID : $0.session.id == state.focus.conversationID }
@@ -210,8 +213,8 @@ struct SpatialWorkspaceView: View {
                 do { try await Task.sleep(for: .seconds(2)) } catch { return }
             }
         }
-        .task(id: "\(visible)-\((scenePhase == .active && library.windowIsActive))-\(state.focus.conversationID ?? "")") {
-            guard visible, (scenePhase == .active && library.windowIsActive) else { return }
+        .task(id: "\(visible)-\(liveRefresh)-\(state.focus.conversationID ?? "")") {
+            guard visible, liveRefresh else { return }
             while !Task.isCancelled {
                 library.observationClock = Date()
                 refreshWorld()
@@ -229,7 +232,7 @@ struct SpatialWorkspaceView: View {
         let teams = focus.projectID.flatMap { id in snapshot.projects.first { $0.id == id }?.teams } ?? snapshot.team(focus).map { [$0] } ?? []
         return LiveAgentRosterPanel(model: model, agents: teams.flatMap(\.agents),
             // The roster sits beside both the office and the kitchen, so it stays live in either scene.
-            active: visible && (scenePhase == .active && library.windowIsActive) && inspection == nil, paused: library.paused) { destination in
+            active: visible && liveRefresh && inspection == nil, paused: library.paused) { destination in
                 if narrow { model.collapsed = true }
                 go(destination)
             } archive: { row in
