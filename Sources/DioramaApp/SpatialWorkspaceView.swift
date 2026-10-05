@@ -210,7 +210,8 @@ struct SpatialWorkspaceView: View {
     private func rosterPanel(_ snapshot: SpatialWorld, focus: SpatialFocus, model: LiveAgentRosterModel, narrow: Bool) -> some View {
         let teams = focus.projectID.flatMap { id in snapshot.projects.first { $0.id == id }?.teams } ?? snapshot.team(focus).map { [$0] } ?? []
         return LiveAgentRosterPanel(model: model, agents: teams.flatMap(\.agents),
-            active: !kitchenSelected && visible && (scenePhase == .active && library.windowIsActive) && inspection == nil, paused: library.paused) { destination in
+            // The roster sits beside both the office and the kitchen, so it stays live in either scene.
+            active: visible && (scenePhase == .active && library.windowIsActive) && inspection == nil, paused: library.paused) { destination in
                 if narrow { model.collapsed = true }
                 go(destination)
             } archive: { row in

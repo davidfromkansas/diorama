@@ -33,6 +33,7 @@ struct LiveAgentRosterPanel: View {
             }
             if model.rows.isEmpty {
                 ContentUnavailableView("No agents reported", systemImage: "person.2", description: Text("Agents appear as project activity is discovered."))
+                    .frame(maxHeight: .infinity)
             } else {
                 LiveAgentRosterTable(model: model, animate: active && !paused && !reduced, paused: paused, recentExpanded: false, jumpRevision: model.jumpRevision, open: open, archive: archive)
             }
@@ -40,6 +41,8 @@ struct LiveAgentRosterPanel: View {
             Text(paused ? "Observation paused · last reported state" : "Reported activity · providers may buffer updates")
                 .font(.system(size: 10)).foregroundStyle(.secondary).padding(.horizontal, 6).padding(.vertical, 10)
         }
+        // Fill the sidebar's full height whatever the row count; the footer stays at the bottom.
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
         .background(Color.white).environment(\.colorScheme, .light).tint(.blue)
         .onChange(of: agents, initial: true) { _, value in model.ingest(value) }
         .onChange(of: AgentCompletionViews.shared.revision) { model.ingest(agents) }
