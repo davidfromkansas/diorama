@@ -367,7 +367,9 @@ final class KitchenSceneView: SCNView {
             let size = label.attributedStringValue.size()
             let width = min(160, size.width + 12), height = size.height + 4
             let y = isFlipped ? bounds.height - CGFloat(point.y) : CGFloat(point.y)
-            label.frame = CGRect(x: CGFloat(point.x) - width / 2, y: y, width: width, height: height)
+            // Keep name tags fully inside the view near the walls.
+            let x = min(max(4, CGFloat(point.x) - width / 2), max(4, bounds.width - width - 4))
+            label.frame = CGRect(x: x, y: min(max(4, y), max(4, bounds.height - height - 4)), width: width, height: height)
         }
     }
     override func mouseUp(with event: NSEvent) {
