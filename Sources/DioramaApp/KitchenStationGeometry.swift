@@ -135,13 +135,12 @@ import SceneKit
             for i in 0..<5 { box("drainer groove", 0.025, 0.012, 0.7, 0.8 + CGFloat(i) * 0.1, 1.01, 0, brass) }
             for i in 0..<3 { cylinder("tasting spoon cup", 0.08, 0.16, width / 2 - 0.4 - CGFloat(i) * 0.3, 1.08, -0.3, ceramic) }
         case "serving":
-            // The pass: a framed window with heat lamps over the counter.
+            // The pass: an open counter between two posts, with nothing overhead so the
+            // camera can see the dishes waiting for review.
             for x in [-width / 2 + 0.08, width / 2 - 0.08] { box("window post", 0.12, 1.9, 0.12, x, 1.95, 0, green) }
-            box("window header", width, 0.22, 0.3, 0, 2.95, 0, green)
-            let lamps = max(2, Int(width / 1.5))
-            for i in 0..<lamps {
-                let x = -width / 2 + (CGFloat(i) + 0.5) * width / CGFloat(lamps)
-                cylinder("heat lamp", 0.16, 0.18, x, 2.75, 0, brass)
+            let platters = max(2, Int(width / 1.5))
+            for i in 0..<platters {
+                let x = -width / 2 + (CGFloat(i) + 0.5) * width / CGFloat(platters)
                 cylinder("serving platter", 0.3, 0.03, x, 1.025, 0.15, ceramic)
             }
         default:
