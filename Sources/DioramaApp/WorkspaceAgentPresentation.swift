@@ -231,12 +231,14 @@ enum WorkspaceAgentPresentation {
                 result[index].latestToolDetail = String((tool?.detail ?? "").prefix(500))
                 result[index].turnHasEdits = edits
                 result[index].turnWork = TurnWork.from(stream)
+                if agent.status != .working { result[index].turnWork.settle() }
             } else {
                 let tools = relevant.filter { $0.kind == "tool" && (latest?.turnID == nil || $0.turnID == latest?.turnID) }
                 result[index].latestTool = tools.last?.title ?? ""
                 result[index].latestToolDetail = String((tools.last?.data["command"].string ?? tools.last?.detail ?? "").prefix(500))
                 result[index].turnHasEdits = tools.contains { KitchenActivity.isEditing(tool: $0.title) }
                 result[index].turnWork = TurnWork.from(tools)
+                if agent.status != .working { result[index].turnWork.settle() }
             }
             result[index].meaningfulUpdatedAt = useActivity ? activity?.recordedAt : latest?.recordedAt
             result[index].meaningfulEventID = useActivity ? (activity.map(activityIdentity) ?? "") : latest.map { [$0.nativeID, $0.turnID ?? "", $0.kind, $0.status].joined(separator: ":") } ?? (source.task?.turnID ?? "")

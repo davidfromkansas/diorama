@@ -86,6 +86,7 @@ struct AgentProgressSections: View {
         case .running: "hourglass"
         case .passed: "checkmark.seal.fill"
         case .failed: "xmark.octagon.fill"
+        case .unknown: "questionmark.circle"
         }
     }
     static func outcome(_ outcome: TurnWork.Outcome) -> String {
@@ -93,6 +94,7 @@ struct AgentProgressSections: View {
         case .running: "Testing"
         case .passed: "Tests passed"
         case .failed: "Tests failed"
+        case .unknown: "Test result not reported"
         }
     }
 }

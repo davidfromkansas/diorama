@@ -150,11 +150,18 @@ public enum ActivityParser {
         }
         return files
     }
-    /// `Process exited with code N` from Codex shell output.
+    /// The exit status in Codex shell output: `Process exited with code N` or `"exit_code":N`.
     public static func exitCode(_ output: String) -> Int? {
-        guard let range = output.range(of: "Process exited with code ") else { return nil }
-        return Int(output[range.upperBound...].prefix { $0.isNumber || $0 == "-" })
+        first(exitPattern, in: output).flatMap { Int($0) }
     }
+    /// The session a still-running Codex command continues in.
+    public static func sessionID(_ output: String) -> String? { first(sessionPattern, in: output) }
+    private static func first(_ pattern: NSRegularExpression, in text: String) -> String? {
+        guard let match = pattern.firstMatch(in: text, range: NSRange(text.startIndex..., in: text)) else { return nil }
+        return (1..<match.numberOfRanges).lazy.compactMap { Range(match.range(at: $0), in: text).map { String(text[$0]) } }.first
+    }
+    private static let exitPattern = try! NSRegularExpression(pattern: #"Process exited with code (-?\d+)|"exit_code"\s*:\s*(-?\d+)"#)
+    private static let sessionPattern = try! NSRegularExpression(pattern: #"Process running with session ID (\d+)|"session_id"\s*:\s*(\d+)"#)
     private static func clipped(_ value: Any?) -> String? { (value as? String).map { String($0.prefix(1000)) } }
     public static func transcript(_ r: [String: Any], session: Session, id: String, now: Date) -> [ActivityEvent] {
         let time = date(r["timestamp"])
@@ -183,17 +190,21 @@ public enum ActivityParser {
                 }
                 // Code-mode calls wrap the real tool in JavaScript: `tools.exec_command({cmd:"…"})`.
                 if let input = p["input"] as? String, let inner = codeModeCall(input) {
-                    return [event("toolStarted", .working, call: call, tool: inner.tool, detail: inner.detail.map { String($0.prefix(1000)) }, turn: turn)]
+                    // A wrapped patch keeps its newlines escaped inside the script's string literal.
+                    let detail = inner.tool == "apply_patch" ? patchFiles(input.replacingOccurrences(of: "\\n", with: "\n")).joined(separator: "\n") : inner.detail
+                    return [event("toolStarted", .working, call: call, tool: inner.tool, detail: detail.map { String($0.prefix(1000)) }, turn: turn)]
                 }
                 let args = (p["arguments"] as? String).flatMap { try? JSONSerialization.jsonObject(with: Data($0.utf8)) } as? [String: Any]
                 let command = (args?["command"] as? [String])?.joined(separator: " ") ?? args?["command"] ?? args?["cmd"] ?? args?["file_path"]
                 return [event("toolStarted", .working, call: call, tool: p["name"] as? String, detail: clipped(command), turn: turn)]
             }
             if ["function_call_output", "custom_tool_call_output"].contains(type) {
-                // Shell output reports its exit status; anything else just finished.
-                let output = p["output"] as? String ?? ""
-                let failed = exitCode(output).map { $0 != 0 } ?? false
-                return [event(failed ? "toolFailed" : "toolFinished", call: call, turn: turn)]
+                // Shell output reports its exit status, or the session a still-running command
+                // continues in (a later `write_stdin` poll reports its exit); the detail carries both.
+                let output = (p["output"] as? String) ?? ((p["output"] as? [[String: Any]])?.compactMap { $0["text"] as? String }.joined(separator: "\n") ?? "")
+                let code = exitCode(output), session = sessionID(output)
+                let detail = [code.map { "exit=\($0)" }, session.map { "session=\($0)" }].compactMap { $0 }.joined(separator: " ")
+                return [event(code.map { $0 != 0 } == true ? "toolFailed" : "toolFinished", call: call, detail: detail.isEmpty ? nil : detail, turn: turn)]
             }
         } else if let message = r["message"] as? [String: Any] {
             let blocks = message["content"] as? [[String: Any]] ?? []

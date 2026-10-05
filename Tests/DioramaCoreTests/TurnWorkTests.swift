@@ -50,4 +50,32 @@ struct TurnWorkTests {
         #expect(ActivityParser.exitCode("Process exited with code 0\n") == 0)
         #expect(ActivityParser.exitCode("no status") == nil)
     }
+
+    @Test func codexCodeModeCallsNameFilesAndSettleLongCommandsByPolling() {
+        let session = Session(id: "s", provider: .codex, url: nil, sessionID: "s", title: "t", project: "/", modified: Date(), bytes: 0, archived: false, parentID: nil)
+        func call(_ id: String, _ script: String) -> [String: Any] {
+            ["type": "response_item", "payload": ["type": "custom_tool_call", "call_id": id, "name": "exec", "input": script]]
+        }
+        func output(_ id: String, _ json: String) -> [String: Any] {
+            ["type": "response_item", "payload": ["type": "custom_tool_call_output", "call_id": id,
+                "output": [["type": "input_text", "text": "Script completed\nOutput:\n"], ["type": "input_text", "text": json]]]]
+        }
+        let lines: [[String: Any]] = [
+            ["type": "event_msg", "payload": ["type": "task_started", "turn_id": "t"]],
+            call("p", #"text(await tools.apply_patch("*** Begin Patch\n*** Update File: /r/math.js\n@@\n-a\n+b\n*** End Patch"));"#), output("p", "{}"),
+            call("b", #"text(await tools.exec_command({cmd:"npm run build",yield_time_ms:1000}));"#), output("b", #"{"chunk_id":"1","session_id":17775}"#),
+            call("w1", #"text(await tools.write_stdin({session_id:17775,chars:""}));"#), output("w1", #"{"chunk_id":"2","session_id":17775}"#),
+            call("w2", #"text(await tools.write_stdin({session_id:17775,chars:""}));"#), output("w2", #"{"chunk_id":"3","exit_code":2,"session_id":17775}"#),
+            call("t1", #"text(await tools.exec_command({cmd:"npm test"}));"#), output("t1", #"{"chunk_id":"4","exit_code":1}"#),
+            call("t2", #"text(await tools.exec_command({cmd:"npm test"}));"#),
+            ["type": "event_msg", "payload": ["type": "task_complete", "turn_id": "t"]],
+        ]
+        let events = lines.enumerated().flatMap { ActivityParser.transcript($1, session: session, id: "\($0)", now: Date()) }
+        let work = TurnWork.from(events)
+        #expect(work.files == ["/r/math.js"])
+        // The build failed in a later poll; polls are not commands of their own.
+        #expect(work.commands == 1 && work.failedCommands == 1)
+        // A test whose result never arrived is unknown once the turn is over.
+        #expect(work.tests.map(\.outcome) == [.failed, .unknown])
+    }
 }
