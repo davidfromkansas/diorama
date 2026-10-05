@@ -68,8 +68,9 @@ struct KitchenSceneSurface: NSViewRepresentable {
     var review: ((SpatialAgent) -> Void)? = nil
     /// Clicking a chef's name tag opens its progress panel.
     var progress: ((SpatialAgent) -> Void)? = nil
-    func makeNSView(context: Context) -> KitchenSceneView { KitchenSceneView() }
-    func updateNSView(_ view: KitchenSceneView, context: Context) {
+    func makeNSView(context: Context) -> KitchenStage { KitchenStage() }
+    func updateNSView(_ stage: KitchenStage, context: Context) {
+        let view = stage.show(scope ?? "")
         view.select = select
         view.review = review
         view.progress = progress
@@ -77,7 +78,43 @@ struct KitchenSceneSurface: NSViewRepresentable {
         view.apply(agents: agents, scope: scope, active: active, reducedMotion: reducedMotion)
         view.fitFloor()
     }
-    static func dismantleNSView(_ view: KitchenSceneView, coordinator: ()) { view.tearDown() }
+    static func dismantleNSView(_ stage: KitchenStage, coordinator: ()) { stage.tearDown() }
+}
+
+/// One kitchen per project, kept while you look at other projects or tabs, so switching back
+/// shows the same chefs (caught up to what their agents did meanwhile) instead of a rebuilt room.
+final class KitchenStage: NSView {
+    static let maxKitchens = 6
+    private(set) var kitchens: [String: KitchenSceneView] = [:]
+    private var recency: [String] = []
+    private(set) var current: String?
+
+    /// The kitchen for `scope`, now the only one on screen.
+    @discardableResult func show(_ scope: String) -> KitchenSceneView {
+        let view = kitchens[scope] ?? {
+            let view = KitchenSceneView(frame: bounds)
+            view.autoresizingMask = [.width, .height]
+            addSubview(view); kitchens[scope] = view
+            return view
+        }()
+        recency.removeAll { $0 == scope }; recency.append(scope)
+        while recency.count > Self.maxKitchens {
+            let old = recency.removeFirst()
+            kitchens.removeValue(forKey: old).map { $0.tearDown(); $0.removeFromSuperview() }
+        }
+        if current != scope {
+            current = scope
+            for (key, kitchen) in kitchens where kitchen.isHidden != (key != scope) {
+                kitchen.isHidden = key != scope
+                kitchen.updatePlayback()
+            }
+        }
+        return view
+    }
+    func tearDown() {
+        kitchens.values.forEach { $0.tearDown(); $0.removeFromSuperview() }
+        kitchens = [:]; recency = []; current = nil
+    }
 }
 @MainActor private final class KitchenFrameDriver: NSObject {
     weak var view: KitchenSceneView?
@@ -228,7 +265,7 @@ final class KitchenSceneView: SCNView {
     }
     /// The intent this chef's agent calls for. It keeps the chef's spot when the area is the
     /// same; otherwise it claims a new spot (`claim`) or uses a placeholder for comparison.
-    private func wanted(_ id: String, claim: Bool) -> ChefIntent? {
+    private func wanted(_ id: String, claim: Bool, restored: Bool = false) -> ChefIntent? {
         guard let state = pacing[id], let chef = chefs[id] else { return nil }
         let work = KitchenLayout.work(for: state.agent, review: state.review)
         var slot: ChefStation?
@@ -239,7 +276,7 @@ final class KitchenSceneView: SCNView {
         }
         // Finished chefs pick their plate up where they already work, never at a shared spot.
         let pickup = chef.director.station.flatMap { ["cooking", "stove", "prep", "tasting"].contains($0.area) ? $0 : nil }
-        return KitchenLayout.intent(for: state.agent, at: slot, pickup: pickup, restored: false, review: state.review)
+        return KitchenLayout.intent(for: state.agent, at: slot, pickup: pickup, restored: restored, review: state.review)
     }
     private func queuedWithFreeSpot(_ id: String) -> Bool {
         guard let slot = slots[id], slot.id.contains("~") else { return false }
@@ -286,7 +323,8 @@ final class KitchenSceneView: SCNView {
                 chef.director.reducedMotion = reduced
                 chef.dish = KitchenFood.dish(for: agent.value.completionKey ?? agent.conversationID)
                 chefs[agent.id] = chef
-                let arriving = seenScopes.contains(agent.projectID ?? agent.conversationID) && [.live, .recentlyObserved].contains(agent.value.freshness)
+                // Only agents that start while someone watches ride the elevator in.
+                let arriving = !catchingUp && seenScopes.contains(agent.projectID ?? agent.conversationID) && [.live, .recentlyObserved].contains(agent.value.freshness)
                 if arriving, let door = slotTable["elevator"]?.first, let order = claimSlot(agent.id, area: "order") {
                     // A new agent joins: it rides the elevator in and reads its order first.
                     chef.director.place(door.stand, heading: door.facing)
@@ -327,7 +365,9 @@ final class KitchenSceneView: SCNView {
             label?.textColor = agent.needsAttention ? .systemOrange : .init(white: 0.2, alpha: 1)
         }
         seenScopes.formUnion(ranked.map { $0.projectID ?? $0.conversationID })
+        noteObservation()
         chefLock.lock(); pace(now: now); chefLock.unlock()
+        if catchingUp { catchUp() }
         updateFlames()
         updateBoards()
         placeChefLabels()
@@ -487,8 +527,42 @@ final class KitchenSceneView: SCNView {
         placeChefLabels()
         updatePlayback()
     }
-    private var effectiveActive: Bool { active && (window == nil || window?.occlusionState.contains(.visible) == true) }
+    private var effectiveActive: Bool { active && !isHiddenOrHasHiddenAncestor && (window == nil || window?.occlusionState.contains(.visible) == true) }
+    /// Whether someone can see this kitchen. A view outside any window (tests, capture) counts as
+    /// seen, so it always paces and animates.
+    var observed: Bool { window == nil || effectiveActive }
+    /// When the kitchen last came into view after being out of view, for catching up.
+    private var observedSince: Double? = 0
+    /// Out of view, and for a moment after coming back, changes take effect at once: the kitchen
+    /// looks as if it kept working while nobody watched.
+    private var catchingUp: Bool { observedSince.map { CACurrentMediaTime() - $0 < Self.catchUpWindow } ?? true }
+    static let catchUpWindow = 1.5
+    private func noteObservation() {
+        if !observed { observedSince = nil }
+        else if observedSince == nil { observedSince = CACurrentMediaTime(); catchUp() }
+    }
+    /// Jump every chef to where its agent's current state puts it: no walk, no replayed gesture,
+    /// and a dish waiting for review already on the pass.
+    func catchUp() {
+        chefLock.lock(); defer { chefLock.unlock() }
+        let now = CACurrentMediaTime()
+        for id in chefs.keys.sorted() {
+            guard let chef = chefs[id], var state = pacing[id] else { continue }
+            let director = chef.director
+            state.arriving = false; pacing[id] = state
+            let walking = director.intent?.station != nil && director.station == nil
+            guard walking || state.want?.key != director.intent?.key || queuedWithFreeSpot(id) else { continue }
+            if queuedWithFreeSpot(id) { slots[id] = nil }
+            guard let next = wanted(id, claim: true, restored: true) else { continue }
+            if let station = next.station { director.place(station.stand, heading: station.facing) }
+            director.setIntent(next, force: true)
+            state.want = wanted(id, claim: false)
+            state.arrivedAt = now - KitchenLayout.minimumDwell
+            pacing[id] = state
+        }
+    }
     func updatePlayback() {
+        noteObservation()
         // Only chef state is read under the lock: SceneKit playback setters can wait on the
         // renderer, which may itself be waiting for the lock in renderer(_:updateAtTime:).
         chefLock.lock()
