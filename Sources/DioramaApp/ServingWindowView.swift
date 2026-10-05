@@ -62,6 +62,7 @@ struct ServingWindowView: View {
         case .committed: "Committed locally" + (reviews.entries[agent.conversationID]?.note.map { " · \($0)" } ?? "")
         case .shipped: "Pull request open" + (workspace?.pullRequest.map { " · #\($0.number)" } ?? "")
         case .approved: "Done"
+        case .reworking: "Back to work on your feedback"
         }
     }
 
@@ -164,7 +165,8 @@ struct ServingWindowView: View {
         let text = feedback.trimmingCharacters(in: .whitespacesAndNewlines)
         await run("feedback") {
             try await library.execution.send(in: session, prompt: text)
-            reviews.clear(agent.conversationID)
+            // Not cleared: until the new turn shows up, the chef would look finished and idle.
+            reviews.set(agent.conversationID, .reworking)
             feedback = ""
             dismiss()
         }

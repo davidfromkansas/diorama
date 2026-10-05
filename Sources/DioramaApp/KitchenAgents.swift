@@ -41,6 +41,7 @@ extension KitchenLayout {
         if let review, agent.isMain, ![.working, .waiting, .failed].contains(agent.status) {
             switch review {
             case .approved: return breakRoom(agent, urgent: true)
+            case .reworking: return .init(area: "prep", loop: "planning_recipe", hand: .card, urgent: true)
             case .committed: return .init(area: "serving", loop: "wait_review", oneShot: "cover_dish", urgent: true)
             case .awaiting, .shipped: return .init(area: "serving", loop: "wait_review", oneShot: "present_review", urgent: true, deliversPlate: true)
             }

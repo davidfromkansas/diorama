@@ -14,6 +14,9 @@ import Observation
         case shipped
         /// Done or merged: the chef celebrates and goes to the break room.
         case approved
+        /// You sent feedback: the chef heads back to work before the new turn is reported, rather
+        /// than looking idle in the meantime. The new turn's live activity replaces this.
+        case reworking
     }
     struct Entry: Codable, Equatable {
         var state: State
