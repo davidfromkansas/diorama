@@ -305,11 +305,9 @@ final class KitchenSceneView: SCNView {
             label?.textColor = agent.needsAttention ? .systemOrange : .init(white: 0.2, alpha: 1)
         }
         seenScopes.formUnion(ranked.map { $0.projectID ?? $0.conversationID })
-        chefLock.lock()
-        pace(now: now)
+        chefLock.lock(); pace(now: now); chefLock.unlock()
         updateFlames()
         placeChefLabels()
-        chefLock.unlock()
         updatePlayback()
         needsDisplay = true
     }
@@ -351,10 +349,12 @@ final class KitchenSceneView: SCNView {
     }
     /// A burner is lit while a chef works at it (watching its command cook).
     func updateFlames() {
+        chefLock.lock()
         let lit = Set(chefs.values.compactMap { chef -> String? in
             guard let station = chef.director.station, station.area == "stove", chef.director.clip.name == "waiting_tool" else { return nil }
             return station.id
         })
+        chefLock.unlock()
         for (id, flame) in flames {
             let on = lit.contains(id)
             flame.node.isHidden = !on
@@ -420,19 +420,22 @@ final class KitchenSceneView: SCNView {
         let delta = lastFrame.map { Float(min(0.05, max(0, time - $0))) } ?? 0
         lastFrame = time
         _ = delta // chefs advance on the render thread; this loop only paces and places tags
-        chefLock.lock(); defer { chefLock.unlock() }
-        pace(now: CACurrentMediaTime())
+        chefLock.lock(); pace(now: CACurrentMediaTime()); chefLock.unlock()
         updateFlames()
         placeChefLabels()
         updatePlayback()
     }
     private var effectiveActive: Bool { active && (window == nil || window?.occlusionState.contains(.visible) == true) }
     func updatePlayback() {
-        chefLock.lock(); defer { chefLock.unlock() }
-        let moving = effectiveActive && (chefs.values.contains(where: \.animating) || pacingPending)
+        // Only chef state is read under the lock: SceneKit playback setters can wait on the
+        // renderer, which may itself be waiting for the lock in renderer(_:updateAtTime:).
+        chefLock.lock()
+        let animating = chefs.values.contains(where: \.animating) || pacingPending
+        chefLock.unlock()
+        let moving = effectiveActive && animating
         if isPlaying != moving { isPlaying = moving }
         if rendersContinuously != moving { rendersContinuously = moving }
-        if !moving { lastRenderTime = nil } // a pause is not a stall
+        if !moving { chefLock.lock(); lastRenderTime = nil; chefLock.unlock() } // a pause is not a stall
         if frameLink?.isPaused != !moving {
             Self.trace("playback \(moving ? "running" : "paused") active=\(active) window=\(window?.occlusionState.contains(.visible) ?? false)")
             frameLink?.isPaused = !moving
@@ -470,9 +473,12 @@ final class KitchenSceneView: SCNView {
     }
     private func placeChefLabels() {
         var placed: [CGRect] = []
-        for (id, chef) in chefs.sorted(by: { $0.key < $1.key }) {
+        chefLock.lock()
+        let positions = chefs.mapValues(\.root.simdPosition)
+        chefLock.unlock()
+        for (id, position) in positions.sorted(by: { $0.key < $1.key }) {
             guard let label = chefLabels[id] else { continue }
-            let head = chef.root.simdPosition + SIMD3(0, 2.05 * KitchenLayout.chefScale, 0)
+            let head = position + SIMD3(0, 2.05 * KitchenLayout.chefScale, 0)
             guard let point = projectWithoutLock(head) else { label.isHidden = true; continue }
             label.isHidden = false
             let size = label.attributedStringValue.size()
