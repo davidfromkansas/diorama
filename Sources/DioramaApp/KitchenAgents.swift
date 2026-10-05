@@ -16,31 +16,43 @@ extension KitchenLayout {
     static var worktopHeight: Float { chefScale * chefCounterTop }
     static var heightScale: Float { (worktopHeight - Float(floorTop)) / 1.25 }
 
-    /// Where an agent's chef works. Station ids are `KitchenArea.id`s plus "home" (aisle).
+    /// How long a chef stays at a station before a non-urgent change of work moves it (seconds).
+    /// Agents make many tool calls a minute; this keeps the kitchen calm.
+    static let minimumDwell: Double = 3
+    /// How long a newly arrived chef reads its order at the rail.
+    static let orderReading: Double = 3
+
+    /// Where an agent's chef works. Station ids are `KitchenArea.id`s.
     struct ChefWork: Equatable {
         var area: String?
         var loop: String
         var hand: ChefProp? = nil
         var oneShot: String? = nil
+        /// Moves immediately, without waiting out the minimum dwell.
         var urgent = false
         var deliversPlate = false
     }
+    /// The lifecycle: prep before the first edit, then the island (editing) and stove (commands);
+    /// tests at tasting; anything needing you at the bell; finished work at the serving window;
+    /// stale or stopped sessions rest in the break room.
     static func work(for agent: WorkspaceAgent) -> ChefWork {
+        let fresh = agent.freshness == .live || agent.freshness == .recentlyObserved
         switch agent.status {
-        case .ready: return .init(area: "home", loop: "idle_available")
-        case .working:
-            switch KitchenActivity.classify(tool: agent.latestTool, detail: agent.latestToolDetail) {
-            case .planning: return .init(area: "prep", loop: "planning_recipe", hand: .card)
-            case .researching: return .init(area: "context", loop: "researching_book", hand: .book)
-            case .editing, .other: return .init(area: "prep", loop: "working_chop", hand: .knife)
-            case .commands: return .init(area: "build", loop: "waiting_tool")
-            case .testing: return .init(area: "test", loop: "testing_dish", hand: .spoon)
-            }
-        case .waiting: return .init(area: "attention", loop: "wait_input", oneShot: "request_input", urgent: true)
-        case .failed: return .init(area: "attention", loop: "blocked_wait", oneShot: "error_react", urgent: true)
-        case .done: return .init(area: "review", loop: "wait_review", oneShot: "present_review", deliversPlate: true)
-        case .stopped: return .init(area: nil, loop: "idle_available", oneShot: "cancel_cleanup", urgent: true)
+        case .ready: return .init(area: "order", loop: "idle_available")
+        case .waiting: return .init(area: "bell", loop: "wait_input", oneShot: "request_input", urgent: true)
+        case .failed: return .init(area: "bell", loop: "blocked_wait", oneShot: "error_react", urgent: true)
+        case .stopped: return .init(area: "break", loop: "idle_available", oneShot: "cancel_cleanup", urgent: true)
         case .unknown: return .init(area: nil, loop: "unknown_wait", urgent: true)
+        case .done where fresh: return .init(area: "serving", loop: "wait_review", oneShot: "present_review", urgent: true, deliversPlate: true)
+        case .working where fresh:
+            switch (KitchenActivity.classify(tool: agent.latestTool, detail: agent.latestToolDetail), agent.turnHasEdits) {
+            case (.testing, _): return .init(area: "tasting", loop: "testing_dish", hand: .spoon)
+            case (.planning, false): return .init(area: "prep", loop: "planning_recipe", hand: .card)
+            case (_, false): return .init(area: "prep", loop: "researching_book", hand: .book)
+            case (.commands, true): return .init(area: "stove", loop: "waiting_tool")
+            case (_, true): return .init(area: "island", loop: "working_chop", hand: .knife)
+            }
+        default: return .init(area: "break", loop: "idle_available", urgent: true)
         }
     }
     static func intent(for agent: WorkspaceAgent, at slot: ChefStation?, pickup: ChefStation?, restored: Bool) -> ChefIntent {
@@ -52,6 +64,10 @@ extension KitchenLayout {
         return ChefIntent(key: key, station: work.area == nil ? nil : slot, loop: work.loop, oneShot: shot, hand: work.hand,
                           pickup: work.deliversPlate && !restored ? pickup : nil, urgent: work.urgent)
     }
+    /// A new agent reads its order at the rail before starting work.
+    static func arrivalIntent(at slot: ChefStation) -> ChefIntent {
+        ChefIntent(key: "arrival|" + slot.id, station: slot, loop: "planning_recipe", hand: .card)
+    }
 
     /// Stand slots per area, in preference order. Chefs face the counter, standing so their
     /// hands reach it (`counter_front_from_root`).
@@ -59,43 +75,57 @@ extension KitchenLayout {
         let s = chefScale, reach = chefCounterFront * s, spacing = 1.05 * s
         var result: [String: [ChefStation]] = [:]
         let navigation = chefNavigation
-        func row(_ area: String, from a: SIMD2<Float>, to b: SIMD2<Float>, facing: Float) -> [ChefStation] {
-            let length = simd_distance(a, b), count = max(1, Int(length / spacing))
+        func row(_ area: String, from a: SIMD2<Float>, to b: SIMD2<Float>, facing: Float, gap: Float = spacing) -> [ChefStation] {
+            let length = simd_distance(a, b), count = max(1, Int(length / gap))
             let points = (0..<count).map { simd_mix(a, b, SIMD2(repeating: (Float($0) + 0.5) / Float(count))) }
             // Corner slots can fall inside a connecting cabinet; keep at least one per row.
             let free = points.filter(navigation.isFree)
-            return (free.isEmpty ? points : free).enumerated().map { ChefStation(id: "\(area)#\($0.offset)", area: area, stand: $0.element, facing: facing) }
+            return (free.isEmpty ? points : free).map { ChefStation(id: "", area: area, stand: $0, facing: facing) }
         }
         for area in areas {
             let f = area.footprint
             let minX = Float(f.minX), maxX = Float(f.maxX), minZ = Float(f.minY), maxZ = Float(f.maxY)
+            var slots: [ChefStation]
             switch area.id {
-            case "context", "build": // back counters: stand in front, face the wall (-Z)
-                result[area.id] = row(area.id, from: SIMD2(minX, maxZ + reach), to: SIMD2(maxX, maxZ + reach), facing: .pi)
-            case "prep": // island: the far side faces the camera, then the near side
-                let far = row(area.id, from: SIMD2(minX, minZ - reach), to: SIMD2(maxX, minZ - reach), facing: 0)
-                let near = row(area.id, from: SIMD2(minX, maxZ + reach), to: SIMD2(maxX, maxZ + reach), facing: .pi)
-                result[area.id] = (far + near).enumerated().map { ChefStation(id: "prep#\($0.offset)", area: "prep", stand: $0.element.stand, facing: $0.element.facing) }
-            case "test": // sink on the right wall: face +X
-                result[area.id] = row(area.id, from: SIMD2(minX - reach, minZ), to: SIMD2(minX - reach, maxZ), facing: .pi / 2)
-            default: // front counters: stand behind them, facing the room's front (+Z)
-                result[area.id] = row(area.id, from: SIMD2(minX, minZ - reach), to: SIMD2(maxX, minZ - reach), facing: 0)
+            case "elevator":
+                slots = [ChefStation(id: "", area: area.id, stand: SIMD2(Float(f.midX), Float(f.midY)), facing: 0)]
+            case "bell": // a ring around the bell, everyone facing it
+                let center = SIMD2(Float(f.midX), Float(f.midY)), radius = 0.5 + reach + 0.55
+                slots = (0..<area.spots).map { i in
+                    let angle = Float(i) / Float(area.spots) * 2 * .pi + .pi / 2
+                    let stand = center + SIMD2(cos(angle), sin(angle)) * radius
+                    let toward = center - stand
+                    return ChefStation(id: "", area: area.id, stand: stand, facing: atan2(toward.x, toward.y))
+                }
+            case "break": // seats along both sides of the table
+                let seat = 0.55 * Float(1), gap = (maxX - minX) / Float(area.spots / 2)
+                slots = row(area.id, from: SIMD2(minX, minZ - seat), to: SIMD2(maxX, minZ - seat), facing: 0, gap: gap)
+                    + row(area.id, from: SIMD2(minX, maxZ + seat), to: SIMD2(maxX, maxZ + seat), facing: .pi, gap: gap)
+            default:
+                switch area.wall {
+                case .back: slots = row(area.id, from: SIMD2(minX, maxZ + reach), to: SIMD2(maxX, maxZ + reach), facing: .pi)
+                case .left: slots = row(area.id, from: SIMD2(maxX + reach, minZ), to: SIMD2(maxX + reach, maxZ), facing: -.pi / 2)
+                case .right: slots = row(area.id, from: SIMD2(minX - reach, minZ), to: SIMD2(minX - reach, maxZ), facing: .pi / 2)
+                case .front: slots = row(area.id, from: SIMD2(minX, minZ - reach), to: SIMD2(maxX, minZ - reach), facing: 0)
+                case .island, .freestanding: // the far side faces the camera, then the near side
+                    slots = row(area.id, from: SIMD2(minX, minZ - reach), to: SIMD2(maxX, minZ - reach), facing: 0)
+                        + row(area.id, from: SIMD2(minX, maxZ + reach), to: SIMD2(maxX, maxZ + reach), facing: .pi)
+                }
             }
+            result[area.id] = slots.enumerated().map { ChefStation(id: "\(area.id)#\($0.offset)", area: area.id, stand: $0.element.stand, facing: $0.element.facing) }
         }
-        // Idle spots in the aisles beside the island, facing the camera.
-        let aisle = Float(areas.first { $0.id == "prep" }?.footprint.minX ?? -2.5) - 0.8 * s
-        result["home"] = [SIMD2(aisle, -0.6 * s), SIMD2(-aisle, -0.6 * s), SIMD2(aisle, 0.6 * s), SIMD2(-aisle, 0.6 * s)]
-            .enumerated().map { ChefStation(id: "home#\($0.offset)", area: "home", stand: $0.element, facing: 0) }
         return result
     }
 
-    /// Walkable floor: every fixture footprint is an obstacle, inflated by the chef's half depth.
+    /// Walkable floor: fixtures are obstacles, inflated by the chef's half depth. The elevator car
+    /// stays walkable (only its walls block) so arrivals can step out.
     static var chefNavigation: WorkspaceCapybaraNavigation {
         var navigation = WorkspaceCapybaraNavigation()
         let clearance = 0.35 * chefScale
         navigation.min = SIMD2(Float(floor.minX) + clearance, Float(floor.minY) + clearance)
         navigation.max = SIMD2(Float(floor.maxX) - clearance, Float(floor.maxY) - clearance)
-        navigation.obstacles = (areas.map(\.footprint) + connectors).map { r in
+        let fixtures = areas.filter { $0.id != "elevator" }.map(\.footprint) + connectors + breakRoomWalls + elevatorWalls
+        navigation.obstacles = fixtures.map { r in
             .init(min: SIMD2(Float(r.minX) - clearance, Float(r.minY) - clearance), max: SIMD2(Float(r.maxX) + clearance, Float(r.maxY) + clearance))
         }
         return navigation
