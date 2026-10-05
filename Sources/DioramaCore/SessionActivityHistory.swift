@@ -49,11 +49,12 @@ public enum SessionActivityHistory {
                     let previous = state.records.first { $0.nativeID == call && $0.kind == "tool" && $0.turnID == codexTurn }
                     if previous?.data["nativeItem"].bool == true { continue }
                     let arguments = p["arguments"].string.flatMap { try? JSONDecoder().decode(WireValue.self, from: Data($0.utf8)) } ?? .null
+                    let inner = p["input"].string.flatMap(ActivityParser.codeModeCall)
                     state.apply(SessionActivityRecord(id: session.id + ":tool:" + (codexTurn ?? "unknown") + ":" + call, provider: session.provider.rawValue,
                         sessionID: session.sessionID, turnID: codexTurn, nativeID: call, parentID: nil,
-                        kind: "tool", title: p["name"].string ?? previous?.title ?? "Tool",
+                        kind: "tool", title: inner?.tool ?? p["name"].string ?? previous?.title ?? "Tool",
                         status: finished ? "Returned" : "Called",
-                        detail: arguments["cmd"].string ?? arguments["command"].string ?? previous?.detail ?? "",
+                        detail: inner?.detail ?? arguments["cmd"].string ?? arguments["command"].string ?? previous?.detail ?? "",
                         source: "Codex transcript", recordedAt: ActivityParser.date(e["timestamp"].string), observedAt: Date(), data: .null))
                 }
                 if p["type"].string == "function_call", p["name"].string == "update_plan",

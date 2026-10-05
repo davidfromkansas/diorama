@@ -59,13 +59,15 @@ struct WorkspaceAgent: Identifiable, Equatable {
     /// Raw tool name and detail of the latest reported tool call, for kitchen station mapping.
     var latestTool = ""
     var latestToolDetail = ""
+    /// Whether the current turn has edited files: before that, work is preparation.
+    var turnHasEdits = false
     var meaningfulUpdatedAt: Date?
     var meaningfulEventID = ""
     var meaningfulUpdateID: String { [meaningfulEventID, reportedStatus, latestActivity].joined(separator: "\u{1E}") }
     mutating func retainMeaningfulState(from previous: WorkspaceAgent) {
         status = previous.status; reportedStatus = previous.reportedStatus
         action = previous.action; latestActivity = previous.latestActivity
-        latestTool = previous.latestTool; latestToolDetail = previous.latestToolDetail
+        latestTool = previous.latestTool; latestToolDetail = previous.latestToolDetail; turnHasEdits = previous.turnHasEdits
         meaningfulUpdatedAt = previous.meaningfulUpdatedAt; meaningfulEventID = previous.meaningfulEventID
         attentionReason = previous.attentionReason
         completionKey = previous.completionKey
@@ -211,8 +213,26 @@ enum WorkspaceAgentPresentation {
             let useActivity = activity != nil && (latest == nil || (activity?.recordedAt ?? .distantPast) >= (latest?.recordedAt ?? .distantPast))
             result[index].latestActivity = useActivity ? [activity?.label, activity?.detail].compactMap { $0 }.filter { !$0.isEmpty }.joined(separator: " · ") : latest.map { [$0.title, $0.detail].filter { !$0.isEmpty }.joined(separator: " · ") } ?? agent.action
             result[index].latestActivity = String(result[index].latestActivity.prefix(500))
-            result[index].latestTool = useActivity ? (activity?.tool ?? "") : (latest?.kind == "tool" ? latest?.title ?? "" : "")
-            result[index].latestToolDetail = String((useActivity ? activity?.detail ?? "" : latest?.kind == "tool" ? latest?.detail ?? "" : "").prefix(500))
+            // The kitchen shows the current turn's latest tool, also between calls (results,
+            // plan steps and checklists name no tool).
+            if useActivity {
+                let stream = (source.task?.attached == true ? source.task?.activity : source.observation?.activity.events) ?? []
+                var tool: ActivityEvent?, edits = false
+                for event in stream.reversed() {
+                    if event.kind == "started" || event.kind == "turnStarted" { break }
+                    guard let name = event.tool, !name.isEmpty else { continue }
+                    if tool == nil { tool = event }
+                    if KitchenActivity.isEditing(tool: name) { edits = true; break }
+                }
+                result[index].latestTool = tool?.tool ?? ""
+                result[index].latestToolDetail = String((tool?.detail ?? "").prefix(500))
+                result[index].turnHasEdits = edits
+            } else {
+                let tools = relevant.filter { $0.kind == "tool" && (latest?.turnID == nil || $0.turnID == latest?.turnID) }
+                result[index].latestTool = tools.last?.title ?? ""
+                result[index].latestToolDetail = String((tools.last?.data["command"].string ?? tools.last?.detail ?? "").prefix(500))
+                result[index].turnHasEdits = tools.contains { KitchenActivity.isEditing(tool: $0.title) }
+            }
             result[index].meaningfulUpdatedAt = useActivity ? activity?.recordedAt : latest?.recordedAt
             result[index].meaningfulEventID = useActivity ? (activity.map(activityIdentity) ?? "") : latest.map { [$0.nativeID, $0.turnID ?? "", $0.kind, $0.status].joined(separator: ":") } ?? (source.task?.turnID ?? "")
             let record = source.snapshot.records.first { $0.id == agent.activityRecordID }

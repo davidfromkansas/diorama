@@ -105,7 +105,7 @@ public enum SessionActivityReducer {
                     if name == "ExitPlanMode", let plan = args["plan"].string {
                         out.append(record("proposal", id + ":plan", "Proposed plan", status: "proposed", detail: plan, parent: parent, time: time))
                     }
-                    out.append(record("tool", id, name, status: "running", detail: args["description"].string ?? args["command"].string ?? args["file_path"].string ?? "", parent: parent, data: ["TaskCreate", "TaskUpdate", "TodoWrite", "ExitPlanMode"].contains(name) ? .object(["input": args]) : .null, time: time))
+                    out.append(record("tool", id, name, status: "running", detail: args["description"].string ?? args["command"].string ?? args["file_path"].string ?? "", parent: parent, data: ["TaskCreate", "TaskUpdate", "TodoWrite", "ExitPlanMode"].contains(name) ? .object(["input": args]) : name == "Bash" ? .object(["command": args["command"]]) : .null, time: time))
                 }
                 return out
             }

@@ -117,6 +117,22 @@ public struct ActivitySummary: Sendable {
 }
 
 public enum ActivityParser {
+    /// The first `tools.<name>(` call in a Codex code-mode script and its `cmd:` string literal.
+    public static func codeModeCall(_ script: String) -> (tool: String, detail: String?)? {
+        let range = NSRange(script.startIndex..., in: script)
+        guard let match = codeModeTool.firstMatch(in: script, range: range), let name = Range(match.range(at: 1), in: script) else { return nil }
+        let after = NSRange(match.range.upperBound..<range.upperBound)
+        var detail: String?
+        if let cmd = codeModeCommand.firstMatch(in: script, range: after), let literal = Range(cmd.range(at: 1), in: script) {
+            let quoted = String(script[literal])
+            if quoted.hasPrefix("\""), let decoded = try? JSONDecoder().decode(String.self, from: Data(quoted.utf8)) { detail = decoded }
+            else { detail = String(quoted.dropFirst().dropLast()) }
+        }
+        return (String(script[name]), detail)
+    }
+    private static let codeModeTool = try! NSRegularExpression(pattern: #"\btools\.([A-Za-z_][A-Za-z0-9_]*)\s*\("#)
+    private static let codeModeCommand = try! NSRegularExpression(pattern: #"\bcmd\s*:\s*("(?:[^"\\]|\\.)*"|'(?:[^'\\]|\\.)*'|`[^`]*`)"#)
+
     public static func date(_ value: Any?) -> Date? {
         guard let value = value as? String else { return nil }
         let formatter = ISO8601DateFormatter()
@@ -145,8 +161,13 @@ public enum ActivityParser {
             guard r["type"] as? String == "response_item" else { return [] }
             let call = p["call_id"] as? String
             if ["function_call", "custom_tool_call"].contains(type) {
+                // Code-mode calls wrap the real tool in JavaScript: `tools.exec_command({cmd:"…"})`.
+                if let input = p["input"] as? String, let inner = codeModeCall(input) {
+                    return [event("toolStarted", .working, call: call, tool: inner.tool, detail: inner.detail.map { String($0.prefix(1000)) }, turn: turn)]
+                }
                 let args = (p["arguments"] as? String).flatMap { try? JSONSerialization.jsonObject(with: Data($0.utf8)) } as? [String: Any]
-                return [event("toolStarted", .working, call: call, tool: p["name"] as? String, detail: clipped(args?["command"] ?? args?["cmd"] ?? args?["file_path"]), turn: turn)]
+                let command = (args?["command"] as? [String])?.joined(separator: " ") ?? args?["command"] ?? args?["cmd"] ?? args?["file_path"]
+                return [event("toolStarted", .working, call: call, tool: p["name"] as? String, detail: clipped(command), turn: turn)]
             }
             if ["function_call_output", "custom_tool_call_output"].contains(type) { return [event("toolFinished", call: call, turn: turn)] }
         } else if let message = r["message"] as? [String: Any] {

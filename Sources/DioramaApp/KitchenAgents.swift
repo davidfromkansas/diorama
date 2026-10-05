@@ -32,7 +32,7 @@ extension KitchenLayout {
             switch KitchenActivity.classify(tool: agent.latestTool, detail: agent.latestToolDetail) {
             case .planning: return .init(area: "prep", loop: "planning_recipe", hand: .card)
             case .researching: return .init(area: "context", loop: "researching_book", hand: .book)
-            case .working: return .init(area: "prep", loop: "working_chop", hand: .knife)
+            case .editing, .other: return .init(area: "prep", loop: "working_chop", hand: .knife)
             case .commands: return .init(area: "build", loop: "waiting_tool")
             case .testing: return .init(area: "test", loop: "testing_dish", hand: .spoon)
             }

@@ -683,6 +683,8 @@ public final class ExecutionController {
             tasks[id]?.work.turnID = turn
             tasks[id]?.work.explanation = p["explanation"].string
             tasks[id]?.work.plan = p["plan"].array.enumerated().map { ExecutionPlanStep(id: $0.offset, text: $0.element["step"].string ?? "", status: $0.element["status"].string ?? "unknown") }
+            // Plan revisions are planning work; Codex reports them only through this notification.
+            activity(id, kind: "planUpdated", state: .working, tool: "update_plan", detail: p["explanation"].string)
         case "turn/diff/updated":
             guard let turn = p["turnId"].string, tasks[id]?.turnID == turn, let diff = p["diff"].string else { return }
             tasks[id]?.work.turnID = turn
@@ -710,7 +712,8 @@ public final class ExecutionController {
             else if type == "hookPrompt" { kind = "System context"; text = item.pretty }
             else {
                 kind = "Tool activity"; text = (item["command"].string ?? type) + "\n\n```json\n" + item.pretty + "\n```"
-                activity(id, kind: done ? (item["status"].string == "failed" ? "toolFailed" : "toolFinished") : "toolStarted", state: .working, call: itemID, tool: item["tool"].string ?? type, detail: item["command"].string)
+                activity(id, kind: done ? (item["status"].string == "failed" ? "toolFailed" : "toolFinished") : "toolStarted", state: .working, call: itemID, tool: item["tool"].string ?? type,
+                         detail: item["command"].string ?? item["arguments"]["command"].string ?? item["arguments"]["file_path"].string)
             }
             setEntry(id, itemID: itemID, kind: kind, text: text, append: false,
                      image: TranscriptImage(itemType: type, path: item["path"].string), tool: ToolResult(item: item))
