@@ -6,6 +6,8 @@ import SwiftUI
 struct AgentCommandBar: View {
     let agent: SpatialAgent
     @Bindable var library: LibraryModel
+    /// Opens the serving-window review when this chef's dish waits for one.
+    var review: (() -> Void)? = nil
     let close: () -> Void
     static let height: CGFloat = 248
 
@@ -15,10 +17,10 @@ struct AgentCommandBar: View {
 
     var body: some View {
         HStack(alignment: .top, spacing: 10) {
-            identity.frame(width: 230)
-            orderTicket.frame(minWidth: 220, maxWidth: .infinity)
-            activity.frame(minWidth: 220, maxWidth: .infinity)
-            CommandBarSkills(agent: agent, library: library).frame(width: 268)
+            identity.frame(width: 196)
+            orderTicket.frame(minWidth: 140, maxWidth: .infinity)
+            activity.frame(minWidth: 140, maxWidth: .infinity)
+            CommandBarSkills(agent: agent, library: library).frame(width: CommandBarSkills.width)
         }
         .padding(10)
         .frame(height: Self.height)
@@ -60,6 +62,10 @@ struct AgentCommandBar: View {
                     if let tokens { fact("gauge.with.dots.needle.33percent", tokens) }
                     if let time = value.observedAt { fact("clock", "Updated " + time.formatted(.relative(presentation: .named))) }
                 }
+                if let review, KitchenReviews.shared.state(agent.conversationID) != nil || value.status == .done {
+                    Button(action: review) { Label("Review dish", systemImage: "fork.knife.circle.fill").font(.caption.weight(.semibold)) }
+                        .buttonStyle(.borderedProminent).tint(Palette.accent).controlSize(.small).pointingHand()
+                }
             }
         }
     }
@@ -72,8 +78,8 @@ struct AgentCommandBar: View {
         return running.isEmpty ? value.reportedModel : running
     }
     private var tokens: String? {
-        let total = task?.workflow.usage["total"]["totalTokens"].scalarText ?? ""
-        return total.isEmpty || total == "null" ? nil : total + " tokens"
+        guard case .number(let total)? = task?.workflow.usage["total"]["totalTokens"], total > 0 else { return nil }
+        return Int(total).formatted() + " tokens"
     }
     private var statusText: String {
         if agent.needsAttention { return "Needs you" }
@@ -231,11 +237,14 @@ struct CommandBarSkills: View {
     @Bindable var library: LibraryModel
     @State private var model = CapabilityLibraryModel()
     private let columns = Array(repeating: GridItem(.fixed(56), spacing: 6), count: 4)
+    static let width: CGFloat = 4 * 56 + 3 * 6 + 22
 
     private var session: Session? { library.sessions.first { $0.id == agent.conversationID } }
     private var context: CapabilityLibraryContext? {
         guard let session, let provider = Provider(rawValue: agent.value.provider) ?? Optional(session.provider) else { return nil }
-        return CapabilityLibraryContext(provider: provider, folder: agent.value.worktree ?? session.project, sessionID: session.sessionID)
+        // A finished task's worktree may be gone; its project folder still has the same skills.
+        let folder = agent.value.worktree.flatMap { FileManager.default.fileExists(atPath: $0) ? $0 : nil } ?? session.project
+        return CapabilityLibraryContext(provider: provider, folder: folder, sessionID: session.sessionID)
     }
     private var skills: [CapabilityLibraryItem] { (model.snapshot?.items ?? []).filter { $0.kind == .skill } }
     private var armed: Set<String> { Set((session.map { library.armedCapabilities[$0.id] ?? [] } ?? []).map(\.path)) }
@@ -243,8 +252,12 @@ struct CommandBarSkills: View {
     var body: some View {
         CommandBarPanel(title: "Skills") {
             if skills.isEmpty {
-                Text(model.loading ? "Loading skills…" : "No skills found for this agent.").font(.caption)
-                    .foregroundStyle(CommandBarPalette.paper.opacity(0.6)).frame(maxWidth: .infinity, maxHeight: .infinity)
+                VStack(spacing: 4) {
+                    Text(model.loading ? "Loading skills…" : "No skills found for this agent.")
+                    if !model.loading, let error = model.snapshot?.errors.values.first { Text(error).font(.caption2).lineLimit(3).foregroundStyle(.orange.opacity(0.85)) }
+                }
+                .font(.caption).multilineTextAlignment(.center)
+                .foregroundStyle(CommandBarPalette.paper.opacity(0.6)).frame(maxWidth: .infinity, maxHeight: .infinity)
             } else {
                 ScrollView {
                     LazyVGrid(columns: columns, alignment: .leading, spacing: 6) {

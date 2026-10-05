@@ -80,7 +80,7 @@ struct SpatialWorkspaceView: View {
                                             selectedAgentID: focus.agentID, deselect: { deselectAgent(focus) })
                         // The selected chef's command bar sits under the kitchen, down to the window's edge.
                         if let selected = cooks.first(where: { $0.id == focus.agentID }) {
-                            AgentCommandBar(agent: selected, library: library) { deselectAgent(focus) }
+                            AgentCommandBar(agent: selected, library: library, review: { reviewing = selected }) { deselectAgent(focus) }
                                 .transition(.move(edge: .bottom).combined(with: .opacity))
                         }
                     }

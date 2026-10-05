@@ -822,7 +822,8 @@ final class KitchenSceneView: SCNView {
             while let current = node {
                 if let name = current.name, name.hasPrefix("agent:"), let agent = chefAgents[String(name.dropFirst(6))] {
                     chefLock.lock(); let serving = chefs[agent.id]?.director.intent?.station?.area == "serving"; chefLock.unlock()
-                    if let review, serving { review(agent); return }
+                    // The first click selects; clicking the selected chef at the pass opens its review.
+                    if let review, serving, selectedID == agent.id || selectedID == nil && deselect == nil { review(agent); return }
                     select?(.agent(project: agent.projectID, conversation: agent.conversationID, agent: agent.id, expanded: true))
                     return
                 }
