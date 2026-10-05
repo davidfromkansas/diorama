@@ -5,7 +5,7 @@ import SceneKit
 /// `assets/food/build.sh` (centred, base at 0, widest side 1.0). Adding a dish needs no code.
 @MainActor enum KitchenFood {
     /// Dish templates by id (file name), loaded once; chefs clone them.
-    static let templates: [String: SCNNode] = load()
+    static let templates: [String: SCNNode] = models(in: "Food")
     /// Dish ids in a stable order, so a task always gets the same dish.
     static var ids: [String] { templates.keys.sorted() }
 
@@ -24,19 +24,27 @@ import SceneKit
         return ids[Int(hash % UInt64(ids.count))]
     }
 
-    private static func load() -> [String: SCNNode] {
+    /// Every static `.glb` in a bundled resource folder, keyed by file name.
+    static func models(in name: String) -> [String: SCNNode] {
         let bundle = WorkspaceCapybaraAsset.resourceBundle
-        guard let folder = bundle.resourceURL?.appendingPathComponent("Food"),
+        guard let folder = bundle.resourceURL?.appendingPathComponent(name),
               let files = try? FileManager.default.contentsOfDirectory(at: folder, includingPropertiesForKeys: nil) else { return [:] }
         var result: [String: SCNNode] = [:]
         for file in files where file.pathExtension == "glb" {
-            // An unreadable dish is skipped rather than breaking the kitchen.
+            // An unreadable model is skipped rather than breaking the kitchen.
             guard let data = try? Data(contentsOf: file), let roots = try? GLBStaticMeshes.read(data), !roots.isEmpty else { continue }
             let id = file.deletingPathExtension().lastPathComponent
-            let dish = SCNNode(); dish.name = "dish:" + id
-            for root in roots.values { dish.addChildNode(root) }
-            result[id] = dish
+            let model = SCNNode(); model.name = name + ":" + id
+            for root in roots.values { model.addChildNode(root) }
+            result[id] = model
         }
         return result
     }
+}
+
+/// Decorative kitchen models from `assets/props` (same normalization as food).
+@MainActor enum KitchenProps {
+    static let templates: [String: SCNNode] = KitchenFood.models(in: "KitchenProps")
+    /// A cleaver resting on its board, shown on cutting boards nobody is using.
+    static var cleaverBoard: SCNNode? { templates["cleaver_board"] }
 }
