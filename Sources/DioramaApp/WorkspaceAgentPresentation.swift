@@ -63,6 +63,8 @@ struct WorkspaceAgent: Identifiable, Equatable {
     var turnHasEdits = false
     /// Files edited, commands run and tests in the current turn, for the progress panel.
     var turnWork = TurnWork()
+    /// The distilled activity feed for the command bar (oldest first).
+    var feed: [FeedEntry] = []
     var meaningfulUpdatedAt: Date?
     var meaningfulEventID = ""
     var meaningfulUpdateID: String { [meaningfulEventID, reportedStatus, latestActivity].joined(separator: "\u{1E}") }
@@ -71,6 +73,7 @@ struct WorkspaceAgent: Identifiable, Equatable {
         action = previous.action; latestActivity = previous.latestActivity
         latestTool = previous.latestTool; latestToolDetail = previous.latestToolDetail; turnHasEdits = previous.turnHasEdits
         turnWork = previous.turnWork
+        feed = previous.feed
         meaningfulUpdatedAt = previous.meaningfulUpdatedAt; meaningfulEventID = previous.meaningfulEventID
         attentionReason = previous.attentionReason
         completionKey = previous.completionKey
@@ -231,6 +234,7 @@ enum WorkspaceAgentPresentation {
                 result[index].latestToolDetail = String((tool?.detail ?? "").prefix(500))
                 result[index].turnHasEdits = edits
                 result[index].turnWork = TurnWork.from(stream)
+                result[index].feed = AgentActivityFeed.entries(from: stream)
                 if agent.status != .working { result[index].turnWork.settle() }
             } else {
                 let tools = relevant.filter { $0.kind == "tool" && (latest?.turnID == nil || $0.turnID == latest?.turnID) }
@@ -238,6 +242,7 @@ enum WorkspaceAgentPresentation {
                 result[index].latestToolDetail = String((tools.last?.data["command"].string ?? tools.last?.detail ?? "").prefix(500))
                 result[index].turnHasEdits = tools.contains { KitchenActivity.isEditing(tool: $0.title) }
                 result[index].turnWork = TurnWork.from(tools)
+                result[index].feed = AgentActivityFeed.entries(from: relevant)
                 if agent.status != .working { result[index].turnWork.settle() }
             }
             result[index].meaningfulUpdatedAt = useActivity ? activity?.recordedAt : latest?.recordedAt
