@@ -20,6 +20,57 @@ public enum KitchenActivity: String, Sendable, CaseIterable {
     }
 
     public static func isEditing(tool: String) -> Bool { editingTools.contains(tool.lowercased()) }
+    /// An edit tool, or a shell command that writes files (agents often write whole files with
+    /// `cat > file <<EOF`, `curl -o` or `tee` instead of an edit tool).
+    public static func isEditing(tool: String, detail: String) -> Bool {
+        isEditing(tool: tool) || (commandTools.contains(tool.lowercased()) && !writtenFiles(command: detail).isEmpty)
+    }
+    /// Files a shell command writes: redirect targets, `tee`, `curl -o`, `wget -O`, `cp`/`mv`
+    /// destinations, `touch`, and `sed -i` files. Heredoc bodies are skipped, so markup inside them
+    /// is never mistaken for a redirect.
+    public static func writtenFiles(command: String) -> [String] {
+        let script = withoutHeredocs(shellScript(command))
+        var files: [String] = []
+        func add(_ path: String) {
+            let path = path.trimmingCharacters(in: CharacterSet(charactersIn: "'\"")).trimmingCharacters(in: .whitespaces)
+            guard !path.isEmpty, !path.hasPrefix("&"), !path.hasPrefix("-"), path != "/dev/null", !path.hasPrefix("/dev/"), !files.contains(path) else { return }
+            files.append(path)
+        }
+        let range = NSRange(script.startIndex..., in: script)
+        for match in redirectTarget.matches(in: script, range: range) {
+            if let target = Range(match.range(at: 1), in: script) { add(String(script[target])) }
+        }
+        for segment in segments(script) {
+            let words = segment.split(whereSeparator: \.isWhitespace).map(String.init).drop { $0.contains("=") && !$0.hasPrefix("-") }
+            guard let program = words.first.map({ ($0 as NSString).lastPathComponent }) else { continue }
+            let args = Array(words.dropFirst())
+            switch program {
+            case "tee", "touch": args.filter { !$0.hasPrefix("-") }.forEach(add)
+            case "cp", "mv", "install": if args.filter({ !$0.hasPrefix("-") }).count >= 2, let last = args.last { add(last) }
+            case "sed", "gsed": if args.contains(where: { $0.hasPrefix("-i") }), let last = args.last { add(last) }
+            case "curl", "wget":
+                for (index, arg) in args.enumerated() where ["-o", "--output", "-O", "--output-document"].contains(arg) && index + 1 < args.count {
+                    if !(program == "curl" && arg == "-O") { add(args[index + 1]) }
+                }
+            default: break
+            }
+        }
+        return files
+    }
+    static func withoutHeredocs(_ script: String) -> String {
+        var kept: [Substring] = [], delimiter: String?
+        for line in script.split(separator: "\n", omittingEmptySubsequences: false) {
+            if let end = delimiter { if line.trimmingCharacters(in: .whitespaces) == end { delimiter = nil }; continue }
+            kept.append(line)
+            let text = String(line)
+            if let match = heredoc.firstMatch(in: text, range: NSRange(text.startIndex..., in: text)), let word = Range(match.range(at: 1), in: text) {
+                delimiter = String(text[word])
+            }
+        }
+        return kept.joined(separator: "\n")
+    }
+    private static let heredoc = try! NSRegularExpression(pattern: #"<<-?\s*['"]?([A-Za-z_][A-Za-z0-9_]*)['"]?"#)
+    private static let redirectTarget = try! NSRegularExpression(pattern: #"(?<![0-9&<>])>>?\s*([^\s;&|<>]+)"#)
     public static func isResource(tool: String) -> Bool {
         let name = tool.lowercased()
         return name.hasPrefix("mcp__") || resourceTools.contains(name)
@@ -31,6 +82,8 @@ public enum KitchenActivity: String, Sendable, CaseIterable {
         let script = shellScript(command)
         let range = NSRange(script.startIndex..., in: script)
         if testCommand.firstMatch(in: script, range: range) != nil { return .testing }
+        // Writing files from the shell is editing, like an edit tool.
+        if !writtenFiles(command: command).isEmpty { return .editing }
         let words = segments(script).compactMap { segment -> [String]? in
             let words = segment.split(whereSeparator: \.isWhitespace).map(String.init)
                 .drop { $0.contains("=") && !$0.hasPrefix("-") } // env assignments

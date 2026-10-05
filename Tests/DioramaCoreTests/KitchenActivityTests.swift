@@ -14,8 +14,8 @@ struct KitchenActivityTests {
             ("Bash", "git commit -m x", .commands),
             ("Bash", "python3 build.py", .commands),
             ("Bash", "ls -la && cat README.md", .researching),
-            ("Bash", "sed -i '' 's/a/b/' file.swift", .commands),
-            ("Bash", "cat a > b", .commands),
+            ("Bash", "sed -i '' 's/a/b/' file.swift", .editing),
+            ("Bash", "cat a > b", .editing),
             ("Bash", "FOO=1 rg foo 2>/dev/null", .researching),
             ("Bash", "echo contest", .researching),
             ("exec_command", #"["/bin/zsh","-lc","cat package.json"]"#, .researching),
@@ -69,5 +69,22 @@ struct KitchenActivityTests {
         let item = CodexOutputEvidence.canonical(.object(["type": .string("CommandExecution"), "command": .array([.string("/bin/zsh"), .string("-lc"), .string("npm test")])]))
         #expect(item["command"].string == "/bin/zsh -lc npm test")
         #expect(KitchenActivity.classify(tool: "commandExecution", detail: item["command"].string ?? "") == .testing)
+    }
+
+    @Test func shellWritesCountAsEdits() {
+        // Ruby wrote a whole website from the shell and never used an edit tool.
+        let page = "cat > sf-time/dist/index.html <<'EOF'\n<!doctype html>\n<div class=\"a\">x > y</div>\nEOF"
+        #expect(KitchenActivity.writtenFiles(command: page) == ["sf-time/dist/index.html"])
+        #expect(KitchenActivity.classify(tool: "exec_command", detail: page) == .editing)
+        #expect(KitchenActivity.isEditing(tool: "exec_command", detail: page))
+        #expect(KitchenActivity.writtenFiles(command: "curl -fsSL https://x/suncalc.js -o sf-time/dist/suncalc.js && echo done") == ["sf-time/dist/suncalc.js"])
+        #expect(KitchenActivity.writtenFiles(command: "npm run build 2>&1 | tee build.log") == ["build.log"])
+        #expect(KitchenActivity.writtenFiles(command: "sed -i '' 's/a/b/' math.js") == ["math.js"])
+        #expect(KitchenActivity.writtenFiles(command: "cp a.txt b.txt") == ["b.txt"])
+        // Not writes: stream redirects, /dev/null, plain reads, directory setup.
+        #expect(KitchenActivity.writtenFiles(command: "npm run build > /dev/null 2>&1").isEmpty)
+        #expect(KitchenActivity.writtenFiles(command: "cat README.md").isEmpty)
+        #expect(KitchenActivity.writtenFiles(command: "mkdir -p sf-time/dist").isEmpty)
+        #expect(KitchenActivity.classify(tool: "exec_command", detail: "npm test > out.txt") == .testing)
     }
 }
