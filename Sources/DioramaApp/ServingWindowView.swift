@@ -28,6 +28,8 @@ struct ServingWindowView: View {
             Divider()
             changesSection
             Divider()
+            doneSection
+            Divider()
             feedbackSection
             Divider()
             shipSection
@@ -92,6 +94,14 @@ struct ServingWindowView: View {
                 Text("This conversation has no Diorama worktree, so git steps are unavailable. You can still send feedback or mark it done.")
                     .font(.callout).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
             }
+        }
+    }
+
+    /// The agent's checklist (when it kept one) and what it did in this turn.
+    private var doneSection: some View {
+        VStack(alignment: .leading, spacing: 6) {
+            Text("What was done").font(.title3.weight(.semibold))
+            ScrollView { AgentProgressSections(agent: agent.value, fileLimit: 5) }.frame(maxHeight: 220)
         }
     }
 

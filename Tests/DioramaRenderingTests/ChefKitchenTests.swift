@@ -1,5 +1,5 @@
 import AppKit
-import DioramaCore
+@testable import DioramaCore
 import SceneKit
 import Testing
 import simd
@@ -335,6 +335,23 @@ import simd
         other.reducedMotion = true
         let calm = try director(); calm.reducedMotion = true; calm.place(serving.stand); calm.setIntent(next)
         #expect(!calm.stepNames.contains("once:celebrate_done"))
+    }
+
+    @Test func nameTagsShowTheCurrentTurnsChecklistProgress() {
+        var value = agent("main", .working).value
+        value.name = "Leo"
+        #expect(KitchenSceneView.tagText(value, doing: "Editing a file") == "Leo · Editing a file")
+        func step(_ status: String, turn: String) -> SessionActivityRecord {
+            SessionActivityRecord(id: UUID().uuidString, provider: "Claude", sessionID: "s", turnID: turn, nativeID: UUID().uuidString, kind: "step",
+                                  title: "Step", status: status, detail: "", source: "test", observedAt: Date(), data: .null)
+        }
+        var snapshot = SessionActivitySnapshot()
+        snapshot.records = [step("completed", turn: "t2"), step("completed", turn: "t2"), step("inProgress", turn: "t2"), step("pending", turn: "t2")]
+        value.plan = AgentPlan.reported(in: snapshot, provider: "Claude", sessionID: "s", currentTurn: "t2")
+        #expect(KitchenSceneView.tagText(value, doing: "Editing a file") == "Leo · ✓ 2/4 · Editing a file")
+        // A checklist from an earlier turn is not this turn's progress.
+        value.plan = AgentPlan.reported(in: snapshot, provider: "Claude", sessionID: "s", currentTurn: "t3")
+        #expect(KitchenSceneView.tagText(value, doing: "Editing a file") == "Leo · Editing a file")
     }
 
     @Test func emptyCuttingBoardsShowTheRestingCleaver() throws {

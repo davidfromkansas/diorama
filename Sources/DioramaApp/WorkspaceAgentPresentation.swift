@@ -61,6 +61,8 @@ struct WorkspaceAgent: Identifiable, Equatable {
     var latestToolDetail = ""
     /// Whether the current turn has edited files: before that, work is preparation.
     var turnHasEdits = false
+    /// Files edited, commands run and tests in the current turn, for the progress panel.
+    var turnWork = TurnWork()
     var meaningfulUpdatedAt: Date?
     var meaningfulEventID = ""
     var meaningfulUpdateID: String { [meaningfulEventID, reportedStatus, latestActivity].joined(separator: "\u{1E}") }
@@ -68,6 +70,7 @@ struct WorkspaceAgent: Identifiable, Equatable {
         status = previous.status; reportedStatus = previous.reportedStatus
         action = previous.action; latestActivity = previous.latestActivity
         latestTool = previous.latestTool; latestToolDetail = previous.latestToolDetail; turnHasEdits = previous.turnHasEdits
+        turnWork = previous.turnWork
         meaningfulUpdatedAt = previous.meaningfulUpdatedAt; meaningfulEventID = previous.meaningfulEventID
         attentionReason = previous.attentionReason
         completionKey = previous.completionKey
@@ -227,11 +230,13 @@ enum WorkspaceAgentPresentation {
                 result[index].latestTool = tool?.tool ?? ""
                 result[index].latestToolDetail = String((tool?.detail ?? "").prefix(500))
                 result[index].turnHasEdits = edits
+                result[index].turnWork = TurnWork.from(stream)
             } else {
                 let tools = relevant.filter { $0.kind == "tool" && (latest?.turnID == nil || $0.turnID == latest?.turnID) }
                 result[index].latestTool = tools.last?.title ?? ""
                 result[index].latestToolDetail = String((tools.last?.data["command"].string ?? tools.last?.detail ?? "").prefix(500))
                 result[index].turnHasEdits = tools.contains { KitchenActivity.isEditing(tool: $0.title) }
+                result[index].turnWork = TurnWork.from(tools)
             }
             result[index].meaningfulUpdatedAt = useActivity ? activity?.recordedAt : latest?.recordedAt
             result[index].meaningfulEventID = useActivity ? (activity.map(activityIdentity) ?? "") : latest.map { [$0.nativeID, $0.turnID ?? "", $0.kind, $0.status].joined(separator: ":") } ?? (source.task?.turnID ?? "")

@@ -66,10 +66,13 @@ struct KitchenSceneSurface: NSViewRepresentable {
     var select: (SpatialFocus) -> Void = { _ in }
     /// Clicking a chef waiting at the serving window opens the review panel instead.
     var review: ((SpatialAgent) -> Void)? = nil
+    /// Clicking a chef's name tag opens its progress panel.
+    var progress: ((SpatialAgent) -> Void)? = nil
     func makeNSView(context: Context) -> KitchenSceneView { KitchenSceneView() }
     func updateNSView(_ view: KitchenSceneView, context: Context) {
         view.select = select
         view.review = review
+        view.progress = progress
         view.reviews = reviews
         view.apply(agents: agents, scope: scope, active: active, reducedMotion: reducedMotion)
         view.fitFloor()
@@ -91,6 +94,7 @@ final class KitchenSceneView: SCNView {
     let floorSize = SIMD3<Float>(Float(KitchenLayout.floor.width), 0.2, Float(KitchenLayout.floor.height))
     var select: ((SpatialFocus) -> Void)?
     var review: ((SpatialAgent) -> Void)?
+    var progress: ((SpatialAgent) -> Void)?
     var reviews: [String: KitchenReviews.State] = [:]
     private(set) var chefs: [String: ChefAvatar] = [:]
     private var chefAgents: [String: SpatialAgent] = [:]
@@ -309,7 +313,7 @@ final class KitchenSceneView: SCNView {
             // The label always shows the live action, even while the chef stays put.
             let doing = agent.value.status == .working && !agent.value.latestActivity.isEmpty ? agent.value.latestActivity : agent.value.statusLabel
             let label = chefLabels[agent.id]
-            label?.stringValue = agent.value.name + " · " + (doing.count > 48 ? String(doing.prefix(47)) + "…" : doing)
+            label?.stringValue = Self.tagText(agent.value, doing: doing)
             label?.textColor = agent.needsAttention ? .systemOrange : .init(white: 0.2, alpha: 1)
         }
         seenScopes.formUnion(ranked.map { $0.projectID ?? $0.conversationID })
@@ -543,8 +547,19 @@ final class KitchenSceneView: SCNView {
             label.frame = frame
         }
     }
+    /// Name, reported checklist progress (current turn only) and the live action.
+    static func tagText(_ agent: WorkspaceAgent, doing: String) -> String {
+        var parts = [agent.name]
+        if let plan = agent.plan, plan.hasTasks, !plan.tasksPreviousTurn { parts.append("✓ " + plan.taskProgress) }
+        parts.append(doing.count > 48 ? String(doing.prefix(47)) + "…" : doing)
+        return parts.joined(separator: " · ")
+    }
     override func mouseUp(with event: NSEvent) {
         let point = convert(event.locationInWindow, from: nil)
+        // Name tags sit above the 3D scene; a click on one opens that chef's progress.
+        if let progress, let id = chefLabels.first(where: { !$0.value.isHidden && $0.value.frame.contains(point) })?.key, let agent = chefAgents[id] {
+            progress(agent); return
+        }
         for hit in hitTest(point, options: [.searchMode: SCNHitTestSearchMode.all.rawValue]) {
             var node: SCNNode? = hit.node
             while let current = node {

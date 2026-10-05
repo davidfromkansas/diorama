@@ -712,8 +712,11 @@ public final class ExecutionController {
             else if type == "hookPrompt" { kind = "System context"; text = item.pretty }
             else {
                 kind = "Tool activity"; text = (item["command"].string ?? type) + "\n\n```json\n" + item.pretty + "\n```"
-                activity(id, kind: done ? (item["status"].string == "failed" ? "toolFailed" : "toolFinished") : "toolStarted", state: .working, call: itemID, tool: item["tool"].string ?? type,
-                         detail: item["command"].string ?? item["arguments"]["command"].string ?? item["arguments"]["file_path"].string)
+                let failed = item["status"].string == "failed" || { if case .number(let code) = item["exitCode"] { return code != 0 }; return false }()
+                // File changes name their files; commands and tools their command or path.
+                let files = item["changes"].array.compactMap { $0["path"].string }
+                activity(id, kind: done ? (failed ? "toolFailed" : "toolFinished") : "toolStarted", state: .working, call: itemID, tool: item["tool"].string ?? type,
+                         detail: files.isEmpty ? item["command"].string ?? item["arguments"]["command"].string ?? item["arguments"]["file_path"].string : files.joined(separator: "\n"))
             }
             setEntry(id, itemID: itemID, kind: kind, text: text, append: false,
                      image: TranscriptImage(itemType: type, path: item["path"].string), tool: ToolResult(item: item))
