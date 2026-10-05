@@ -354,6 +354,24 @@ import simd
         #expect(KitchenSceneView.tagText(value, doing: "Editing a file") == "Leo · Editing a file")
     }
 
+    @Test func dishesWaitingForReviewQueueWithPlatesInsteadOfDisappearing() throws {
+        let view = KitchenSceneView(frame: CGRect(x: 0, y: 0, width: 1000, height: 700))
+        let resting = (0..<6).map { agent("r\($0)", .done, freshness: .lastKnown, conversation: "rest\($0)") }
+        let waiting = (0..<8).map { agent("w\($0)", .done, conversation: "dish\($0)") }
+        view.apply(agents: resting + waiting, active: false, reducedMotion: false, now: 0)
+        for _ in 0..<(30 * 20) { for chef in view.chefs.values { chef.update(1 / 30) } }
+        // Every dish waiting for review is shown; resting chefs only fill the rest of the cap.
+        #expect(waiting.allSatisfy { view.chefs[$0.id] != nil })
+        #expect(view.chefs.count == KitchenSceneView.maxChefs)
+        let line = waiting.compactMap { view.chefs[$0.id]?.director }.filter { $0.intent?.station?.id.contains("~") == true }
+        #expect(line.count == 3)
+        #expect(line.allSatisfy { $0.held.contains(.plate) && $0.clip.name == "carry_idle" })
+        // Fifteen dishes all stay reachable, past the usual cap.
+        let many = (0..<15).map { agent("m\($0)", .done, conversation: "many\($0)") }
+        view.apply(agents: many, active: false, reducedMotion: false, now: 1)
+        #expect(view.chefs.count == 15)
+    }
+
     @Test func emptyCuttingBoardsShowTheRestingCleaver() throws {
         let view = KitchenSceneView(frame: CGRect(x: 0, y: 0, width: 1000, height: 700))
         view.updateBoards()
@@ -465,6 +483,7 @@ import simd
                      agent("cmd", .working, tool: "Bash", detail: "make", edits: true), agent("test", .working, tool: "Bash", detail: "swift test"),
                      agent("ask", .waiting, attention: .approval), agent("done", .done), agent("rest", .done, freshness: .lastKnown),
                      agent("new", .ready, freshness: .ready)], "diorama-kitchen-stages")
+        try capture((0..<8).map { task(agent("w\($0)", .done, conversation: "dish\($0)"), "codex:w\($0):turn") }, "diorama-kitchen-serving-line")
         try capture((0..<10).map { agent("e\($0)", .working, tool: "Edit", edits: true) }, "diorama-kitchen-ten-cooking")
         try capture((0..<10).map { agent("r\($0)", .done, freshness: .lastKnown) }, "diorama-kitchen-break-room")
         func task(_ a: SpatialAgent, _ key: String) -> SpatialAgent { var a = a; a.value.completionKey = key; return a }
