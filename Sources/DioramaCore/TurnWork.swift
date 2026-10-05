@@ -96,8 +96,16 @@ public struct TurnWork: Equatable, Sendable {
     /// Codex history records each call twice: the model's tool call and the native item that ran
     /// (`commandExecution`, `fileChange`) with its exit code and files. When native items exist,
     /// only they count.
+    /// Event lists hold one revision per update of a call (running, then completed); the latest
+    /// revision of each call stands, in the order calls first appeared.
     public static func from(_ records: [SessionActivityRecord]) -> TurnWork {
-        let tools = records.filter { $0.kind == "tool" }
+        var order: [String] = [], latest: [String: SessionActivityRecord] = [:]
+        for record in records where record.kind == "tool" {
+            let key = record.nativeID.isEmpty ? record.id : record.nativeID
+            if latest[key] == nil { order.append(key) }
+            latest[key] = record
+        }
+        let tools = order.compactMap { latest[$0] }
         let native = tools.contains { $0.data["nativeItem"].bool }
         let shellOrPatch = KitchenActivity.commandTools.union(KitchenActivity.editingTools)
         var work = TurnWork()
