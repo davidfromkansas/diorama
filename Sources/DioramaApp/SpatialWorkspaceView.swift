@@ -21,6 +21,9 @@ struct SpatialWorkspaceView: View {
     @State private var reviewing: SpatialAgent?
     /// The kitchen chef whose progress panel is open.
     @State private var progressAgent: String?
+    /// The chef whose command bar is shown. Clearing waits a moment, like the kitchen camera, so
+    /// switching chefs (which passes through "no agent" while the conversation changes) keeps it up.
+    @State private var commandBarAgent: String?
     @State private var explore = false
     @State private var attention = false
     @State private var allConversations = false
@@ -79,12 +82,17 @@ struct SpatialWorkspaceView: View {
                                             reducedMotion: reduced, select: go, review: { reviewing = $0 }, progress: { progressAgent = $0.id },
                                             selectedAgentID: focus.agentID, deselect: { deselectAgent(focus) })
                         // The selected chef's command bar sits under the kitchen, down to the window's edge.
-                        if let selected = cooks.first(where: { $0.id == focus.agentID }) {
+                        if let selected = cooks.first(where: { $0.id == (focus.agentID ?? commandBarAgent) }) {
                             AgentCommandBar(agent: selected, library: library, review: { reviewing = selected }) { deselectAgent(focus) }
                                 .transition(.move(edge: .bottom).combined(with: .opacity))
                         }
                     }
-                    .animation(reduced ? nil : .easeOut(duration: 0.22), value: focus.agentID)
+                    .animation(reduced ? nil : .easeOut(duration: 0.22), value: commandBarAgent)
+                    .task(id: focus.agentID) {
+                        if let id = focus.agentID { commandBarAgent = id; return }
+                        do { try await Task.sleep(for: .seconds(KitchenSceneView.deselectGrace)) } catch { return }
+                        commandBarAgent = nil
+                    }
                 }
                 if !kitchenSelected && focus != .portfolio && !ScenePerformance.disabled("OVERLAYS") {
                     VStack(alignment: .leading, spacing: 12) {

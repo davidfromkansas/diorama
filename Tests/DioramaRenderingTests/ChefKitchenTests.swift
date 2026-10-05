@@ -385,10 +385,27 @@ import simd
         let labels = view.subviews.compactMap { $0 as? NSTextField }.filter { !$0.isHidden && $0.stringValue.hasPrefix("Agent ") }
         #expect(labels.map(\.stringValue).allSatisfy { $0.hasPrefix("Agent a") })
         // Letting go returns the camera to the whole kitchen and drops the ring.
-        view.setSelection(nil)
+        view.setSelection(nil, immediately: true)
         #expect(chef.root.childNode(withName: "selection ring", recursively: false) == nil)
         for _ in 0..<120 { t += 1 / 30; view.renderer(view, updateAtTime: t) }
         #expect(view.cameraPose == overview && !view.cameraMoving)
+    }
+
+    @Test func switchingChefsGlidesAcrossInsteadOfPullingBack() throws {
+        let view = KitchenSceneView(frame: CGRect(x: 0, y: 0, width: 1000, height: 700))
+        let a = agent("a", .working, tool: "Edit", edits: true, conversation: "c1"), b = agent("b", .working, tool: "Read", conversation: "c2")
+        view.apply(agents: [a, b], active: false, reducedMotion: false, now: 0)
+        view.fitFloor()
+        view.setSelection(a.id)
+        var t = 0.0
+        for _ in 0..<90 { t += 1 / 30; view.renderer(view, updateAtTime: t) }
+        let height = try #require(view.cameraPose?.eye.y)
+        // Changing conversations clears the focus for a moment before the new chef is chosen.
+        view.setSelection(nil); view.setSelection(b.id)
+        var highest: Float = 0
+        for _ in 0..<60 { t += 1 / 30; view.renderer(view, updateAtTime: t); highest = max(highest, view.cameraPose?.eye.y ?? 0) }
+        #expect(view.selectedID == b.id)
+        #expect(highest < height + 0.05)
     }
 
     @Test func everyTestRunGetsTastedEvenWhenTheAgentMovesOnAtOnce() throws {

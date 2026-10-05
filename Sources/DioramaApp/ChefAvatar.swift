@@ -43,7 +43,7 @@ nonisolated final class ChefAvatar: @unchecked Sendable {
     private var dishNode: (id: String, node: SCNNode)?
     private var dishSpot = ""
     /// Dish diameter in chef units (about the old plate prop's footprint).
-    static let dishSize: Float = 0.38
+    static let dishSize: Float = 0.76
     /// Where the dish sits relative to the chef, in chef units: on the cutting board under the
     /// knife while chopping, and under the spoon's dip point while tasting.
     static let boardSpot = SIMD3<Float>(-0.05, 0.605, 0.7)

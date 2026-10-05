@@ -16,62 +16,65 @@ struct AgentCommandBar: View {
     private var task: ExecutedTask? { session.flatMap { library.execution.tasks[$0.sessionID] } }
 
     var body: some View {
-        HStack(alignment: .top, spacing: 10) {
-            identity.frame(width: 196)
-            orderTicket.frame(minWidth: 140, maxWidth: .infinity)
-            activity.frame(minWidth: 140, maxWidth: .infinity)
+        HStack(alignment: .top, spacing: 8) {
+            card.frame(minWidth: 250, maxWidth: .infinity).layoutPriority(1)
+            activity.frame(minWidth: 180, maxWidth: .infinity)
             CommandBarSkills(agent: agent, library: library).frame(width: CommandBarSkills.width)
         }
-        .padding(10)
+        .padding(8)
         .frame(height: Self.height)
         .frame(maxWidth: .infinity)
         .background(Palette.frame)
-        .overlay(alignment: .top) { Rectangle().fill(Palette.trim).frame(height: 3) }
-        .overlay(alignment: .topTrailing) {
-            Button(action: close) { Image(systemName: "xmark").font(.system(size: 11, weight: .bold)).padding(6) }
-                .buttonStyle(.plain).foregroundStyle(Palette.paper.opacity(0.85)).pointingHand()
-                .help("Deselect (Esc)").accessibilityLabel("Deselect " + value.name)
-        }
+        .overlay(alignment: .top) { Rectangle().fill(Palette.trim.opacity(0.8)).frame(height: 2) }
         .environment(\.colorScheme, .dark)
         .accessibilityElement(children: .contain)
         .accessibilityLabel("Command bar for " + value.name)
     }
 
-    // MARK: Identity
+    // MARK: Agent and order
 
-    private var identity: some View {
-        Panel(title: "Chef") {
+    /// Who the chef is and the order it's cooking, in one card: a header row, one line of facts,
+    /// then the task and its progress.
+    private var card: some View {
+        Panel {
             VStack(alignment: .leading, spacing: 8) {
-                HStack(spacing: 10) {
-                    ZStack {
-                        Circle().fill(LinearGradient(colors: [Palette.accent, Palette.accent.opacity(0.55)], startPoint: .top, endPoint: .bottom))
-                        Image(systemName: "frying.pan.fill").font(.system(size: 22)).foregroundStyle(.white)
+                HStack(spacing: 8) {
+                    Image(systemName: "frying.pan.fill").font(.system(size: 13)).foregroundStyle(.white)
+                        .frame(width: 26, height: 26)
+                        .background(Circle().fill(Palette.accent.gradient))
+                        .overlay(Circle().stroke(Palette.ring.opacity(0.9), lineWidth: 1.5))
+                    Text(value.name).font(.headline).lineLimit(1)
+                    StatusPill(text: statusText, color: statusColor)
+                    Spacer(minLength: 4)
+                    if let review, KitchenReviews.shared.state(agent.conversationID) != nil || value.status == .done {
+                        Button("Review", action: review).buttonStyle(.borderedProminent).tint(Palette.accent).controlSize(.small).pointingHand()
+                            .help("Open the serving-window review")
                     }
-                    .frame(width: 52, height: 52)
-                    .overlay(Circle().stroke(Palette.ring, lineWidth: 2))
-                    VStack(alignment: .leading, spacing: 4) {
-                        Text(value.name).font(.title3.weight(.bold)).lineLimit(1)
-                        StatusPill(text: statusText, color: statusColor)
+                    Button(action: close) { Image(systemName: "xmark").font(.system(size: 10, weight: .bold)).frame(width: 18, height: 18) }
+                        .buttonStyle(.plain).foregroundStyle(Palette.paper.opacity(0.6)).pointingHand()
+                        .help("Deselect (Esc)").accessibilityLabel("Deselect " + value.name)
+                }
+                Text(facts).font(.caption2).foregroundStyle(Palette.paper.opacity(0.6)).lineLimit(1).truncationMode(.middle)
+                Divider().overlay(Palette.paper.opacity(0.08))
+                ScrollView {
+                    VStack(alignment: .leading, spacing: 8) {
+                        Text(TaskTitle.full(value.task)).font(.callout.weight(.medium)).foregroundStyle(Palette.paper)
+                            .lineLimit(4).fixedSize(horizontal: false, vertical: true).textSelection(.enabled)
+                        if let plan = value.plan, plan.hasTasks, !plan.tasksPreviousTurn {
+                            ProgressBar(fraction: Double(plan.completedTaskCount) / Double(max(1, plan.checklist.count)))
+                        }
+                        AgentProgressSections(agent: value, fileLimit: 4, compact: true)
                     }
-                }
-                VStack(alignment: .leading, spacing: 3) {
-                    fact("cpu", [value.provider, model].compactMap { $0 }.filter { !$0.isEmpty }.joined(separator: " · "))
-                    if let branch = value.branch, !branch.isEmpty { fact("arrow.triangle.branch", branch) }
-                    if let folder = value.worktree { fact("folder", (folder as NSString).lastPathComponent) }
-                    if let dish = KitchenFood.dish(for: value.completionKey ?? agent.conversationID) { fact("fork.knife", Self.dishName(dish)) }
-                    if let tokens { fact("gauge.with.dots.needle.33percent", tokens) }
-                    if let time = value.observedAt { fact("clock", "Updated " + time.formatted(.relative(presentation: .named))) }
-                }
-                if let review, KitchenReviews.shared.state(agent.conversationID) != nil || value.status == .done {
-                    Button(action: review) { Label("Review dish", systemImage: "fork.knife.circle.fill").font(.caption.weight(.semibold)) }
-                        .buttonStyle(.borderedProminent).tint(Palette.accent).controlSize(.small).pointingHand()
                 }
             }
         }
     }
-    private func fact(_ icon: String, _ text: String) -> some View {
-        Label { Text(text).lineLimit(1).truncationMode(.middle) } icon: { Image(systemName: icon).frame(width: 14) }
-            .font(.caption).foregroundStyle(Palette.paper.opacity(0.85))
+    /// Provider and model, branch and usage on one line.
+    private var facts: String {
+        var parts = [[value.provider, model].compactMap { $0 }.filter { !$0.isEmpty }.joined(separator: " · ")]
+        if let branch = value.branch, !branch.isEmpty { parts.append("⎇ " + branch) }
+        if let tokens { parts.append(tokens) }
+        return parts.filter { !$0.isEmpty }.joined(separator: "   ")
     }
     private var model: String? {
         let running = task?.model ?? ""
@@ -79,7 +82,7 @@ struct AgentCommandBar: View {
     }
     private var tokens: String? {
         guard case .number(let total)? = task?.workflow.usage["total"]["totalTokens"], total > 0 else { return nil }
-        return Int(total).formatted() + " tokens"
+        return Int(total).formatted(.number.notation(.compactName)) + " tokens"
     }
     private var statusText: String {
         if agent.needsAttention { return "Needs you" }
@@ -92,27 +95,6 @@ struct AgentCommandBar: View {
         case .working: return Palette.ring
         case .done: return .teal
         default: return .gray
-        }
-    }
-    static func dishName(_ id: String) -> String {
-        let words = id.replacingOccurrences(of: "_", with: " ")
-        return words.prefix(1).uppercased() + words.dropFirst()
-    }
-
-    // MARK: Order ticket
-
-    private var orderTicket: some View {
-        Panel(title: "Order", paper: true) {
-            ScrollView {
-                VStack(alignment: .leading, spacing: 10) {
-                    Text(TaskTitle.full(value.task)).font(.callout.weight(.semibold)).foregroundStyle(Palette.ink)
-                        .fixedSize(horizontal: false, vertical: true).textSelection(.enabled)
-                    if let plan = value.plan, plan.hasTasks, plan.checklist.count > 0 {
-                        ProgressView(value: Double(plan.completedTaskCount), total: Double(plan.checklist.count)).tint(Palette.accent)
-                    }
-                    AgentProgressSections(agent: value, fileLimit: 4, compact: true).foregroundStyle(Palette.ink)
-                }
-            }
         }
     }
 
@@ -191,20 +173,35 @@ private struct FeedRow: View {
 
 /// A framed section of the command bar; `paper` sections look like an order ticket.
 struct CommandBarPanel<Content: View>: View {
-    let title: String
-    var paper = false
+    var title: String? = nil
     @ViewBuilder let content: Content
     var body: some View {
         VStack(alignment: .leading, spacing: 6) {
-            Text(title.uppercased()).font(.system(size: 10, weight: .heavy, design: .rounded)).tracking(1.2)
-                .foregroundStyle(paper ? Palette.ink.opacity(0.55) : Palette.trim)
+            if let title {
+                Text(title.uppercased()).font(.system(size: 9.5, weight: .bold, design: .rounded)).tracking(1)
+                    .foregroundStyle(Palette.trim.opacity(0.85))
+            }
             content.frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
         }
         .padding(10)
         .frame(maxHeight: .infinity, alignment: .top)
-        .background(RoundedRectangle(cornerRadius: 12).fill(paper ? Palette.paper : Palette.panel))
-        .overlay(RoundedRectangle(cornerRadius: 12).stroke(paper ? Palette.ink.opacity(0.15) : Palette.trim.opacity(0.45), lineWidth: 1.5))
-        .shadow(color: .black.opacity(0.35), radius: 3, y: 2)
+        .background(RoundedRectangle(cornerRadius: 10, style: .continuous).fill(Palette.panel))
+        .overlay(RoundedRectangle(cornerRadius: 10, style: .continuous).stroke(.white.opacity(0.07), lineWidth: 1))
+    }
+}
+
+/// A thin progress track in the selection ring's green.
+private struct ProgressBar: View {
+    let fraction: Double
+    var body: some View {
+        GeometryReader { geometry in
+            ZStack(alignment: .leading) {
+                Capsule().fill(.white.opacity(0.1))
+                Capsule().fill(Palette.ring.gradient).frame(width: max(4, geometry.size.width * min(1, max(0, fraction))))
+            }
+        }
+        .frame(height: 4)
+        .accessibilityLabel("\(Int((fraction * 100).rounded())) percent done")
     }
 }
 private typealias Panel = CommandBarPanel
