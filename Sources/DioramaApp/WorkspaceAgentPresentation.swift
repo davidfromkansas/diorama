@@ -228,7 +228,7 @@ enum WorkspaceAgentPresentation {
                     if event.kind == "started" || event.kind == "turnStarted" { break }
                     guard let name = event.tool, !name.isEmpty else { continue }
                     if tool == nil { tool = event }
-                    if KitchenActivity.isEditing(tool: name) { edits = true; break }
+                    if KitchenActivity.isEditing(tool: name, detail: event.detail ?? "") { edits = true; break }
                 }
                 result[index].latestTool = tool?.tool ?? ""
                 result[index].latestToolDetail = String((tool?.detail ?? "").prefix(500))
@@ -240,7 +240,7 @@ enum WorkspaceAgentPresentation {
                 let tools = relevant.filter { $0.kind == "tool" && (latest?.turnID == nil || $0.turnID == latest?.turnID) }
                 result[index].latestTool = tools.last?.title ?? ""
                 result[index].latestToolDetail = String((tools.last?.data["command"].string ?? tools.last?.detail ?? "").prefix(500))
-                result[index].turnHasEdits = tools.contains { KitchenActivity.isEditing(tool: $0.title) }
+                result[index].turnHasEdits = tools.contains { KitchenActivity.isEditing(tool: $0.title, detail: $0.data["command"].string ?? $0.detail) }
                 result[index].turnWork = TurnWork.from(tools)
                 result[index].feed = AgentActivityFeed.entries(from: relevant)
                 if agent.status != .working { result[index].turnWork.settle() }

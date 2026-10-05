@@ -33,6 +33,14 @@ public struct TurnWork: Equatable, Sendable {
     public mutating func started(tool: String, detail: String, call: String?) {
         // Polling a running command's session is not a new command.
         if tool.lowercased() == "write_stdin" { if let call { calls[call] = .poll; polled[call] = Self.session(detail) }; return }
+        let written = KitchenActivity.commandTools.contains(tool.lowercased()) ? KitchenActivity.writtenFiles(command: detail) : []
+        if !written.isEmpty {
+            // A shell write is an edit of the files it writes; it still runs as a command.
+            for path in written where !files.contains(path) { files.append(path) }
+            if let call { calls[call] = .command }
+            commands += 1
+            return
+        }
         if KitchenActivity.isEditing(tool: tool) {
             for path in detail.split(whereSeparator: \.isNewline).map({ $0.trimmingCharacters(in: .whitespaces) }) where !path.isEmpty && !files.contains(path) {
                 files.append(path)
