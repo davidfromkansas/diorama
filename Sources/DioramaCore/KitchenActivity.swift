@@ -4,13 +4,15 @@ import Foundation
 /// first ported from the chef avatar prototype (`app/src/agent/mapping.ts`), then extended with
 /// shell-command understanding: both providers mostly read files through the shell.
 public enum KitchenActivity: String, Sendable, CaseIterable {
-    case planning, researching, editing, commands, testing, other
+    case planning, researching, editing, commands, testing, resources, other
 
     /// Tool names arrive as Claude Code tool titles (`Read`, `Bash`…), Codex item types
     /// (`commandExecution`, `fileChange`…) or Codex function names (`exec_command`, `apply_patch`…).
     public static func classify(tool: String, detail: String = "") -> KitchenActivity {
         let name = tool.trimmingCharacters(in: .whitespaces).lowercased()
         if commandTools.contains(name) { return classify(command: detail) }
+        // Using a skill or an MCP server's tool: fetching from the pantry.
+        if isResource(tool: name) { return .resources }
         if researchTools.contains(name) { return .researching }
         if planningTools.contains(name) { return .planning }
         if editingTools.contains(name) { return .editing }
@@ -18,6 +20,11 @@ public enum KitchenActivity: String, Sendable, CaseIterable {
     }
 
     public static func isEditing(tool: String) -> Bool { editingTools.contains(tool.lowercased()) }
+    public static func isResource(tool: String) -> Bool {
+        let name = tool.lowercased()
+        return name.hasPrefix("mcp__") || resourceTools.contains(name)
+    }
+    static let resourceTools: Set<String> = ["skill", "mcptoolcall", "listmcpresources", "readmcpresource", "listmcpresourcestool", "readmcpresourcetool"]
 
     /// Tests anywhere in the script → testing; only read-only commands → researching; else commands.
     public static func classify(command: String) -> KitchenActivity {
@@ -74,8 +81,7 @@ public enum KitchenActivity: String, Sendable, CaseIterable {
         return result.map { $0.trimmingCharacters(in: .whitespaces) }.filter { !$0.isEmpty }
     }
 
-    static let researchTools: Set<String> = ["read", "grep", "glob", "websearch", "webfetch", "web__run", "web.search", "toolsearch", "view_image", "imageview",
-                                             "listmcpresources", "readmcpresource", "listmcpresourcestool", "readmcpresourcetool"]
+    static let researchTools: Set<String> = ["read", "grep", "glob", "websearch", "webfetch", "web__run", "web.search", "toolsearch", "view_image", "imageview"]
     static let planningTools: Set<String> = ["todowrite", "taskcreate", "taskupdate", "enterplanmode", "exitplanmode", "update_plan", "plan"]
     static let editingTools: Set<String> = ["edit", "write", "multiedit", "notebookedit", "filechange", "apply_patch"]
     static let commandTools: Set<String> = ["bash", "commandexecution", "shell", "local_shell", "exec_command", "write_stdin"]

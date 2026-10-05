@@ -232,7 +232,7 @@ public enum ActivityParser {
                 switch block["type"] as? String {
                 case "tool_use":
                     let args = block["input"] as? [String: Any]
-                    result = event("toolStarted", block["name"] as? String == "AskUserQuestion" ? .input : .working, call: block["id"] as? String, tool: block["name"] as? String, detail: clipped(args?["command"] ?? args?["file_path"]))
+                    result = event("toolStarted", block["name"] as? String == "AskUserQuestion" ? .input : .working, call: block["id"] as? String, tool: block["name"] as? String, detail: clipped(args?["command"] ?? args?["file_path"] ?? args?["skill"]))
                 case "tool_result":
                     result = event(block["is_error"] as? Bool == true ? "toolFailed" : "toolFinished", call: block["tool_use_id"] as? String)
                 default: return nil
