@@ -78,4 +78,24 @@ struct TurnWorkTests {
         // A test whose result never arrived is unknown once the turn is over.
         #expect(work.tests.map(\.outcome) == [.failed, .unknown])
     }
+
+    @Test func codexHistoryCountsEachCallOnceFromItsNativeItem() {
+        func record(_ title: String, _ status: String, detail: String = "", data: WireValue = .null) -> SessionActivityRecord {
+            SessionActivityRecord(id: UUID().uuidString, provider: "Codex", sessionID: "s", nativeID: UUID().uuidString, kind: "tool", title: title,
+                                  status: status, detail: detail, source: "test", observedAt: Date(), data: data)
+        }
+        func item(_ exit: Double?, files: [String] = []) -> WireValue {
+            .object(["nativeItem": .bool(true), "exitCode": exit.map(WireValue.number) ?? .null,
+                     "files": .array(files.map { .object(["path": .string($0)]) })])
+        }
+        let work = TurnWork.from([
+            record("apply_patch", "Returned"), record("fileChange", "completed", data: item(nil, files: ["/r/math.js"])),
+            record("exec_command", "Returned", detail: "npm run build"), record("write_stdin", "Returned"),
+            record("commandExecution", "completed", detail: "/bin/zsh -lc 'npm run build'", data: item(1)),
+            record("exec_command", "Returned", detail: "npm test"), record("commandExecution", "completed", detail: "/bin/zsh -lc 'npm test'", data: item(0)),
+        ])
+        #expect(work.files == ["/r/math.js"])
+        #expect(work.commands == 1 && work.failedCommands == 1)
+        #expect(work.tests == [.init(command: "npm test", outcome: .passed)])
+    }
 }
