@@ -86,15 +86,24 @@ public struct TurnWork: Equatable, Sendable {
         return work
     }
     /// The current turn's work from tool records (one per call, carrying its latest status).
+    /// Codex history records each call twice: the model's tool call and the native item that ran
+    /// (`commandExecution`, `fileChange`) with its exit code and files. When native items exist,
+    /// only they count.
     public static func from(_ records: [SessionActivityRecord]) -> TurnWork {
+        let tools = records.filter { $0.kind == "tool" }
+        let native = tools.contains { $0.data["nativeItem"].bool }
+        let shellOrPatch = KitchenActivity.commandTools.union(KitchenActivity.editingTools)
         var work = TurnWork()
-        for record in records where record.kind == "tool" {
-            let detail = record.data["command"].string ?? record.detail
+        for record in tools {
+            if native && !record.data["nativeItem"].bool && shellOrPatch.contains(record.title.lowercased()) { continue }
+            let files = record.data["files"].array.compactMap { $0["path"].string }
+            let detail = files.isEmpty ? record.data["command"].string ?? record.detail : files.joined(separator: "\n")
             work.started(tool: record.title, detail: detail, call: record.id)
+            let exitFailed: Bool = { if case .number(let code) = record.data["exitCode"] { return code != 0 }; return false }()
             switch record.status.lowercased() {
             case "failed", "error", "errored": work.finished(call: record.id, failed: true)
-            case "completed", "finished", "done": work.finished(call: record.id, failed: false)
-            default: break
+            case "completed", "finished", "done": work.finished(call: record.id, failed: exitFailed)
+            default: break // Still running, or returned without an outcome.
             }
         }
         return work
