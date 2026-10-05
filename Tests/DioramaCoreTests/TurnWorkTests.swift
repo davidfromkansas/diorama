@@ -111,4 +111,15 @@ struct TurnWorkTests {
         ])
         #expect(work.commands == 1 && work.tests == [.init(command: "npm test", outcome: .passed)] && work.files == ["/r/a.js"])
     }
+
+    @Test func eachCallCountsOnceAcrossItsRevisions() {
+        func revision(_ call: String, _ status: String, exit: Double?) -> SessionActivityRecord {
+            SessionActivityRecord(id: call + ":revision:" + UUID().uuidString, provider: "Codex", sessionID: "s", nativeID: call, kind: "tool", title: "commandExecution",
+                                  status: status, detail: "/bin/zsh -lc 'npm test'", source: "test", observedAt: Date(),
+                                  data: .object(["nativeItem": .bool(true), "exitCode": exit.map(WireValue.number) ?? .null]))
+        }
+        var work = TurnWork.from([revision("a", "running", exit: nil), revision("a", "completed", exit: 0)])
+        work.settle()
+        #expect(work.tests == [.init(command: "npm test", outcome: .passed)])
+    }
 }
