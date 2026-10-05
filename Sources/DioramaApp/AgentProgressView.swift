@@ -10,10 +10,10 @@ struct AgentProgressSections: View {
     var fileLimit = 8
     /// Smaller type and spacing for the kitchen's command bar.
     var compact = false
-    private var heading: Font { compact ? .subheadline.weight(.semibold) : .headline }
+    private var heading: Font { compact ? .caption.weight(.semibold) : .headline }
 
     var body: some View {
-        VStack(alignment: .leading, spacing: compact ? 8 : 14) {
+        VStack(alignment: .leading, spacing: compact ? 6 : 14) {
             if let plan = agent.plan, plan.hasTasks {
                 VStack(alignment: .leading, spacing: 6) {
                     Text("Checklist · \(plan.completedTaskCount) of \(plan.checklist.count) done" + (plan.tasksPreviousTurn ? " · previous turn" : ""))
@@ -26,7 +26,7 @@ struct AgentProgressSections: View {
                                 .foregroundStyle(step.status == "completed" ? .secondary : .primary)
                         }
                     }
-                    Text("Reported by the agent").font(.caption).foregroundStyle(.secondary)
+                    if !compact { Text("Reported by the agent").font(.caption).foregroundStyle(.secondary) }
                 }
             }
             VStack(alignment: .leading, spacing: 6) {
@@ -45,7 +45,7 @@ struct AgentProgressSections: View {
                             if work.files.count > fileLimit {
                                 Text("and \(work.files.count - fileLimit) more").font(.caption).foregroundStyle(.secondary)
                             }
-                        }.padding(.leading, 26)
+                        }.padding(.leading, compact ? 20 : 26)
                     }
                     if work.commands > 0 {
                         Label("Ran \(work.commands) command\(work.commands == 1 ? "" : "s")" + (work.failedCommands > 0 ? " · \(work.failedCommands) failed" : ""),
@@ -53,15 +53,17 @@ struct AgentProgressSections: View {
                     }
                     ForEach(Array(work.tests.enumerated()), id: \.offset) { _, test in
                         Label {
-                            Text(Self.outcome(test.outcome) + " · ") + Text(test.command).font(.system(.callout, design: .monospaced))
+                            Text(Self.outcome(test.outcome) + " · ") + Text(test.command).font(.system(compact ? .caption : .callout, design: .monospaced))
                         } icon: {
                             Image(systemName: Self.testIcon(test.outcome)).foregroundStyle(test.outcome == .failed ? .red : test.outcome == .passed ? .green : .secondary)
                         }.lineLimit(1)
                     }
                 }
-                Text("Observed from the agent's tool calls").font(.caption).foregroundStyle(.secondary)
+                if !compact { Text("Observed from the agent's tool calls").font(.caption).foregroundStyle(.secondary) }
             }
-        }.frame(maxWidth: .infinity, alignment: .leading).textSelection(.enabled)
+        }
+        .font(compact ? .caption : nil)
+        .frame(maxWidth: .infinity, alignment: .leading).textSelection(.enabled)
     }
 
     /// Paths inside the agent's worktree are shown relative to it.

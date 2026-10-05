@@ -667,12 +667,28 @@ final class KitchenSceneView: SCNView {
         })
         updatePlayback()
     }
-    /// Select a chef (nil clears it): ring it, follow it, and hide the other name tags.
-    func setSelection(_ agentID: String?) {
+    /// Select a chef (nil clears it): ring it, follow it, and hide the other name tags. Clearing
+    /// waits a moment: switching to another chef passes through "nothing selected" (the
+    /// conversation changes first), and the camera should glide across, not pull back and in.
+    func setSelection(_ agentID: String?, immediately: Bool = false) {
+        if agentID == nil, selectedID != nil, !immediately {
+            guard pendingDeselect == nil else { return }
+            let work = DispatchWorkItem { [weak self] in
+                guard let self else { return }
+                self.pendingDeselect = nil
+                self.selectedID = nil; self.syncSelection()
+            }
+            pendingDeselect = work
+            DispatchQueue.main.asyncAfter(deadline: .now() + Self.deselectGrace, execute: work)
+            return
+        }
+        pendingDeselect?.cancel(); pendingDeselect = nil
         guard agentID != selectedID else { return }
         selectedID = agentID
         syncSelection()
     }
+    private var pendingDeselect: DispatchWorkItem?
+    static let deselectGrace = 0.25
     /// Keeps the ring, the followed chef and the station signs in line with the selection, also
     /// when the selected chef appears or leaves after it was chosen.
     private func syncSelection() {
