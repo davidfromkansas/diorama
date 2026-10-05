@@ -206,6 +206,11 @@ public enum SessionActivityReducer {
             if let prior, prior.turnID == event["params"]["turnId"].string, prior.data == bounded(event["params"]["plan"]) { return }
             snapshot.records.removeAll { $0.kind == "step" && $0.provider == provider.rawValue && $0.sessionID == sessionID && $0.parentID == owner }
         }
+        // Codex keeps a requested to-do list as a Markdown checklist in its messages.
+        if provider == .codex, method == "item/completed", event["params"]["item"]["type"].string == "agentMessage",
+           let plan = MessageChecklist.plan(event["params"]["item"]["text"].string ?? "") {
+            ingest(.object(["method": .string("turn/plan/updated"), "params": .object(["plan": plan, "turnId": event["params"]["turnId"], "timestamp": event["params"]["timestamp"]])]), provider: provider, sessionID: sessionID, into: &snapshot)
+        }
         if method == "diorama/claudeActivity", event["params"]["event"]["type"].string == "user" {
             let e = event["params"]["event"]
             for block in e["message"]["content"].array where block["type"].string == "tool_result" && !block["is_error"].bool {
