@@ -65,7 +65,7 @@ struct SpatialWorkspaceView: View {
                     .opacity(focus == .portfolio || kitchenSelected ? 0 : 1)
                     .allowsHitTesting(!kitchenSelected && focus != .portfolio && inspection == nil).accessibilityHidden(kitchenSelected || focus == .portfolio || inspection != nil)
                 if kitchenSelected {
-                    KitchenSceneSurface(agents: kitchenAgents(snapshot, focus: focus), active: visible && scenePhase == .active && library.windowIsActive,
+                    KitchenSceneSurface(agents: kitchenAgents(snapshot, focus: focus), scope: focus == .portfolio ? nil : focus.projectID ?? focus.conversationID, active: visible && scenePhase == .active && library.windowIsActive,
                                         reducedMotion: reduced, select: go)
                 }
                 if !kitchenSelected && focus != .portfolio && !ScenePerformance.disabled("OVERLAYS") {
