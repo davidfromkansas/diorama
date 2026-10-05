@@ -367,7 +367,8 @@ final class KitchenSceneView: SCNView {
         scene = nil
     }
     private func placeChefLabels() {
-        for (id, chef) in chefs {
+        var placed: [CGRect] = []
+        for (id, chef) in chefs.sorted(by: { $0.key < $1.key }) {
             guard let label = chefLabels[id] else { continue }
             let head = chef.root.simdPosition + SIMD3(0, 2.05 * KitchenLayout.chefScale, 0)
             let point = projectPoint(SCNVector3(head))
@@ -376,7 +377,13 @@ final class KitchenSceneView: SCNView {
             let y = isFlipped ? bounds.height - CGFloat(point.y) : CGFloat(point.y)
             // Keep name tags fully inside the view near the walls.
             let x = min(max(4, CGFloat(point.x) - width / 2), max(4, bounds.width - width - 4))
-            label.frame = CGRect(x: x, y: min(max(4, y), max(4, bounds.height - height - 4)), width: width, height: height)
+            var frame = CGRect(x: x, y: min(max(4, y), max(4, bounds.height - height - 4)), width: width, height: height)
+            // Neighbouring chefs (e.g. side by side in the break room) stack their tags instead of overlapping.
+            while let clash = placed.first(where: { $0.insetBy(dx: -2, dy: -1).intersects(frame) }) {
+                frame.origin.y = isFlipped ? clash.maxY + 2 : clash.minY - height - 2
+            }
+            placed.append(frame)
+            label.frame = frame
         }
     }
     override func mouseUp(with event: NSEvent) {

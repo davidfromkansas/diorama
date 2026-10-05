@@ -246,6 +246,15 @@ import simd
         #expect(view.chefs[other.id]?.director.intent?.key.hasPrefix("arrival") == false)
     }
 
+    @Test func neighbouringNameTagsNeverOverlap() throws {
+        let view = KitchenSceneView(frame: CGRect(x: 0, y: 0, width: 1000, height: 700))
+        view.layoutSubtreeIfNeeded(); view.fitFloor()
+        view.apply(agents: (0..<10).map { agent("r\($0)", .done, freshness: .lastKnown) }, active: false, reducedMotion: false)
+        let tags = view.subviews.compactMap { $0 as? NSTextField }.filter { $0.stringValue.hasPrefix("Agent ") }.map(\.frame)
+        #expect(tags.count == 10)
+        for (i, a) in tags.enumerated() { for b in tags.dropFirst(i + 1) { #expect(!a.intersects(b)) } }
+    }
+
     @Test func kitchenViewReconcilesChefsAndPlaysOnlyWhileActive() throws {
         let view = KitchenSceneView(frame: CGRect(x: 0, y: 0, width: 1000, height: 700))
         view.apply(agents: [], active: true, reducedMotion: false)
