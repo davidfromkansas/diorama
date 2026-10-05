@@ -337,6 +337,20 @@ import simd
         #expect(!calm.stepNames.contains("once:celebrate_done"))
     }
 
+    @Test func emptyCuttingBoardsShowTheRestingCleaver() throws {
+        let view = KitchenSceneView(frame: CGRect(x: 0, y: 0, width: 1000, height: 700))
+        view.updateBoards()
+        #expect(view.idleBoards.count == 6)
+        view.apply(agents: [agent("a", .working, tool: "Edit", edits: true)], active: false, reducedMotion: false, now: 0)
+        for chef in view.chefs.values { chef.update(0.1) }
+        view.updateBoards()
+        let used = try #require(view.chefs.values.first?.director.station?.id)
+        #expect(view.idleBoards.count == 5 && !view.idleBoards.contains(used))
+        view.apply(agents: [], active: false, reducedMotion: false, now: 1)
+        view.updateBoards()
+        #expect(view.idleBoards.count == 6)
+    }
+
     @Test func burnersIgniteOnlyWhereChefsCook() throws {
         let view = KitchenSceneView(frame: CGRect(x: 0, y: 0, width: 1000, height: 700))
         let cooks = [agent("a", .working, tool: "Bash", detail: "make", edits: true), agent("b", .working, tool: "Bash", detail: "npm run build", edits: true),

@@ -106,6 +106,9 @@ final class KitchenSceneView: SCNView {
     private var labels: [NSTextField] = []
     /// One flame per burner, keyed by the stove slot it belongs to.
     private var flames: [String: (node: SCNNode, fire: SCNParticleSystem)] = [:]
+    /// Per cooking slot: the plain board a chef chops on, and the cleaver-on-board model shown
+    /// while nobody is there.
+    private var boards: [String: (plain: SCNNode, idle: SCNNode)] = [:]
     private let leaders = CAShapeLayer()
     private var fittedSize = CGSize.zero
     var labelFrames: [CGRect] { labels.map(\.frame) }
@@ -130,7 +133,9 @@ final class KitchenSceneView: SCNView {
             world.rootNode.addChildNode(flame.node); flames[slot.id] = flame
         }
         for area in KitchenLayout.areas {
-            world.rootNode.addChildNode(KitchenStationGeometry.make(area))
+            let station = KitchenStationGeometry.make(area)
+            world.rootNode.addChildNode(station)
+            if area.id == "cooking" { boards = Self.idleBoards(on: station) }
             let label = KitchenLabel(labelWithString: area.short)
             label.toolTip = area.label; label.setAccessibilityLabel(area.label)
             label.font = .systemFont(ofSize: 11, weight: .medium); label.textColor = .init(white: 0.18, alpha: 1)
@@ -310,6 +315,7 @@ final class KitchenSceneView: SCNView {
         seenScopes.formUnion(ranked.map { $0.projectID ?? $0.conversationID })
         chefLock.lock(); pace(now: now); chefLock.unlock()
         updateFlames()
+        updateBoards()
         placeChefLabels()
         updatePlayback()
         needsDisplay = true
@@ -363,6 +369,44 @@ final class KitchenSceneView: SCNView {
             flame.node.isHidden = !on
             flame.fire.birthRate = on && !reduced ? 140 : 0
         }
+    }
+    /// A board shows the resting cleaver until a chef reaches it.
+    func updateBoards() {
+        guard !boards.isEmpty else { return }
+        chefLock.lock()
+        let busy = Set(chefs.values.compactMap { chef -> String? in
+            guard let station = chef.director.station, station.area == "cooking",
+                  simd_distance(chef.director.position, station.stand) < 0.35 else { return nil }
+            return station.id
+        })
+        chefLock.unlock()
+        for (id, board) in boards {
+            let used = busy.contains(id)
+            if board.plain.isHidden != !used { board.plain.isHidden = !used }
+            if board.idle.isHidden != used { board.idle.isHidden = used }
+        }
+    }
+    var idleBoards: Set<String> { Set(boards.filter { !$0.value.idle.isHidden }.map(\.key)) }
+    /// Pairs each plain board on the island with its cooking slot (nearest along the island) and
+    /// lays the cleaver model over it, sized to the plain board.
+    private static func idleBoards(on island: SCNNode) -> [String: (plain: SCNNode, idle: SCNNode)] {
+        guard let template = KitchenProps.cleaverBoard else { return [:] }
+        let slots = KitchenLayout.chefSlots["cooking"] ?? []
+        var result: [String: (plain: SCNNode, idle: SCNNode)] = [:]
+        for plain in island.childNodes where plain.name == "cutting board" {
+            let x = Float(island.convertPosition(plain.position, to: nil).x)
+            guard let slot = slots.min(by: { abs($0.stand.x - x) < abs($1.stand.x - x) }), result[slot.id] == nil,
+                  let box = plain.geometry as? SCNBox else { continue }
+            let idle = template.clone(); idle.name = "idle cutting board"
+            // The model is 1.0 wide; the island's height scale is undone so it keeps its proportions.
+            let width = box.width, lift = CGFloat(island.scale.y)
+            idle.scale = SCNVector3(width, width / lift, width)
+            idle.position = SCNVector3(plain.position.x, plain.position.y - box.height / 2, plain.position.z)
+            island.addChildNode(idle)
+            plain.isHidden = true
+            result[slot.id] = (plain, idle)
+        }
+        return result
     }
     var litBurners: Set<String> { Set(flames.filter { !$0.value.node.isHidden }.map(\.key)) }
     private static func flame() -> (node: SCNNode, fire: SCNParticleSystem) {
@@ -425,6 +469,7 @@ final class KitchenSceneView: SCNView {
         _ = delta // chefs advance on the render thread; this loop only paces and places tags
         chefLock.lock(); pace(now: CACurrentMediaTime()); chefLock.unlock()
         updateFlames()
+        updateBoards()
         placeChefLabels()
         updatePlayback()
     }
