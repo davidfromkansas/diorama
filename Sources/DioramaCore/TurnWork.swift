@@ -4,7 +4,7 @@ import Foundation
 /// edited, the commands it ran and its test runs. Always available, unlike a reported checklist,
 /// but it says what was done, not what is left.
 public struct TurnWork: Equatable, Sendable {
-    public enum Outcome: String, Sendable { case running, passed, failed }
+    public enum Outcome: String, Sendable { case running, passed, failed, unknown }
     public struct TestRun: Equatable, Sendable {
         public var command: String
         public var outcome: Outcome
@@ -17,13 +17,17 @@ public struct TurnWork: Equatable, Sendable {
     public private(set) var failedCommands = 0
     public private(set) var tests: [TestRun] = []
     private var calls: [String: Call] = [:]
-    private enum Call: Equatable, Sendable { case command, test(Int) }
+    /// Commands still running in a shell session, resolved by a later poll of that session.
+    private var sessions: [String: Call] = [:]
+    private enum Call: Equatable, Sendable { case command, test(Int), poll }
 
     public init() {}
     public var isEmpty: Bool { files.isEmpty && commands == 0 && tests.isEmpty }
 
     /// A tool call started. `call` pairs it with its result.
     public mutating func started(tool: String, detail: String, call: String?) {
+        // Polling a running command's session is not a new command.
+        if tool.lowercased() == "write_stdin" { if let call { calls[call] = .poll }; return }
         if KitchenActivity.isEditing(tool: tool) {
             for path in detail.split(whereSeparator: \.isNewline).map({ $0.trimmingCharacters(in: .whitespaces) }) where !path.isEmpty && !files.contains(path) {
                 files.append(path)
@@ -40,13 +44,30 @@ public struct TurnWork: Equatable, Sendable {
         default: break
         }
     }
-    /// A tool call returned, successfully or not.
-    public mutating func finished(call: String?, failed: Bool) {
+    /// A tool call returned, successfully or not. `result` is the parser's `exit=N session=S`
+    /// detail when the output reported them.
+    public mutating func finished(call: String?, failed: Bool, result: String = "") {
         guard let call, let kind = calls.removeValue(forKey: call) else { return }
-        switch kind {
+        let fields = Dictionary(result.split(separator: " ").compactMap { field -> (String, String)? in
+            let parts = field.split(separator: "=", maxSplits: 1); return parts.count == 2 ? (String(parts[0]), String(parts[1])) : nil
+        }, uniquingKeysWith: { $1 })
+        var target = kind
+        if case .poll = kind {
+            // A poll that reports an exit settles the command running in its session.
+            guard let session = fields["session"], fields["exit"] != nil, let running = sessions.removeValue(forKey: session) else { return }
+            target = running
+        } else if let session = fields["session"], fields["exit"] == nil {
+            sessions[session] = kind; return
+        }
+        switch target {
         case .command: if failed { failedCommands += 1 }
         case .test(let index): tests[index].outcome = failed ? .failed : .passed
+        case .poll: break
         }
+    }
+    /// The turn is over: tests whose result never arrived are unknown rather than running.
+    public mutating func settle() {
+        for index in tests.indices where tests[index].outcome == .running { tests[index].outcome = .unknown }
     }
 
     /// The current turn's work from an activity stream (oldest first): everything after the last
@@ -57,7 +78,8 @@ public struct TurnWork: Equatable, Sendable {
         for event in events[start...] {
             switch event.kind {
             case "toolStarted": work.started(tool: event.tool ?? "", detail: event.detail ?? "", call: event.callID)
-            case "toolFinished", "toolFailed": work.finished(call: event.callID, failed: event.kind == "toolFailed")
+            case "toolFinished", "toolFailed": work.finished(call: event.callID, failed: event.kind == "toolFailed", result: event.detail ?? "")
+            case "finished", "interrupted", "failed": work.settle()
             default: break
             }
         }
