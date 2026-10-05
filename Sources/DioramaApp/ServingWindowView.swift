@@ -40,7 +40,7 @@ struct ServingWindowView: View {
         }
         .padding(22)
         .frame(width: 560)
-        .task { message = TaskTitle.compact(agent.value.task); await refresh() }
+        .task { message = Self.defaultMessage(agent.value.task); await refresh() }
         .sheet(isPresented: $showPR, onDismiss: { Task { await afterPR() } }) {
             if let project, let workspace { GitHubPRView(projectID: project.id, workspace: workspace, library: library) }
         }
@@ -133,6 +133,19 @@ struct ServingWindowView: View {
     private var mergeHint: String {
         if let pr = workspace?.pullRequest, pr.state == "OPEN" { return "Merges pull request #\(pr.number) on GitHub, then updates your local \(pr.baseRefName ?? project?.base ?? "base")." }
         return "Done finishes without git. Commit saves the changes on this task's branch. Merge brings the committed branch into \(project?.base ?? "the base branch") in \(project?.folder ?? "your project folder")."
+    }
+
+    /// The task's first sentence, kept under a conventional 72-character subject line.
+    static func defaultMessage(_ task: String) -> String {
+        let line = task.split(whereSeparator: \.isNewline).first.map(String.init) ?? "Update"
+        // A sentence ends at ". ", not at the dot in a file name like README.md.
+        let sentence = line.components(separatedBy: ". ").first ?? line
+        var subject = sentence.trimmingCharacters(in: .whitespaces)
+        if subject.count > 72 {
+            subject = String(subject.prefix(72))
+            if let space = subject.lastIndex(of: " ") { subject = String(subject[..<space]) }
+        }
+        return subject.isEmpty ? "Update" : subject
     }
 
     // MARK: Actions

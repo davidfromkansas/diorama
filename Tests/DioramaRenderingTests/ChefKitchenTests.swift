@@ -98,6 +98,13 @@ import simd
         reviews.clear("c"); #expect(reviews.state("c") == nil)
     }
 
+    @Test func servingWindowSuggestsAPlainCommitSubject() {
+        #expect(ServingWindowView.defaultMessage("Read README.md and math.js first. Then add multiply.") == "Read README.md and math.js first")
+        #expect(ServingWindowView.defaultMessage("Add a divide function to math\nand run the build") == "Add a divide function to math")
+        let long = ServingWindowView.defaultMessage(String(repeating: "word ", count: 30))
+        #expect(long.count <= 72 && !long.contains("…"))
+    }
+
     @Test func roomFitsTenChefsPerStationOnWalkableFloor() {
         let navigation = KitchenLayout.chefNavigation, table = KitchenLayout.chefSlots
         #expect(KitchenLayout.areas.count == 9)
