@@ -148,12 +148,32 @@ import simd
         #expect(KitchenLayout.work(for: stale, review: .shipped).area == "serving")
         #expect(KitchenLayout.work(for: stale, review: .committed).oneShot == "cover_dish")
         #expect(KitchenLayout.work(for: stale, review: .approved).area == "break")
+        // Feedback sends the chef back to work, not to the break room, before the new turn is reported.
+        #expect(KitchenLayout.work(for: stale, review: .reworking).area == "prep")
         // Live work always wins over an old review.
         #expect(KitchenLayout.work(for: agent("main", .working, tool: "Edit", edits: true).value, review: .awaiting).area == "cooking")
         let reviews = KitchenReviews(defaults: UserDefaults(suiteName: "reviews-" + UUID().uuidString)!)
         reviews.set("c", .awaiting); #expect(reviews.state("c") == .awaiting)
         reviews.set("c", .approved, note: "Merged"); #expect(reviews.state("c") == .approved)
         reviews.clear("c"); #expect(reviews.state("c") == nil)
+    }
+
+    @Test func feedbackKeepsTheChefWorkingUntilTheNextTurnFinishes() async throws {
+        let reviews = KitchenReviews(defaults: UserDefaults(suiteName: "reviews-" + UUID().uuidString)!)
+        var done = agent("main", .done)
+        done.value.completionKey = "turn-1"
+        reviews.observe([done]); try await Task.sleep(for: .milliseconds(50))
+        #expect(reviews.state(done.conversationID) == .awaiting)
+        reviews.set(done.conversationID, .reworking)
+        // The finished turn is still reported for a moment; it must not reopen the review.
+        reviews.observe([done]); try await Task.sleep(for: .milliseconds(50))
+        #expect(reviews.state(done.conversationID) == .reworking)
+        // The new turn's live work takes over, and its completion waits at the window again.
+        reviews.observe([agent("main", .working)]); try await Task.sleep(for: .milliseconds(50))
+        #expect(reviews.state(done.conversationID) == nil)
+        done.value.completionKey = "turn-2"
+        reviews.observe([done]); try await Task.sleep(for: .milliseconds(50))
+        #expect(reviews.state(done.conversationID) == .awaiting)
     }
 
     @Test func servingWindowSuggestsAPlainCommitSubject() {
