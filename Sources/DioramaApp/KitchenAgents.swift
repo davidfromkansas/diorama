@@ -73,6 +73,11 @@ extension KitchenLayout {
     }
     static func intent(for agent: WorkspaceAgent, at slot: ChefStation?, pickup: ChefStation?, restored: Bool, review: KitchenReviews.State? = nil) -> ChefIntent {
         let work = work(for: agent, review: review)
+        if let slot, slot.area == "serving", slot.id.contains("~") {
+            // The pass is full: wait in line with the dish in hand until a spot frees up.
+            return ChefIntent(key: ["serving-line", slot.id, "carry_idle"].joined(separator: "|"), station: slot, loop: "carry_idle",
+                              oneShot: nil, hand: .plate, pickup: restored ? nil : pickup, urgent: work.urgent)
+        }
         // One-shot ids are stable per cause, so re-delivered states never replay a gesture.
         let cause = agent.completionKey ?? agent.meaningfulEventID
         let shot = work.oneShot.map { ChefIntent.OneShot(id: "\($0):\(agent.status.rawValue):\(cause)", clip: $0, restored: restored) }

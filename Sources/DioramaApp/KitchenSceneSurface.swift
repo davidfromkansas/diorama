@@ -91,6 +91,8 @@ private final class KitchenLabel: NSTextField {
 /// matches their state. It only observes agent state; it never controls provider execution.
 final class KitchenSceneView: SCNView {
     static let maxChefs = 12
+    /// Extra chefs allowed past `maxChefs` so every dish waiting for review stays reachable.
+    static let maxWaiting = 12
     let floorSize = SIMD3<Float>(Float(KitchenLayout.floor.width), 0.2, Float(KitchenLayout.floor.height))
     var select: ((SpatialFocus) -> Void)?
     var review: ((SpatialAgent) -> Void)?
@@ -255,11 +257,19 @@ final class KitchenSceneView: SCNView {
         if active != self.active { Self.trace("active -> \(active)") }
         self.active = active; reduced = reducedMotion
         defer { if let scope { seenScopes.insert(scope) } }
-        let ranked = agents.enumerated().sorted { a, b in
-            let ra = a.element.needsAttention ? 0 : a.element.value.status == .working ? 1 : 2
-            let rb = b.element.needsAttention ? 0 : b.element.value.status == .working ? 1 : 2
-            return ra != rb ? ra < rb : a.offset < b.offset
-        }.prefix(Self.maxChefs).map(\.element)
+        // Attention first, then working, then dishes waiting for review; resting chefs fill what
+        // is left. Dishes waiting for review are never dropped: past the cap they queue at the pass.
+        func rank(_ agent: SpatialAgent) -> Int {
+            if agent.needsAttention { return 0 }
+            if agent.value.status == .working { return 1 }
+            return KitchenLayout.work(for: agent.value, review: reviews[agent.conversationID]).area == "serving" ? 2 : 3
+        }
+        let sorted = agents.enumerated().map { (rank: rank($0.element), offset: $0.offset, agent: $0.element) }
+            .sorted { $0.rank != $1.rank ? $0.rank < $1.rank : $0.offset < $1.offset }
+        let working = sorted.filter { $0.rank <= 1 }.prefix(Self.maxChefs)
+        let waiting = sorted.filter { $0.rank == 2 }.prefix(Self.maxChefs + Self.maxWaiting - working.count)
+        let resting = sorted.filter { $0.rank == 3 }.prefix(max(0, Self.maxChefs - working.count - waiting.count))
+        let ranked = (working + waiting + resting).map(\.agent)
         let ids = Set(ranked.map(\.id))
         for id in chefs.keys where !ids.contains(id) {
             chefLock.lock(); renderChefs.removeAll { $0.id == id }; chefLock.unlock()
