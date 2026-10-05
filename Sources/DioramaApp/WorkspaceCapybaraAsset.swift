@@ -162,9 +162,10 @@ nonisolated final class WorkspaceCapybaraAsset: @unchecked Sendable {
     }
 }
 
-/// Untextured static meshes from a bundled GLB (e.g. chef props), keyed by root node name.
-/// Supports several primitives per mesh with flat PBR factor materials; node transforms below
-/// each root are preserved. Templates are shared; callers `clone()` them.
+/// Static meshes from a bundled GLB (chef props, kitchen food), keyed by root node name.
+/// Supports several primitives per mesh with PBR materials (embedded base colour,
+/// metal/roughness and normal textures, or flat factors); node transforms below each root are
+/// preserved. Templates are shared; callers `clone()` them.
 @MainActor enum GLBStaticMeshes {
     static func load(_ resource: String, subdirectory: String) throws -> [String: SCNNode] {
         guard let url = WorkspaceCapybaraAsset.resourceBundle.url(forResource: resource, withExtension: "glb", subdirectory: subdirectory) else {
@@ -177,14 +178,17 @@ nonisolated final class WorkspaceCapybaraAsset: @unchecked Sendable {
         guard let nodes = glb.json["nodes"] as? [[String: Any]], let meshes = glb.json["meshes"] as? [[String: Any]] else {
             throw WorkspaceCapybaraAsset.AssetError.invalid("Invalid static GLB")
         }
-        let materials = (glb.json["materials"] as? [[String: Any]] ?? []).map(material)
+        let materials = (glb.json["materials"] as? [[String: Any]] ?? []).map { material($0, glb: glb) }
         var geometries: [Int: SCNGeometry] = [:]
         func geometry(_ id: Int) throws -> SCNGeometry {
             if let cached = geometries[id] { return cached }
             var sources: [SCNGeometrySource] = [], elements: [SCNGeometryElement] = [], used: [SCNMaterial] = []
             // One SCNGeometry per mesh: primitives become elements over concatenated sources.
-            var positions = Data(), normals = Data(), vertexCount = 0
-            for primitive in meshes[id]["primitives"] as? [[String: Any]] ?? [] {
+            var positions = Data(), normals = Data(), uvs = Data(), vertexCount = 0
+            let primitives = meshes[id]["primitives"] as? [[String: Any]] ?? []
+            // Texture coordinates are kept only when every primitive has them.
+            let textured = primitives.allSatisfy { ($0["attributes"] as? [String: Int])?["TEXCOORD_0"] != nil }
+            for primitive in primitives {
                 guard let attrs = primitive["attributes"] as? [String: Int], let p = attrs["POSITION"], let n = attrs["NORMAL"],
                       let i = primitive["indices"] as? Int else { throw WorkspaceCapybaraAsset.AssetError.invalid("Unsupported static primitive") }
                 let pa = try glb.accessor(p), na = try glb.accessor(n), ia = try glb.accessor(i)
@@ -197,9 +201,17 @@ nonisolated final class WorkspaceCapybaraAsset: @unchecked Sendable {
                 elements.append(SCNGeometryElement(data: shifted.withUnsafeBufferPointer { Data(buffer: $0) }, primitiveType: .triangles, primitiveCount: ia.count/3, bytesPerIndex: 4))
                 used.append((primitive["material"] as? Int).flatMap { materials.indices.contains($0) ? materials[$0] : nil } ?? SCNMaterial())
                 positions.append(pa.data); normals.append(na.data); vertexCount += pa.count
+                if textured, let t = attrs["TEXCOORD_0"] {
+                    let ta = try glb.accessor(t)
+                    guard ta.floating, ta.width == 2, ta.count == pa.count else { throw WorkspaceCapybaraAsset.AssetError.invalid("Unsupported texture coordinates") }
+                    uvs.append(ta.data)
+                }
             }
             sources.append(SCNGeometrySource(data: positions, semantic: .vertex, vectorCount: vertexCount, usesFloatComponents: true, componentsPerVector: 3, bytesPerComponent: 4, dataOffset: 0, dataStride: 12))
             sources.append(SCNGeometrySource(data: normals, semantic: .normal, vectorCount: vertexCount, usesFloatComponents: true, componentsPerVector: 3, bytesPerComponent: 4, dataOffset: 0, dataStride: 12))
+            if textured {
+                sources.append(SCNGeometrySource(data: uvs, semantic: .texcoord, vectorCount: vertexCount, usesFloatComponents: true, componentsPerVector: 2, bytesPerComponent: 4, dataOffset: 0, dataStride: 8))
+            }
             let result = SCNGeometry(sources: sources, elements: elements); result.materials = used
             geometries[id] = result
             return result
@@ -220,14 +232,23 @@ nonisolated final class WorkspaceCapybaraAsset: @unchecked Sendable {
         }
         return result
     }
-    private static func material(_ definition: [String: Any]) -> SCNMaterial {
+    private static func material(_ definition: [String: Any], glb: GLBDocument) -> SCNMaterial {
         let pbr = definition["pbrMetallicRoughness"] as? [String: Any] ?? [:]
         let color = (pbr["baseColorFactor"] as? [Double]) ?? [1, 1, 1, 1]
         let material = SCNMaterial(); material.lightingModel = .physicallyBased
         material.name = definition["name"] as? String
-        material.diffuse.contents = NSColor(srgbRed: color[0], green: color[1], blue: color[2], alpha: color.count > 3 ? color[3] : 1)
-        material.metalness.contents = (pbr["metallicFactor"] as? Double) ?? 1
-        material.roughness.contents = (pbr["roughnessFactor"] as? Double) ?? 1
+        func texture(_ info: Any?) -> NSImage? { ((info as? [String: Any])?["index"] as? Int).flatMap { try? glb.image($0) } }
+        // Embedded textures win over flat factors (SceneKit can't multiply the two).
+        material.diffuse.contents = texture(pbr["baseColorTexture"]) ?? NSColor(srgbRed: color[0], green: color[1], blue: color[2], alpha: color.count > 3 ? color[3] : 1)
+        if let packed = texture(pbr["metallicRoughnessTexture"]) {
+            material.roughness.contents = packed; material.roughness.textureComponents = .green
+            material.metalness.contents = packed; material.metalness.textureComponents = .blue
+        } else {
+            material.metalness.contents = (pbr["metallicFactor"] as? Double) ?? 1
+            material.roughness.contents = (pbr["roughnessFactor"] as? Double) ?? 1
+        }
+        if let normal = texture(definition["normalTexture"]) { material.normal.contents = normal }
+        for property in [material.diffuse, material.normal, material.roughness, material.metalness] { property.wrapS = .repeat; property.wrapT = .repeat }
         material.isDoubleSided = definition["doubleSided"] as? Bool ?? false
         return material
     }

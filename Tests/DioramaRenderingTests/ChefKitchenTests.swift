@@ -93,6 +93,54 @@ import simd
         #expect(!KitchenLayout.work(for: agent("a", .working, tool: "Edit", edits: true).value).urgent)
     }
 
+    @Test func everyBundledDishLoadsNormalizedAndLight() throws {
+        #expect(KitchenFood.ids == ["cheeseburger", "peking_duck", "pizza", "spaghetti"])
+        for (id, dish) in KitchenFood.templates {
+            var vertices = 0, textured = false
+            dish.enumerateHierarchy { node, _ in
+                guard let geometry = node.geometry else { return }
+                vertices += geometry.sources(for: .vertex).first?.vectorCount ?? 0
+                textured = textured || (geometry.sources(for: .texcoord).first != nil && geometry.materials.first?.diffuse.contents is NSImage)
+            }
+            let (low, high) = dish.boundingBox
+            #expect(textured, "\(id) lost its textures")
+            #expect(vertices > 0 && vertices <= 20_000, "\(id) has \(vertices) vertices")
+            #expect(abs(max(high.x - low.x, high.z - low.z) - 1) < 0.02 && abs(low.y) < 0.01, "\(id) is not normalized")
+        }
+    }
+
+    @Test func eachTaskGetsAStableDishWithEqualOdds() {
+        let ids = KitchenFood.ids
+        #expect(KitchenFood.dish(for: "codex:s1:turn-1") == KitchenFood.dish(for: "codex:s1:turn-1"))
+        var counts: [String: Int] = [:]
+        for i in 0..<4000 { counts[KitchenFood.dish(for: "codex:session-\(i % 97):turn-\(i)")!, default: 0] += 1 }
+        for id in ids { #expect(abs(Double(counts[id, default: 0]) / 4000 - 1 / Double(ids.count)) < 0.03, "\(id): \(counts[id, default: 0])") }
+        #expect(KitchenFood.dish(for: "x", among: []) == nil)
+    }
+
+    @Test func theTasksDishFollowsTheChefFromBoardToTastingToServing() throws {
+        let assets = try ChefAssets.shared.get(), table = KitchenLayout.chefSlots
+        let chef = ChefAvatar(id: "a", assets: assets, scale: KitchenLayout.chefScale, navigation: KitchenLayout.chefNavigation)
+        chef.dish = "pizza"
+        let board = try #require(table["cooking"]?.first), tasting = try #require(table["tasting"]?.first), serving = try #require(table["serving"]?.first)
+        chef.director.place(board.stand, heading: board.facing)
+        chef.director.setIntent(KitchenLayout.intent(for: agent("main", .working, tool: "Edit", edits: true).value, at: board, pickup: nil, restored: false))
+        for _ in 0..<10 { chef.update(1 / 30) }
+        #expect(chef.dishPlacement == "board")
+        chef.director.place(tasting.stand, heading: tasting.facing)
+        chef.director.setIntent(KitchenLayout.intent(for: agent("main", .working, tool: "Bash", detail: "npm test", edits: true).value, at: tasting, pickup: nil, restored: false))
+        for _ in 0..<10 { chef.update(1 / 30) }
+        #expect(chef.dishPlacement == "tasting")
+        chef.director.setIntent(KitchenLayout.intent(for: agent("main", .done).value, at: serving, pickup: tasting, restored: false))
+        var carried = false
+        for _ in 0..<(30 * 30) { chef.update(1 / 30); carried = carried || chef.dishPlacement == "carry" }
+        #expect(carried)
+        #expect(chef.dishPlacement == "pass")
+        // Without dishes the kitchen keeps the old plate prop.
+        chef.dish = nil; chef.update(0)
+        #expect(chef.dishPlacement == "none")
+    }
+
     @Test func reviewStateKeepsFinishedWorkAtTheServingWindow() {
         let stale = agent("main", .done, freshness: .lastKnown).value
         #expect(KitchenLayout.work(for: stale).area == "break")
@@ -368,6 +416,8 @@ import simd
                      agent("new", .ready, freshness: .ready)], "diorama-kitchen-stages")
         try capture((0..<10).map { agent("e\($0)", .working, tool: "Edit", edits: true) }, "diorama-kitchen-ten-cooking")
         try capture((0..<10).map { agent("r\($0)", .done, freshness: .lastKnown) }, "diorama-kitchen-break-room")
+        func task(_ a: SpatialAgent, _ key: String) -> SpatialAgent { var a = a; a.value.completionKey = key; return a }
+        try capture((0..<6).map { task(agent("f\($0)", .working, tool: "Edit", edits: true), "codex:s\($0):turn") } + (0..<3).map { task(agent("t\($0)", .working, tool: "Bash", detail: "npm test", edits: true), "codex:t\($0):turn") }, "diorama-kitchen-food")
         try capture((0..<6).map { agent("e\($0)", .working, tool: "Edit", edits: true) } + (0..<4).map { agent("s\($0)", .working, tool: "Bash", detail: "make", edits: true) }, "diorama-kitchen-islands")
     }
 }

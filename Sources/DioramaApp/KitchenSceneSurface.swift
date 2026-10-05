@@ -265,6 +265,7 @@ final class KitchenSceneView: SCNView {
             if chefs[agent.id] == nil {
                 let chef = ChefAvatar(id: agent.id, assets: assets, scale: KitchenLayout.chefScale, navigation: navigation)
                 chef.director.reducedMotion = reduced
+                chef.dish = KitchenFood.dish(for: agent.value.completionKey ?? agent.conversationID)
                 chefs[agent.id] = chef
                 let arriving = seenScopes.contains(agent.projectID ?? agent.conversationID) && [.live, .recentlyObserved].contains(agent.value.freshness)
                 if arriving, let door = slotTable["elevator"]?.first, let order = claimSlot(agent.id, area: "order") {
@@ -293,6 +294,8 @@ final class KitchenSceneView: SCNView {
             } else {
                 chefLock.lock()
                 chefs[agent.id]?.director.reducedMotion = reduced
+                // One dish per task: a new turn (new completion key) rolls a new one.
+                chefs[agent.id]?.dish = KitchenFood.dish(for: agent.value.completionKey ?? agent.conversationID)
                 pacing[agent.id]?.agent = agent.value
                 pacing[agent.id]?.review = review
                 if pacing[agent.id]?.arriving == false { let want = wanted(agent.id, claim: false); pacing[agent.id]?.want = want }

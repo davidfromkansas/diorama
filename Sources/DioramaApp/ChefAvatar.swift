@@ -37,6 +37,17 @@ nonisolated final class ChefAvatar: @unchecked Sendable {
     private let asset: WorkspaceCapybaraAsset
     private let templates: [String: SCNNode]
     private let manifest: ChefManifest
+    private let dishTemplates: [String: SCNNode]
+    /// The dish this chef's task prepares (see `KitchenFood`); set under the kitchen's chef lock.
+    var dish: String?
+    private var dishNode: (id: String, node: SCNNode)?
+    private var dishSpot = ""
+    /// Dish diameter in chef units (about the old plate prop's footprint).
+    static let dishSize: Float = 0.38
+    /// Where the dish sits relative to the chef, in chef units: on the cutting board under the
+    /// knife while chopping, and under the spoon's dip point while tasting.
+    static let boardSpot = SIMD3<Float>(-0.05, 0.605, 0.7)
+    static let tastingSpot = SIMD3<Float>(-0.1, 0.585, 0.66)
     private var props: [ChefProp: SCNNode] = [:]
     private var token = -1
     private var last: (name: String, time: Float, loop: Bool)?
@@ -46,6 +57,7 @@ nonisolated final class ChefAvatar: @unchecked Sendable {
 
     @MainActor init(id: String, assets: ChefAssets, scale: Float, navigation: WorkspaceCapybaraNavigation) {
         self.id = id; asset = assets.rig; templates = assets.props; manifest = assets.manifest
+        dishTemplates = KitchenFood.templates
         rig = assets.rig.makeInstance()
         director = ChefDirector(clips: assets.manifest.clips, unit: scale, navigation: navigation)
         root.name = "agent:" + id
@@ -93,7 +105,11 @@ nonisolated final class ChefAvatar: @unchecked Sendable {
     }
 
     private func syncProps() {
+        let dish = currentDish()
+        syncDish(dish)
         for prop in ChefProp.allCases {
+            // With dishes available, the task's dish stands in for the plate prop.
+            if prop == .plate, dish != nil { props[prop]?.removeFromParentNode(); continue }
             if director.held.contains(prop) {
                 guard let socket = rig.bone(prop.socket), let node = node(for: prop) else { continue }
                 if node.parent !== socket {
@@ -114,6 +130,44 @@ nonisolated final class ChefAvatar: @unchecked Sendable {
             }
         }
     }
+
+    private func currentDish() -> SCNNode? {
+        guard let id = dish, let template = dishTemplates[id] else {
+            dishNode?.node.removeFromParentNode(); dishNode = nil; return nil
+        }
+        if dishNode?.id != id {
+            dishNode?.node.removeFromParentNode()
+            let node = template.clone(); node.simdScale = SIMD3(repeating: Self.dishSize)
+            dishNode = (id, node); dishSpot = ""
+        }
+        return dishNode?.node
+    }
+    /// Carried and served as the plate; on the board while chopping; at tasting while tasting.
+    private func syncDish(_ node: SCNNode?) {
+        guard let node else { return }
+        let station = director.station?.area, clip = director.clip.name
+        var parent: SCNNode? = visual, position = SIMD3<Float>.zero, orientation = simd_quatf(ix: 0, iy: 0, iz: 0, r: 1), spot: String
+        if director.held.contains(.plate), let socket = rig.bone(ChefProp.plate.socket) {
+            let fit = manifest.attach[ChefProp.plate.node]?[ChefProp.plate.fitClip]
+            parent = socket; position = fit?.simdPosition ?? .zero; orientation = fit?.simdQuaternion ?? orientation; spot = "carry"
+        } else if director.placedPlate != nil {
+            position = SIMD3(0, manifest.stations.counterTop, 0.57); spot = "pass"
+        } else if station == "cooking", clip == "working_chop" {
+            position = Self.boardSpot; spot = "board"
+        } else if station == "tasting", clip == "testing_dish" {
+            position = Self.tastingSpot; spot = "tasting"
+        } else {
+            parent = nil; spot = "hidden"
+        }
+        guard spot != dishSpot else { return }
+        dishSpot = spot
+        node.removeFromParentNode()
+        guard let parent else { return }
+        parent.addChildNode(node)
+        node.simdPosition = position; node.simdOrientation = orientation
+    }
+    /// Where the dish currently is ("carry", "pass", "board", "tasting" or "hidden"), for tests.
+    var dishPlacement: String { dishNode == nil ? "none" : dishSpot.isEmpty ? "hidden" : dishSpot }
 
     private func node(for prop: ChefProp) -> SCNNode? {
         if let node = props[prop] { return node }
