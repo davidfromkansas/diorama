@@ -72,12 +72,19 @@ public struct TurnWork: Equatable, Sendable {
 
     /// The current turn's work from an activity stream (oldest first): everything after the last
     /// turn start.
+    /// Codex streams can report a shell call twice, as the model's call (`exec_command`…) and as
+    /// the item that ran it (`commandExecution`); then only the item counts.
     public static func from(_ events: [ActivityEvent]) -> TurnWork {
         let start = events.lastIndex { $0.kind == "started" || $0.kind == "turnStarted" }.map { $0 + 1 } ?? 0
+        let turn = events[start...]
+        let native = turn.contains { $0.kind == "toolStarted" && $0.tool?.lowercased() == "commandexecution" }
         var work = TurnWork()
-        for event in events[start...] {
+        for event in turn {
             switch event.kind {
-            case "toolStarted": work.started(tool: event.tool ?? "", detail: event.detail ?? "", call: event.callID)
+            case "toolStarted":
+                let tool = event.tool ?? ""
+                if native && tool.lowercased() != "commandexecution" && KitchenActivity.commandTools.contains(tool.lowercased()) { continue }
+                work.started(tool: tool, detail: event.detail ?? "", call: event.callID)
             case "toolFinished", "toolFailed": work.finished(call: event.callID, failed: event.kind == "toolFailed", result: event.detail ?? "")
             case "finished", "interrupted", "failed": work.settle()
             default: break
