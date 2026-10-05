@@ -19,17 +19,7 @@ struct WorkspaceShell<AddActions: View>: View {
                             Button { if let roster = library.spatial.focus.projectID { library.spatial.roster(for: roster).collapsed.toggle() } } label: { Image(systemName: "sidebar.left") }.pointingHand().help("Toggle agents")
                             Button { if let route = navigation.back() { library.navigate(route, record: false) } } label: { Image(systemName: "chevron.left") }.pointingHand().disabled(navigation.backStack.isEmpty)
                             Button { if let route = navigation.forward() { library.navigate(route, record: false) } } label: { Image(systemName: "chevron.right") }.pointingHand().disabled(navigation.forwardStack.isEmpty)
-                            Menu {
-                                ForEach(WorkspaceSceneKind.allCases, id: \.self) { kind in
-                                    Button { library.spatial.sceneKind = kind } label: {
-                                        if library.spatial.sceneKind == kind { Label(kind.rawValue, systemImage: "checkmark") }
-                                        else { Text(kind.rawValue) }
-                                    }
-                                }
-                            } label: {
-                                HStack(spacing: 5) { Text(library.spatial.sceneKind.rawValue); Image(systemName: "chevron.down").font(.caption2) }
-                            }.menuStyle(.borderlessButton).fixedSize().pointingHand()
-                                .accessibilityLabel("Scene: " + library.spatial.sceneKind.rawValue)
+                            // The kitchen is the only scene for now; the Office stays in code for future scenes.
                             Spacer()
                             Button { library.showNewTask = true } label: { Label("New agent", systemImage: "plus") }.pointingHand()
                             Button { library.toggleWorkspaceInspector() } label: { Image(systemName: "sidebar.right") }.pointingHand().help("Toggle conversation panel")

@@ -27,7 +27,6 @@ enum KitchenLayout {
         .init(x: -9.2, y: -7.8, width: 0.8, height: 1.2),
         .init(x: -3.6, y: -7.8, width: 2.4, height: 1.2),
         .init(x: 8.0, y: -7.8, width: 3.8, height: 1.2),
-        .init(x: -11.8, y: -5.8, width: 1.2, height: 8.9),
         .init(x: 10.6, y: -6.6, width: 1.2, height: 2.2),
         .init(x: 10.6, y: 0.4, width: 1.2, height: 7.2)
     ]
@@ -42,7 +41,9 @@ enum KitchenLayout {
         .init(id: "tasting", label: "Tasting: tests and QA", short: "Tasting", footprint: .init(x: 10.6, y: -4.4, width: 1.2, height: 4.8), wall: .right, spots: 3, accent: .init(red: 0.64, green: 0.59, blue: 0.72, alpha: 1)),
         .init(id: "bell", label: "Service bell: needs you", short: "Needs you", footprint: .init(x: -0.5, y: 4.0, width: 1.0, height: 1.0), wall: .freestanding, spots: 6, accent: .init(red: 0.75, green: 0.58, blue: 0.47, alpha: 1)),
         .init(id: "serving", label: "Serving window: ready for review", short: "Serving", footprint: .init(x: 3.2, y: 6.4, width: 7.4, height: 1.2), wall: .front, spots: 5, accent: .init(red: 0.51, green: 0.67, blue: 0.66, alpha: 1)),
-        .init(id: "break", label: "Break room: finished agents", short: "Break room", footprint: .init(x: -11.0, y: 5.4, width: 6.6, height: 1.0), wall: .island, spots: 10, accent: .init(red: 0.55, green: 0.52, blue: 0.68, alpha: 1))
+        .init(id: "break", label: "Break room: finished agents", short: "Break room", footprint: .init(x: -11.0, y: 5.4, width: 6.6, height: 1.0), wall: .island, spots: 10, accent: .init(red: 0.55, green: 0.52, blue: 0.68, alpha: 1)),
+        // Where agents fetch what they use: skills (jars), plugins (crates) and MCP servers (appliances).
+        .init(id: "pantry", label: "Pantry: skills, plugins and MCP", short: "Pantry", footprint: .init(x: -11.8, y: -5.8, width: 1.2, height: 8.9), wall: .left, spots: 4, accent: .init(red: 0.62, green: 0.43, blue: 0.24, alpha: 1))
     ]
     /// Low partial walls enclosing the break room, with a doorway toward the kitchen.
     static let breakRoomWalls: [CGRect] = [
@@ -72,6 +73,8 @@ struct KitchenSceneSurface: NSViewRepresentable {
     var selectedAgentID: String? = nil
     /// Clearing the selection (a click on empty floor).
     var deselect: (() -> Void)? = nil
+    /// A click on the pantry wall opens the pantry card.
+    var openPantry: (() -> Void)? = nil
     func makeNSView(context: Context) -> KitchenStage { KitchenStage() }
     func updateNSView(_ stage: KitchenStage, context: Context) {
         let view = stage.show(scope ?? "")
@@ -80,6 +83,7 @@ struct KitchenSceneSurface: NSViewRepresentable {
         view.progress = progress
         view.reviews = reviews
         view.deselect = deselect
+        view.openPantry = openPantry
         view.apply(agents: agents, scope: scope, active: active, reducedMotion: reducedMotion)
         view.setSelection(selectedAgentID)
         view.fitFloor()
@@ -141,6 +145,7 @@ final class KitchenSceneView: SCNView {
     var review: ((SpatialAgent) -> Void)?
     var progress: ((SpatialAgent) -> Void)?
     var deselect: (() -> Void)?
+    var openPantry: (() -> Void)?
     var reviews: [String: KitchenReviews.State] = [:]
     private(set) var chefs: [String: ChefAvatar] = [:]
     private var chefAgents: [String: SpatialAgent] = [:]
@@ -846,6 +851,10 @@ final class KitchenSceneView: SCNView {
                 node = current.parent
             }
         }
+        // The pantry wall opens the pantry.
+        if let openPantry, hitTest(point, options: [.searchMode: SCNHitTestSearchMode.all.rawValue]).contains(where: { hit in
+            sequence(first: hit.node, next: \.parent).contains { $0.name == "pantry" }
+        }) { openPantry(); return }
         // Anywhere else in the kitchen clears the selection.
         if selectedID != nil, let deselect { deselect(); return }
         super.mouseUp(with: event)

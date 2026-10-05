@@ -185,7 +185,7 @@ import simd
 
     @Test func roomFitsTenChefsPerStationOnWalkableFloor() {
         let navigation = KitchenLayout.chefNavigation, table = KitchenLayout.chefSlots
-        #expect(KitchenLayout.areas.count == 9)
+        #expect(KitchenLayout.areas.count == 10)
         for area in KitchenLayout.areas {
             #expect(KitchenLayout.floor.contains(area.footprint), "\(area.id) leaves the floor")
             let slots = table[area.id] ?? []
@@ -477,6 +477,16 @@ import simd
         let many = (0..<15).map { agent("m\($0)", .done, conversation: "many\($0)") }
         view.apply(agents: many, active: false, reducedMotion: false, now: 1)
         #expect(view.chefs.count == 15)
+    }
+
+    @Test func chefsFetchSkillsAndMCPToolsFromThePantry() throws {
+        let fetching = agent("a", .working, tool: "mcp__linear__create_issue", edits: true).value
+        #expect(KitchenLayout.work(for: fetching).area == "pantry")
+        let slots = try #require(KitchenLayout.chefSlots["pantry"])
+        #expect(slots.count == 4 && slots.allSatisfy { KitchenLayout.chefNavigation.isFree($0.stand) })
+        var work = TurnWork(); work.started(tool: "Skill", detail: "diorama-release", call: "1")
+        let feed = AgentActivityFeed.entries(from: [ActivityEvent(id: "1", provider: "Claude", sessionID: "s", kind: "toolStarted", source: "t", callID: "1", tool: "Skill", detail: "diorama-release")])
+        #expect(feed.map(\.title) == ["Fetched diorama-release"])
     }
 
     @Test func emptyCuttingBoardsShowTheRestingCleaver() throws {

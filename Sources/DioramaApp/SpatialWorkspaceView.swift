@@ -24,6 +24,8 @@ struct SpatialWorkspaceView: View {
     /// The chef whose command bar is shown. Clearing waits a moment, like the kitchen camera, so
     /// switching chefs (which passes through "no agent" while the conversation changes) keeps it up.
     @State private var commandBarAgent: String?
+    /// The pantry card (skills, plugins, MCP) floating under the agents card.
+    @State private var pantryOpen = false
     @State private var explore = false
     @State private var attention = false
     @State private var allConversations = false
@@ -56,7 +58,7 @@ struct SpatialWorkspaceView: View {
             let narrow = officeWidth < 760
             ZStack(alignment: .topLeading) {
                 HStack(spacing: 0) {
-                if visible, focus != .portfolio, !roster.collapsed, !narrow {
+                if visible, focus != .portfolio, !roster.collapsed, !narrow, !kitchenSelected {
                     rosterPanel(snapshot, focus: focus, model: roster, narrow: false).frame(width: library.navigation.layout.sidebarWidth)
                         .disabled(inspection != nil).accessibilityHidden(inspection != nil)
                     Rectangle().fill(DioramaStyle.border).frame(width: 1).overlay {
@@ -80,7 +82,29 @@ struct SpatialWorkspaceView: View {
                         KitchenSceneSurface(agents: cooks, scope: focus == .portfolio ? nil : focus.projectID ?? focus.conversationID,
                                             reviews: KitchenReviews.shared.states, active: visible,
                                             reducedMotion: reduced, select: go, review: { reviewing = $0 }, progress: { progressAgent = $0.id },
-                                            selectedAgentID: focus.agentID, deselect: { deselectAgent(focus) })
+                                            selectedAgentID: focus.agentID, deselect: { deselectAgent(focus) }, openPantry: { pantryOpen = true })
+                            .overlay(alignment: .topLeading) {
+                                if visible, focus != .portfolio {
+                                    GeometryReader { scene in kitchenHUD(snapshot, focus: focus, model: roster, height: scene.size.height - 24) }
+                                }
+                            }
+                            .overlay(alignment: .topTrailing) {
+                                // Inbox and live servers, docked top right above the kitchen.
+                                if visible, let project = focus.projectID, inspection == nil {
+                                    GeometryReader { scene in
+                                        HStack {
+                                            Spacer(minLength: 0)
+                                            ProjectOfficeInbox(library: library, project: project, height: max(120, scene.size.height * 0.55),
+                                                active: liveRefresh && !library.paused,
+                                                inboxExpanded: Binding(get: { inboxExpanded }, set: { inboxExpanded = $0 }), serversExpanded: Binding(get: { serversExpanded }, set: { serversExpanded = $0 }), selected: Binding(get: { inboxSelection }, set: { inboxSelection = $0 }),
+                                                reply: { thread in openInboxConversation(thread, world: snapshot) },
+                                                canReply: { thread in snapshot.teams.first { $0.session.id == thread.conversation }?.session.observationOnly == false })
+                                                .id(project)
+                                                .frame(width: max(100, min(400, scene.size.width - library.navigation.layout.sidebarWidth - 48)))
+                                        }.padding(12)
+                                    }
+                                }
+                            }
                         // The selected chef's command bar sits under the kitchen, down to the window's edge.
                         if let selected = cooks.first(where: { $0.id == (focus.agentID ?? commandBarAgent) }) {
                             AgentCommandBar(agent: selected, library: library, review: { reviewing = selected }) { deselectAgent(focus) }
@@ -128,7 +152,7 @@ struct SpatialWorkspaceView: View {
                         }.padding(.horizontal, 16).padding(.bottom, 40)
                     }
                 }
-                if visible, focus != .portfolio, !roster.collapsed, narrow, inspection == nil {
+                if visible, focus != .portfolio, !roster.collapsed, narrow, inspection == nil, !kitchenSelected {
                     rosterPanel(snapshot, focus: focus, model: roster, narrow: true)
                         .frame(width: max(180, min(300, officeWidth - 32)))
                         .clipShape(RoundedRectangle(cornerRadius: 12))
@@ -247,20 +271,47 @@ struct SpatialWorkspaceView: View {
         }
     }
 
-    private func rosterPanel(_ snapshot: SpatialWorld, focus: SpatialFocus, model: LiveAgentRosterModel, narrow: Bool) -> some View {
+    private func rosterPanel(_ snapshot: SpatialWorld, focus: SpatialFocus, model: LiveAgentRosterModel, narrow: Bool, floating: Bool = false) -> some View {
         let teams = focus.projectID.flatMap { id in snapshot.projects.first { $0.id == id }?.teams } ?? snapshot.team(focus).map { [$0] } ?? []
         return LiveAgentRosterPanel(model: model, agents: teams.flatMap(\.agents),
             // The roster sits beside both the office and the kitchen, so it stays live in either scene.
-            active: visible && liveRefresh && inspection == nil, paused: library.paused) { destination in
+            active: visible && liveRefresh && inspection == nil, paused: library.paused,
+            open: { destination in
                 if narrow { model.collapsed = true }
                 go(destination)
-            } archive: { row in
+            }, archive: { row in
                 if let session = library.sessions.first(where: { $0.id == row.agent.conversationID }), session.classification != .internalReview {
                     library.archiveSession = session
                 }
-            } create: {
+            }, create: {
                 creationProject = AgentCreationDestination(id: focus.projectID ?? "")
+            }, floating: floating, collapse: floating ? { model.collapsed = true } : nil)
+    }
+    /// The kitchen's floating HUD, top left: the agents card (or its working/blocked summary when
+    /// collapsed) and, below it, the pantry.
+    private func kitchenHUD(_ snapshot: SpatialWorld, focus: SpatialFocus, model: LiveAgentRosterModel, height: CGFloat) -> some View {
+        let teams = focus.projectID.flatMap { id in snapshot.projects.first { $0.id == id }?.teams } ?? snapshot.team(focus).map { [$0] } ?? []
+        let width = library.navigation.layout.sidebarWidth
+        let project = focus.projectID.flatMap { id in library.projects.projects.first { $0.id == id } }
+        var sessions: [Provider: String] = [:]
+        for team in teams where sessions[team.session.provider] == nil { sessions[team.session.provider] = team.session.sessionID }
+        let selected = focus.agentID.flatMap { id in teams.flatMap(\.agents).first { $0.id == id } }
+        return VStack(alignment: .leading, spacing: 10) {
+            if model.collapsed {
+                KitchenAgentSummary(agents: teams.flatMap(\.agents), expand: { model.collapsed = false }, openPantry: { pantryOpen = true })
+            } else {
+                rosterPanel(snapshot, focus: focus, model: model, narrow: false, floating: true)
+                    .frame(width: width, height: max(160, height * (pantryOpen ? 0.45 : 0.62)))
+                    .floatingCard()
             }
+            if pantryOpen, let folder = project?.folder ?? teams.first?.session.project {
+                PantryCard(library: library, folder: folder, sessions: sessions, preferred: teams.first?.session.provider ?? .codex,
+                           armFor: selected.map { ($0.conversationID, $0.value.name) }) { pantryOpen = false }
+                    .frame(width: width, height: max(200, height * (model.collapsed ? 0.6 : 0.42)))
+            }
+        }
+        .padding(12)
+        .disabled(inspection != nil).accessibilityHidden(inspection != nil)
     }
 
     /// Camera/monitor updates may arrive every frame. Project the library once per observation

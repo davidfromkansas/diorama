@@ -57,6 +57,8 @@ extension KitchenLayout {
         case .working where fresh:
             switch (KitchenActivity.classify(tool: agent.latestTool, detail: agent.latestToolDetail), agent.turnHasEdits) {
             case (.testing, _): return .init(area: "tasting", loop: "testing_dish", hand: .spoon)
+            // Skills and MCP tools come from the pantry, at any point in the turn.
+            case (.resources, _): return .init(area: "pantry", loop: "idle_available", oneShot: "pickup")
             case (.planning, false): return .init(area: "prep", loop: "planning_recipe", hand: .card)
             case (_, false): return .init(area: "prep", loop: "researching_book", hand: .book)
             case (.commands, true): return .init(area: "stove", loop: "waiting_tool")
@@ -122,6 +124,8 @@ extension KitchenLayout {
                 let seat = Float(0.7), gap = (maxX - minX) / Float(area.spots / 2)
                 slots = row(area.id, from: SIMD2(minX, minZ - seat), to: SIMD2(maxX, minZ - seat), facing: 0, gap: gap)
                     + row(area.id, from: SIMD2(minX, maxZ + seat), to: SIMD2(maxX, maxZ + seat), facing: .pi, gap: gap)
+            case "pantry": // a few roomy spots along the shelves
+                slots = row(area.id, from: SIMD2(maxX + reach, minZ), to: SIMD2(maxX + reach, maxZ), facing: -.pi / 2, gap: (maxZ - minZ) / Float(area.spots))
             default:
                 switch area.wall {
                 case .back: slots = row(area.id, from: SIMD2(minX, maxZ + reach), to: SIMD2(maxX, maxZ + reach), facing: .pi)

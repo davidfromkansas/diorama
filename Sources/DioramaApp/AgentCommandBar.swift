@@ -142,6 +142,7 @@ private struct FeedRow: View {
         case .editing: "knife"
         case .command: "flame"
         case .test: "drop"
+        case .resource: "shippingbox"
         case .tool: "wrench.and.screwdriver"
         }
     }
@@ -151,6 +152,7 @@ private struct FeedRow: View {
         case .editing: Palette.ring
         case .command: .orange
         case .test: .cyan
+        case .resource: .purple
         default: Palette.paper.opacity(0.7)
         }
     }

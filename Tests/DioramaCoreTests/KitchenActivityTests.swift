@@ -36,7 +36,10 @@ struct KitchenActivityTests {
         #expect(KitchenActivity.classify(tool: "Edit") == .editing)
         #expect(KitchenActivity.classify(tool: "fileChange") == .editing)
         #expect(KitchenActivity.classify(tool: "apply_patch") == .editing)
-        #expect(KitchenActivity.classify(tool: "mcp__linear__create_issue") == .other)
+        // Skills and MCP tools are fetched from the pantry.
+        #expect(KitchenActivity.classify(tool: "mcp__linear__create_issue") == .resources)
+        #expect(KitchenActivity.classify(tool: "Skill") == .resources)
+        #expect(KitchenActivity.classify(tool: "mcpToolCall") == .resources)
         #expect(KitchenActivity.classify(tool: "Agent") == .other)
     }
 

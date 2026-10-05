@@ -10,6 +10,9 @@ struct LiveAgentRosterPanel: View {
     let open: (SpatialFocus) -> Void
     var archive: ((AgentRosterRow) -> Void)? = nil
     var create: (() -> Void)? = nil
+    /// Drawn as a dark, see-through card floating over the kitchen, with a collapse control.
+    var floating = false
+    var collapse: (() -> Void)? = nil
     @Environment(\.accessibilityReduceMotion) private var reduced
     var body: some View {
         VStack(spacing: 0) {
@@ -22,10 +25,14 @@ struct LiveAgentRosterPanel: View {
                 Spacer()
                 if let create {
                     Button(action: create) { HStack(spacing: 4) { Text("Create"); Image(systemName: "plus") } }.pointingHand()
-                        .buttonStyle(.plain).font(.caption.weight(.semibold)).foregroundStyle(.blue)
+                        .buttonStyle(.plain).font(.caption.weight(.semibold)).foregroundStyle(floating ? Color.accentColor : .blue)
                         .accessibilityLabel("Create agent")
                 }
-            }.padding(.horizontal, 6).padding(.vertical, 14)
+                if let collapse {
+                    Button(action: collapse) { Image(systemName: "minus").font(.system(size: 11, weight: .bold)).frame(width: 18, height: 18) }
+                        .buttonStyle(.plain).foregroundStyle(.secondary).pointingHand().help("Collapse (⌘B)").accessibilityLabel("Collapse agents")
+                }
+            }.padding(.horizontal, floating ? 12 : 6).padding(.vertical, floating ? 10 : 14)
             Divider()
             if model.newActivity {
                 Button("New activity ↑") { model.anchor = nil; model.newActivity = false; model.jumpRevision += 1 }.pointingHand()
@@ -35,15 +42,17 @@ struct LiveAgentRosterPanel: View {
                 ContentUnavailableView("No agents reported", systemImage: "person.2", description: Text("Agents appear as project activity is discovered."))
                     .frame(maxHeight: .infinity)
             } else {
-                LiveAgentRosterTable(model: model, animate: active && !paused && !reduced, paused: paused, recentExpanded: false, jumpRevision: model.jumpRevision, open: open, archive: archive)
+                LiveAgentRosterTable(model: model, animate: active && !paused && !reduced, paused: paused, recentExpanded: false, jumpRevision: model.jumpRevision, open: open, archive: archive, floating: floating)
             }
-            Divider()
-            Text(paused ? "Observation paused · last reported state" : "Reported activity · providers may buffer updates")
-                .font(.system(size: 10)).foregroundStyle(.secondary).padding(.horizontal, 6).padding(.vertical, 10)
+            if !floating {
+                Divider()
+                Text(paused ? "Observation paused · last reported state" : "Reported activity · providers may buffer updates")
+                    .font(.system(size: 10)).foregroundStyle(.secondary).padding(.horizontal, 6).padding(.vertical, 10)
+            }
         }
         // Fill the sidebar's full height whatever the row count; the footer stays at the bottom.
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
-        .background(Color.white).environment(\.colorScheme, .light).tint(.blue)
+        .background(floating ? Color.clear : Color.white).environment(\.colorScheme, floating ? .dark : .light).tint(floating ? nil : .blue)
         .onChange(of: agents, initial: true) { _, value in model.ingest(value) }
         .onChange(of: AgentCompletionViews.shared.revision) { model.ingest(agents) }
         .onChange(of: active, initial: true) { _, value in model.setActive(value) }
@@ -128,14 +137,17 @@ struct LiveAgentRosterTable: NSViewRepresentable {
     let jumpRevision: Int
     let open: (SpatialFocus) -> Void
     var archive: ((AgentRosterRow) -> Void)? = nil
+    /// Clear background and dark appearance, for the floating card over the kitchen.
+    var floating = false
     func makeCoordinator() -> Coordinator { Coordinator(self) }
     func makeNSView(context: Context) -> NSScrollView {
         let scroll = NSScrollView()
         scroll.hasVerticalScroller = true; scroll.autohidesScrollers = true
-        scroll.drawsBackground = true; scroll.backgroundColor = .white
+        scroll.drawsBackground = !floating; scroll.backgroundColor = .white
+        if floating { scroll.appearance = NSAppearance(named: .darkAqua) }
         let table = RosterTable()
         table.style = .plain
-        table.headerView = nil; table.backgroundColor = .white
+        table.headerView = nil; table.backgroundColor = floating ? .clear : .white
         table.intercellSpacing = .zero; table.rowHeight = Coordinator.rowHeight
         table.selectionHighlightStyle = .regular; table.allowsMultipleSelection = false
         table.addTableColumn(NSTableColumn(identifier: .init("agent")))

@@ -8,6 +8,7 @@ import SceneKit
         case "elevator": return elevator(area)
         case "bell": return bell(area)
         case "break": return breakTable(area)
+        case "pantry": return pantry(area)
         default: return counter(area)
         }
     }
@@ -222,6 +223,59 @@ import SceneKit
                 node.position = SCNVector3(CGFloat(spot.x), -CGFloat(node.boundingBox.min.y) * loungeChairScale, CGFloat(spot.y))
                 root.addChildNode(node)
             }
+        }
+        return root
+    }
+
+    /// The pantry along the left wall: open shelves over a counter. Skills are jars, plugins are
+    /// crates and MCP servers are small appliances with a status light (all decorative).
+    private static func pantry(_ area: KitchenArea) -> SCNNode {
+        let root = counter(area)
+        let width = area.footprint.height, depth = area.footprint.width
+        let oak = material(NSColor(red: 0.47, green: 0.3, blue: 0.16, alpha: 1))
+        let shelfWood = material(NSColor(red: 0.62, green: 0.43, blue: 0.24, alpha: 1))
+        let crate = material(NSColor(red: 0.72, green: 0.55, blue: 0.32, alpha: 1))
+        let steel = material(NSColor(white: 0.78, alpha: 1), metal: 0.6)
+        let glass = SCNMaterial()
+        glass.diffuse.contents = NSColor(red: 0.85, green: 0.95, blue: 1, alpha: 1)
+        glass.transparency = 0.45; glass.roughness.contents = 0.1; glass.lightingModel = .physicallyBased
+        let lids: [NSColor] = [NSColor(red: 0.86, green: 0.36, blue: 0.24, alpha: 1), NSColor(red: 0.22, green: 0.55, blue: 0.62, alpha: 1),
+                               NSColor(red: 0.55, green: 0.42, blue: 0.75, alpha: 1), NSColor(red: 0.78, green: 0.6, blue: 0.2, alpha: 1),
+                               NSColor(red: 0.32, green: 0.6, blue: 0.36, alpha: 1)]
+        func add(_ geometry: SCNGeometry, _ name: String, _ material: SCNMaterial, _ x: CGFloat, _ y: CGFloat, _ z: CGFloat) {
+            geometry.materials = [material]
+            let node = SCNNode(geometry: geometry); node.name = name; node.position = SCNVector3(x, y, z)
+            root.addChildNode(node)
+        }
+        // Back panel and uprights hold two shelves above the worktop.
+        let back = -depth / 2 + 0.12
+        add(SCNBox(width: width - 0.1, height: 1.6, length: 0.06, chamferRadius: 0.01), "pantry back", oak, 0, 1.85, back - 0.03)
+        for x in stride(from: -width / 2 + 0.08, through: width / 2 - 0.07, by: (width - 0.16) / 4) {
+            add(SCNBox(width: 0.07, height: 1.6, length: 0.4, chamferRadius: 0.01), "pantry upright", oak, x, 1.85, back + 0.18)
+        }
+        let shelves: [CGFloat] = [1.62, 2.18]
+        for y in shelves { add(SCNBox(width: width - 0.1, height: 0.05, length: 0.42, chamferRadius: 0.01), "pantry shelf", shelfWood, 0, y, back + 0.2) }
+        // Top shelf: jars of skills.
+        let jars = 12
+        for i in 0..<jars {
+            let x = -width / 2 + 0.35 + CGFloat(i) * (width - 0.7) / CGFloat(jars - 1)
+            add(SCNCylinder(radius: 0.11, height: 0.26), "skill jar", glass, x, shelves[1] + 0.155, back + 0.2)
+            add(SCNCylinder(radius: 0.115, height: 0.05), "skill jar lid", material(lids[i % lids.count]), x, shelves[1] + 0.31, back + 0.2)
+            add(SCNCylinder(radius: 0.085, height: 0.12), "skill jar contents", material(lids[(i + 2) % lids.count].withAlphaComponent(1)), x, shelves[1] + 0.09, back + 0.2)
+        }
+        // Middle shelf: crates of plugins.
+        let crates = 7
+        for i in 0..<crates {
+            let x = -width / 2 + 0.55 + CGFloat(i) * (width - 1.1) / CGFloat(crates - 1)
+            add(SCNBox(width: 0.5, height: 0.28, length: 0.34, chamferRadius: 0.02), "plugin crate", crate, x, shelves[0] + 0.165, back + 0.2)
+            add(SCNBox(width: 0.52, height: 0.04, length: 0.36, chamferRadius: 0.01), "plugin crate slat", oak, x, shelves[0] + 0.2, back + 0.2)
+        }
+        // Worktop: appliances for MCP servers, each with a small green status light.
+        let light = material(NSColor(red: 0.35, green: 1, blue: 0.62, alpha: 1))
+        light.emission.contents = NSColor(red: 0.35, green: 1, blue: 0.62, alpha: 1)
+        for (i, x) in [-width * 0.3, 0, width * 0.3].enumerated() {
+            add(SCNBox(width: 0.42, height: 0.36, length: 0.36, chamferRadius: 0.06), "mcp appliance", i == 1 ? material(lids[0]) : steel, x, 1.25, back + 0.32)
+            add(SCNSphere(radius: 0.035), "mcp appliance light", light, x + 0.12, 1.36, back + 0.51)
         }
         return root
     }

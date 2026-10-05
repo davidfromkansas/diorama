@@ -2,7 +2,7 @@ import Foundation
 
 /// One line of an agent's distilled activity: what it did, in a few words, and how it went.
 public struct FeedEntry: Equatable, Sendable, Identifiable {
-    public enum Kind: String, Sendable { case started, finished, failed, interrupted, research, planning, editing, command, test, tool }
+    public enum Kind: String, Sendable { case started, finished, failed, interrupted, research, planning, editing, command, test, resource, tool }
     public enum Outcome: String, Sendable { case running, done, failed }
     public var id: String
     public var kind: Kind
@@ -135,6 +135,10 @@ public enum AgentActivityFeed {
                     return
                 }
                 append(FeedEntry(id: id, kind: .research, title: "Looked at " + item, detail: item, outcome: .done, time: time))
+            case .resources:
+                let item = Self.resourceName(tool: tool, detail: detail)
+                if let last = result.last, last.kind == .resource, last.detail == item { return }
+                append(FeedEntry(id: id, kind: .resource, title: "Fetched " + item, detail: item, outcome: .done, time: time))
             case .planning:
                 if result.last?.kind == .planning { return }
                 append(FeedEntry(id: id, kind: .planning, title: "Updated the plan", outcome: .done, time: time))
@@ -206,6 +210,11 @@ public enum AgentActivityFeed {
             }
             if lower.contains("search") || lower.contains("fetch") { return detail.isEmpty ? "the web" : String(detail.prefix(40)) }
             return detail.isEmpty ? toolName(tool) : name(detail)
+        }
+        /// A skill by name, or an MCP server's tool as "server tool".
+        static func resourceName(tool: String, detail: String) -> String {
+            if tool.lowercased() == "skill" { return detail.isEmpty ? "a skill" : detail }
+            return toolName(tool)
         }
         static func toolName(_ tool: String) -> String {
             // `mcp__server__tool` reads as "server tool".
