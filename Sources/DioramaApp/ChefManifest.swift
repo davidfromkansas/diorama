@@ -3,7 +3,7 @@ import simd
 
 /// Runtime contract shipped next to `chef-animated.glb` (see assets/chef/README.md).
 /// glTF has no events, so clip markers and prop attach transforms only live here.
-struct ChefManifest: Decodable {
+nonisolated struct ChefManifest: Decodable, Sendable {
     struct Clip: Decodable {
         let duration: Float
         let loop: Bool
@@ -30,7 +30,7 @@ struct ChefManifest: Decodable {
     let attach: [String: [String: Attach]]
     let stations: Stations
 
-    static func load() throws -> ChefManifest {
+    @MainActor static func load() throws -> ChefManifest {
         guard let url = WorkspaceCapybaraAsset.resourceBundle.url(forResource: "chef-manifest", withExtension: "json", subdirectory: "Chef") else {
             throw WorkspaceCapybaraAsset.AssetError.invalid("Bundled chef manifest is missing")
         }
@@ -40,7 +40,7 @@ struct ChefManifest: Decodable {
 
 /// Hand props a chef can hold. Each maps to a node in `chef-props.glb` and the clip whose
 /// grip the manifest fitted it to.
-enum ChefProp: String, CaseIterable {
+nonisolated enum ChefProp: String, CaseIterable, Sendable {
     case card, book, knife, spoon, plate, ticket, mug, cloche
     var node: String {
         switch self {

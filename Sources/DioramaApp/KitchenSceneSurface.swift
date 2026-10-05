@@ -167,6 +167,7 @@ final class KitchenSceneView: SCNView {
         camera.camera?.screenSpaceAmbientOcclusionIntensity = 0.65
         camera.camera?.screenSpaceAmbientOcclusionRadius = 0.4
         scene = world; pointOfView = camera; autoenablesDefaultLighting = false
+        delegate = self
         allowsCameraControl = false; isPlaying = false; rendersContinuously = false
         wantsLayer = true; leaders.strokeColor = NSColor.darkGray.withAlphaComponent(0.25).cgColor
         leaders.fillColor = nil; leaders.lineWidth = 1; layer?.addSublayer(leaders)
@@ -181,12 +182,22 @@ final class KitchenSceneView: SCNView {
     /// whether it is still reading its order after arriving by elevator.
     private struct Pacing { var desired: ChefIntent; var arrivedAt: Double?; var arriving = false }
     private var pacing: [String: Pacing] = [:]
+    /// Chefs are stepped on SceneKit's render thread (`renderer(_:updateAtTime:)`) so their
+    /// animation never waits for the main thread; main-thread steering takes the same lock.
+    nonisolated let chefLock = NSRecursiveLock()
+    nonisolated(unsafe) private var renderChefs: [ChefAvatar] = []
+    nonisolated(unsafe) private var lastRenderTime: TimeInterval?
+    private func publishChefs() { chefLock.lock(); renderChefs = Array(chefs.values); chefLock.unlock() }
     /// Projects (or standalone conversations) already shown here: only agents that start while
     /// their project is on screen ride the elevator in; everything else appears in place.
     private var seenScopes: Set<String> = []
 
     /// Reconcile chefs with agents: attention first, then working, capped at `maxChefs`.
     func apply(agents: [SpatialAgent], scope: String? = nil, active: Bool, reducedMotion: Bool, now: Double = CACurrentMediaTime()) {
+        chefLock.lock(); defer { chefLock.unlock(); publishChefs() }
+        let applyStart = CACurrentMediaTime()
+        defer { if CACurrentMediaTime() - applyStart > 0.02 { Self.trace(String(format: "slow apply %.0f ms", (CACurrentMediaTime() - applyStart) * 1000)) } }
+        if active != self.active { Self.trace("active -> \(active)") }
         self.active = active; reduced = reducedMotion
         defer { if let scope { seenScopes.insert(scope) } }
         let ranked = agents.enumerated().sorted { a, b in
@@ -339,10 +350,21 @@ final class KitchenSceneView: SCNView {
             door.runAction(.sequence([.moveBy(x: slide, y: 0, z: 0, duration: 0.6), .wait(duration: 2.4), .moveBy(x: -slide, y: 0, z: 0, duration: 0.6)]), forKey: "doors")
         }
     }
+    /// Diagnostics: when /tmp/diorama-kitchen-frames.log exists, frame gaps over 50 ms, slow
+    /// reconciles and playback pauses are appended to it.
+    nonisolated(unsafe) private static let frameLog: FileHandle? = FileHandle(forWritingAtPath: "/tmp/diorama-kitchen-frames.log")
+    nonisolated static func trace(_ text: @autoclosure () -> String) {
+        guard let log = frameLog else { return }
+        log.seekToEndOfFile(); log.write(Data((String(format: "%.3f ", CACurrentMediaTime()) + text() + "\n").utf8))
+    }
     func frameStep(at time: TimeInterval) {
+        if let last = lastFrame, time - last > 0.05 { Self.trace(String(format: "gap %.0f ms", (time - last) * 1000)) }
+        let stepStart = CACurrentMediaTime()
+        defer { if CACurrentMediaTime() - stepStart > 0.02 { Self.trace(String(format: "slow frameStep %.0f ms", (CACurrentMediaTime() - stepStart) * 1000)) } }
         let delta = lastFrame.map { Float(min(0.05, max(0, time - $0))) } ?? 0
         lastFrame = time
-        for chef in chefs.values { chef.update(delta) }
+        _ = delta // chefs advance on the render thread; this loop only paces and places tags
+        chefLock.lock(); defer { chefLock.unlock() }
         pace(now: CACurrentMediaTime())
         updateFlames()
         placeChefLabels()
@@ -350,10 +372,14 @@ final class KitchenSceneView: SCNView {
     }
     private var effectiveActive: Bool { active && (window == nil || window?.occlusionState.contains(.visible) == true) }
     func updatePlayback() {
+        chefLock.lock(); defer { chefLock.unlock() }
         let moving = effectiveActive && (chefs.values.contains(where: \.animating) || pacingPending)
         if isPlaying != moving { isPlaying = moving }
         if rendersContinuously != moving { rendersContinuously = moving }
-        if frameLink?.isPaused != !moving { frameLink?.isPaused = !moving }
+        if frameLink?.isPaused != !moving {
+            Self.trace("playback \(moving ? "running" : "paused") active=\(active) window=\(window?.occlusionState.contains(.visible) ?? false)")
+            frameLink?.isPaused = !moving
+        }
         if !moving { lastFrame = nil }
     }
     override func viewDidMoveToWindow() {
@@ -412,7 +438,8 @@ final class KitchenSceneView: SCNView {
             var node: SCNNode? = hit.node
             while let current = node {
                 if let name = current.name, name.hasPrefix("agent:"), let agent = chefAgents[String(name.dropFirst(6))] {
-                    if let review, chefs[agent.id]?.director.intent?.station?.area == "serving" { review(agent); return }
+                    chefLock.lock(); let serving = chefs[agent.id]?.director.intent?.station?.area == "serving"; chefLock.unlock()
+                    if let review, serving { review(agent); return }
                     select?(.agent(project: agent.projectID, conversation: agent.conversationID, agent: agent.id, expanded: true))
                     return
                 }
@@ -497,5 +524,16 @@ final class KitchenSceneView: SCNView {
         CATransaction.begin(); CATransaction.setDisableActions(true)
         leaders.frame = bounds; leaders.path = path
         CATransaction.commit()
+    }
+}
+
+extension KitchenSceneView: SCNSceneRendererDelegate {
+    /// Runs on SceneKit's render thread every rendered frame, independent of main-thread work.
+    nonisolated func renderer(_ renderer: any SCNSceneRenderer, updateAtTime time: TimeInterval) {
+        chefLock.lock(); defer { chefLock.unlock() }
+        if let last = lastRenderTime, time - last > 0.05 { Self.trace(String(format: "render gap %.0f ms", (time - last) * 1000)) }
+        let delta = lastRenderTime.map { Float(min(0.1, max(0, time - $0))) } ?? 0
+        lastRenderTime = time
+        for chef in renderChefs { chef.update(delta) }
     }
 }

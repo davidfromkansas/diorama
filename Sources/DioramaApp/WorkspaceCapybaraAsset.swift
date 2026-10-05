@@ -5,7 +5,8 @@ import simd
 /// A deliberately narrow reader for bundled, validated skinned GLBs (the capybara and the chef).
 /// No external URLs or extensions. Geometry/materials are shared; every instance owns its skeleton
 /// and sampled pose.
-@MainActor final class WorkspaceCapybaraAsset {
+/// Immutable after init, so poses can be sampled from SceneKit's render thread.
+nonisolated final class WorkspaceCapybaraAsset: @unchecked Sendable {
     /// What a bundled character must provide; anything else is rejected rather than half-rendered.
     struct Spec {
         let skeletonRoot: String
@@ -39,16 +40,16 @@ import simd
         func bone(_ name: String) -> SCNNode? { nodes.first { $0.name == name } }
     }
     enum AssetError: Error { case invalid(String) }
-    static let shared: Result<WorkspaceCapybaraAsset, Error> = Result {
+    @MainActor static let shared: Result<WorkspaceCapybaraAsset, Error> = Result {
         try load("Capybara", subdirectory: "Capybara", spec: .capybara)
     }
-    static var resourceBundle: Bundle {
+    @MainActor static var resourceBundle: Bundle {
         if let url = Bundle.main.resourceURL?.appendingPathComponent("Diorama_DioramaApp.bundle"), let packaged = Bundle(url: url) {
             return packaged
         }
         return Bundle.module
     }
-    static func load(_ resource: String, subdirectory: String, spec: Spec) throws -> WorkspaceCapybaraAsset {
+    @MainActor static func load(_ resource: String, subdirectory: String, spec: Spec) throws -> WorkspaceCapybaraAsset {
         guard let url = resourceBundle.url(forResource: resource, withExtension: "glb", subdirectory: subdirectory) else {
             throw AssetError.invalid("Bundled \(resource).glb is missing")
         }
@@ -233,7 +234,7 @@ import simd
 }
 
 /// GLB container parsing shared by the skinned and static readers.
-struct GLBDocument {
+nonisolated struct GLBDocument {
     struct Accessor { let data: Data; let count: Int; let width: Int; let bytes: Int; let floating: Bool }
     let json: [String: Any]
     let binary: Data
@@ -291,7 +292,7 @@ struct GLBDocument {
         return image
     }
 }
-extension Data {
+nonisolated extension Data {
     func u32(_ offset: Int) -> UInt32 { withUnsafeBytes { UInt32(littleEndian:$0.loadUnaligned(fromByteOffset:offset,as:UInt32.self)) } }
     func u16(_ offset: Int) -> UInt16 { withUnsafeBytes { UInt16(littleEndian:$0.loadUnaligned(fromByteOffset:offset,as:UInt16.self)) } }
 }

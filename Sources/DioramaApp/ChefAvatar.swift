@@ -26,13 +26,17 @@ import simd
 /// One rendered chef. Navigation (position, heading) applies to `root`, which is never scaled;
 /// `visual` scales the skinned model so props and attach offsets scale with it. Each chef owns its
 /// skeleton and props; geometry, textures and clips are shared.
-@MainActor final class ChefAvatar {
+/// Updated on SceneKit's render thread (see KitchenSceneView's renderer delegate) and created
+/// and steered on the main thread, always under the kitchen's chef lock.
+nonisolated final class ChefAvatar: @unchecked Sendable {
     let id: String
     let root = SCNNode()
     let visual = SCNNode()
     let rig: WorkspaceCapybaraAsset.Instance
     let director: ChefDirector
-    private let assets: ChefAssets
+    private let asset: WorkspaceCapybaraAsset
+    private let templates: [String: SCNNode]
+    private let manifest: ChefManifest
     private var props: [ChefProp: SCNNode] = [:]
     private var token = -1
     private var last: (name: String, time: Float, loop: Bool)?
@@ -40,8 +44,8 @@ import simd
     private var fadeElapsed: Float = 0
     private var fadeDuration: Float = 0
 
-    init(id: String, assets: ChefAssets, scale: Float, navigation: WorkspaceCapybaraNavigation) {
-        self.id = id; self.assets = assets
+    @MainActor init(id: String, assets: ChefAssets, scale: Float, navigation: WorkspaceCapybaraNavigation) {
+        self.id = id; asset = assets.rig; templates = assets.props; manifest = assets.manifest
         rig = assets.rig.makeInstance()
         director = ChefDirector(clips: assets.manifest.clips, unit: scale, navigation: navigation)
         root.name = "agent:" + id
@@ -81,7 +85,7 @@ import simd
     }
 
     private func sampleTime(_ name: String, _ time: Float, loop: Bool) -> Float {
-        let duration = assets.rig.clips[name]?.duration ?? 0
+        let duration = asset.clips[name]?.duration ?? 0
         guard duration > 0 else { return 0 }
         // Reduced motion holds a stable, readable pose instead of looping decorative motion.
         if director.reducedMotion && loop && !ChefDirector.locomotionClips.contains(name) { return duration * 0.35 }
@@ -94,7 +98,7 @@ import simd
                 guard let socket = rig.bone(prop.socket), let node = node(for: prop) else { continue }
                 if node.parent !== socket {
                     node.removeFromParentNode(); socket.addChildNode(node)
-                    let fit = assets.manifest.attach[prop.node]?[prop.fitClip]
+                    let fit = manifest.attach[prop.node]?[prop.fitClip]
                     node.simdPosition = fit?.simdPosition ?? .zero
                     node.simdOrientation = fit?.simdQuaternion ?? simd_quatf(ix: 0, iy: 0, iz: 0, r: 1)
                 }
@@ -102,7 +106,7 @@ import simd
                 // Left on the pass in front of the chef, in chef units (slot depth 0.57).
                 if node.parent !== visual {
                     node.removeFromParentNode(); visual.addChildNode(node)
-                    node.simdPosition = SIMD3(0, assets.manifest.stations.counterTop, 0.57)
+                    node.simdPosition = SIMD3(0, manifest.stations.counterTop, 0.57)
                     node.simdOrientation = simd_quatf(ix: 0, iy: 0, iz: 0, r: 1)
                 }
             } else {
@@ -113,7 +117,7 @@ import simd
 
     private func node(for prop: ChefProp) -> SCNNode? {
         if let node = props[prop] { return node }
-        guard let template = assets.props[prop.node] else { return nil }
+        guard let template = templates[prop.node] else { return nil }
         let node = template.clone(); node.name = prop.node
         props[prop] = node
         return node

@@ -3,7 +3,7 @@ import simd
 
 /// A place a chef stands to work: a station slot or an aisle spot. Floor X/Z, facing yaw
 /// (the chef model faces +Z at yaw 0; `x += sin(yaw)`, `z += cos(yaw)` when walking).
-struct ChefStation: Equatable {
+nonisolated struct ChefStation: Equatable, Sendable {
     let id: String
     let area: String
     let stand: SIMD2<Float>
@@ -11,8 +11,8 @@ struct ChefStation: Equatable {
 }
 
 /// What a chef should be doing for its agent's current state. Equal keys mean "keep going".
-struct ChefIntent: Equatable {
-    struct OneShot: Equatable {
+nonisolated struct ChefIntent: Equatable, Sendable {
+    struct OneShot: Equatable, Sendable {
         let id: String
         let clip: String
         /// Already happened before the chef saw it (history, view re-entry): apply its end
@@ -32,7 +32,7 @@ struct ChefIntent: Equatable {
     var prelude: String? = nil
 }
 
-struct ChefClipCommand: Equatable {
+nonisolated struct ChefClipCommand: Equatable, Sendable {
     var name: String
     var loop: Bool
     /// Changes whenever the clip must (re)start, even with the same name.
@@ -45,7 +45,9 @@ struct ChefClipCommand: Equatable {
 /// hand-offs and interruption reconciliation. Ported from the avatar prototype
 /// (`app/src/avatar/director.ts`); routes now avoid kitchen fixtures. ChefAvatar renders
 /// whatever this decides; tests drive it directly.
-@MainActor final class ChefDirector {
+/// Stepped on SceneKit's render thread and steered from the main thread; KitchenSceneView
+/// serialises both with its chef lock.
+nonisolated final class ChefDirector: @unchecked Sendable {
     static let walkSpeed: Float = 0.75, runSpeed: Float = 1.55, runDistance: Float = 2.6
     static let turnRate: Float = 7, acceleration: Float = 4
     static let fade: Float = 0.22, urgentFade: Float = 0.12, locomotionFade: Float = 0.15
