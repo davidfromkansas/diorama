@@ -123,6 +123,24 @@ def build_props():
         ("box", (0.07, 0.025, 0.02), (0.16, 0, 0.12), potm),
         ("box", (0.07, 0.025, 0.02), (-0.16, 0, 0.12), potm),
     ])
+    # Order ticket: a small paper slip gripped at its bottom edge (origin).
+    out["prop_ticket"] = _obj("prop_ticket", [
+        ("box", (0.16, 0.004, 0.22), (0, 0, 0.11), paper),
+        *[("box", (0.12 - 0.04 * (i % 2), 0.005, 0.012), (0, 0, 0.18 - i * 0.03), ink) for i in range(5)],
+    ])
+    # Coffee mug held around its body (origin at the grip), handle on the outside.
+    mug = _mat("prop_mug", (0.93, 0.9, 0.84), 0.4)
+    coffee = _mat("prop_coffee", (0.28, 0.16, 0.08), 0.3)
+    out["prop_mug"] = _obj("prop_mug", [
+        ("cyl", (0.05, 0.11, 16, 0.05), (0, 0, 0.02), mug),
+        ("cyl", (0.044, 0.004, 16, 0.044), (0, 0, 0.074), coffee),
+        ("box", (0.015, 0.02, 0.06), (-0.06, 0, 0.025), mug),
+    ])
+    # Cloche lifted by its knob (origin), dome hanging below.
+    out["prop_cloche"] = _obj("prop_cloche", [
+        ("sphere", (0.13, 0.13, 0.08), (0, 0, -0.07), steel),
+        ("cyl", (0.022, 0.03, 10, 0.022), (0, 0, -0.005), steel),
+    ])
     return out
 
 
@@ -169,6 +187,19 @@ def _plate(S):
     return _at(S.translation + Vector((0, -0.02, -0.006)), Quaternion())
 
 
+def _ticket(S):
+    # upright slip tilted back toward the chef's eyes
+    return _at(S.translation + Vector((-0.02, -0.02, 0.0)), Euler((math.radians(-60), 0, math.radians(-8))))
+
+
+def _mug(S):
+    return _at(S.translation + Vector((0.0, -0.04, -0.01)), Quaternion())
+
+
+def _cloche(S):
+    return _at(S.translation + Vector((0.0, -0.02, -0.02)), Quaternion())
+
+
 # (prop, socket, clip, time_s, desired_world_matrix_fn)
 ATTACH_FITS = [
     ("prop_recipe_card", "socket_hand.L", "planning_recipe", 1.0, _card),
@@ -176,6 +207,9 @@ ATTACH_FITS = [
     ("prop_knife", "socket_hand.R", "working_chop", 2 / 30, _knife),
     ("prop_spoon", "socket_hand.R", "testing_dish", 0.75, _spoon),
     ("prop_plate", "socket_carry", "carry_idle", 0.0, _plate),
+    ("prop_ticket", "socket_hand.L", "read_ticket", 0.0, _ticket),
+    ("prop_mug", "socket_hand.R", "sit_sip", 0.0, _mug),
+    ("prop_cloche", "socket_hand.R", "cover_dish", 0.35, _cloche),
 ]
 
 

@@ -262,7 +262,10 @@ final class KitchenSceneView: SCNView {
                 apply = state.desired.urgent || director.intent?.station == nil || director.station == nil || settledFor >= KitchenLayout.minimumDwell
             }
             if apply {
-                director.setIntent(state.desired)
+                var next = state.desired
+                // Work that leaves the serving window for the break room was accepted: celebrate.
+                if next.station?.area == "break", director.intent?.station?.area == "serving" { next.prelude = "celebrate_done" }
+                director.setIntent(next)
                 state.arrivedAt = nil
             }
             pacing[id] = state

@@ -408,6 +408,117 @@ def clip_carry_walk():
     return _gait(period=16 / FPS, stride=0.20, lift=0.05, bob=0.016, lean=2, arm_swing=0.0, carry=True)
 
 
+# ----------------------------------------------------------------- lifecycle clips (phase 2)
+# Arrival: the chef steps out of the elevator toward the camera and waves.
+def clip_arrive_wave():
+    wave = P(hand_R=RAISED, rot__hand_R=(-10, 0, 0), rot__clavicle_R=(0, 12, 0), rot__chest=(-3, -4, 0),
+             rot__head=(-8, 0, -6), pole_R=(-0.70, 0.30, 0.60))
+    return dict(duration=1.8, loop=False, keys=[
+        (0.0, P()),
+        (0.15, P(loc__hips=(0, 0, -0.03), rot__spine=(4, 0, 0))),
+        (0.32, P(loc__hips=(0, -0.02, 0.03), foot_L=(0, -0.04, 0.04), foot_R=(0, -0.04, 0.04), rot__hat=(-2, 0, 0))),
+        (0.48, P(loc__hips=(0, 0, -0.01), rot__hat=(2, 0, 0))),
+        (0.7, wave),
+        (0.88, merge(wave, rot__hand_R=(-10, 0, 22))),
+        (1.06, merge(wave, rot__hand_R=(-10, 0, -18))),
+        (1.24, merge(wave, rot__hand_R=(-10, 0, 22))),
+        (1.42, merge(wave, rot__hand_R=(-10, 0, -10))),
+        (1.8, P(rot__head=(2, 0, 0))),
+    ])
+
+
+# Reading the order: a small ticket held up close in the left mitten, right hand steadying it.
+def clip_read_ticket():
+    tl = (0.17, -0.35, 0.82)
+    base = P(rot__head=(16, 0, 4), rot__chest=(2, 0, 4), hand_L=tl, rot__hand_L=(-35, 0, -15),
+             hand_R=(-0.17, -0.35, 0.78), rot__hand_R=(-30, 0, 15),
+             rot__clavicle_L=(0, 0, -16), rot__clavicle_R=(0, 0, 16), pole_L=DOWN_POLE["L"], pole_R=DOWN_POLE["R"])
+    return dict(duration=2.6, loop=True, keys=[
+        (0.0, base),
+        (0.7, merge(base, rot__head=(18, 0, -4))),
+        (1.3, merge(base, rot__head=(14, 0, 6), loc__hips=(0, 0, 0.004))),
+        (1.7, merge(base, rot__head=(20, 0, 2))),  # nod: got it
+        (2.0, merge(base, rot__head=(12, 0, 2))),
+    ])
+
+
+# Break room: the chef perches in an Eames lounge chair, hips back on the cushion, short legs out.
+SIT_HIPS = (0, 0.08, 0.04)
+SIT = P(loc__hips=SIT_HIPS, rot__hips=(-16, 0, 0), rot__spine=(-4, 0, 0), rot__chest=(-2, 0, 0), rot__head=(14, 0, 0),
+        foot_L=(0, -0.17, 0.19), foot_R=(0, -0.17, 0.19), rot__foot_ik_L=(-35, 0, 0), rot__foot_ik_R=(-35, 0, 0),
+        hand_L=(0.42, -0.04, 0.58), hand_R=(-0.42, -0.04, 0.58), rot__hand_L=(0, 0, -10), rot__hand_R=(0, 0, 10),
+        pole_L=DOWN_POLE["L"], pole_R=DOWN_POLE["R"])
+MUG_REST = (-0.30, -0.20, 0.64)
+MUG_LIP = (-0.10, -0.36, 0.98)
+
+
+def clip_sit_down():
+    return dict(duration=0.9, loop=False, keys=[
+        (0.0, P()),
+        (0.25, P(loc__hips=(0, 0.03, -0.05), rot__hips=(8, 0, 0), hand_L=(0.45, 0.02, 0.52), hand_R=(-0.45, 0.02, 0.52))),
+        (0.55, merge(SIT, loc__hips=(0, 0.07, 0.06), foot_L=(0, -0.12, 0.12), foot_R=(0, -0.12, 0.12))),
+        (0.9, SIT),
+    ])
+
+
+def clip_stand_up():
+    return dict(duration=0.7, loop=False, keys=[
+        (0.0, SIT),
+        (0.3, P(loc__hips=(0, 0.02, -0.04), rot__hips=(14, 0, 0), rot__spine=(6, 0, 0),
+                hand_L=(0.44, -0.10, 0.52), hand_R=(-0.44, -0.10, 0.52))),
+        (0.7, P()),
+    ])
+
+
+def clip_sit_idle():
+    return dict(duration=4.0, loop=True, keys=[
+        (0.0, SIT),
+        (1.2, merge(SIT, loc__hips=add(SIT_HIPS, (0, 0, -0.006)), rot__chest=(-4, 0, 0), rot__head=(10, 0, 12))),
+        (2.4, merge(SIT, rot__head=(12, 0, -10), rot__chest=(-3, 0, 2))),
+        (3.2, merge(SIT, foot_L=(0, -0.19, 0.21), rot__head=(15, 0, 0))),
+    ])
+
+
+def clip_sit_sip():
+    hold = merge(SIT, hand_R=MUG_REST, rot__hand_R=(0, 0, 0), rot__clavicle_R=(0, 0, 12))
+    sip = merge(hold, hand_R=MUG_LIP, rot__hand_R=(-25, 0, 0), rot__head=(-4, 0, 0), rot__clavicle_R=(0, 0, 24))
+    return dict(duration=3.6, loop=True, markers={"sip": 1.3}, keys=[
+        (0.0, hold),
+        (0.9, merge(hold, rot__head=(12, 0, 6))),
+        (1.3, sip),
+        (1.9, sip),
+        (2.4, hold),
+        (3.0, merge(hold, rot__head=(14, 0, -6))),
+    ])
+
+
+def clip_sit_chat():
+    talk = merge(SIT, rot__head=(8, 0, 22), rot__neck=(0, 0, 6), rot__chest=(-3, 0, 8))
+    return dict(duration=3.0, loop=True, keys=[
+        (0.0, talk),
+        (0.5, merge(talk, hand_R=(-0.36, -0.24, 0.74), rot__hand_R=(-30, 0, 20), rot__head=(6, 0, 24))),
+        (0.9, merge(talk, hand_R=(-0.32, -0.26, 0.78), rot__hand_R=(-30, 0, -10), rot__head=(4, 2, 20))),
+        (1.4, merge(talk, rot__head=(10, 0, 18))),
+        (2.0, merge(talk, rot__head=(4, -3, 24), loc__hips=add(SIT_HIPS, (0, 0, 0.012)))),  # laugh
+        (2.3, merge(talk, rot__head=(10, 0, 22), loc__hips=SIT_HIPS)),
+    ])
+
+
+# Shipping (used by the serving-window flow): lower a cloche over the presented plate.
+def clip_cover_dish():
+    # Short arms and a round belly: lean in like PLACE and keep the hand low over the plate.
+    over = (-0.12, -0.43, BOARD_TOP + 0.19)
+    down = (-0.12, -0.45, BOARD_TOP + 0.115)
+    base = merge(P(**LEAN_WORK), rot__hips=(14, 0, 0), rot__spine=(6, 0, 0), hand_L=(0.42, -0.05, 0.60),
+                 pole_L=BACK_POLE["L"], rot__head=(16, 0, 0))
+    return dict(duration=1.2, loop=False, markers={"release": 0.75}, keys=[
+        (0.0, merge(base, hand_R=(-0.42, -0.10, 0.70))),
+        (0.35, merge(base, hand_R=over, rot__hand_R=(-10, 0, 0))),
+        (0.75, merge(base, hand_R=down, rot__hand_R=(-5, 0, 0), loc__hips=(0, 0.02, -0.01))),
+        (1.2, P(rot__chest=(-3, 0, 0), rot__head=(-2, 0, 0))),
+    ])
+
+
 CLIPS = {
     "idle_available": clip_idle,
     "planning_recipe": clip_planning,
@@ -431,4 +542,12 @@ CLIPS = {
     "cancel_cleanup": clip_cancel,
     "pickup": clip_pickup,
     "putdown": clip_putdown,
+    "arrive_wave": clip_arrive_wave,
+    "read_ticket": clip_read_ticket,
+    "sit_down": clip_sit_down,
+    "stand_up": clip_stand_up,
+    "sit_idle": clip_sit_idle,
+    "sit_sip": clip_sit_sip,
+    "sit_chat": clip_sit_chat,
+    "cover_dish": clip_cover_dish,
 }

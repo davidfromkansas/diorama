@@ -7,7 +7,9 @@ import simd
         skeletonRoot: "chef_rig", jointCount: 26,
         requiredClips: ["idle_available", "walk", "run", "carry_idle", "carry_walk", "planning_recipe", "researching_book",
                         "working_chop", "waiting_tool", "testing_dish", "request_input", "wait_input", "blocked_wait",
-                        "error_react", "present_review", "wait_review", "unknown_wait", "cancel_cleanup", "pickup"],
+                        "error_react", "present_review", "wait_review", "unknown_wait", "cancel_cleanup", "pickup",
+                        "blocked_react", "celebrate_done", "arrive_wave", "read_ticket", "sit_down", "stand_up",
+                        "sit_idle", "sit_sip", "sit_chat", "cover_dish"],
         instanceName: "chef")
     static let shared: Result<ChefAssets, Error> = Result { try ChefAssets() }
     let rig: WorkspaceCapybaraAsset

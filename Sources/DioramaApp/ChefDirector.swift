@@ -28,6 +28,8 @@ struct ChefIntent: Equatable {
     /// Pick the plate up here and carry it to `station` before presenting.
     var pickup: ChefStation? = nil
     var urgent = false
+    /// A gesture played where the chef stands before it sets off (arrival wave, celebration).
+    var prelude: String? = nil
 }
 
 struct ChefClipCommand: Equatable {
@@ -120,6 +122,12 @@ struct ChefClipCommand: Equatable {
         intent = next
         if next.urgent && next.station == nil { speed = 0; path = []; pathGoal = nil }
         var plan: [Step] = []
+        if !reducedMotion {
+            // Get out of the chair before walking off, then any requested gesture.
+            let seated = clip.name.hasPrefix("sit_")
+            if seated && next.station != station && next.station != nil { plan.append(.once("stand_up", markers: [:], interrupted: nil)) }
+            if let prelude = next.prelude { plan.append(.once(prelude, markers: [:], interrupted: nil)) }
+        }
         if let target = next.station {
             let carry = next.pickup != nil || (held.contains(.plate) && next.oneShot?.clip == "present_review")
             if let pickup = next.pickup, !held.contains(.plate) {

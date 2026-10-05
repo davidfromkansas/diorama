@@ -23,7 +23,7 @@ import simd
 
     @Test func chefAssetsLoadWithSocketsClipsAndProps() throws {
         let assets = try ChefAssets.shared.get()
-        #expect(assets.rig.clips.count == 22)
+        #expect(assets.rig.clips.count == 30)
         #expect(Set(assets.manifest.clips.keys) == Set(assets.rig.clips.keys))
         let chef = assets.rig.makeInstance()
         #expect(chef.nodes.contains { $0.skinner?.bones.count == 26 })
@@ -32,7 +32,7 @@ import simd
             #expect(assets.props[prop.node] != nil)
             #expect(assets.manifest.attach[prop.node]?[prop.fitClip] != nil)
         }
-        #expect(assets.props.count == 8)
+        #expect(assets.props.count == 11)
         #expect(assets.manifest.stations.counterTop == KitchenLayout.chefCounterTop)
         #expect(assets.manifest.stations.counterFrontFromRoot == KitchenLayout.chefCounterFront)
         #expect(assets.manifest.height == KitchenLayout.chefHeight)
@@ -67,6 +67,10 @@ import simd
         #expect(area(agent("a", .working, tool: "Bash", detail: "make", edits: true)) == "stove")
         #expect(area(agent("a", .working, tool: "Bash", detail: "npm test", edits: true)) == "tasting")
         #expect(area(agent("a", .waiting, attention: .approval)) == "bell")
+        #expect(KitchenLayout.work(for: agent("a", .waiting, attention: .approval).value).oneShot == "request_input")
+        #expect(KitchenLayout.work(for: agent("a", .waiting).value).oneShot == "blocked_react")
+        let rest = KitchenLayout.work(for: agent("a", .done, freshness: .lastKnown).value)
+        #expect(rest.oneShot == "sit_down" && rest.loop.hasPrefix("sit_") && (rest.loop == "sit_sip") == (rest.hand == .mug))
         #expect(area(agent("a", .failed)) == "bell")
         #expect(KitchenLayout.work(for: agent("a", .done).value).deliversPlate)
         #expect(area(agent("a", .done)) == "serving")
@@ -178,6 +182,25 @@ import simd
         #expect(chef.director.intent?.station?.area == "bell")
     }
 
+    @Test func seatedChefsStandUpBeforeLeavingAndCelebrateAfterServing() throws {
+        let d = try director(), table = KitchenLayout.chefSlots
+        let seat = try #require(table["break"]?.first), serving = try #require(table["serving"]?.first)
+        d.place(seat.stand, heading: seat.facing)
+        d.setIntent(KitchenLayout.intent(for: agent("a", .done, freshness: .lastKnown).value, at: seat, pickup: nil, restored: true))
+        run(d, seconds: 1)
+        #expect(d.clip.name.hasPrefix("sit_"))
+        d.setIntent(KitchenLayout.intent(for: agent("a", .working, tool: "Read").value, at: table["prep"]?.first, pickup: nil, restored: false))
+        #expect(d.stepNames.first == "once:stand_up")
+        var next = KitchenLayout.intent(for: agent("a", .done, freshness: .lastKnown).value, at: seat, pickup: nil, restored: false)
+        next.prelude = "celebrate_done"
+        let other = try director(); other.place(serving.stand, heading: serving.facing)
+        other.setIntent(next)
+        #expect(other.stepNames.first == "once:celebrate_done")
+        other.reducedMotion = true
+        let calm = try director(); calm.reducedMotion = true; calm.place(serving.stand); calm.setIntent(next)
+        #expect(!calm.stepNames.contains("once:celebrate_done"))
+    }
+
     @Test func burnersIgniteOnlyWhereChefsCook() throws {
         let view = KitchenSceneView(frame: CGRect(x: 0, y: 0, width: 1000, height: 700))
         let cooks = [agent("a", .working, tool: "Bash", detail: "make", edits: true), agent("b", .working, tool: "Bash", detail: "npm run build", edits: true),
@@ -201,6 +224,8 @@ import simd
         let door = try #require(KitchenLayout.chefSlots["elevator"]?.first)
         #expect(simd_distance(newcomer.director.position, door.stand) < 0.01)
         #expect(newcomer.director.intent?.key.hasPrefix("arrival") == true)
+        #expect(newcomer.director.stepNames.first == "once:arrive_wave")
+        #expect(newcomer.director.intent?.loop == "read_ticket" && newcomer.director.intent?.hand == .ticket)
         var clock = 1.0
         for _ in 0..<(30 * 12) { clock += 1 / 30; newcomer.update(1 / 30); view.pace(now: clock) }
         #expect(newcomer.director.intent?.station?.area == "prep")
@@ -244,6 +269,7 @@ import simd
                      agent("ask", .waiting, attention: .approval), agent("done", .done), agent("rest", .done, freshness: .lastKnown),
                      agent("new", .ready, freshness: .ready)], "diorama-kitchen-stages")
         try capture((0..<10).map { agent("e\($0)", .working, tool: "Edit", edits: true) }, "diorama-kitchen-ten-cooking")
+        try capture((0..<10).map { agent("r\($0)", .done, freshness: .lastKnown) }, "diorama-kitchen-break-room")
         try capture((0..<6).map { agent("e\($0)", .working, tool: "Edit", edits: true) } + (0..<4).map { agent("s\($0)", .working, tool: "Bash", detail: "make", edits: true) }, "diorama-kitchen-islands")
     }
 }
