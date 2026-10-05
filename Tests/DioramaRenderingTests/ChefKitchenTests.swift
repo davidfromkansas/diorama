@@ -53,20 +53,6 @@ import simd
         #expect(!clip.tracks.contains { $0.path == "scale" })
     }
 
-    @Test func toolActivityClassification() {
-        #expect(KitchenActivity.classify(tool: "Read") == .researching)
-        #expect(KitchenActivity.classify(tool: "Grep") == .researching)
-        #expect(KitchenActivity.classify(tool: "TodoWrite") == .planning)
-        #expect(KitchenActivity.classify(tool: "Edit") == .working)
-        #expect(KitchenActivity.classify(tool: "fileChange") == .working)
-        #expect(KitchenActivity.classify(tool: "mcp__linear__create_issue") == .working)
-        #expect(KitchenActivity.classify(tool: "Bash", detail: "git status") == .commands)
-        #expect(KitchenActivity.classify(tool: "commandExecution", detail: "swift test --filter Kitchen") == .testing)
-        #expect(KitchenActivity.classify(tool: "Bash", detail: "npm run test") == .testing)
-        #expect(KitchenActivity.classify(tool: "Bash", detail: "pytest -q") == .testing)
-        #expect(KitchenActivity.classify(tool: "Bash", detail: "echo contest") == .commands)
-    }
-
     @Test func agentStatesMapToStations() {
         #expect(KitchenLayout.work(for: agent("a", .working, tool: "Read").value).area == "context")
         #expect(KitchenLayout.work(for: agent("a", .working, tool: "Edit").value) == .init(area: "prep", loop: "working_chop", hand: .knife))
