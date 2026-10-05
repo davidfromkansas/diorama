@@ -1,3 +1,4 @@
+import OSLog
 import SceneKit
 import SwiftUI
 
@@ -173,6 +174,8 @@ final class KitchenSceneView: SCNView {
     /// whether it is still reading its order after arriving by elevator.
     private struct Pacing { var desired: ChefIntent; var arrivedAt: Double?; var arriving = false }
     private var pacing: [String: Pacing] = [:]
+    private var lastLogged: [String: String] = [:]
+    private static let log = Logger(subsystem: "local.diorama", category: "Kitchen")
     /// Projects (or standalone conversations) already shown here: only agents that start while
     /// their project is on screen ride the elevator in; everything else appears in place.
     private var seenScopes: Set<String> = []
@@ -228,6 +231,11 @@ final class KitchenSceneView: SCNView {
             } else {
                 chefs[agent.id]?.director.reducedMotion = reduced
                 pacing[agent.id]?.desired = desired
+            }
+            if lastLogged[agent.id] != desired.key {
+                lastLogged[agent.id] = desired.key
+                // Diagnose station choices with: log show --predicate 'category == "Kitchen"' --last 10m
+                Self.log.notice("\(agent.value.name, privacy: .public) \(agent.value.status.rawValue, privacy: .public) tool=\(agent.value.latestTool, privacy: .public) detail=\(String(agent.value.latestToolDetail.prefix(60)), privacy: .public) edits=\(agent.value.turnHasEdits) -> \(desired.key, privacy: .public)")
             }
             // The label always shows the live action, even while the chef stays put.
             let doing = agent.value.status == .working && !agent.value.latestActivity.isEmpty ? agent.value.latestActivity : agent.value.statusLabel
