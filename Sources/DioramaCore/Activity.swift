@@ -139,6 +139,22 @@ public enum ActivityParser {
         formatter.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
         return formatter.date(from: value) ?? ISO8601DateFormatter().date(from: value)
     }
+    /// Files named by an `apply_patch` patch (`*** Add File: path`, `*** Update File:`, `*** Delete File:`).
+    public static func patchFiles(_ patch: String) -> [String] {
+        var files: [String] = []
+        for line in patch.split(separator: "\n") {
+            for prefix in ["*** Add File: ", "*** Update File: ", "*** Delete File: "] where line.hasPrefix(prefix) {
+                let path = line.dropFirst(prefix.count).trimmingCharacters(in: .whitespaces)
+                if !path.isEmpty && !files.contains(path) { files.append(path) }
+            }
+        }
+        return files
+    }
+    /// `Process exited with code N` from Codex shell output.
+    public static func exitCode(_ output: String) -> Int? {
+        guard let range = output.range(of: "Process exited with code ") else { return nil }
+        return Int(output[range.upperBound...].prefix { $0.isNumber || $0 == "-" })
+    }
     private static func clipped(_ value: Any?) -> String? { (value as? String).map { String($0.prefix(1000)) } }
     public static func transcript(_ r: [String: Any], session: Session, id: String, now: Date) -> [ActivityEvent] {
         let time = date(r["timestamp"])
@@ -161,6 +177,10 @@ public enum ActivityParser {
             guard r["type"] as? String == "response_item" else { return [] }
             let call = p["call_id"] as? String
             if ["function_call", "custom_tool_call"].contains(type) {
+                // A patch names its files in its headers; the patch text itself is not a detail.
+                if p["name"] as? String == "apply_patch", let input = p["input"] as? String {
+                    return [event("toolStarted", .working, call: call, tool: "apply_patch", detail: clipped(patchFiles(input).joined(separator: "\n")), turn: turn)]
+                }
                 // Code-mode calls wrap the real tool in JavaScript: `tools.exec_command({cmd:"…"})`.
                 if let input = p["input"] as? String, let inner = codeModeCall(input) {
                     return [event("toolStarted", .working, call: call, tool: inner.tool, detail: inner.detail.map { String($0.prefix(1000)) }, turn: turn)]
@@ -169,7 +189,12 @@ public enum ActivityParser {
                 let command = (args?["command"] as? [String])?.joined(separator: " ") ?? args?["command"] ?? args?["cmd"] ?? args?["file_path"]
                 return [event("toolStarted", .working, call: call, tool: p["name"] as? String, detail: clipped(command), turn: turn)]
             }
-            if ["function_call_output", "custom_tool_call_output"].contains(type) { return [event("toolFinished", call: call, turn: turn)] }
+            if ["function_call_output", "custom_tool_call_output"].contains(type) {
+                // Shell output reports its exit status; anything else just finished.
+                let output = p["output"] as? String ?? ""
+                let failed = exitCode(output).map { $0 != 0 } ?? false
+                return [event(failed ? "toolFailed" : "toolFinished", call: call, turn: turn)]
+            }
         } else if let message = r["message"] as? [String: Any] {
             let blocks = message["content"] as? [[String: Any]] ?? []
             var events: [ActivityEvent] = []

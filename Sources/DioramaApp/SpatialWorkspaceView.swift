@@ -19,6 +19,8 @@ struct SpatialWorkspaceView: View {
     private var inboxSelection: InboxThread? { get { state.inboxSelection } nonmutating set { state.inboxSelection = newValue } }
     @State private var creationProject: AgentCreationDestination?
     @State private var reviewing: SpatialAgent?
+    /// The kitchen chef whose progress panel is open.
+    @State private var progressAgent: String?
     @State private var explore = false
     @State private var attention = false
     @State private var allConversations = false
@@ -70,7 +72,7 @@ struct SpatialWorkspaceView: View {
                     let _ = KitchenReviews.shared.observe(cooks)
                     KitchenSceneSurface(agents: cooks, scope: focus == .portfolio ? nil : focus.projectID ?? focus.conversationID,
                                         reviews: KitchenReviews.shared.states, active: visible && scenePhase == .active && library.windowIsActive,
-                                        reducedMotion: reduced, select: go, review: { reviewing = $0 })
+                                        reducedMotion: reduced, select: go, review: { reviewing = $0 }, progress: { progressAgent = $0.id })
                 }
                 if !kitchenSelected && focus != .portfolio && !ScenePerformance.disabled("OVERLAYS") {
                     VStack(alignment: .leading, spacing: 12) {
@@ -129,6 +131,13 @@ struct SpatialWorkspaceView: View {
                         .environment(\.colorScheme, .light).environment(\.avatarMessages, true).tint(.blue)
                         .disabled(inspection != nil).accessibilityHidden(inspection != nil)
                 }
+                }
+                if visible, let id = progressAgent, let agent = snapshot.teams.flatMap(\.agents).first(where: { $0.id == id }) {
+                    ZStack {
+                        Color.black.opacity(0.12).contentShape(Rectangle()).onTapGesture { progressAgent = nil }
+                        AgentProgressModal(agent: agent.value) { progressAgent = nil }
+                            .frame(width: min(460, max(180, geometry.size.width - 32)), height: max(180, geometry.size.height * 0.7))
+                    }.frame(maxWidth: .infinity, maxHeight: .infinity)
                 }
                 if visible, let selection = inspection, let agent = snapshot.teams.flatMap(\.agents).first(where: { $0.id == selection.agentID }) {
                     ZStack {
