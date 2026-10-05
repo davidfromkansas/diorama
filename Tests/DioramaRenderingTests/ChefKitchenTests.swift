@@ -40,6 +40,16 @@ import simd
         #expect(try WorkspaceCapybaraAsset.shared.get().makeInstance().nodes.contains { $0.skinner?.bones.count == 25 })
     }
 
+    @Test func chefLoadsQuicklyEnoughForTheMainThread() throws {
+        let data = try Data(contentsOf: try #require(WorkspaceCapybaraAsset.resourceBundle.url(forResource: "chef-animated", withExtension: "glb", subdirectory: "Chef")))
+        let start = Date()
+        _ = try WorkspaceCapybaraAsset(data: data, spec: ChefAssets.spec)
+        let seconds = Date().timeIntervalSince(start)
+        print("chef rig load: \(Int(seconds * 1000)) ms")
+        // Was ~6 s (quadratic JSON casting) in release builds; generous bound for debug test builds.
+        #expect(seconds < 2)
+    }
+
     @Test func sampledPosesMatchKeyframesExactly() throws {
         let rig = try ChefAssets.shared.get().rig
         let clip = try #require(rig.clips["working_chop"])
