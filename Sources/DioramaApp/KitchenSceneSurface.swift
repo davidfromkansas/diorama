@@ -281,8 +281,11 @@ final class KitchenSceneView: SCNView {
                     state.desired = KitchenLayout.intent(for: agent.value, at: slots[id], pickup: KitchenLayout.chefSlots["cooking"]?.first, restored: false, review: reviews[agent.conversationID])
                 }
             } else if state.desired.key != director.intent?.key {
-                // Redirect at once when urgent, while still walking, or after the minimum stay.
-                apply = state.desired.urgent || director.intent?.station == nil || director.station == nil || settledFor >= KitchenLayout.minimumDwell
+                // Urgent changes apply at once. Otherwise a walking chef finishes its trip (agents
+                // switch tools several times a second; re-routing mid-walk made chefs stop, turn
+                // and restart) and then works at least the minimum dwell before moving on.
+                let walking = director.intent?.station != nil && director.station == nil
+                apply = state.desired.urgent || director.intent?.station == nil || (!walking && settledFor >= KitchenLayout.minimumDwell)
             }
             if apply {
                 var next = state.desired
@@ -352,9 +355,10 @@ final class KitchenSceneView: SCNView {
     }
     /// Diagnostics: when /tmp/diorama-kitchen-frames.log exists, frame gaps over 50 ms, slow
     /// reconciles and playback pauses are appended to it.
-    nonisolated(unsafe) private static let frameLog: FileHandle? = FileHandle(forWritingAtPath: "/tmp/diorama-kitchen-frames.log")
     nonisolated static func trace(_ text: @autoclosure () -> String) {
-        guard let log = frameLog else { return }
+        // Opened per event (events are rare), so the file can be created or removed at any time.
+        guard let log = FileHandle(forWritingAtPath: "/tmp/diorama-kitchen-frames.log") else { return }
+        defer { try? log.close() }
         log.seekToEndOfFile(); log.write(Data((String(format: "%.3f ", CACurrentMediaTime()) + text() + "\n").utf8))
     }
     func frameStep(at time: TimeInterval) {

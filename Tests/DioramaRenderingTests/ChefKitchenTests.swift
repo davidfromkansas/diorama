@@ -208,6 +208,13 @@ import simd
         view.apply(agents: [agent("a", .working, tool: "Bash", detail: "make", edits: true)], active: false, reducedMotion: false, now: clock)
         step(2.5)
         #expect(chef.director.intent?.station?.area == "stove")
+        // While it walks to the stove, switching back to editing doesn't turn it around mid-trip.
+        view.apply(agents: [agent("a", .working, tool: "Edit", edits: true)], active: false, reducedMotion: false, now: clock)
+        step(0.3)
+        #expect(chef.director.station == nil && chef.director.intent?.station?.area == "stove")
+        // It arrives, works the minimum dwell, then moves on.
+        step(8)
+        #expect(chef.director.intent?.station?.area == "cooking")
         // Needing you moves it at once.
         view.apply(agents: [agent("a", .waiting, attention: .approval, edits: true)], active: false, reducedMotion: false, now: clock)
         step(0.1)
