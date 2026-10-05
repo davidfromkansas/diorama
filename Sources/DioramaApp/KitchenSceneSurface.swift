@@ -57,13 +57,15 @@ enum KitchenLayout {
 }
 struct KitchenSceneSurface: NSViewRepresentable {
     var agents: [SpatialAgent] = []
+    /// The project (or conversation) on screen, so even an empty one counts as already shown.
+    var scope: String? = nil
     var active = false
     var reducedMotion = false
     var select: (SpatialFocus) -> Void = { _ in }
     func makeNSView(context: Context) -> KitchenSceneView { KitchenSceneView() }
     func updateNSView(_ view: KitchenSceneView, context: Context) {
         view.select = select
-        view.apply(agents: agents, active: active, reducedMotion: reducedMotion)
+        view.apply(agents: agents, scope: scope, active: active, reducedMotion: reducedMotion)
         view.fitFloor()
     }
     static func dismantleNSView(_ view: KitchenSceneView, coordinator: ()) { view.tearDown() }
@@ -171,12 +173,14 @@ final class KitchenSceneView: SCNView {
     /// whether it is still reading its order after arriving by elevator.
     private struct Pacing { var desired: ChefIntent; var arrivedAt: Double?; var arriving = false }
     private var pacing: [String: Pacing] = [:]
-    /// Conversations already shown here: only agents joining one of these ride the elevator in.
-    private var seenConversations: Set<String> = []
+    /// Projects (or standalone conversations) already shown here: only agents that start while
+    /// their project is on screen ride the elevator in; everything else appears in place.
+    private var seenScopes: Set<String> = []
 
     /// Reconcile chefs with agents: attention first, then working, capped at `maxChefs`.
-    func apply(agents: [SpatialAgent], active: Bool, reducedMotion: Bool, now: Double = CACurrentMediaTime()) {
+    func apply(agents: [SpatialAgent], scope: String? = nil, active: Bool, reducedMotion: Bool, now: Double = CACurrentMediaTime()) {
         self.active = active; reduced = reducedMotion
+        defer { if let scope { seenScopes.insert(scope) } }
         let ranked = agents.enumerated().sorted { a, b in
             let ra = a.element.needsAttention ? 0 : a.element.value.status == .working ? 1 : 2
             let rb = b.element.needsAttention ? 0 : b.element.value.status == .working ? 1 : 2
@@ -190,7 +194,7 @@ final class KitchenSceneView: SCNView {
         }
         guard !ranked.isEmpty, case let .success(assets) = ChefAssets.shared, let world = scene else { updatePlayback(); return }
         let table = KitchenLayout.chefSlots, pickup = table["cooking"]?.first
-        let arriving = ranked.filter { chefs[$0.id] == nil && seenConversations.contains($0.conversationID) && [.live, .recentlyObserved].contains($0.value.freshness) }.map(\.id)
+        let arriving = ranked.filter { chefs[$0.id] == nil && seenScopes.contains($0.projectID ?? $0.conversationID) && [.live, .recentlyObserved].contains($0.value.freshness) }.map(\.id)
         slots = KitchenLayout.assignSlots(ranked.map { agent in
             (agent.id, pacing[agent.id]?.arriving == true || arriving.contains(agent.id) ? "order" : KitchenLayout.work(for: agent.value).area)
         }, previous: slots)
@@ -231,7 +235,7 @@ final class KitchenSceneView: SCNView {
             label?.stringValue = agent.value.name + " · " + (doing.count > 48 ? String(doing.prefix(47)) + "…" : doing)
             label?.textColor = agent.needsAttention ? .systemOrange : .init(white: 0.2, alpha: 1)
         }
-        seenConversations.formUnion(ranked.map(\.conversationID))
+        seenScopes.formUnion(ranked.map { $0.projectID ?? $0.conversationID })
         pace(now: now)
         updateFlames()
         placeChefLabels()

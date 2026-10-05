@@ -7,11 +7,11 @@ import simd
 
 @MainActor struct ChefKitchenTests {
     private func agent(_ id: String, _ status: WorkspaceAgentStatus, tool: String = "", detail: String = "", attention: WorkspaceAttentionReason = .other,
-                       edits: Bool = false, freshness: WorkspaceAgentFreshness = .live, conversation: String = "c") -> SpatialAgent {
+                       edits: Bool = false, freshness: WorkspaceAgentFreshness = .live, conversation: String = "c", project: String = "p") -> SpatialAgent {
         var value = WorkspaceAgent(id: id, name: "Agent \(id)", provider: "Claude", task: "Task", action: "", status: status, reportedStatus: status.rawValue, freshness: freshness)
         value.latestTool = tool; value.latestToolDetail = detail; value.attentionReason = attention; value.turnHasEdits = edits
         value.completionKey = "turn-1"
-        return SpatialAgent(projectID: "p", conversationID: conversation, value: value)
+        return SpatialAgent(projectID: project, conversationID: conversation, value: value)
     }
     private func director() throws -> ChefDirector {
         let assets = try ChefAssets.shared.get()
@@ -214,6 +214,14 @@ import simd
         #expect(view.litBurners.isEmpty)
     }
 
+    @Test func firstAgentInAnOpenEmptyProjectArrivesByElevator() throws {
+        let view = KitchenSceneView(frame: CGRect(x: 0, y: 0, width: 1000, height: 700))
+        view.apply(agents: [], scope: "p", active: false, reducedMotion: false, now: 0)
+        let first = agent("first", .working, tool: "Read")
+        view.apply(agents: [first], scope: "p", active: false, reducedMotion: false, now: 1)
+        #expect(view.chefs[first.id]?.director.intent?.key.hasPrefix("arrival") == true)
+    }
+
     @Test func onlyNewAgentsArriveByElevator() throws {
         let view = KitchenSceneView(frame: CGRect(x: 0, y: 0, width: 1000, height: 700))
         let old = agent("old", .working, tool: "Edit", edits: true), new = agent("new", .working, tool: "Read")
@@ -229,8 +237,11 @@ import simd
         var clock = 1.0
         for _ in 0..<(30 * 12) { clock += 1 / 30; newcomer.update(1 / 30); view.pace(now: clock) }
         #expect(newcomer.director.intent?.station?.area == "prep")
-        // A different conversation shown for the first time is history, not an arrival.
-        let other = agent("other", .working, tool: "Read", conversation: "d")
+        // A new conversation in the same project arrives too; another project's agents are history.
+        let sibling = agent("sibling", .working, tool: "Read", conversation: "d")
+        view.apply(agents: [old, new, sibling], active: false, reducedMotion: false, now: clock)
+        #expect(view.chefs[sibling.id]?.director.intent?.key.hasPrefix("arrival") == true)
+        let other = agent("other", .working, tool: "Read", conversation: "e", project: "q")
         view.apply(agents: [other], active: false, reducedMotion: false, now: clock)
         #expect(view.chefs[other.id]?.director.intent?.key.hasPrefix("arrival") == false)
     }
