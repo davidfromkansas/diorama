@@ -374,12 +374,24 @@ final class KitchenSceneView: SCNView {
         windowObservers.forEach(NotificationCenter.default.removeObserver); windowObservers = []
         scene = nil
     }
+    /// Projects a world point to view coordinates (origin bottom-left, like `projectPoint`) with
+    /// the camera's matrices. `projectPoint` takes SceneKit's scene lock and waits for the
+    /// renderer, which stalled every animation frame when used for per-frame name tags.
+    func projectWithoutLock(_ point: SIMD3<Float>) -> CGPoint? {
+        guard let eye = pointOfView, let camera = eye.camera, bounds.width > 0, bounds.height > 0 else { return nil }
+        let projection = simd_float4x4(camera.projectionTransform(withViewportSize: bounds.size))
+        let clip = projection * eye.simdWorldTransform.inverse * SIMD4(point, 1)
+        guard clip.w > 0.0001 else { return nil }
+        let ndc = SIMD2(clip.x, clip.y) / clip.w
+        return CGPoint(x: CGFloat(ndc.x + 1) / 2 * bounds.width, y: CGFloat(ndc.y + 1) / 2 * bounds.height)
+    }
     private func placeChefLabels() {
         var placed: [CGRect] = []
         for (id, chef) in chefs.sorted(by: { $0.key < $1.key }) {
             guard let label = chefLabels[id] else { continue }
             let head = chef.root.simdPosition + SIMD3(0, 2.05 * KitchenLayout.chefScale, 0)
-            let point = projectPoint(SCNVector3(head))
+            guard let point = projectWithoutLock(head) else { label.isHidden = true; continue }
+            label.isHidden = false
             let size = label.attributedStringValue.size()
             let width = min(160, size.width + 12), height = size.height + 4
             let y = isFlipped ? bounds.height - CGFloat(point.y) : CGFloat(point.y)

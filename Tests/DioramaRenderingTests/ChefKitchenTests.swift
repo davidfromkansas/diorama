@@ -268,6 +268,16 @@ import simd
         #expect(view.chefs[other.id]?.director.intent?.key.hasPrefix("arrival") == false)
     }
 
+    @Test func lockFreeProjectionMatchesSceneKit() throws {
+        let view = KitchenSceneView(frame: CGRect(x: 0, y: 0, width: 1000, height: 700))
+        view.layoutSubtreeIfNeeded(); view.fitFloor()
+        for point in [SIMD3<Float>(0, 0, 0), SIMD3(-9, 2.8, -6), SIMD3(8, 1, 6), SIMD3(3, 3.5, -2)] {
+            let mine = try #require(view.projectWithoutLock(point))
+            let scene = view.projectPoint(SCNVector3(point))
+            #expect(abs(mine.x - CGFloat(scene.x)) < 1 && abs(mine.y - CGFloat(scene.y)) < 1, "\(point): \(mine) vs \(scene)")
+        }
+    }
+
     @Test func neighbouringNameTagsNeverOverlap() throws {
         let view = KitchenSceneView(frame: CGRect(x: 0, y: 0, width: 1000, height: 700))
         view.layoutSubtreeIfNeeded(); view.fitFloor()
