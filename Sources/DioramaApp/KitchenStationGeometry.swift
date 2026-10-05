@@ -190,25 +190,40 @@ import SceneKit
         return root
     }
 
-    /// The break room's long table; seats are the chefs' slots on both sides.
+    /// The break room: a low coffee table between two rows of Eames lounge chairs (the bundled
+    /// Herman Miller Classic model). Each chair sits behind a chef slot, facing the table.
+    static let loungeChairScale: CGFloat = 1.45
+    /// How far a seated chef's root sits in front of its chair's centre.
+    static let loungeChairSetback: Float = 0.12
     private static func breakTable(_ area: KitchenArea) -> SCNNode {
         let root = SCNNode(); root.name = area.id
         root.position = SCNVector3(area.footprint.midX, KitchenLayout.floorTop, area.footprint.midY)
-        let top = CGFloat(KitchenLayout.worktopHeight) - KitchenLayout.floorTop
-        let oak = material(NSColor(red: 0.5, green: 0.32, blue: 0.17, alpha: 1))
+        let walnut = material(NSColor(red: 0.34, green: 0.2, blue: 0.1, alpha: 1))
         let ceramic = material(NSColor(red: 0.96, green: 0.94, blue: 0.86, alpha: 1))
-        let w = area.footprint.width, d = area.footprint.height
-        let slab = SCNBox(width: w, height: 0.07, length: d, chamferRadius: 0.03); slab.materials = [oak]
-        let table = SCNNode(geometry: slab); table.name = "break table"; table.position.y = top; root.addChildNode(table)
-        for x in [-w / 2 + 0.2, w / 2 - 0.2] { for z in [-d / 2 + 0.15, d / 2 - 0.15] {
-            let legShape = SCNBox(width: 0.08, height: top, length: 0.08, chamferRadius: 0.01); legShape.materials = [oak]
+        let w = area.footprint.width - 0.6, d = area.footprint.height * 0.6, top: CGFloat = 0.42
+        let slab = SCNBox(width: w, height: 0.06, length: d, chamferRadius: 0.03); slab.materials = [walnut]
+        let table = SCNNode(geometry: slab); table.name = "coffee table"; table.position.y = top; root.addChildNode(table)
+        for x in [-w / 2 + 0.2, w / 2 - 0.2] { for z in [-d / 2 + 0.12, d / 2 - 0.12] {
+            let legShape = SCNCylinder(radius: 0.035, height: top); legShape.materials = [walnut]
             let leg = SCNNode(geometry: legShape); leg.position = SCNVector3(x, top / 2, z); root.addChildNode(leg)
         } }
-        for i in 0..<5 { for z in [-0.25, 0.25] {
-            let mug = SCNCylinder(radius: 0.07, height: 0.13); mug.materials = [ceramic]
-            let node = SCNNode(geometry: mug); node.position = SCNVector3(-w / 2 + 0.66 + CGFloat(i) * (w - 1.32) / 4, top + 0.1, z)
+        for i in 0..<4 {
+            let pot = SCNCylinder(radius: 0.09, height: 0.12); pot.materials = [ceramic]
+            let node = SCNNode(geometry: pot); node.position = SCNVector3(-w / 2 + 0.6 + CGFloat(i) * (w - 1.2) / 3, top + 0.09, 0)
             root.addChildNode(node)
-        } }
+        }
+        if let chair = OfficeLoungeAssets.template("EamesLounge") {
+            let center = SIMD2(Float(area.footprint.midX), Float(area.footprint.midY))
+            for seat in KitchenLayout.chefSlots[area.id] ?? [] {
+                let forward = SIMD2(sin(seat.facing), cos(seat.facing))
+                let spot = seat.stand - forward * loungeChairSetback - center
+                let node = chair.clone(); node.name = "lounge chair"
+                node.scale = SCNVector3(loungeChairScale, loungeChairScale, loungeChairScale)
+                node.eulerAngles.y = CGFloat(seat.facing)
+                node.position = SCNVector3(CGFloat(spot.x), -CGFloat(node.boundingBox.min.y) * loungeChairScale, CGFloat(spot.y))
+                root.addChildNode(node)
+            }
+        }
         return root
     }
 

@@ -41,9 +41,12 @@ struct ChefManifest: Decodable {
 /// Hand props a chef can hold. Each maps to a node in `chef-props.glb` and the clip whose
 /// grip the manifest fitted it to.
 enum ChefProp: String, CaseIterable {
-    case card, book, knife, spoon, plate
+    case card, book, knife, spoon, plate, ticket, mug, cloche
     var node: String {
         switch self {
+        case .ticket: "prop_ticket"
+        case .mug: "prop_mug"
+        case .cloche: "prop_cloche"
         case .card: "prop_recipe_card"
         case .book: "prop_cookbook"
         case .knife: "prop_knife"
@@ -53,8 +56,8 @@ enum ChefProp: String, CaseIterable {
     }
     var socket: String {
         switch self {
-        case .card, .book: "socket_hand.L"
-        case .knife, .spoon: "socket_hand.R"
+        case .card, .book, .ticket: "socket_hand.L"
+        case .knife, .spoon, .mug, .cloche: "socket_hand.R"
         case .plate: "socket_carry"
         }
     }
@@ -65,6 +68,9 @@ enum ChefProp: String, CaseIterable {
         case .knife: "working_chop"
         case .spoon: "testing_dish"
         case .plate: "carry_idle"
+        case .ticket: "read_ticket"
+        case .mug: "sit_sip"
+        case .cloche: "cover_dish"
         }
     }
 }

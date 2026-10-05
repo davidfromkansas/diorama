@@ -39,9 +39,10 @@ extension KitchenLayout {
         let fresh = agent.freshness == .live || agent.freshness == .recentlyObserved
         switch agent.status {
         case .ready: return .init(area: "order", loop: "idle_available")
+        case .waiting where agent.attentionReason == .other: return .init(area: "bell", loop: "blocked_wait", oneShot: "blocked_react", urgent: true)
         case .waiting: return .init(area: "bell", loop: "wait_input", oneShot: "request_input", urgent: true)
         case .failed: return .init(area: "bell", loop: "blocked_wait", oneShot: "error_react", urgent: true)
-        case .stopped: return .init(area: "break", loop: "idle_available", oneShot: "cancel_cleanup", urgent: true)
+        case .stopped: return breakRoom(agent, urgent: true)
         case .unknown: return .init(area: nil, loop: "unknown_wait", urgent: true)
         case .done where fresh: return .init(area: "serving", loop: "wait_review", oneShot: "present_review", urgent: true, deliversPlate: true)
         case .working where fresh:
@@ -52,8 +53,14 @@ extension KitchenLayout {
             case (.commands, true): return .init(area: "stove", loop: "waiting_tool")
             case (_, true): return .init(area: "cooking", loop: "working_chop", hand: .knife)
             }
-        default: return .init(area: "break", loop: "idle_available", urgent: true)
+        default: return breakRoom(agent, urgent: true)
         }
+    }
+    /// Resting chefs sit down in a lounge chair and idle, sip coffee or chat (stable per agent).
+    static func breakRoom(_ agent: WorkspaceAgent, urgent: Bool) -> ChefWork {
+        let loops = ["sit_idle", "sit_sip", "sit_chat"]
+        let pick = loops[Int(agent.id.utf8.reduce(UInt32(7)) { $0 &* 31 &+ UInt32($1) } % UInt32(loops.count))]
+        return .init(area: "break", loop: pick, hand: pick == "sit_sip" ? .mug : nil, oneShot: "sit_down", urgent: urgent)
     }
     static func intent(for agent: WorkspaceAgent, at slot: ChefStation?, pickup: ChefStation?, restored: Bool) -> ChefIntent {
         let work = work(for: agent)
@@ -66,7 +73,7 @@ extension KitchenLayout {
     }
     /// A new agent reads its order at the rail before starting work.
     static func arrivalIntent(at slot: ChefStation) -> ChefIntent {
-        ChefIntent(key: "arrival|" + slot.id, station: slot, loop: "planning_recipe", hand: .card)
+        ChefIntent(key: "arrival|" + slot.id, station: slot, loop: "read_ticket", hand: .ticket, prelude: "arrive_wave")
     }
 
     /// Stand slots per area, in preference order. Chefs face the counter, standing so their
@@ -98,7 +105,7 @@ extension KitchenLayout {
                     return ChefStation(id: "", area: area.id, stand: stand, facing: atan2(toward.x, toward.y))
                 }
             case "break": // seats along both sides of the table
-                let seat = 0.55 * Float(1), gap = (maxX - minX) / Float(area.spots / 2)
+                let seat = Float(0.7), gap = (maxX - minX) / Float(area.spots / 2)
                 slots = row(area.id, from: SIMD2(minX, minZ - seat), to: SIMD2(maxX, minZ - seat), facing: 0, gap: gap)
                     + row(area.id, from: SIMD2(minX, maxZ + seat), to: SIMD2(maxX, maxZ + seat), facing: .pi, gap: gap)
             default:

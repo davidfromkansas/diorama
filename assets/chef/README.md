@@ -32,4 +32,9 @@ Intermediate files go to `.local/chef-build/`. Review sheets need Pillow.
 
 Clips: `idle_available`, `planning_recipe`, `researching_book`, `working_chop`, `waiting_tool`, `testing_dish`,
 `walk`, `run`, `carry_idle`, `carry_walk`, `request_input`, `wait_input`, `blocked_react`, `blocked_wait`,
-`error_react`, `present_review`, `wait_review`, `celebrate_done`, `unknown_wait`, `cancel_cleanup`, `pickup`, `putdown`.
+`error_react`, `present_review`, `wait_review`, `celebrate_done`, `unknown_wait`, `cancel_cleanup`, `pickup`, `putdown`,
+and the kitchen lifecycle clips `arrive_wave` (elevator arrival), `read_ticket` (reading the order), `sit_down`, `stand_up`,
+`sit_idle`, `sit_sip`, `sit_chat` (break-room lounge chairs) and `cover_dish` (serving window).
+
+Props: recipe card, cookbook, knife, spoon, plate, ingredient, cutting board, pot, plus `prop_ticket`, `prop_mug` and `prop_cloche`.
+Sitting clips are authored for the bundled Eames Lounge Chair–Classic scaled 1.45× (`KitchenStationGeometry.loungeChairScale`).
