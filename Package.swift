@@ -13,7 +13,7 @@ let package = Package(
         .target(name: "DioramaCore"),
         .executableTarget(name: "DioramaReporter", dependencies: ["DioramaCore"]),
         .executableTarget(name: "DioramaApp", dependencies: ["DioramaCore", .product(name: "MarkdownUI", package: "swift-markdown-ui"), .product(name: "Sparkle", package: "Sparkle")],
-                          resources: [.copy("Resources/Library"), .copy("Resources/ConnectorBrand"), .copy("Resources/AgentStatus"), .copy("Resources/Capybara"), .copy("Resources/OfficeFurniture"), .copy("Resources/Chef")],
+                          resources: [.copy("Resources/Library"), .copy("Resources/ConnectorBrand"), .copy("Resources/AgentStatus"), .copy("Resources/Capybara"), .copy("Resources/OfficeFurniture"), .copy("Resources/Chef"), .copy("Resources/Food")],
                           swiftSettings: [.defaultIsolation(MainActor.self)],
                           linkerSettings: [.unsafeFlags(["-Xlinker", "-rpath", "-Xlinker", "@executable_path/../Frameworks"])]),
         .testTarget(name: "DioramaCoreTests", dependencies: ["DioramaCore"]),
