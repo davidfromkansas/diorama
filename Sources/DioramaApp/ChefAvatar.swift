@@ -48,6 +48,9 @@ nonisolated final class ChefAvatar: @unchecked Sendable {
     /// knife while chopping, and under the spoon's dip point while tasting.
     static let boardSpot = SIMD3<Float>(-0.05, 0.605, 0.7)
     static let tastingSpot = SIMD3<Float>(-0.1, 0.585, 0.66)
+    /// Served dishes sit across the pass, in front of the serving window's overhead beam, so
+    /// they stay visible from the kitchen camera.
+    static let passSpot = SIMD3<Float>(0, 0.585, 1.0)
     private var props: [ChefProp: SCNNode] = [:]
     private var token = -1
     private var last: (name: String, time: Float, loop: Bool)?
@@ -151,7 +154,7 @@ nonisolated final class ChefAvatar: @unchecked Sendable {
             let fit = manifest.attach[ChefProp.plate.node]?[ChefProp.plate.fitClip]
             parent = socket; position = fit?.simdPosition ?? .zero; orientation = fit?.simdQuaternion ?? orientation; spot = "carry"
         } else if director.placedPlate != nil {
-            position = SIMD3(0, manifest.stations.counterTop, 0.57); spot = "pass"
+            position = Self.passSpot; spot = "pass"
         } else if station == "cooking", clip == "working_chop" {
             position = Self.boardSpot; spot = "board"
         } else if station == "tasting", clip == "testing_dish" {
