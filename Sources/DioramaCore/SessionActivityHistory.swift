@@ -33,6 +33,10 @@ public enum SessionActivityHistory {
                 }
                 if type == "message", p["role"].string == "assistant" {
                     let text = p["content"].array.compactMap { $0["text"].string }.joined(separator: "\n")
+                    // A Markdown checklist in the message is the agent's reported progress.
+                    if let plan = MessageChecklist.plan(text) {
+                        SessionActivityReducer.ingest(.object(["method": .string("turn/plan/updated"), "params": .object(["plan": plan, "turnId": codexTurn.map(WireValue.string) ?? .null, "timestamp": e["timestamp"]])]), provider: .codex, sessionID: session.sessionID, into: &state)
+                    }
                     if let start = text.range(of: "<proposed_plan>"), let end = text.range(of: "</proposed_plan>", range: start.upperBound..<text.endIndex) {
                         let plan = String(text[start.upperBound..<end.lowerBound]).trimmingCharacters(in: .whitespacesAndNewlines)
                         SessionActivityReducer.ingest(.object(["method": .string("item/completed"), "params": .object([
