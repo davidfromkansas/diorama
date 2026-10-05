@@ -354,6 +354,28 @@ import simd
         #expect(KitchenSceneView.tagText(value, doing: "Editing a file") == "Leo · Editing a file")
     }
 
+    @Test func everyTestRunGetsTastedEvenWhenTheAgentMovesOnAtOnce() throws {
+        let view = KitchenSceneView(frame: CGRect(x: 0, y: 0, width: 1000, height: 700))
+        var cook = agent("a", .working, tool: "Edit", edits: true)
+        view.apply(agents: [cook], active: false, reducedMotion: false, now: 0)
+        let chef = try #require(view.chefs[cook.id])
+        func run(from start: Double, seconds: Double) {
+            var t = start
+            while t < start + seconds { chef.update(1 / 30); t += 1 / 30; view.apply(agents: [cook], active: false, reducedMotion: false, now: t) }
+        }
+        run(from: 0, seconds: 5)
+        #expect(chef.director.station?.area == "cooking")
+        // A test fails within a second and the agent is already editing again.
+        var work = TurnWork(); work.started(tool: "Bash", detail: "npm test", call: "t1"); work.finished(call: "t1", failed: true)
+        cook.value.turnWork = work
+        var visited = false
+        var t = 5.0
+        while t < 25 { chef.update(1 / 30); t += 1 / 30; view.apply(agents: [cook], active: false, reducedMotion: false, now: t); visited = visited || chef.director.station?.area == "tasting" }
+        #expect(visited)
+        // After tasting, the chef goes back to what the agent is doing now.
+        #expect(chef.director.intent?.station?.area == "cooking")
+    }
+
     @Test func eachProjectKeepsItsKitchenWhileYouLookElsewhere() throws {
         let stage = KitchenStage(frame: CGRect(x: 0, y: 0, width: 800, height: 600))
         let a = stage.show("A")

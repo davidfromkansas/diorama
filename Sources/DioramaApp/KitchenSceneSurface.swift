@@ -235,6 +235,10 @@ final class KitchenSceneView: SCNView {
         var want: ChefIntent?
         var arrivedAt: Double?
         var arriving = false
+        /// Test runs seen this turn, and whether a newer one still owes a visit to the tasting
+        /// station (tests often finish faster than a chef can walk over).
+        var testsSeen = 0
+        var tasteOwed = false
     }
     private var pacing: [String: Pacing] = [:]
     private let slotTable = KitchenLayout.chefSlots
@@ -243,6 +247,12 @@ final class KitchenSceneView: SCNView {
     nonisolated let chefLock = NSRecursiveLock()
     nonisolated(unsafe) private var renderChefs: [ChefAvatar] = []
     nonisolated(unsafe) private var lastRenderTime: TimeInterval?
+    /// When the main thread last placed tags and paced chefs, and whether the render thread has
+    /// already asked for another step (both under `chefLock`).
+    nonisolated(unsafe) private var lastMainStep: TimeInterval = 0
+    nonisolated(unsafe) private var mainStepQueued = false
+    /// Keeps macOS from throttling Diorama while chefs move in a visible kitchen.
+    private var motionActivity: NSObjectProtocol?
     private func publishChefs() { chefLock.lock(); renderChefs = Array(chefs.values); chefLock.unlock() }
     /// Projects (or standalone conversations) already shown here: only agents that start while
     /// their project is on screen ride the elevator in; everything else appears in place.
@@ -277,6 +287,14 @@ final class KitchenSceneView: SCNView {
         // Finished chefs pick their plate up where they already work, never at a shared spot.
         let pickup = chef.director.station.flatMap { ["cooking", "stove", "prep", "tasting"].contains($0.area) ? $0 : nil }
         return KitchenLayout.intent(for: state.agent, at: slot, pickup: pickup, restored: restored, review: state.review)
+    }
+    /// The tasting visit owed for a test run, whatever the agent is doing by now.
+    private func tastingIntent(_ id: String) -> ChefIntent? {
+        guard var agent = pacing[id]?.agent else { return nil }
+        agent.status = .working; agent.turnHasEdits = true
+        agent.latestTool = "Bash"; agent.latestToolDetail = agent.turnWork.tests.last?.command ?? "npm test"
+        let slot = claimSlot(id, area: "tasting")
+        return KitchenLayout.intent(for: agent, at: slot, pickup: nil, restored: false)
     }
     private func queuedWithFreeSpot(_ id: String) -> Bool {
         guard let slot = slots[id], slot.id.contains("~") else { return false }
@@ -329,7 +347,7 @@ final class KitchenSceneView: SCNView {
                     // A new agent joins: it rides the elevator in and reads its order first.
                     chef.director.place(door.stand, heading: door.facing)
                     chef.director.setIntent(KitchenLayout.arrivalIntent(at: order))
-                    pacing[agent.id] = Pacing(agent: agent.value, review: review, arriving: true)
+                    pacing[agent.id] = Pacing(agent: agent.value, review: review, arriving: true, testsSeen: agent.value.turnWork.tests.count)
                     openElevator()
                 } else {
                     // Chefs shown from history start in place: no walk-in, no replayed gesture.
@@ -338,7 +356,7 @@ final class KitchenSceneView: SCNView {
                     let home = slotTable["break"] ?? []
                     if let spawn = slot ?? (home.isEmpty ? nil : home[chefs.count % home.count]) { chef.director.place(spawn.stand, heading: spawn.facing) }
                     chef.director.setIntent(KitchenLayout.intent(for: agent.value, at: slot, pickup: nil, restored: true, review: review))
-                    pacing[agent.id] = Pacing(agent: agent.value, review: review)
+                    pacing[agent.id] = Pacing(agent: agent.value, review: review, testsSeen: agent.value.turnWork.tests.count)
                     pacing[agent.id]?.want = chef.director.intent
                 }
                 chef.update(0)
@@ -355,6 +373,10 @@ final class KitchenSceneView: SCNView {
                 chefs[agent.id]?.dish = KitchenFood.dish(for: agent.value.completionKey ?? agent.conversationID)
                 pacing[agent.id]?.agent = agent.value
                 pacing[agent.id]?.review = review
+                // Every new test run sends the chef to taste, however quickly the agent moves on.
+                let tests = agent.value.turnWork.tests.count, seen = pacing[agent.id]?.testsSeen ?? tests
+                if tests > seen && !catchingUp { pacing[agent.id]?.tasteOwed = true }
+                pacing[agent.id]?.testsSeen = tests
                 if pacing[agent.id]?.arriving == false { let want = wanted(agent.id, claim: false); pacing[agent.id]?.want = want }
                 chefLock.unlock()
             }
@@ -384,6 +406,18 @@ final class KitchenSceneView: SCNView {
             let settledFor = state.arrivedAt.map { now - $0 } ?? 0
             let walking = director.intent?.station != nil && director.station == nil
             var apply = false, promote = false
+            if state.tasteOwed, !state.arriving {
+                // Needs-you comes first; otherwise the chef tastes before moving on (even to serve).
+                if state.want?.station?.area == "bell" || (state.want?.urgent == true && state.want?.station == nil) { state.tasteOwed = false }
+                else if director.intent?.station?.area == "tasting" {
+                    if director.station != nil, settledFor >= KitchenLayout.minimumDwell { state.tasteOwed = false }
+                    else { pacing[id] = state; continue }
+                } else if !walking, director.intent?.station == nil || settledFor >= KitchenLayout.minimumDwell, let next = tastingIntent(id) {
+                    director.setIntent(next)
+                    state.arrivedAt = nil
+                    pacing[id] = state; continue
+                } else { pacing[id] = state; continue }
+            }
             if state.arriving {
                 apply = state.arrivedAt != nil && settledFor >= KitchenLayout.orderReading
                 if apply { state.arriving = false }
@@ -514,8 +548,10 @@ final class KitchenSceneView: SCNView {
         defer { try? log.close() }
         log.seekToEndOfFile(); log.write(Data((String(format: "%.3f ", CACurrentMediaTime()) + text() + "\n").utf8))
     }
-    func frameStep(at time: TimeInterval) {
-        if let last = lastFrame, time - last > 0.05 { Self.trace(String(format: "gap %.0f ms", (time - last) * 1000)) }
+    func frameStep(at time: TimeInterval, lagging: Bool = false) {
+        chefLock.lock(); let previousStep = lastMainStep; lastMainStep = CACurrentMediaTime(); chefLock.unlock()
+        if lastFrame != nil, lastMainStep - previousStep > 0.05 { Self.trace(String(format: "tag gap %.0f ms", (lastMainStep - previousStep) * 1000)) }
+        if !lagging, let last = lastFrame, time - last > 0.05 { Self.trace(String(format: "gap %.0f ms", (time - last) * 1000)) }
         let stepStart = CACurrentMediaTime()
         defer { if CACurrentMediaTime() - stepStart > 0.02 { Self.trace(String(format: "slow frameStep %.0f ms", (CACurrentMediaTime() - stepStart) * 1000)) } }
         let delta = lastFrame.map { Float(min(0.05, max(0, time - $0))) } ?? 0
@@ -549,7 +585,7 @@ final class KitchenSceneView: SCNView {
         for id in chefs.keys.sorted() {
             guard let chef = chefs[id], var state = pacing[id] else { continue }
             let director = chef.director
-            state.arriving = false; pacing[id] = state
+            state.arriving = false; state.tasteOwed = false; pacing[id] = state
             let walking = director.intent?.station != nil && director.station == nil
             guard walking || state.want?.key != director.intent?.key || queuedWithFreeSpot(id) else { continue }
             if queuedWithFreeSpot(id) { slots[id] = nil }
@@ -570,6 +606,11 @@ final class KitchenSceneView: SCNView {
         chefLock.unlock()
         let moving = effectiveActive && animating
         if isPlaying != moving { isPlaying = moving }
+        if moving, motionActivity == nil {
+            motionActivity = ProcessInfo.processInfo.beginActivity(options: [.userInitiatedAllowingIdleSystemSleep, .latencyCritical], reason: "Animating the kitchen")
+        } else if !moving, let activity = motionActivity {
+            ProcessInfo.processInfo.endActivity(activity); motionActivity = nil
+        }
         if rendersContinuously != moving { rendersContinuously = moving }
         if !moving { chefLock.lock(); lastRenderTime = nil; chefLock.unlock() } // a pause is not a stall
         if frameLink?.isPaused != !moving {
@@ -592,6 +633,7 @@ final class KitchenSceneView: SCNView {
         updatePlayback()
     }
     func tearDown() {
+        if let activity = motionActivity { ProcessInfo.processInfo.endActivity(activity); motionActivity = nil }
         frameLink?.invalidate(); frameLink = nil; frameDriver = nil
         windowObservers.forEach(NotificationCenter.default.removeObserver); windowObservers = []
         scene = nil
@@ -745,5 +787,17 @@ extension KitchenSceneView: SCNSceneRendererDelegate {
         let delta = lastRenderTime.map { Float(min(0.1, max(0, time - $0))) } ?? 0
         lastRenderTime = time
         for chef in renderChefs { chef.update(delta) }
+        // macOS slows the main thread's frame link while another app is in front; the render
+        // thread keeps full rate, so it asks for the tag/pacing step whenever that link falls behind.
+        if !mainStepQueued, time - lastMainStep > 0.03 {
+            mainStepQueued = true
+            DispatchQueue.main.async { [weak self] in
+                MainActor.assumeIsolated {
+                    guard let self else { return }
+                    self.chefLock.lock(); self.mainStepQueued = false; let late = CACurrentMediaTime() - self.lastMainStep > 0.03; self.chefLock.unlock()
+                    if late, self.frameLink?.isPaused == false { self.frameStep(at: CACurrentMediaTime(), lagging: true) }
+                }
+            }
+        }
     }
 }
