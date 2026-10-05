@@ -59,12 +59,18 @@ struct KitchenSceneSurface: NSViewRepresentable {
     var agents: [SpatialAgent] = []
     /// The project (or conversation) on screen, so even an empty one counts as already shown.
     var scope: String? = nil
+    /// Review state per conversation (see `KitchenReviews`).
+    var reviews: [String: KitchenReviews.State] = [:]
     var active = false
     var reducedMotion = false
     var select: (SpatialFocus) -> Void = { _ in }
+    /// Clicking a chef waiting at the serving window opens the review panel instead.
+    var review: ((SpatialAgent) -> Void)? = nil
     func makeNSView(context: Context) -> KitchenSceneView { KitchenSceneView() }
     func updateNSView(_ view: KitchenSceneView, context: Context) {
         view.select = select
+        view.review = review
+        view.reviews = reviews
         view.apply(agents: agents, scope: scope, active: active, reducedMotion: reducedMotion)
         view.fitFloor()
     }
@@ -84,6 +90,8 @@ final class KitchenSceneView: SCNView {
     static let maxChefs = 12
     let floorSize = SIMD3<Float>(Float(KitchenLayout.floor.width), 0.2, Float(KitchenLayout.floor.height))
     var select: ((SpatialFocus) -> Void)?
+    var review: ((SpatialAgent) -> Void)?
+    var reviews: [String: KitchenReviews.State] = [:]
     private(set) var chefs: [String: ChefAvatar] = [:]
     private var chefAgents: [String: SpatialAgent] = [:]
     private var chefLabels: [String: NSTextField] = [:]
@@ -196,11 +204,11 @@ final class KitchenSceneView: SCNView {
         let table = KitchenLayout.chefSlots, pickup = table["cooking"]?.first
         let arriving = ranked.filter { chefs[$0.id] == nil && seenScopes.contains($0.projectID ?? $0.conversationID) && [.live, .recentlyObserved].contains($0.value.freshness) }.map(\.id)
         slots = KitchenLayout.assignSlots(ranked.map { agent in
-            (agent.id, pacing[agent.id]?.arriving == true || arriving.contains(agent.id) ? "order" : KitchenLayout.work(for: agent.value).area)
+            (agent.id, pacing[agent.id]?.arriving == true || arriving.contains(agent.id) ? "order" : KitchenLayout.work(for: agent.value, review: reviews[agent.conversationID]).area)
         }, previous: slots)
         for agent in ranked {
             chefAgents[agent.id] = agent
-            let desired = KitchenLayout.intent(for: agent.value, at: slots[agent.id], pickup: pickup, restored: false)
+            let desired = KitchenLayout.intent(for: agent.value, at: slots[agent.id], pickup: pickup, restored: false, review: reviews[agent.conversationID])
             if chefs[agent.id] == nil {
                 let chef = ChefAvatar(id: agent.id, assets: assets, scale: KitchenLayout.chefScale, navigation: navigation)
                 chef.director.reducedMotion = reduced
@@ -215,7 +223,7 @@ final class KitchenSceneView: SCNView {
                     let home = table["break"] ?? []
                     let spawn = slots[agent.id] ?? (home.isEmpty ? nil : home[chefs.count % home.count])
                     if let spawn { chef.director.place(spawn.stand, heading: spawn.facing) }
-                    chef.director.setIntent(KitchenLayout.intent(for: agent.value, at: slots[agent.id], pickup: pickup, restored: true))
+                    chef.director.setIntent(KitchenLayout.intent(for: agent.value, at: slots[agent.id], pickup: pickup, restored: true, review: reviews[agent.conversationID]))
                     pacing[agent.id] = Pacing(desired: chef.director.intent ?? desired)
                 }
                 chef.update(0)
@@ -257,9 +265,9 @@ final class KitchenSceneView: SCNView {
                     // Done reading: claim a place at the station its work calls for.
                     state.arriving = false; pacing[id]?.arriving = false
                     slots = KitchenLayout.assignSlots(chefAgents.values.map { a in
-                        (a.id, pacing[a.id]?.arriving == true ? "order" : KitchenLayout.work(for: a.value).area)
+                        (a.id, pacing[a.id]?.arriving == true ? "order" : KitchenLayout.work(for: a.value, review: reviews[a.conversationID]).area)
                     }.sorted { $0.0 < $1.0 }, previous: slots)
-                    state.desired = KitchenLayout.intent(for: agent.value, at: slots[id], pickup: KitchenLayout.chefSlots["cooking"]?.first, restored: false)
+                    state.desired = KitchenLayout.intent(for: agent.value, at: slots[id], pickup: KitchenLayout.chefSlots["cooking"]?.first, restored: false, review: reviews[agent.conversationID])
                 }
             } else if state.desired.key != director.intent?.key {
                 // Redirect at once when urgent, while still walking, or after the minimum stay.
@@ -392,6 +400,7 @@ final class KitchenSceneView: SCNView {
             var node: SCNNode? = hit.node
             while let current = node {
                 if let name = current.name, name.hasPrefix("agent:"), let agent = chefAgents[String(name.dropFirst(6))] {
+                    if let review, chefs[agent.id]?.director.intent?.station?.area == "serving" { review(agent); return }
                     select?(.agent(project: agent.projectID, conversation: agent.conversationID, agent: agent.id, expanded: true))
                     return
                 }

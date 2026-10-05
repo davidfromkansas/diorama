@@ -18,6 +18,7 @@ struct SpatialWorkspaceView: View {
     private var serversExpanded: Bool { get { state.serversExpanded } nonmutating set { state.serversExpanded = newValue } }
     private var inboxSelection: InboxThread? { get { state.inboxSelection } nonmutating set { state.inboxSelection = newValue } }
     @State private var creationProject: AgentCreationDestination?
+    @State private var reviewing: SpatialAgent?
     @State private var explore = false
     @State private var attention = false
     @State private var allConversations = false
@@ -65,8 +66,11 @@ struct SpatialWorkspaceView: View {
                     .opacity(focus == .portfolio || kitchenSelected ? 0 : 1)
                     .allowsHitTesting(!kitchenSelected && focus != .portfolio && inspection == nil).accessibilityHidden(kitchenSelected || focus == .portfolio || inspection != nil)
                 if kitchenSelected {
-                    KitchenSceneSurface(agents: kitchenAgents(snapshot, focus: focus), scope: focus == .portfolio ? nil : focus.projectID ?? focus.conversationID, active: visible && scenePhase == .active && library.windowIsActive,
-                                        reducedMotion: reduced, select: go)
+                    let cooks = kitchenAgents(snapshot, focus: focus)
+                    let _ = KitchenReviews.shared.observe(cooks)
+                    KitchenSceneSurface(agents: cooks, scope: focus == .portfolio ? nil : focus.projectID ?? focus.conversationID,
+                                        reviews: KitchenReviews.shared.states, active: visible && scenePhase == .active && library.windowIsActive,
+                                        reducedMotion: reduced, select: go, review: { reviewing = $0 })
                 }
                 if !kitchenSelected && focus != .portfolio && !ScenePerformance.disabled("OVERLAYS") {
                     VStack(alignment: .leading, spacing: 12) {
@@ -140,6 +144,11 @@ struct SpatialWorkspaceView: View {
         }
         .sheet(item: $creationProject) { destination in
             NewAgentModal(library: library, projectID: destination.id)
+        }
+        .sheet(item: $reviewing) { agent in
+            if let session = world.team(.team(project: agent.projectID, conversation: agent.conversationID))?.session {
+                ServingWindowView(agent: agent, session: session, library: library)
+            }
         }
         .environment(\.avatarPopoverDismissals, avatarPopovers)
         // Let native menus and popovers consume Escape before spatial navigation.

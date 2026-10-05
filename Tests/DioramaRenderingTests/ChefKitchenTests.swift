@@ -83,6 +83,21 @@ import simd
         #expect(!KitchenLayout.work(for: agent("a", .working, tool: "Edit", edits: true).value).urgent)
     }
 
+    @Test func reviewStateKeepsFinishedWorkAtTheServingWindow() {
+        let stale = agent("main", .done, freshness: .lastKnown).value
+        #expect(KitchenLayout.work(for: stale).area == "break")
+        #expect(KitchenLayout.work(for: stale, review: .awaiting).area == "serving")
+        #expect(KitchenLayout.work(for: stale, review: .shipped).area == "serving")
+        #expect(KitchenLayout.work(for: stale, review: .committed).oneShot == "cover_dish")
+        #expect(KitchenLayout.work(for: stale, review: .approved).area == "break")
+        // Live work always wins over an old review.
+        #expect(KitchenLayout.work(for: agent("main", .working, tool: "Edit", edits: true).value, review: .awaiting).area == "cooking")
+        let reviews = KitchenReviews(defaults: UserDefaults(suiteName: "reviews-" + UUID().uuidString)!)
+        reviews.set("c", .awaiting); #expect(reviews.state("c") == .awaiting)
+        reviews.set("c", .approved, note: "Merged"); #expect(reviews.state("c") == .approved)
+        reviews.clear("c"); #expect(reviews.state("c") == nil)
+    }
+
     @Test func roomFitsTenChefsPerStationOnWalkableFloor() {
         let navigation = KitchenLayout.chefNavigation, table = KitchenLayout.chefSlots
         #expect(KitchenLayout.areas.count == 9)

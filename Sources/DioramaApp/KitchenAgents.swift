@@ -35,8 +35,16 @@ extension KitchenLayout {
     /// The lifecycle: prep before the first edit, then the island (editing) and stove (commands);
     /// tests at tasting; anything needing you at the bell; finished work at the serving window;
     /// stale or stopped sessions rest in the break room.
-    static func work(for agent: WorkspaceAgent) -> ChefWork {
+    static func work(for agent: WorkspaceAgent, review: KitchenReviews.State? = nil) -> ChefWork {
         let fresh = agent.freshness == .live || agent.freshness == .recentlyObserved
+        // Finished work waits at the serving window until you decide, even after a restart.
+        if let review, agent.isMain, ![.working, .waiting, .failed].contains(agent.status) {
+            switch review {
+            case .approved: return breakRoom(agent, urgent: true)
+            case .committed: return .init(area: "serving", loop: "wait_review", oneShot: "cover_dish", urgent: true)
+            case .awaiting, .shipped: return .init(area: "serving", loop: "wait_review", oneShot: "present_review", urgent: true, deliversPlate: true)
+            }
+        }
         switch agent.status {
         case .ready: return .init(area: "order", loop: "idle_available")
         case .waiting where agent.attentionReason == .other: return .init(area: "bell", loop: "blocked_wait", oneShot: "blocked_react", urgent: true)
@@ -62,8 +70,8 @@ extension KitchenLayout {
         let pick = loops[Int(agent.id.utf8.reduce(UInt32(7)) { $0 &* 31 &+ UInt32($1) } % UInt32(loops.count))]
         return .init(area: "break", loop: pick, hand: pick == "sit_sip" ? .mug : nil, oneShot: "sit_down", urgent: urgent)
     }
-    static func intent(for agent: WorkspaceAgent, at slot: ChefStation?, pickup: ChefStation?, restored: Bool) -> ChefIntent {
-        let work = work(for: agent)
+    static func intent(for agent: WorkspaceAgent, at slot: ChefStation?, pickup: ChefStation?, restored: Bool, review: KitchenReviews.State? = nil) -> ChefIntent {
+        let work = work(for: agent, review: review)
         // One-shot ids are stable per cause, so re-delivered states never replay a gesture.
         let cause = agent.completionKey ?? agent.meaningfulEventID
         let shot = work.oneShot.map { ChefIntent.OneShot(id: "\($0):\(agent.status.rawValue):\(cause)", clip: $0, restored: restored) }
