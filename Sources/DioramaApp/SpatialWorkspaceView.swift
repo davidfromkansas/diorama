@@ -75,7 +75,8 @@ struct SpatialWorkspaceView: View {
                     let _ = KitchenReviews.shared.observe(cooks)
                     KitchenSceneSurface(agents: cooks, scope: focus == .portfolio ? nil : focus.projectID ?? focus.conversationID,
                                         reviews: KitchenReviews.shared.states, active: visible,
-                                        reducedMotion: reduced, select: go, review: { reviewing = $0 }, progress: { progressAgent = $0.id })
+                                        reducedMotion: reduced, select: go, review: { reviewing = $0 }, progress: { progressAgent = $0.id },
+                                        selectedAgentID: focus.agentID, deselect: { deselectAgent(focus) })
                 }
                 if !kitchenSelected && focus != .portfolio && !ScenePerformance.disabled("OVERLAYS") {
                     VStack(alignment: .leading, spacing: 12) {
@@ -167,6 +168,8 @@ struct SpatialWorkspaceView: View {
         .onExitCommand {
             guard visible else { return }
             if avatarPopovers.dismissTop() { return }
+            // A selected chef is let go first; its conversation stays open.
+            if kitchenSelected, state.focus.agentID != nil, inspection == nil { deselectAgent(state.focus); return }
             if inspection != nil { closePlan() }
             else if serversExpanded { serversExpanded = false }
             else if inboxExpanded && inboxSelection != nil { inboxSelection = nil }
@@ -506,6 +509,10 @@ struct SpatialWorkspaceView: View {
         guard focus != .portfolio else { return [] }
         if let project = focus.projectID { return world.projects.first { $0.id == project }?.teams.flatMap(\.agents) ?? [] }
         return world.team(focus)?.agents ?? []
+    }
+    /// Back to the whole kitchen: the camera returns to the overview and the command bar closes.
+    private func deselectAgent(_ focus: SpatialFocus) {
+        go(focus.projectID.map { .project($0) } ?? focus.officeReturn)
     }
     private func go(_ focus: SpatialFocus) {
         if focus.expanded { state.conversationPanelVisible = true }

@@ -354,6 +354,32 @@ import simd
         #expect(KitchenSceneView.tagText(value, doing: "Editing a file") == "Leo · Editing a file")
     }
 
+    @Test func selectingAChefRingsItFollowsItAndHidesOtherTags() throws {
+        let view = KitchenSceneView(frame: CGRect(x: 0, y: 0, width: 1000, height: 700))
+        let cook = agent("a", .working, tool: "Edit", edits: true, conversation: "c1")
+        let other = agent("b", .working, tool: "Read", conversation: "c2")
+        view.apply(agents: [cook, other], active: false, reducedMotion: false, now: 0)
+        view.fitFloor()
+        let overview = try #require(view.cameraPose)
+        let chef = try #require(view.chefs[cook.id])
+        view.setSelection(cook.id)
+        #expect(chef.root.childNode(withName: "selection ring", recursively: false) != nil)
+        // The camera flies in and keeps the chef in view while it walks.
+        var t = 0.0
+        for _ in 0..<90 { t += 1 / 30; view.renderer(view, updateAtTime: t) }
+        let follow = KitchenSceneView.followPose(for: chef.root.simdPosition)
+        let pose = try #require(view.cameraPose)
+        #expect(simd_distance(pose.look, follow.look) < 0.1 && simd_distance(pose.eye, follow.eye) < 0.2)
+        view.apply(agents: [cook, other], active: false, reducedMotion: false, now: 1)
+        let labels = view.subviews.compactMap { $0 as? NSTextField }.filter { !$0.isHidden && $0.stringValue.hasPrefix("Agent ") }
+        #expect(labels.map(\.stringValue).allSatisfy { $0.hasPrefix("Agent a") })
+        // Letting go returns the camera to the whole kitchen and drops the ring.
+        view.setSelection(nil)
+        #expect(chef.root.childNode(withName: "selection ring", recursively: false) == nil)
+        for _ in 0..<120 { t += 1 / 30; view.renderer(view, updateAtTime: t) }
+        #expect(view.cameraPose == overview && !view.cameraMoving)
+    }
+
     @Test func everyTestRunGetsTastedEvenWhenTheAgentMovesOnAtOnce() throws {
         let view = KitchenSceneView(frame: CGRect(x: 0, y: 0, width: 1000, height: 700))
         var cook = agent("a", .working, tool: "Edit", edits: true)
@@ -537,6 +563,24 @@ import simd
                      agent("ask", .waiting, attention: .approval), agent("done", .done), agent("rest", .done, freshness: .lastKnown),
                      agent("new", .ready, freshness: .ready)], "diorama-kitchen-stages")
         try capture((0..<8).map { task(agent("w\($0)", .done, conversation: "dish\($0)"), "codex:w\($0):turn") }, "diorama-kitchen-serving-line")
+        do {
+            let view = KitchenSceneView(frame: CGRect(x: 0, y: 0, width: 1400, height: 900))
+            let cooks = [agent("sel", .working, tool: "Edit", edits: true, conversation: "s1"), agent("x", .working, tool: "Read", conversation: "s2"),
+                         agent("y", .working, tool: "Bash", detail: "npm test", conversation: "s3")]
+            view.apply(agents: cooks, active: false, reducedMotion: false)
+            for chef in view.chefs.values { for _ in 0..<30 { chef.update(1 / 30) } }
+            view.layoutSubtreeIfNeeded(); view.fitFloor()
+            view.setSelection(cooks[0].id)
+            func shot(_ name: String) throws {
+                let tiff = try #require(view.snapshot().tiffRepresentation)
+                try #require(NSBitmapImageRep(data: tiff)?.representation(using: .png, properties: [:])).write(to: URL(fileURLWithPath: "/tmp/\(name).png"))
+            }
+            view.renderer(view, updateAtTime: 0.01); try shot("diorama-kitchen-selected-start")
+            var t = 0.01
+            for _ in 0..<90 { t += 1 / 30; view.renderer(view, updateAtTime: t) }
+            view.apply(agents: cooks, active: false, reducedMotion: false)
+            try shot("diorama-kitchen-selected-follow")
+        }
         try capture((0..<10).map { agent("e\($0)", .working, tool: "Edit", edits: true) }, "diorama-kitchen-ten-cooking")
         try capture((0..<10).map { agent("r\($0)", .done, freshness: .lastKnown) }, "diorama-kitchen-break-room")
         func task(_ a: SpatialAgent, _ key: String) -> SpatialAgent { var a = a; a.value.completionKey = key; return a }

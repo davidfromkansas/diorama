@@ -68,6 +68,10 @@ struct KitchenSceneSurface: NSViewRepresentable {
     var review: ((SpatialAgent) -> Void)? = nil
     /// Clicking a chef's name tag opens its progress panel.
     var progress: ((SpatialAgent) -> Void)? = nil
+    /// The selected agent: ringed, followed by the camera, the only one with a name tag.
+    var selectedAgentID: String? = nil
+    /// Clearing the selection (a click on empty floor).
+    var deselect: (() -> Void)? = nil
     func makeNSView(context: Context) -> KitchenStage { KitchenStage() }
     func updateNSView(_ stage: KitchenStage, context: Context) {
         let view = stage.show(scope ?? "")
@@ -75,7 +79,9 @@ struct KitchenSceneSurface: NSViewRepresentable {
         view.review = review
         view.progress = progress
         view.reviews = reviews
+        view.deselect = deselect
         view.apply(agents: agents, scope: scope, active: active, reducedMotion: reducedMotion)
+        view.setSelection(selectedAgentID)
         view.fitFloor()
     }
     static func dismantleNSView(_ stage: KitchenStage, coordinator: ()) { stage.tearDown() }
@@ -134,6 +140,7 @@ final class KitchenSceneView: SCNView {
     var select: ((SpatialFocus) -> Void)?
     var review: ((SpatialAgent) -> Void)?
     var progress: ((SpatialAgent) -> Void)?
+    var deselect: (() -> Void)?
     var reviews: [String: KitchenReviews.State] = [:]
     private(set) var chefs: [String: ChefAvatar] = [:]
     private var chefAgents: [String: SpatialAgent] = [:]
@@ -195,6 +202,7 @@ final class KitchenSceneView: SCNView {
         let elevation = 62.0 * Double.pi / 180, yaw = 0.0
         camera.position = SCNVector3(30 * cos(elevation) * sin(yaw), 30 * sin(elevation), 30 * cos(elevation) * cos(yaw))
         camera.look(at: SCNVector3(0, 0.65, 0)); world.rootNode.addChildNode(camera)
+        cameraNode = camera
         let ambient = SCNNode(); ambient.light = SCNLight()
         ambient.light?.type = .ambient; ambient.light?.intensity = 180
         ambient.light?.color = NSColor(red: 1, green: 0.97, blue: 0.91, alpha: 1)
@@ -253,6 +261,32 @@ final class KitchenSceneView: SCNView {
     nonisolated(unsafe) private var mainStepQueued = false
     /// Keeps macOS from throttling Diorama while chefs move in a visible kitchen.
     private var motionActivity: NSObjectProtocol?
+
+    // MARK: Selection and camera
+    /// The selected chef: it wears the selection ring, the camera follows it, and only its name
+    /// tag shows.
+    private(set) var selectedID: String?
+    private var selectionRing: SCNNode?
+    /// Camera state stepped on the render thread (under `chefLock`): the overview pose that frames
+    /// the kitchen, the chef it follows, and where it is now.
+    nonisolated(unsafe) private var cameraNode: SCNNode?
+    nonisolated(unsafe) private var overviewPose: CameraPose?
+    nonisolated(unsafe) private var followID: String?
+    nonisolated(unsafe) private(set) var cameraPose: CameraPose?
+    nonisolated(unsafe) private(set) var cameraMoving = false
+    nonisolated(unsafe) private var snapCamera = false
+    struct CameraPose: Equatable {
+        var eye: SIMD3<Float>
+        var look: SIMD3<Float>
+    }
+    /// The follow camera keeps the overview's angle, closer in, aimed at the chef's chest.
+    nonisolated static func followPose(for position: SIMD3<Float>) -> CameraPose {
+        let elevation: Float = 62 * .pi / 180, distance: Float = 8.5
+        let look = position + SIMD3(0, 1.2, 0)
+        return CameraPose(eye: look + SIMD3(0, distance * sin(elevation), distance * cos(elevation)), look: look)
+    }
+    /// Seconds for the camera to cover most of the way to its target.
+    nonisolated static let cameraEase: Float = 0.35
     private func publishChefs() { chefLock.lock(); renderChefs = Array(chefs.values); chefLock.unlock() }
     /// Projects (or standalone conversations) already shown here: only agents that start while
     /// their project is on screen ride the elevator in; everything else appears in place.
@@ -390,6 +424,7 @@ final class KitchenSceneView: SCNView {
         noteObservation()
         chefLock.lock(); pace(now: now); chefLock.unlock()
         if catchingUp { catchUp() }
+        syncSelection()
         updateFlames()
         updateBoards()
         placeChefLabels()
@@ -602,7 +637,7 @@ final class KitchenSceneView: SCNView {
         // Only chef state is read under the lock: SceneKit playback setters can wait on the
         // renderer, which may itself be waiting for the lock in renderer(_:updateAtTime:).
         chefLock.lock()
-        let animating = chefs.values.contains(where: \.animating) || pacingPending
+        let animating = chefs.values.contains(where: \.animating) || pacingPending || cameraMoving
         chefLock.unlock()
         let moving = effectiveActive && animating
         if isPlaying != moving { isPlaying = moving }
@@ -632,6 +667,100 @@ final class KitchenSceneView: SCNView {
         })
         updatePlayback()
     }
+    /// Select a chef (nil clears it): ring it, follow it, and hide the other name tags.
+    func setSelection(_ agentID: String?) {
+        guard agentID != selectedID else { return }
+        selectedID = agentID
+        syncSelection()
+    }
+    /// Keeps the ring, the followed chef and the station signs in line with the selection, also
+    /// when the selected chef appears or leaves after it was chosen.
+    private func syncSelection() {
+        let chef = selectedID.flatMap { chefs[$0] }
+        chefLock.lock()
+        let previous = followID
+        followID = chef == nil ? nil : selectedID
+        if followID != previous { cameraMoving = true; snapCamera = reduced }
+        chefLock.unlock()
+        if let chef {
+            let ring = selectionRing ?? Self.makeSelectionRing(reducedMotion: reduced)
+            selectionRing = ring
+            if ring.parent !== chef.root { ring.removeFromParentNode(); chef.root.addChildNode(ring) }
+        } else {
+            selectionRing?.removeFromParentNode()
+        }
+        // Station signs and their leaders are drawn for the overview; they step aside while the
+        // camera is anywhere else.
+        let overview = chef == nil && !cameraMoving
+        for label in labels where label.isHidden == overview { label.isHidden = !overview }
+        if leaders.isHidden == overview { leaders.isHidden = !overview }
+        if overview { placeLabels() }
+        placeChefLabels()
+        updatePlayback()
+    }
+    /// Eases the camera toward the followed chef, or back to the overview (render thread, under
+    /// `chefLock`).
+    nonisolated private func stepCamera(_ delta: Float) {
+        guard let camera = cameraNode, let overview = overviewPose else { return }
+        let target = followID.flatMap { id in renderChefs.first { $0.id == id } }.map { Self.followPose(for: $0.root.simdPosition) } ?? overview
+        guard cameraMoving || followID != nil else { return }
+        var pose = cameraPose ?? overview
+        let blend = snapCamera ? 1 : 1 - exp(-delta / Self.cameraEase)
+        pose.eye += (target.eye - pose.eye) * blend
+        pose.look += (target.look - pose.look) * blend
+        let arrived = simd_distance(pose.eye, target.eye) < 0.01 && simd_distance(pose.look, target.look) < 0.01
+        if arrived { pose = target }
+        cameraPose = pose
+        camera.simdPosition = pose.eye
+        camera.simdLook(at: pose.look)
+        if followID == nil && arrived {
+            cameraMoving = false; snapCamera = false
+            // Back on the overview: the station signs return on the main thread.
+            DispatchQueue.main.async { [weak self] in MainActor.assumeIsolated { self?.syncSelection() } }
+        }
+    }
+    /// A glowing ring on the floor around the selected chef, slowly turning (StarCraft-style).
+    static func makeSelectionRing(reducedMotion: Bool) -> SCNNode {
+        let size = CGFloat(1.75 * KitchenLayout.chefScale)
+        let plane = SCNPlane(width: size, height: size)
+        let material = SCNMaterial()
+        material.diffuse.contents = selectionRingImage
+        material.lightingModel = .constant; material.blendMode = .add
+        material.writesToDepthBuffer = false; material.isDoubleSided = true
+        plane.materials = [material]
+        let disc = SCNNode(geometry: plane); disc.name = "selection ring disc"
+        disc.eulerAngles.x = -.pi / 2
+        disc.position.y = CGFloat(KitchenLayout.floorTop) + 0.012
+        disc.renderingOrder = 5; disc.castsShadow = false
+        let ring = SCNNode(); ring.name = "selection ring"
+        ring.addChildNode(disc)
+        if !reducedMotion {
+            ring.runAction(.repeatForever(.rotateBy(x: 0, y: -.pi * 2, z: 0, duration: 7)))
+            disc.runAction(.repeatForever(.sequence([.fadeOpacity(to: 0.6, duration: 0.9), .fadeOpacity(to: 1, duration: 0.9)])))
+        }
+        return ring
+    }
+    /// Soft glow, a bright ring and three bright arcs that make the turning visible.
+    private static let selectionRingImage: NSImage = {
+        let side: CGFloat = 512
+        let image = NSImage(size: NSSize(width: side, height: side))
+        image.lockFocus()
+        let center = NSPoint(x: side / 2, y: side / 2), radius = side * 0.40
+        let color = NSColor(red: 0.35, green: 1, blue: 0.62, alpha: 1)
+        if let context = NSGraphicsContext.current?.cgContext,
+           let glow = CGGradient(colorsSpace: CGColorSpaceCreateDeviceRGB(), colors: [color.withAlphaComponent(0).cgColor, color.withAlphaComponent(0.45).cgColor, color.withAlphaComponent(0).cgColor] as CFArray, locations: [0.62, 0.8, 1]) {
+            context.drawRadialGradient(glow, startCenter: center, startRadius: 0, endCenter: center, endRadius: side / 2, options: [])
+        }
+        color.withAlphaComponent(0.9).setStroke()
+        let ring = NSBezierPath(); ring.appendArc(withCenter: center, radius: radius, startAngle: 0, endAngle: 360); ring.lineWidth = 7; ring.stroke()
+        color.setStroke()
+        for start in stride(from: 0.0, to: 360.0, by: 120.0) {
+            let arc = NSBezierPath(); arc.appendArc(withCenter: center, radius: radius + 18, startAngle: start, endAngle: start + 62)
+            arc.lineWidth = 14; arc.lineCapStyle = .round; arc.stroke()
+        }
+        image.unlockFocus()
+        return image
+    }()
     func tearDown() {
         if let activity = motionActivity { ProcessInfo.processInfo.endActivity(activity); motionActivity = nil }
         frameLink?.invalidate(); frameLink = nil; frameDriver = nil
@@ -656,6 +785,8 @@ final class KitchenSceneView: SCNView {
         chefLock.unlock()
         for (id, position) in positions.sorted(by: { $0.key < $1.key }) {
             guard let label = chefLabels[id] else { continue }
+            // A selected chef has the stage to itself.
+            if let selectedID, selectedID != id { label.isHidden = true; continue }
             let head = position + SIMD3(0, 2.05 * KitchenLayout.chefScale, 0)
             guard let point = projectWithoutLock(head) else { label.isHidden = true; continue }
             label.isHidden = false
@@ -698,6 +829,8 @@ final class KitchenSceneView: SCNView {
                 node = current.parent
             }
         }
+        // Anywhere else in the kitchen clears the selection.
+        if selectedID != nil, let deselect { deselect(); return }
         super.mouseUp(with: event)
     }
     var floorCorners: [SCNVector3] {
@@ -745,6 +878,14 @@ final class KitchenSceneView: SCNView {
                        towardCamera + abs(Double(point.x)) / (tangentX * availableX),
                        towardCamera + abs(cameraY) / (tangentY * availableY))
         }
+        let eye = SIMD3<Float>(0, Float(0.65 + distance * sin(elevation)), Float(distance * cos(elevation)))
+        chefLock.lock()
+        overviewPose = CameraPose(eye: eye, look: SIMD3(Float(target.x), Float(target.y), Float(target.z)))
+        let following = followID != nil || cameraMoving
+        if !following { cameraPose = overviewPose }
+        chefLock.unlock()
+        // While a chef is followed the render thread owns the camera; it returns here on deselect.
+        guard !following else { needsDisplay = true; return }
         SCNTransaction.begin(); SCNTransaction.disableActions = true
         position(distance)
         SCNTransaction.commit()
@@ -787,6 +928,7 @@ extension KitchenSceneView: SCNSceneRendererDelegate {
         let delta = lastRenderTime.map { Float(min(0.1, max(0, time - $0))) } ?? 0
         lastRenderTime = time
         for chef in renderChefs { chef.update(delta) }
+        stepCamera(delta)
         // macOS slows the main thread's frame link while another app is in front; the render
         // thread keeps full rate, so it asks for the tag/pacing step whenever that link falls behind.
         if !mainStepQueued, time - lastMainStep > 0.03 {
