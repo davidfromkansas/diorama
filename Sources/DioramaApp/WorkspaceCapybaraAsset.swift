@@ -237,6 +237,9 @@ struct GLBDocument {
     struct Accessor { let data: Data; let count: Int; let width: Int; let bytes: Int; let floating: Bool }
     let json: [String: Any]
     let binary: Data
+    // Parsed once: casting these JSON arrays per accessor made loading quadratic.
+    private let accessors: [[String: Any]]
+    private let views: [[String: Any]]
     init(data: Data) throws {
         guard data.count > 28, data.u32(0) == 0x46546C67, data.u32(4) == 2,
               Int(data.u32(8)) == data.count else { throw WorkspaceCapybaraAsset.AssetError.invalid("Invalid GLB header") }
@@ -246,13 +249,15 @@ struct GLBDocument {
               let json = try JSONSerialization.jsonObject(with: data.subdata(in: 20..<20+count)) as? [String: Any] else { throw WorkspaceCapybaraAsset.AssetError.invalid("Invalid GLB chunks") }
         guard (json["extensionsRequired"] as? [String] ?? []).isEmpty else { throw WorkspaceCapybaraAsset.AssetError.invalid("Unsupported GLB extensions") }
         self.json = json; binary = data.subdata(in: count+28..<data.count)
+        accessors = json["accessors"] as? [[String: Any]] ?? []
+        views = json["bufferViews"] as? [[String: Any]] ?? []
     }
     static func restPose(_ n: [String: Any]) -> WorkspaceCapybaraAsset.Pose {
         let p = n["translation"] as? [Float] ?? [0,0,0], q = n["rotation"] as? [Float] ?? [0,0,0,1], s = n["scale"] as? [Float] ?? [1,1,1]
         return .init(position: SIMD3(p[0],p[1],p[2]), rotation: simd_quatf(ix:q[0],iy:q[1],iz:q[2],r:q[3]), scale: SIMD3(s[0],s[1],s[2]))
     }
     func accessor(_ index: Int) throws -> Accessor {
-        guard let accessors = json["accessors"] as? [[String: Any]], accessors.indices.contains(index), let views = json["bufferViews"] as? [[String: Any]] else { throw WorkspaceCapybaraAsset.AssetError.invalid("Invalid accessor") }
+        guard accessors.indices.contains(index) else { throw WorkspaceCapybaraAsset.AssetError.invalid("Invalid accessor") }
         let a = accessors[index]
         guard let viewID = a["bufferView"] as? Int, views.indices.contains(viewID), let count = a["count"] as? Int,
               let component = a["componentType"] as? Int, let type = a["type"] as? String,
@@ -273,7 +278,9 @@ struct GLBDocument {
     func floats(_ index: Int) throws -> [[Float]] {
         let a = try accessor(index)
         guard a.floating else { throw WorkspaceCapybaraAsset.AssetError.invalid("Expected float accessor") }
-        return (0..<a.count).map { i in (0..<a.width).map { Float(bitPattern:a.data.u32((i*a.width+$0)*4)) } }
+        // Bulk copy, then slice per element (glTF floats are little-endian, like the host).
+        let flat = a.data.withUnsafeBytes { Array($0.bindMemory(to: Float.self)) }
+        return stride(from: 0, to: flat.count, by: a.width).map { Array(flat[$0..<$0 + a.width]) }
     }
     func image(_ textureIndex: Int) throws -> NSImage {
         guard let textures = json["textures"] as? [[String: Any]], let images = json["images"] as? [[String: Any]], let views = json["bufferViews"] as? [[String: Any]],
