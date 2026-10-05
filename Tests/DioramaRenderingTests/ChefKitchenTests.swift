@@ -221,6 +221,35 @@ import simd
         #expect(chef.director.intent?.station?.area == "bell")
     }
 
+    @Test func everyChefOwnsItsSpotAndQueuedChefsStepInWhenOneFrees() throws {
+        let view = KitchenSceneView(frame: CGRect(x: 0, y: 0, width: 1000, height: 700))
+        var clock = 100.0
+        func step(_ seconds: Double) {
+            for _ in 0..<Int(seconds * 30) { clock += 1 / 30; for chef in view.chefs.values { chef.update(1 / 30) }; view.pace(now: clock) }
+        }
+        func spot(_ a: SpatialAgent) -> String? { view.chefs[a.id]?.director.intent?.station?.id }
+        var cooks = (0..<7).map { agent("c\($0)", .working, tool: "Edit", edits: true) }
+        view.apply(agents: cooks, active: false, reducedMotion: false, now: clock)
+        step(0.5)
+        let spots = cooks.compactMap(spot)
+        #expect(Set(spots).count == 7)
+        #expect(spots.filter { !$0.contains("~") }.count == 6)
+        let queued = try #require(cooks.first { spot($0)?.contains("~") == true })
+        // c0 switches to the stove but keeps its board while it works out the minimum dwell…
+        cooks[0] = agent("c0", .working, tool: "Bash", detail: "make", edits: true)
+        let board = try #require(spot(cooks[0]))
+        view.apply(agents: cooks, active: false, reducedMotion: false, now: clock)
+        let newcomer = agent("n", .working, tool: "Edit", edits: true)
+        view.apply(agents: cooks + [newcomer], active: false, reducedMotion: false, now: clock)
+        #expect(spot(newcomer) != board)
+        // …then leaves for a free burner, and the queued chef takes the freed board.
+        step(12)
+        #expect(spot(cooks[0])?.hasPrefix("stove#") == true)
+        #expect(spot(queued) == board || spot(newcomer) == board)
+        let all = (cooks + [newcomer]).compactMap(spot)
+        #expect(Set(all).count == all.count)
+    }
+
     @Test func seatedChefsStandUpBeforeLeavingAndCelebrateAfterServing() throws {
         let d = try director(), table = KitchenLayout.chefSlots
         let seat = try #require(table["break"]?.first), serving = try #require(table["serving"]?.first)
