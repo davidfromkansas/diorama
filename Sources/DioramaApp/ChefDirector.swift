@@ -49,7 +49,7 @@ nonisolated struct ChefClipCommand: Equatable, Sendable {
 /// serialises both with its chef lock.
 nonisolated final class ChefDirector: @unchecked Sendable {
     static let walkSpeed: Float = 0.75, runSpeed: Float = 1.55, runDistance: Float = 2.6
-    static let turnRate: Float = 7, acceleration: Float = 4
+    static let turnRate: Float = 9, acceleration: Float = 6
     static let fade: Float = 0.22, urgentFade: Float = 0.12, locomotionFade: Float = 0.15
     static let locomotionClips: Set<String> = ["walk", "run", "carry_walk"]
 
@@ -270,8 +270,11 @@ nonisolated final class ChefDirector: @unchecked Sendable {
         let error = Self.wrap(atan2(delta.x, delta.y) - heading)
         heading = Self.wrap(heading + max(-Self.turnRate * dt, min(Self.turnRate * dt, error)))
         let remaining = simd_distance(position, target.stand)
-        let run = !carry && remaining > Self.runDistance * unit
-        let top = (run ? Self.runSpeed : Self.walkSpeed * (carry ? 0.9 : 1)) * unit
+        // Chefs keep pace with their agents: they run anywhere they go (a plate is carried at a
+        // brisk walk), easing into a walk only for the last step.
+        _ = remaining
+        let run = !carry
+        let top = (run ? Self.runSpeed : Self.walkSpeed * 1.3) * unit
         let wanted = min(top, final ? distance * 3 : top) * max(0, cos(error))
         speed += max(-Self.acceleration * unit * dt * 2, min(Self.acceleration * unit * dt, wanted - speed))
         let step = min(speed * dt, distance)
