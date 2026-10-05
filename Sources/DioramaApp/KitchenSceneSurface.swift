@@ -17,8 +17,8 @@ struct KitchenArea: Identifiable {
     let accent: NSColor
     var center: SCNVector3 { SCNVector3(footprint.midX, 0.6, footprint.midY) }
 }
-/// The kitchen follows an agent's journey: elevator → order rail → prep → cooking (island for
-/// editing, stove for commands) → tasting → serving window, with the service bell in the middle
+/// The kitchen follows an agent's journey: elevator → order rail → prep → cooking (cutting
+/// boards for editing, burners for commands) → tasting → serving window, with the service bell in the middle
 /// and the break room for finished chefs. Sized for 10 agents in parallel.
 enum KitchenLayout {
     static let floor = CGRect(x: -12, y: -8, width: 24, height: 16)
@@ -27,19 +27,20 @@ enum KitchenLayout {
         .init(x: -9.2, y: -7.8, width: 0.8, height: 1.2),
         .init(x: -3.6, y: -7.8, width: 2.4, height: 1.2),
         .init(x: 8.0, y: -7.8, width: 3.8, height: 1.2),
-        .init(x: -11.8, y: -5.8, width: 1.2, height: 1.4),
-        .init(x: -11.8, y: 1.6, width: 1.2, height: 1.6),
+        .init(x: -11.8, y: -5.8, width: 1.2, height: 8.9),
         .init(x: 10.6, y: -6.6, width: 1.2, height: 2.2),
         .init(x: 10.6, y: 0.4, width: 1.2, height: 7.2)
     ]
     static let areas: [KitchenArea] = [
         .init(id: "elevator", label: "Elevator: new agents arrive", short: "Elevator", footprint: .init(x: -11.6, y: -7.8, width: 2.4, height: 2.0), wall: .freestanding, spots: 1, accent: .init(red: 0.55, green: 0.52, blue: 0.68, alpha: 1)),
         .init(id: "order", label: "Order rail: read the request", short: "Orders", footprint: .init(x: -8.4, y: -7.8, width: 4.8, height: 1.2), wall: .back, spots: 3, accent: .init(red: 0.56, green: 0.67, blue: 0.61, alpha: 1)),
-        .init(id: "prep", label: "Prep: planning and research", short: "Prep", footprint: .init(x: -11.8, y: -4.4, width: 1.2, height: 6.0), wall: .left, spots: 4, accent: .init(red: 0.56, green: 0.67, blue: 0.61, alpha: 1)),
-        .init(id: "stove", label: "Stove: running commands", short: "Stove", footprint: .init(x: -1.2, y: -7.8, width: 9.2, height: 1.2), wall: .back, spots: 6, accent: .init(red: 0.69, green: 0.59, blue: 0.47, alpha: 1)),
-        .init(id: "island", label: "Cooking island: editing code", short: "Cooking", footprint: .init(x: -3.5, y: -2.6, width: 7.0, height: 2.0), wall: .island, spots: 8, accent: .init(red: 0.57, green: 0.64, blue: 0.72, alpha: 1)),
+        .init(id: "prep", label: "Prep: planning and research", short: "Prep", footprint: .init(x: -1.2, y: -7.8, width: 9.2, height: 1.2), wall: .back, spots: 6, accent: .init(red: 0.56, green: 0.67, blue: 0.61, alpha: 1)),
+        // Two long islands, each worked from the far side so chefs face the camera: one
+        // cutting board or burner per chef.
+        .init(id: "cooking", label: "Cooking island: editing code", short: "Cooking", footprint: .init(x: -4.5, y: -2.8, width: 9.0, height: 1.2), wall: .front, spots: 6, accent: .init(red: 0.57, green: 0.64, blue: 0.72, alpha: 1)),
+        .init(id: "stove", label: "Stove island: running commands", short: "Stove", footprint: .init(x: -4.5, y: 0.6, width: 9.0, height: 1.2), wall: .front, spots: 6, accent: .init(red: 0.69, green: 0.59, blue: 0.47, alpha: 1)),
         .init(id: "tasting", label: "Tasting: tests and QA", short: "Tasting", footprint: .init(x: 10.6, y: -4.4, width: 1.2, height: 4.8), wall: .right, spots: 3, accent: .init(red: 0.64, green: 0.59, blue: 0.72, alpha: 1)),
-        .init(id: "bell", label: "Service bell: needs you", short: "Needs you", footprint: .init(x: -0.5, y: 3.3, width: 1.0, height: 1.0), wall: .freestanding, spots: 6, accent: .init(red: 0.75, green: 0.58, blue: 0.47, alpha: 1)),
+        .init(id: "bell", label: "Service bell: needs you", short: "Needs you", footprint: .init(x: -0.5, y: 4.0, width: 1.0, height: 1.0), wall: .freestanding, spots: 6, accent: .init(red: 0.75, green: 0.58, blue: 0.47, alpha: 1)),
         .init(id: "serving", label: "Serving window: ready for review", short: "Serving", footprint: .init(x: 3.2, y: 6.4, width: 7.4, height: 1.2), wall: .front, spots: 5, accent: .init(red: 0.51, green: 0.67, blue: 0.66, alpha: 1)),
         .init(id: "break", label: "Break room: finished agents", short: "Break room", footprint: .init(x: -11.0, y: 5.4, width: 6.6, height: 1.0), wall: .island, spots: 10, accent: .init(red: 0.55, green: 0.52, blue: 0.68, alpha: 1))
     ]
@@ -93,6 +94,8 @@ final class KitchenSceneView: SCNView {
     private var lastFrame: TimeInterval?
     private var windowObservers: [NSObjectProtocol] = []
     private var labels: [NSTextField] = []
+    /// One flame per burner, keyed by the stove slot it belongs to.
+    private var flames: [String: (node: SCNNode, fire: SCNParticleSystem)] = [:]
     private let leaders = CAShapeLayer()
     private var fittedSize = CGSize.zero
     var labelFrames: [CGRect] { labels.map(\.frame) }
@@ -111,6 +114,11 @@ final class KitchenSceneView: SCNView {
         }
         _ = box("Kitchen floor", width: KitchenLayout.floor.width, height: 0.2, depth: KitchenLayout.floor.height, at: SCNVector3Zero, material: material(.init(white: 0.71, alpha: 1)))
         world.rootNode.addChildNode(KitchenRoomGeometry.make())
+        for slot in KitchenLayout.chefSlots["stove"] ?? [] {
+            let burner = SCNVector3(slot.stand.x, KitchenLayout.worktopHeight + 0.04, Float(KitchenLayout.areas.first { $0.id == "stove" }?.footprint.midY ?? 0))
+            let flame = Self.flame(); flame.node.position = burner
+            world.rootNode.addChildNode(flame.node); flames[slot.id] = flame
+        }
         for area in KitchenLayout.areas {
             world.rootNode.addChildNode(KitchenStationGeometry.make(area))
             let label = KitchenLabel(labelWithString: area.short)
@@ -181,7 +189,7 @@ final class KitchenSceneView: SCNView {
             chefAgents[id] = nil; slots[id] = nil; pacing[id] = nil
         }
         guard !ranked.isEmpty, case let .success(assets) = ChefAssets.shared, let world = scene else { updatePlayback(); return }
-        let table = KitchenLayout.chefSlots, pickup = table["island"]?.first
+        let table = KitchenLayout.chefSlots, pickup = table["cooking"]?.first
         let arriving = ranked.filter { chefs[$0.id] == nil && seenConversations.contains($0.conversationID) && [.live, .recentlyObserved].contains($0.value.freshness) }.map(\.id)
         slots = KitchenLayout.assignSlots(ranked.map { agent in
             (agent.id, pacing[agent.id]?.arriving == true || arriving.contains(agent.id) ? "order" : KitchenLayout.work(for: agent.value).area)
@@ -225,6 +233,7 @@ final class KitchenSceneView: SCNView {
         }
         seenConversations.formUnion(ranked.map(\.conversationID))
         pace(now: now)
+        updateFlames()
         placeChefLabels()
         updatePlayback()
         needsDisplay = true
@@ -246,7 +255,7 @@ final class KitchenSceneView: SCNView {
                     slots = KitchenLayout.assignSlots(chefAgents.values.map { a in
                         (a.id, pacing[a.id]?.arriving == true ? "order" : KitchenLayout.work(for: a.value).area)
                     }.sorted { $0.0 < $1.0 }, previous: slots)
-                    state.desired = KitchenLayout.intent(for: agent.value, at: slots[id], pickup: KitchenLayout.chefSlots["island"]?.first, restored: false)
+                    state.desired = KitchenLayout.intent(for: agent.value, at: slots[id], pickup: KitchenLayout.chefSlots["cooking"]?.first, restored: false)
                 }
             } else if state.desired.key != director.intent?.key {
                 // Redirect at once when urgent, while still walking, or after the minimum stay.
@@ -259,6 +268,50 @@ final class KitchenSceneView: SCNView {
             pacing[id] = state
         }
     }
+    /// A burner is lit while a chef works at it (watching its command cook).
+    func updateFlames() {
+        let lit = Set(chefs.values.compactMap { chef -> String? in
+            guard let station = chef.director.station, station.area == "stove", chef.director.clip.name == "waiting_tool" else { return nil }
+            return station.id
+        })
+        for (id, flame) in flames {
+            let on = lit.contains(id)
+            flame.node.isHidden = !on
+            flame.fire.birthRate = on && !reduced ? 140 : 0
+        }
+    }
+    var litBurners: Set<String> { Set(flames.filter { !$0.value.node.isHidden }.map(\.key)) }
+    private static func flame() -> (node: SCNNode, fire: SCNParticleSystem) {
+        let node = SCNNode(); node.name = "burner flame"; node.isHidden = true
+        // A steady glow (also shown under reduced motion) plus rising particles.
+        let glow = SCNCone(topRadius: 0.02, bottomRadius: 0.2, height: 0.32)
+        let hot = SCNMaterial(); hot.lightingModel = .constant; hot.diffuse.contents = NSColor(red: 1, green: 0.55, blue: 0.12, alpha: 0.85)
+        hot.emission.contents = NSColor(red: 1, green: 0.45, blue: 0.1, alpha: 1); hot.blendMode = .add; hot.writesToDepthBuffer = false
+        glow.materials = [hot]
+        let cone = SCNNode(geometry: glow); cone.position.y = 0.16; node.addChildNode(cone)
+        let fire = SCNParticleSystem()
+        fire.birthRate = 0
+        fire.particleLifeSpan = 0.45; fire.particleLifeSpanVariation = 0.15
+        fire.particleSize = 0.11; fire.particleSizeVariation = 0.04
+        fire.particleVelocity = 0.9; fire.particleVelocityVariation = 0.3
+        fire.emittingDirection = SCNVector3(0, 1, 0); fire.spreadingAngle = 18
+        fire.emitterShape = SCNTorus(ringRadius: 0.17, pipeRadius: 0.03)
+        fire.particleColor = NSColor(red: 1, green: 0.52, blue: 0.12, alpha: 1); fire.particleColorVariation = SCNVector4(0.04, 0.1, 0, 0)
+        fire.blendMode = .additive; fire.isLightingEnabled = false; fire.isAffectedByGravity = false
+        fire.particleImage = flameSprite
+        let fade = CAKeyframeAnimation(); fade.values = [0.0, 1.0, 0.6, 0.0]; fade.keyTimes = [0, 0.15, 0.6, 1]
+        let shrink = CAKeyframeAnimation(); shrink.values = [1.0, 0.8, 0.2]; shrink.keyTimes = [0, 0.5, 1]
+        fire.propertyControllers = [.opacity: SCNParticlePropertyController(animation: fade), .size: SCNParticlePropertyController(animation: shrink)]
+        node.addParticleSystem(fire)
+        return (node, fire)
+    }
+    private static let flameSprite: NSImage = {
+        let image = NSImage(size: NSSize(width: 64, height: 64))
+        image.lockFocus()
+        NSGradient(colors: [.white, NSColor(white: 1, alpha: 0)])?.draw(in: NSBezierPath(ovalIn: NSRect(x: 0, y: 0, width: 64, height: 64)), relativeCenterPosition: .zero)
+        image.unlockFocus()
+        return image
+    }()
     private var pacingPending: Bool {
         pacing.contains { id, state in state.arriving || state.desired.key != chefs[id]?.director.intent?.key }
     }
@@ -276,6 +329,7 @@ final class KitchenSceneView: SCNView {
         lastFrame = time
         for chef in chefs.values { chef.update(delta) }
         pace(now: CACurrentMediaTime())
+        updateFlames()
         placeChefLabels()
         updatePlayback()
     }

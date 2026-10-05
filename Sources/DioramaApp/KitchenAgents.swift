@@ -50,7 +50,7 @@ extension KitchenLayout {
             case (.planning, false): return .init(area: "prep", loop: "planning_recipe", hand: .card)
             case (_, false): return .init(area: "prep", loop: "researching_book", hand: .book)
             case (.commands, true): return .init(area: "stove", loop: "waiting_tool")
-            case (_, true): return .init(area: "island", loop: "working_chop", hand: .knife)
+            case (_, true): return .init(area: "cooking", loop: "working_chop", hand: .knife)
             }
         default: return .init(area: "break", loop: "idle_available", urgent: true)
         }

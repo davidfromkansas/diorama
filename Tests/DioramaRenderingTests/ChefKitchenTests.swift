@@ -62,8 +62,8 @@ import simd
         #expect(area(agent("a", .working, tool: "Bash", detail: "make")) == "prep")
         #expect(area(agent("a", .working, tool: "Bash", detail: "swift test")) == "tasting")
         // After it: editing at the island, commands at the stove, reads keep chopping.
-        #expect(KitchenLayout.work(for: agent("a", .working, tool: "Edit", edits: true).value) == .init(area: "island", loop: "working_chop", hand: .knife))
-        #expect(area(agent("a", .working, tool: "Read", edits: true)) == "island")
+        #expect(KitchenLayout.work(for: agent("a", .working, tool: "Edit", edits: true).value) == .init(area: "cooking", loop: "working_chop", hand: .knife))
+        #expect(area(agent("a", .working, tool: "Read", edits: true)) == "cooking")
         #expect(area(agent("a", .working, tool: "Bash", detail: "make", edits: true)) == "stove")
         #expect(area(agent("a", .working, tool: "Bash", detail: "npm test", edits: true)) == "tasting")
         #expect(area(agent("a", .waiting, attention: .approval)) == "bell")
@@ -95,14 +95,14 @@ import simd
         // Every station reaches every other one.
         let all = KitchenLayout.areas.compactMap { table[$0.id]?.first }
         for a in all { for b in all where a.id != b.id { #expect(navigation.route(from: a.stand, to: b.stand) != nil, "\(a.id) → \(b.id)") } }
-        let first = KitchenLayout.assignSlots([("a", "island"), ("b", "island")], previous: [:])
+        let first = KitchenLayout.assignSlots([("a", "cooking"), ("b", "cooking")], previous: [:])
         #expect(first["a"] != first["b"])
-        #expect(KitchenLayout.assignSlots([("b", "island"), ("a", "island")], previous: first) == first)
+        #expect(KitchenLayout.assignSlots([("b", "cooking"), ("a", "cooking")], previous: first) == first)
     }
 
     @Test func workingChefWalksAroundFixturesGrabsKnifeAndChops() throws {
         let d = try director(), table = KitchenLayout.chefSlots
-        let start = try #require(table["order"]?.first), island = try #require(table["island"]?.last)
+        let start = try #require(table["order"]?.first), island = try #require(table["cooking"]?.last)
         d.place(start.stand)
         d.setIntent(KitchenLayout.intent(for: agent("a", .working, tool: "Edit", edits: true).value, at: island, pickup: nil, restored: false))
         // Corners may graze the walking margin, but the chef's root never enters a fixture.
@@ -121,11 +121,11 @@ import simd
 
     @Test func finishedTurnCarriesPlateFromIslandToServingOnce() throws {
         let d = try director(), table = KitchenLayout.chefSlots
-        let island = try #require(table["island"]?.first), serving = try #require(table["serving"]?.first)
+        let island = try #require(table["cooking"]?.first), serving = try #require(table["serving"]?.first)
         d.place(island.stand, heading: island.facing)
         let done = KitchenLayout.intent(for: agent("a", .done).value, at: serving, pickup: island, restored: false)
         d.setIntent(done)
-        #expect(d.stepNames.first == "goto:island")
+        #expect(d.stepNames.first == "goto:cooking")
         var carried = false
         for _ in 0..<(60 * 30) { d.update(1 / 60); carried = carried || d.held.contains(.plate) }
         #expect(carried)
@@ -164,11 +164,11 @@ import simd
         view.apply(agents: [agent("a", .working, tool: "Edit", edits: true)], active: false, reducedMotion: false, now: clock)
         step(0.5)
         let chef = try #require(view.chefs.values.first)
-        #expect(chef.director.intent?.station?.area == "island")
+        #expect(chef.director.intent?.station?.area == "cooking")
         // A quick command and a read within three seconds don't move the chef.
         view.apply(agents: [agent("a", .working, tool: "Bash", detail: "make", edits: true)], active: false, reducedMotion: false, now: clock)
         step(1)
-        #expect(chef.director.intent?.station?.area == "island")
+        #expect(chef.director.intent?.station?.area == "cooking")
         view.apply(agents: [agent("a", .working, tool: "Bash", detail: "make", edits: true)], active: false, reducedMotion: false, now: clock)
         step(2.5)
         #expect(chef.director.intent?.station?.area == "stove")
@@ -178,11 +178,24 @@ import simd
         #expect(chef.director.intent?.station?.area == "bell")
     }
 
+    @Test func burnersIgniteOnlyWhereChefsCook() throws {
+        let view = KitchenSceneView(frame: CGRect(x: 0, y: 0, width: 1000, height: 700))
+        let cooks = [agent("a", .working, tool: "Bash", detail: "make", edits: true), agent("b", .working, tool: "Bash", detail: "npm run build", edits: true),
+                     agent("c", .working, tool: "Edit", edits: true)]
+        view.apply(agents: cooks, active: false, reducedMotion: false, now: 0)
+        for chef in view.chefs.values { chef.update(0.1) }
+        view.updateFlames()
+        #expect(view.litBurners == ["stove#0", "stove#1"])
+        view.apply(agents: [cooks[2]], active: false, reducedMotion: false, now: 1)
+        view.updateFlames()
+        #expect(view.litBurners.isEmpty)
+    }
+
     @Test func onlyNewAgentsArriveByElevator() throws {
         let view = KitchenSceneView(frame: CGRect(x: 0, y: 0, width: 1000, height: 700))
         let old = agent("old", .working, tool: "Edit", edits: true), new = agent("new", .working, tool: "Read")
         view.apply(agents: [old], active: false, reducedMotion: false, now: 0)
-        #expect(view.chefs[old.id]?.director.intent?.station?.area == "island")
+        #expect(view.chefs[old.id]?.director.intent?.station?.area == "cooking")
         view.apply(agents: [old, new], active: false, reducedMotion: false, now: 1)
         let newcomer = try #require(view.chefs[new.id])
         let door = try #require(KitchenLayout.chefSlots["elevator"]?.first)
@@ -220,6 +233,7 @@ import simd
             let view = KitchenSceneView(frame: CGRect(x: 0, y: 0, width: 1400, height: 900))
             view.apply(agents: agents, active: false, reducedMotion: false)
             for chef in view.chefs.values { for _ in 0..<30 { chef.update(1 / 30) } }
+            view.updateFlames()
             view.layoutSubtreeIfNeeded(); view.fitFloor()
             let tiff = try #require(view.snapshot().tiffRepresentation)
             let bitmap = try #require(NSBitmapImageRep(data: tiff))
@@ -230,5 +244,6 @@ import simd
                      agent("ask", .waiting, attention: .approval), agent("done", .done), agent("rest", .done, freshness: .lastKnown),
                      agent("new", .ready, freshness: .ready)], "diorama-kitchen-stages")
         try capture((0..<10).map { agent("e\($0)", .working, tool: "Edit", edits: true) }, "diorama-kitchen-ten-cooking")
+        try capture((0..<6).map { agent("e\($0)", .working, tool: "Edit", edits: true) } + (0..<4).map { agent("s\($0)", .working, tool: "Bash", detail: "make", edits: true) }, "diorama-kitchen-islands")
     }
 }
