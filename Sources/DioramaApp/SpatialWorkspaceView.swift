@@ -224,7 +224,7 @@ struct SpatialWorkspaceView: View {
         .onExitCommand {
             guard visible else { return }
             if avatarPopovers.dismissTop() { return }
-            // A selected chef is let go first; its conversation stays open.
+            // A selected chef is let go first, closing its conversation and command bar.
             if kitchenSelected, state.focus.agentID != nil, inspection == nil { deselectAgent(state.focus); return }
             if inspection != nil { closePlan() }
             else if serversExpanded { serversExpanded = false }
@@ -596,6 +596,8 @@ struct SpatialWorkspaceView: View {
     /// Back to the whole kitchen: the camera returns to the overview and the command bar closes.
     private func deselectAgent(_ focus: SpatialFocus) {
         go(focus.projectID.map { .project($0) } ?? focus.officeReturn)
+        // Letting go of a chef closes its conversation along with the command bar.
+        state.conversationPanelVisible = false
     }
     private func go(_ focus: SpatialFocus) {
         if focus.expanded { state.conversationPanelVisible = true }
