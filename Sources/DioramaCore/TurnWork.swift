@@ -37,16 +37,14 @@ public struct TurnWork: Equatable, Sendable {
         if tool.lowercased() == "write_stdin" { if let call { calls[call] = .poll; polled[call] = Self.session(detail) }; return }
         let written = KitchenActivity.commandTools.contains(tool.lowercased()) ? KitchenActivity.writtenFiles(command: detail) : []
         // A shell write is an edit of the files it writes; the same command may also build or test.
-        for path in written where !files.contains(path) { files.append(path) }
+        for path in written { addFile(path) }
         if !written.isEmpty, KitchenActivity.classify(tool: tool, detail: detail) != .testing {
             if let call { calls[call] = .command }
             commands += 1
             return
         }
         if KitchenActivity.isEditing(tool: tool) {
-            for path in detail.split(whereSeparator: \.isNewline).map({ $0.trimmingCharacters(in: .whitespaces) }) where !path.isEmpty && !files.contains(path) {
-                files.append(path)
-            }
+            for path in detail.split(whereSeparator: \.isNewline).map({ $0.trimmingCharacters(in: .whitespaces) }) where !path.isEmpty { addFile(path) }
             return
         }
         switch KitchenActivity.classify(tool: tool, detail: detail) {
@@ -81,6 +79,12 @@ public struct TurnWork: Equatable, Sendable {
         case .test(let index): tests[index].outcome = failed ? .failed : .passed
         case .poll: break
         }
+    }
+    /// One entry per file, whether it was named relative to the project or by its full path.
+    private mutating func addFile(_ path: String) {
+        if files.contains(where: { $0 == path || $0.hasSuffix("/" + path) }) { return }
+        if let index = files.firstIndex(where: { path.hasSuffix("/" + $0) }) { files[index] = path; return }
+        files.append(path)
     }
     /// The turn is over: tests whose result never arrived are unknown rather than running.
     public mutating func settle() {

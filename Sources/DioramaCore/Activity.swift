@@ -133,6 +133,45 @@ public enum ActivityParser {
         }
         return (String(script[name]), commands.isEmpty ? nil : commands.joined(separator: " && "))
     }
+    /// Every `tools.<name>(` call in a code-mode script with its own detail: a command, the files a
+    /// patch touches, or the session a poll reads.
+    public static func codeModeCalls(_ script: String) -> [(tool: String, detail: String?)] {
+        let range = NSRange(script.startIndex..., in: script)
+        let matches = codeModeTool.matches(in: script, range: range)
+        return matches.enumerated().compactMap { index, match in
+            guard let name = Range(match.range(at: 1), in: script) else { return nil }
+            let end = index + 1 < matches.count ? matches[index + 1].range.location : range.upperBound
+            guard let segment = Range(NSRange(location: match.range.upperBound, length: end - match.range.upperBound), in: script) else { return nil }
+            let body = String(script[segment]), tool = String(script[name])
+            switch tool {
+            case "apply_patch":
+                // A wrapped patch keeps its newlines escaped inside the script's string literal.
+                return (tool, patchFiles(body.replacingOccurrences(of: "\\n", with: "\n")).joined(separator: "\n"))
+            case "write_stdin": return (tool, polledSession(body).map { "session=" + $0 })
+            default:
+                let range = NSRange(body.startIndex..., in: body)
+                let command = codeModeCommand.firstMatch(in: body, range: range).flatMap { Range($0.range(at: 1), in: body) }.map { literal -> String in
+                    let quoted = String(body[literal])
+                    if quoted.hasPrefix("\""), let decoded = try? JSONDecoder().decode(String.self, from: Data(quoted.utf8)) { return decoded }
+                    return String(quoted.dropFirst().dropLast())
+                }
+                return (tool, command.map(KitchenActivity.withoutHeredocs))
+            }
+        }
+    }
+    /// The checklist from a code-mode `tools.update_plan({plan:[{step:"…",status:"…"}]})` call.
+    public static func codeModePlan(_ script: String) -> WireValue? {
+        guard let start = script.range(of: "tools.update_plan(") else { return nil }
+        let body = String(script[start.upperBound...])
+        let range = NSRange(body.startIndex..., in: body)
+        let steps = codeModePlanStep.matches(in: body, range: range).compactMap { match -> WireValue? in
+            guard let step = Range(match.range(at: 1), in: body), let status = Range(match.range(at: 2), in: body) else { return nil }
+            let title = (try? JSONDecoder().decode(String.self, from: Data(("\"" + body[step] + "\"").utf8))) ?? String(body[step])
+            return .object(["step": .string(title), "status": .string(String(body[status]))])
+        }
+        return steps.isEmpty ? nil : .array(steps)
+    }
+    private static let codeModePlanStep = try! NSRegularExpression(pattern: #"step\s*:\s*"((?:[^"\\]|\\.)*)"\s*,\s*status\s*:\s*"(\w+)""#)
     private static let codeModeTool = try! NSRegularExpression(pattern: #"\btools\.([A-Za-z_][A-Za-z0-9_]*)\s*\("#)
     private static let codeModeCommand = try! NSRegularExpression(pattern: #"\bcmd\s*:\s*("(?:[^"\\]|\\.)*"|'(?:[^'\\]|\\.)*'|`[^`]*`)"#)
 
@@ -199,12 +238,21 @@ public enum ActivityParser {
                 if p["name"] as? String == "apply_patch", let input = p["input"] as? String {
                     return [event("toolStarted", .working, call: call, tool: "apply_patch", detail: clipped(patchFiles(input).joined(separator: "\n")), turn: turn)]
                 }
-                // Code-mode calls wrap the real tool in JavaScript: `tools.exec_command({cmd:"…"})`.
-                if let input = p["input"] as? String, let inner = codeModeCall(input) {
-                    // A wrapped patch keeps its newlines escaped inside the script's string literal.
-                    let detail = inner.tool == "apply_patch" ? patchFiles(input.replacingOccurrences(of: "\\n", with: "\n")).joined(separator: "\n")
-                        : inner.tool == "write_stdin" ? polledSession(input).map { "session=" + $0 } : inner.detail.map(KitchenActivity.withoutHeredocs)
-                    return [event("toolStarted", .working, call: call, tool: inner.tool, detail: detail.map { String($0.prefix(1000)) }, turn: turn)]
+                // Code-mode calls wrap real tools in JavaScript, often several per script
+                // (`tools.update_plan(…); tools.apply_patch(…); tools.exec_command({cmd:"…"})`):
+                // each becomes its own event; the script's output finishes the last one.
+                if let input = p["input"] as? String {
+                    let inner = codeModeCalls(input)
+                    if !inner.isEmpty {
+                        var events: [ActivityEvent] = []
+                        for (index, item) in inner.enumerated() {
+                            let last = index == inner.count - 1
+                            let id = last ? call : call.map { $0 + "#\(index)" }
+                            events.append(event("toolStarted", .working, call: id, tool: item.tool, detail: item.detail.map { String($0.prefix(1000)) }, turn: turn))
+                            if !last { events.append(event("toolFinished", call: id, turn: turn)) }
+                        }
+                        return events
+                    }
                 }
                 let args = (p["arguments"] as? String).flatMap { try? JSONSerialization.jsonObject(with: Data($0.utf8)) } as? [String: Any]
                 // Codex's JavaScript runner driving the Computer Use plugin (a browser preview, an app).
@@ -245,7 +293,7 @@ public enum ActivityParser {
                 switch block["type"] as? String {
                 case "tool_use":
                     let args = block["input"] as? [String: Any]
-                    result = event("toolStarted", block["name"] as? String == "AskUserQuestion" ? .input : .working, call: block["id"] as? String, tool: block["name"] as? String, detail: clipped(args?["command"] ?? args?["file_path"] ?? args?["skill"]))
+                    result = event("toolStarted", block["name"] as? String == "AskUserQuestion" ? .input : .working, call: block["id"] as? String, tool: block["name"] as? String, detail: clipped(args?["command"] ?? args?["file_path"] ?? args?["skill"] ?? args?["pattern"]))
                 case "tool_result":
                     result = event(block["is_error"] as? Bool == true ? "toolFailed" : "toolFinished", call: block["tool_use_id"] as? String)
                 case "text" where r["type"] as? String == "assistant":

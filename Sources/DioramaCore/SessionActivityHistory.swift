@@ -53,13 +53,25 @@ public enum SessionActivityHistory {
                     let previous = state.records.first { $0.nativeID == call && $0.kind == "tool" && $0.turnID == codexTurn }
                     if previous?.data["nativeItem"].bool == true { continue }
                     let arguments = p["arguments"].string.flatMap { try? JSONDecoder().decode(WireValue.self, from: Data($0.utf8)) } ?? .null
-                    let inner = p["input"].string.flatMap(ActivityParser.codeModeCall)
-                    state.apply(SessionActivityRecord(id: session.id + ":tool:" + (codexTurn ?? "unknown") + ":" + call, provider: session.provider.rawValue,
-                        sessionID: session.sessionID, turnID: codexTurn, nativeID: call, parentID: nil,
-                        kind: "tool", title: inner?.tool ?? p["name"].string ?? previous?.title ?? "Tool",
-                        status: finished ? "Returned" : "Called",
-                        detail: inner?.detail ?? arguments["cmd"].string ?? arguments["command"].string ?? previous?.detail ?? "",
-                        source: "Codex transcript", recordedAt: ActivityParser.date(e["timestamp"].string), observedAt: Date(), data: .null))
+                    // A code-mode script may run several tools: one record each; the script's
+                    // output completes the last.
+                    let inner = finished ? [] : (p["input"].string.map(ActivityParser.codeModeCalls) ?? [])
+                    let calls: [(id: String, tool: String?, detail: String?, done: Bool)] = inner.isEmpty
+                        ? [(call, nil, nil, finished)]
+                        : inner.enumerated().map { index, item in (index == inner.count - 1 ? call : call + "#\(index)", item.tool, item.detail, index < inner.count - 1) }
+                    for entry in calls {
+                        let earlier = entry.id == call ? previous : state.records.first { $0.nativeID == entry.id && $0.kind == "tool" && $0.turnID == codexTurn }
+                        state.apply(SessionActivityRecord(id: session.id + ":tool:" + (codexTurn ?? "unknown") + ":" + entry.id, provider: session.provider.rawValue,
+                            sessionID: session.sessionID, turnID: codexTurn, nativeID: entry.id, parentID: nil,
+                            kind: "tool", title: entry.tool ?? p["name"].string ?? earlier?.title ?? "Tool",
+                            status: entry.done ? "Returned" : "Called",
+                            detail: entry.detail ?? arguments["cmd"].string ?? arguments["command"].string ?? earlier?.detail ?? "",
+                            source: "Codex transcript", recordedAt: ActivityParser.date(e["timestamp"].string), observedAt: Date(), data: .null))
+                    }
+                    // A plan updated inside a code-mode script (`tools.update_plan({plan:[…]})`).
+                    if let input = p["input"].string, let plan = ActivityParser.codeModePlan(input) {
+                        SessionActivityReducer.ingest(.object(["method": .string("turn/plan/updated"), "params": .object(["plan": plan, "turnId": codexTurn.map(WireValue.string) ?? .null, "timestamp": e["timestamp"]])]), provider: .codex, sessionID: session.sessionID, into: &state)
+                    }
                 }
                 if p["type"].string == "function_call", p["name"].string == "update_plan",
                    let json = p["arguments"].string, let plan = try? JSONDecoder().decode(WireValue.self, from: Data(json.utf8)) {

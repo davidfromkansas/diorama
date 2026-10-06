@@ -38,6 +38,9 @@ public enum KitchenActivity: String, Sendable, CaseIterable {
         func add(_ path: String) {
             let path = path.trimmingCharacters(in: CharacterSet(charactersIn: "'\"")).trimmingCharacters(in: .whitespaces)
             guard !path.isEmpty, !path.hasPrefix("&"), !path.hasPrefix("-"), path != "/dev/null", !path.hasPrefix("/dev/"), !files.contains(path) else { return }
+            // Scratch output (a server's log, a pid file, anything in /tmp) is not editing the project.
+            let scratch = ["/tmp/", "/private/tmp/", "/var/folders/", "$TMPDIR"].contains { path.hasPrefix($0) } || [".log", ".pid"].contains { path.hasSuffix($0) }
+            guard !scratch else { return }
             files.append(path)
         }
         let range = NSRange(script.startIndex..., in: script)
@@ -97,24 +100,30 @@ public enum KitchenActivity: String, Sendable, CaseIterable {
 
     /// Tests anywhere in the script → testing; only read-only commands → researching; else commands.
     public static func classify(command: String) -> KitchenActivity {
-        let script = shellScript(command)
+        // Heredoc bodies are data (a file written inline, a script fed to python); what runs is
+        // the rest.
+        let script = withoutHeredocs(shellScript(command))
         let range = NSRange(script.startIndex..., in: script)
         if testCommand.firstMatch(in: script, range: range) != nil { return .testing }
         // Writing files from the shell is editing, like an edit tool.
         if !writtenFiles(command: command).isEmpty { return .editing }
-        // Reading a skill's SKILL.md fetches the skill from the pantry.
-        if isSkillFile(script) { return .resources }
-        let words = segments(script).compactMap { segment -> [String]? in
-            let words = segment.split(whereSeparator: \.isWhitespace).map(String.init)
-                .drop { $0.contains("=") && !$0.hasPrefix("-") } // env assignments
-            return words.isEmpty ? nil : Array(words)
-        }.filter { $0.first != "cd" }
+        let words = commandWords(script)
+        // Reading a skill's SKILL.md fetches the skill from the pantry (listing skill folders doesn't).
+        if words.contains(where: { ["cat", "head", "tail", "sed", "less", "more", "bat", "nl"].contains(($0[0] as NSString).lastPathComponent) && $0.contains { $0.contains("SKILL.md") } }) {
+            return .resources
+        }
+        // Fetching the agent's own local server is checking the work.
+        if words.contains(where: { ["curl", "wget", "http"].contains(($0[0] as NSString).lastPathComponent) && $0.contains { $0.contains("localhost") || $0.contains("127.0.0.1") || $0.contains("0.0.0.0") } }) {
+            return .checking
+        }
         guard !words.isEmpty else { return .commands }
         // Redirecting into a file writes (`> out`); stream redirects like `2>&1` don't.
         let redirect = try! NSRegularExpression(pattern: #"(?<![0-9&])>"#)
         if redirect.firstMatch(in: script, range: range) != nil { return .commands }
         let reads = words.allSatisfy { words in
             let program = (words[0] as NSString).lastPathComponent
+            // `node --version`, `npm -v`: asking a tool its version reads.
+            if words.count == 2, ["--version", "-v", "-V", "version"].contains(words[1]) { return true }
             if program == "sed" && words.contains(where: { $0.hasPrefix("-i") }) { return false }
             if program == "git" { return words.count > 1 && readOnlyGit.contains(words[1]) }
             return readOnlyCommands.contains(program)
@@ -122,6 +131,17 @@ public enum KitchenActivity: String, Sendable, CaseIterable {
         return reads ? .researching : .commands
     }
 
+    /// The commands a script runs, as words: shell keywords (`if … then`, `for … do`) are looked
+    /// through, loop headers and tests skipped, `cd` and env assignments dropped.
+    static func commandWords(_ script: String) -> [[String]] {
+        segments(script).compactMap { segment -> [String]? in
+            var words = Array(segment.split(whereSeparator: \.isWhitespace).map(String.init)
+                .drop { $0.contains("=") && !$0.hasPrefix("-") })
+            while let first = words.first, ["do", "then", "else", "elif", "if", "while", "until", "!", "{", "("].contains(first) { words.removeFirst() }
+            guard let first = words.first, !["for", "done", "fi", "esac", "case", "}", ")", "[", "[[", "test", "true", "false", "cd"].contains(first) else { return nil }
+            return words
+        }
+    }
     /// Unwraps `/bin/zsh -lc "…"`, `bash -lc '…'`, `sh -c …` and JSON-array commands.
     public static func shellScript(_ command: String) -> String {
         var text = command.trimmingCharacters(in: .whitespacesAndNewlines)
