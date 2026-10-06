@@ -57,7 +57,8 @@ public enum KitchenActivity: String, Sendable, CaseIterable {
         }
         return files
     }
-    static func withoutHeredocs(_ script: String) -> String {
+    /// The command with heredoc bodies dropped: what it runs, without the file it writes inline.
+    public static func withoutHeredocs(_ script: String) -> String {
         var kept: [Substring] = [], delimiter: String?
         for line in script.split(separator: "\n", omittingEmptySubsequences: false) {
             if let end = delimiter { if line.trimmingCharacters(in: .whitespaces) == end { delimiter = nil }; continue }
@@ -142,5 +143,5 @@ public enum KitchenActivity: String, Sendable, CaseIterable {
                                                 "file", "stat", "du", "less", "more", "pwd", "jq", "echo", "printf", "which", "awk", "sort", "uniq", "cut", "diff", "realpath", "basename", "dirname"]
     static let readOnlyGit: Set<String> = ["log", "show", "diff", "status", "blame", "grep", "ls-files", "rev-parse", "branch", "remote", "describe"]
     static let testCommand = try! NSRegularExpression(pattern:
-        #"\b(?:(?:npm|pnpm|yarn|bun)\s+(?:run\s+)?test|vitest|jest|pytest|go\s+test|cargo\s+test|swift\s+test|xcodebuild\s+(?:\S+\s+)*test|playwright\s+test|rspec|phpunit|ctest|mvn\s+test|gradle\w*\s+test)\b"#)
+        #"\b(?:(?:npm|pnpm|yarn|bun)\s+(?:run\s+)?test|vitest|jest|pytest|go\s+test|cargo\s+test|swift\s+test|xcodebuild\s+(?:\S+\s+)*test|playwright\s+test|rspec|phpunit|ctest|mvn\s+test|gradle\w*\s+test|deno\s+test|node\s+--test|node\s+\S*test\S*\.[mc]?[jt]s)\b"#)
 }

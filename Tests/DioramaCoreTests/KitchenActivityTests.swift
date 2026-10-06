@@ -87,4 +87,16 @@ struct KitchenActivityTests {
         #expect(KitchenActivity.writtenFiles(command: "mkdir -p sf-time/dist").isEmpty)
         #expect(KitchenActivity.classify(tool: "exec_command", detail: "npm test > out.txt") == .testing)
     }
+
+    @Test func testsAfterAnInlineFileAreStillSeen() {
+        // Remy wrote app.js from a heredoc, then built and tested in the same command.
+        let body = String(repeating: "const x = 1;\n", count: 200)
+        let command = "cat > public/app.js <<'EOF'\n" + body + "EOF\nnpm run build && npm test"
+        #expect(KitchenActivity.withoutHeredocs(command) == "cat > public/app.js <<'EOF'\nnpm run build && npm test")
+        #expect(KitchenActivity.classify(command: command) == .testing)
+        #expect(KitchenActivity.classify(command: "node --test") == .testing)
+        #expect(KitchenActivity.classify(command: "node time.test.mjs") == .testing)
+        var work = TurnWork(); work.started(tool: "exec_command", detail: command, call: "1"); work.finished(call: "1", failed: false)
+        #expect(work.files == ["public/app.js"] && work.tests.map(\.outcome) == [.passed])
+    }
 }
