@@ -897,3 +897,32 @@ extension ChefKitchenTests {
         #expect(KitchenLayout.work(for: waiting.value).area == "bell" && ChefEmote.lasting(waiting, review: nil) == .question)
     }
 }
+
+extension ChefKitchenTests {
+    @Test func aCommandThatTestsAndBuildsVisitsBothStationsInOrder() throws {
+        #expect(KitchenActivity.stations(command: "npm test && npm run build") == [.testing, .commands])
+        #expect(KitchenActivity.stations(command: "npm run build; npm test") == [.commands, .testing])
+        #expect(KitchenActivity.stations(command: "node - <<'NODE'\nconsole.log(1)\nNODE\nnpm test\nnpm run build") == [.commands, .testing, .commands])
+        #expect(KitchenActivity.stations(command: "git status; cat math.js") == [])
+        // Eli's last step: tests and a build in one command, just before finishing.
+        let view = KitchenSceneView(frame: CGRect(x: 0, y: 0, width: 1000, height: 700))
+        var cook = agent("e", .working, tool: "Edit", edits: true)
+        view.apply(agents: [cook], active: false, reducedMotion: false, now: 0)
+        let chef = try #require(view.chefs[cook.id])
+        var t = 0.0
+        func run(seconds: Double, _ body: (String) -> Void = { _ in }) {
+            let end = t + seconds
+            while t < end { chef.update(1 / 30); t += 1 / 30; view.apply(agents: [cook], active: false, reducedMotion: false, now: t); body(chef.director.station?.area ?? "") }
+        }
+        run(seconds: 6)
+        var work = TurnWork()
+        work.started(tool: "Bash", detail: "npm test && npm run build", call: "c"); work.finished(call: "c", failed: false)
+        cook.value.turnWork = work; cook.value.latestTool = "Bash"; cook.value.latestToolDetail = "npm test && npm run build"
+        run(seconds: 0.3)
+        cook.value.status = .done
+        var visits: [String] = []
+        run(seconds: 40) { if $0 != "" && visits.last != $0 { visits.append($0) } }
+        let tasting = try #require(visits.firstIndex(of: "tasting")), stove = try #require(visits.firstIndex(of: "stove"))
+        #expect(tasting < stove && visits.last == "serving")
+    }
+}

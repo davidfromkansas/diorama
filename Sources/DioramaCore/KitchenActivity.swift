@@ -208,6 +208,17 @@ public enum KitchenActivity: String, Sendable, CaseIterable {
         return text
     }
 
+    /// The kinds of work a shell command does, step by step, in the order it runs them
+    /// (`npm test && npm run build` tests, then builds). Steps that only look around are left out.
+    public static func stations(command: String) -> [KitchenActivity] {
+        var order: [KitchenActivity] = []
+        for segment in segments(withoutHeredocs(shellScript(command))) where !segment.trimmingCharacters(in: .whitespaces).isEmpty {
+            let kind = classify(command: segment)
+            guard [.testing, .commands, .checking, .editing].contains(kind), order.last != kind else { continue }
+            order.append(kind)
+        }
+        return order
+    }
     static func segments(_ script: String) -> [String] {
         var result: [String] = [], current = "", quote: Character?
         var characters = Array(script)[...]
