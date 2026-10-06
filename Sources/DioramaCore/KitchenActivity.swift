@@ -70,7 +70,7 @@ public enum KitchenActivity: String, Sendable, CaseIterable {
         for body in heredocBodies(full) {
             let range = NSRange(body.startIndex..., in: body)
             var names: [String: String] = [:]
-            for match in scriptAssignment.matches(in: body, range: range) {
+            for match in scriptAssignment.matches(in: body, range: range) + pathAssignment.matches(in: body, range: range) {
                 if let name = Range(match.range(at: 1), in: body), let value = Range(match.range(at: 2), in: body) { names[String(body[name])] = String(body[value]) }
             }
             for match in scriptWrite.matches(in: body, range: range) {
@@ -79,6 +79,9 @@ public enum KitchenActivity: String, Sendable, CaseIterable {
                     let target = String(body[found])
                     add([2, 5].contains(group) ? names[target] ?? "" : target)
                 }
+            }
+            for match in pathWrite.matches(in: body, range: range) {
+                if let found = Range(match.range(at: 1), in: body) { add(names[String(body[found])] ?? "") }
             }
         }
         return files
@@ -101,6 +104,9 @@ public enum KitchenActivity: String, Sendable, CaseIterable {
     }
     /// `name = 'path'` in a script.
     private static let scriptAssignment = try! NSRegularExpression(pattern: #"\b([A-Za-z_][A-Za-z0-9_]*)\s*=\s*['"]([^'"\n]+\.[A-Za-z0-9]+)['"]"#)
+    /// `name = Path('path')`, then `name.write_text(…)`.
+    private static let pathAssignment = try! NSRegularExpression(pattern: #"\b([A-Za-z_][A-Za-z0-9_]*)\s*=\s*Path\(\s*['"]([^'"\n]+)['"]\s*\)"#)
+    private static let pathWrite = try! NSRegularExpression(pattern: #"\b([A-Za-z_][A-Za-z0-9_]*)\.write_(?:text|bytes)\("#)
     /// Writes in Python (`open('f', 'w')`, `open(p, 'a')`, `Path('f').write_text`) and Node
     /// (`writeFileSync('f'`, `writeFile(p`): group 1 a literal path, group 2 a variable.
     private static let scriptWrite = try! NSRegularExpression(pattern: #"(?:open\(\s*(?:['"]([^'"\n]+)['"]|([A-Za-z_][A-Za-z0-9_]*))\s*,\s*['"][wax])|(?:Path\(\s*['"]([^'"\n]+)['"]\s*\)\.write_(?:text|bytes))|(?:writeFile(?:Sync)?\(\s*(?:['"]([^'"\n]+)['"]|([A-Za-z_][A-Za-z0-9_]*)))"#)
