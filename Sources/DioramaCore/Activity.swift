@@ -38,7 +38,8 @@ public struct ActivityEvent: Codable, Equatable, Identifiable, Sendable {
                 "approval": "Approval requested", "input": "Input requested", "idle": "Idle reported",
                 "interrupted": "Interrupted", "compact": "Compacting conversation", "compacted": "Compaction finished",
                 "sessionStarted": "Session started or resumed", "sessionEnded": "Session ended",
-                "agentStarted": "Subagent started", "agentStopped": "Subagent stopped", "blocked": "Blocking condition reported"][kind] ?? kind
+                "agentStarted": "Subagent started", "agentStopped": "Subagent stopped", "blocked": "Blocking condition reported",
+                "commentary": "Says"][kind] ?? kind
     }
     public init(id: String, provider: String, sessionID: String, kind: String, source: String,
                 recordedAt: Date? = nil, observedAt: Date = Date(), turnID: String? = nil, callID: String? = nil,
@@ -187,6 +188,11 @@ public enum ActivityParser {
                 }
             }
             guard r["type"] as? String == "response_item" else { return [] }
+            // The agent's progress notes to you ("I'll check the setup first…").
+            if type == "message", p["role"] as? String == "assistant" {
+                let text = (p["content"] as? [[String: Any]] ?? []).compactMap { $0["text"] as? String }.joined(separator: " ")
+                return text.isEmpty ? [] : [event("commentary", detail: clipped(text), turn: turn)]
+            }
             let call = p["call_id"] as? String
             if ["function_call", "custom_tool_call"].contains(type) {
                 // A patch names its files in its headers; the patch text itself is not a detail.
@@ -242,6 +248,9 @@ public enum ActivityParser {
                     result = event("toolStarted", block["name"] as? String == "AskUserQuestion" ? .input : .working, call: block["id"] as? String, tool: block["name"] as? String, detail: clipped(args?["command"] ?? args?["file_path"] ?? args?["skill"]))
                 case "tool_result":
                     result = event(block["is_error"] as? Bool == true ? "toolFailed" : "toolFinished", call: block["tool_use_id"] as? String)
+                case "text" where r["type"] as? String == "assistant":
+                    guard let text = block["text"] as? String, !text.isEmpty else { return nil }
+                    result = event("commentary", detail: clipped(text))
                 default: return nil
                 }
                 result.id = id + ":\(index)"; return result

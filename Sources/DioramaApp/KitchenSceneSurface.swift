@@ -156,7 +156,9 @@ final class KitchenSceneView: SCNView {
     var reviews: [String: KitchenReviews.State] = [:]
     private(set) var chefs: [String: ChefAvatar] = [:]
     private var chefAgents: [String: SpatialAgent] = [:]
-    private var chefLabels: [String: NSTextField] = [:]
+    private(set) var chefLabels: [String: ChefTagView] = [:]
+    /// The chef under the pointer: resting chefs show their tag only then.
+    private var hoveredID: String?
     private var slots: [String: ChefStation] = [:]
     private let navigation = KitchenLayout.chefNavigation
     private var active = false
@@ -512,10 +514,7 @@ final class KitchenSceneView: SCNView {
                 }
                 chef.update(0)
                 world.rootNode.addChildNode(chef.root)
-                let label = KitchenLabel(labelWithString: "")
-                label.font = .systemFont(ofSize: 10, weight: .semibold); label.alignment = .center
-                label.wantsLayer = true; label.layer?.cornerRadius = 4
-                label.layer?.backgroundColor = NSColor.white.withAlphaComponent(0.9).cgColor
+                let label = ChefTagView(frame: .zero)
                 chefLabels[agent.id] = label; addSubview(label)
             } else {
                 chefLock.lock()
@@ -540,11 +539,8 @@ final class KitchenSceneView: SCNView {
                 if pacing[agent.id]?.arriving == false { let want = wanted(agent.id, claim: false); pacing[agent.id]?.want = want }
                 chefLock.unlock()
             }
-            // The label always shows the live action, even while the chef stays put.
-            let doing = agent.value.status == .working && !agent.value.latestActivity.isEmpty ? agent.value.latestActivity : agent.value.statusLabel
-            let label = chefLabels[agent.id]
-            label?.stringValue = Self.tagText(agent.value, doing: doing)
-            label?.textColor = agent.needsAttention ? .systemOrange : .init(white: 0.2, alpha: 1)
+            // The tag shows the task and one live icon for what the agent is doing right now.
+            chefLabels[agent.id]?.update(ChefTagContent.make(agent, review: review), reducedMotion: reduced)
         }
         seenScopes.formUnion(ranked.map { $0.projectID ?? $0.conversationID })
         noteObservation()
@@ -843,6 +839,15 @@ final class KitchenSceneView: SCNView {
         followID = chef == nil ? nil : selectedID
         if followID != previous { cameraMoving = true; snapCamera = reduced }
         chefLock.unlock()
+        // The others step back: dimmed while a chef is selected.
+        for (id, other) in chefs {
+            let opacity: CGFloat = selectedID == nil || id == selectedID ? 1 : 0.4
+            if other.root.opacity != opacity {
+                SCNTransaction.begin(); SCNTransaction.animationDuration = reduced ? 0 : 0.25
+                other.root.opacity = opacity
+                SCNTransaction.commit()
+            }
+        }
         // Flying to a chef takes the camera; keys held for the free camera are let go.
         if chef != nil, !freeCamera.held.isEmpty { freeCamera.releaseAll() }
         if let chef {
@@ -949,13 +954,14 @@ final class KitchenSceneView: SCNView {
         chefLock.unlock()
         for (id, position) in positions.sorted(by: { $0.key < $1.key }) {
             guard let label = chefLabels[id] else { continue }
-            // A selected chef has the stage to itself.
+            // A selected chef has the stage to itself; resting chefs show their tag on hover.
             if let selectedID, selectedID != id { label.isHidden = true; continue }
+            if selectedID == nil, label.content?.resting == true, hoveredID != id { label.isHidden = true; continue }
             let head = position + SIMD3(0, 2.05 * KitchenLayout.chefScale, 0)
             guard let point = projectWithoutLock(head) else { label.isHidden = true; continue }
             label.isHidden = false
-            let size = label.attributedStringValue.size()
-            let width = min(160, size.width + 12), height = size.height + 4
+            let size = label.tagSize
+            let width = size.width, height = size.height
             let y = isFlipped ? bounds.height - CGFloat(point.y) : CGFloat(point.y)
             // Keep name tags fully inside the view near the walls.
             let x = min(max(4, CGFloat(point.x) - width / 2), max(4, bounds.width - width - 4))
@@ -968,13 +974,21 @@ final class KitchenSceneView: SCNView {
             label.frame = frame
         }
     }
-    /// Name, reported checklist progress (current turn only) and the live action.
-    static func tagText(_ agent: WorkspaceAgent, doing: String) -> String {
-        var parts = [agent.name]
-        if let plan = agent.plan, plan.hasTasks, !plan.tasksPreviousTurn { parts.append("✓ " + plan.taskProgress) }
-        parts.append(doing.count > 48 ? String(doing.prefix(47)) + "…" : doing)
-        return parts.joined(separator: " · ")
+    /// Pointer tracking: resting chefs reveal their tag under the pointer.
+    override func updateTrackingAreas() {
+        super.updateTrackingAreas()
+        trackingAreas.forEach(removeTrackingArea)
+        addTrackingArea(NSTrackingArea(rect: bounds, options: [.mouseMoved, .mouseEnteredAndExited, .activeInKeyWindow, .inVisibleRect], owner: self))
     }
+    override func mouseMoved(with event: NSEvent) {
+        let point = convert(event.locationInWindow, from: nil)
+        var found: String?
+        for hit in hitTest(point, options: [.searchMode: SCNHitTestSearchMode.closest.rawValue]) {
+            if let node = sequence(first: hit.node, next: \.parent).first(where: { $0.name?.hasPrefix("agent:") == true }) { found = String(node.name!.dropFirst(6)); break }
+        }
+        if found != hoveredID { hoveredID = found; placeChefLabels() }
+    }
+    override func mouseExited(with event: NSEvent) { if hoveredID != nil { hoveredID = nil; placeChefLabels() } }
     override func mouseUp(with event: NSEvent) {
         let point = convert(event.locationInWindow, from: nil)
         // Name tags sit above the 3D scene; a click on one opens that chef's progress.
