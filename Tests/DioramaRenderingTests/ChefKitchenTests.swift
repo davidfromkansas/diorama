@@ -353,25 +353,24 @@ import simd
         #expect(!calm.stepNames.contains("once:celebrate_done"))
     }
 
-    @Test func nameTagsShowTheTaskAndOneLiveIcon() {
+    @Test func nameTagsShowAShortTaskAndEmotesShowState() {
         var working = agent("main", .working, tool: "Edit", edits: true)
         working.value.task = "Add a clamp function\nwith tests"
         var tag = ChefTagContent.make(working, review: nil)
-        #expect(tag.text == "Add a clamp function" && tag.icon == .edit && !tag.stale && !tag.resting && tag.progress == nil)
-        // A fresh progress note shows the speech bubble, until the next tool call or a few seconds pass.
-        let now = Date()
-        working.value.lastToolAt = now.addingTimeInterval(-5); working.value.lastCommentaryAt = now.addingTimeInterval(-1)
-        #expect(ChefTagContent.make(working, review: nil, now: now).icon == .commentary)
-        #expect(ChefTagContent.make(working, review: nil, now: now.addingTimeInterval(5)).icon == .edit)
-        working.value.lastToolAt = now
-        #expect(ChefTagContent.make(working, review: nil, now: now).icon == .edit)
-        // Each kind of work has its icon.
-        #expect(ChefTagContent.make(agent("a", .working, tool: "Bash", detail: "npm test"), review: nil).icon == .test)
-        #expect(ChefTagContent.make(agent("a", .working, tool: "Bash", detail: "npm run build"), review: nil).icon == .command)
-        #expect(ChefTagContent.make(agent("a", .working, tool: "mcp__linear__create_issue"), review: nil).icon == .pantry)
-        // Needing you wins; a dish waiting for review shows a check; resting chefs hide until hovered.
-        #expect(ChefTagContent.make(agent("a", .waiting, attention: .approval), review: nil).icon == .help)
-        #expect(ChefTagContent.make(agent("a", .done), review: .awaiting).icon == .ready)
+        #expect(tag.text == "Add a clamp function" && !tag.stale && !tag.resting && tag.progress == nil)
+        // At most four words, without the request around it.
+        #expect(ChefTagContent.shortTitle("Build a website that shows a three.js model of Salesforce Tower") == "Build a website that…")
+        #expect(ChefTagContent.shortTitle("can you please fix the login bug") == "Fix the login bug")
+        #expect(ChefTagContent.shortTitle("Refactor math.js.") == "Refactor math.js")
+        working.value.task = "Build a website that shows a three.js model of Salesforce Tower"
+        tag = ChefTagContent.make(working, review: nil)
+        #expect(tag.text == "Build a website that…" && tag.fullText.hasPrefix("Build a website that shows"))
+        // Lasting emotes: needing you, a dish at the pass; nothing while simply working or resting.
+        #expect(ChefEmote.lasting(working, review: nil) == nil)
+        #expect(ChefEmote.lasting(agent("a", .waiting, attention: .approval), review: nil) == .alert)
+        #expect(ChefEmote.lasting(agent("a", .waiting, attention: .input), review: nil) == .question)
+        #expect(ChefEmote.lasting(agent("a", .done), review: .awaiting) == .star)
+        #expect(ChefEmote.lasting(agent("main", .done), review: .approved) == nil)
         let resting = ChefTagContent.make(agent("a", .done, freshness: .lastKnown), review: nil)
         #expect(resting.resting && resting.stale)
         // The checklist shows as progress for this turn only.
@@ -717,10 +716,115 @@ import simd
             view.apply(agents: cooks, active: false, reducedMotion: false)
             try shot("diorama-kitchen-selected-follow")
         }
+        do {
+            // Emotes: lasting (needs you, a dish ready) and brief reactions.
+            let view = KitchenSceneView(frame: CGRect(x: 0, y: 0, width: 1400, height: 900))
+            let cast = [agent("ask", .waiting, attention: .approval), agent("q", .waiting, attention: .input), agent("done", .done),
+                        agent("e1", .working, tool: "Edit", edits: true), agent("e2", .working, tool: "Bash", detail: "npm test"),
+                        agent("e3", .working, tool: "Read"), agent("e4", .working, tool: "Skill"), agent("e5", .working, tool: "Edit", edits: true)]
+            view.apply(agents: cast, active: false, reducedMotion: true)
+            for chef in view.chefs.values { for _ in 0..<30 { chef.update(1 / 30) } }
+            for (id, emote) in zip(["e1", "e2", "e3", "e4", "e5"], [ChefEmote.note, .check, .thinking, .plus, .idea]) {
+                view.chefEmotes[cast.first { $0.value.id == id }!.id]?.react([emote])
+            }
+            view.layoutSubtreeIfNeeded(); view.fitFloor()
+            view.apply(agents: cast, active: false, reducedMotion: true)
+            // The scene snapshot has no overlays; draw the tags and emotes over it.
+            let scene = try #require(view.snapshot().cgImage(forProposedRect: nil, context: nil, hints: nil))
+            let scale = CGFloat(scene.width) / view.bounds.width
+            let context = try #require(CGContext(data: nil, width: scene.width, height: scene.height, bitsPerComponent: 8, bytesPerRow: 0,
+                                                 space: CGColorSpace(name: CGColorSpace.sRGB)!, bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue))
+            context.draw(scene, in: CGRect(x: 0, y: 0, width: scene.width, height: scene.height))
+            context.interpolationQuality = .none
+            for overlay in view.subviews where !overlay.isHidden && (overlay is ChefTagView || overlay is ChefEmoteView) {
+                guard let layer = overlay.layer else { continue }
+                context.saveGState()
+                let y = view.isFlipped ? view.bounds.height - overlay.frame.maxY : overlay.frame.minY
+                context.translateBy(x: overlay.frame.minX * scale, y: y * scale)
+                context.scaleBy(x: scale, y: scale)
+                if overlay.isFlipped { context.translateBy(x: 0, y: overlay.bounds.height); context.scaleBy(x: 1, y: -1) }
+                layer.render(in: context)
+                context.restoreGState()
+            }
+            let image = try #require(context.makeImage())
+            try #require(NSBitmapImageRep(cgImage: image).representation(using: .png, properties: [:])).write(to: URL(fileURLWithPath: "/tmp/diorama-kitchen-emotes.png"))
+        }
         try capture((0..<10).map { agent("e\($0)", .working, tool: "Edit", edits: true) }, "diorama-kitchen-ten-cooking")
         try capture((0..<10).map { agent("r\($0)", .done, freshness: .lastKnown) }, "diorama-kitchen-break-room")
         func task(_ a: SpatialAgent, _ key: String) -> SpatialAgent { var a = a; a.value.completionKey = key; return a }
         try capture((0..<6).map { task(agent("f\($0)", .working, tool: "Edit", edits: true), "codex:s\($0):turn") } + (0..<3).map { task(agent("t\($0)", .working, tool: "Bash", detail: "npm test", edits: true), "codex:t\($0):turn") }, "diorama-kitchen-food")
         try capture((0..<6).map { agent("e\($0)", .working, tool: "Edit", edits: true) } + (0..<4).map { agent("s\($0)", .working, tool: "Bash", detail: "make", edits: true) }, "diorama-kitchen-islands")
+    }
+}
+
+extension ChefKitchenTests {
+    @Test func momentsReactToWhatChanged() {
+        var before = agent("a", .working, tool: "Edit", edits: true).value
+        var after = before
+        #expect(ChefMoment.detect(previous: nil, current: after).isEmpty)
+        #expect(ChefMoment.detect(previous: before, current: after).isEmpty)
+        // Tests passing and failing, a failed command, a skill fetched.
+        var work = TurnWork()
+        work.started(tool: "Bash", detail: "npm test", call: "t1"); work.finished(call: "t1", failed: false)
+        after.turnWork = work
+        #expect(ChefMoment.detect(previous: before, current: after) == [.check])
+        before = after
+        work.started(tool: "Bash", detail: "npm test", call: "t2"); work.finished(call: "t2", failed: true)
+        work.started(tool: "Skill", detail: "frontend-design", call: "s1")
+        after.turnWork = work
+        #expect(Set(ChefMoment.detect(previous: before, current: after)) == [.angry, .plus])
+        // A plan appears, then a step is ticked off.
+        func step(_ status: String) -> SessionActivityRecord {
+            SessionActivityRecord(id: UUID().uuidString, provider: "Codex", sessionID: "s", turnID: "t", nativeID: UUID().uuidString, kind: "step",
+                                  title: "Step", status: status, detail: "", source: "test", observedAt: Date(), data: .null)
+        }
+        var snapshot = SessionActivitySnapshot()
+        snapshot.records = [step("inProgress"), step("pending"), step("pending")]
+        before = after
+        after.plan = AgentPlan.reported(in: snapshot, provider: "Codex", sessionID: "s", currentTurn: "t")
+        #expect(ChefMoment.detect(previous: before, current: after) == [.idea])
+        before = after
+        snapshot.records[0].status = "completed"
+        after.plan = AgentPlan.reported(in: snapshot, provider: "Codex", sessionID: "s", currentTurn: "t")
+        #expect(ChefMoment.detect(previous: before, current: after) == [.note])
+        // Needing you, a question, the dish done.
+        before = after; after.status = .waiting; after.attentionReason = .approval
+        #expect(ChefMoment.detect(previous: before, current: after) == [.alert])
+        before = after; after.attentionReason = .input
+        #expect(ChefMoment.detect(previous: before, current: after) == [.question])
+        before = after; after.status = .done
+        #expect(ChefMoment.detect(previous: before, current: after) == [.star])
+        // Quiet for a while: thinking.
+        var quiet = agent("q", .working, tool: "Edit").value
+        let now = Date()
+        quiet.lastToolAt = now.addingTimeInterval(-25)
+        #expect(ChefMoment.silent(quiet, now: now))
+        quiet.lastToolAt = now.addingTimeInterval(-5)
+        #expect(!ChefMoment.silent(quiet, now: now))
+    }
+
+    @Test func emotesQueueOneAtATimeAndReturnToTheLastingState() throws {
+        let view = ChefEmoteView(frame: .zero)
+        view.setLasting(.star)
+        #expect(view.showing == .star)
+        let now = Date()
+        view.react([.note, .alert, .check], now: now)
+        // Highest priority first; the others wait their turn.
+        #expect(view.showing == .alert)
+        // Repeats within a few seconds are dropped.
+        view.react([.alert], now: now.addingTimeInterval(1))
+        #expect(view.showing == .alert)
+        #expect(ChefEmote.image(ChefEmote.check.glyph, color: ChefEmote.check.color)?.width == 13)
+    }
+
+    @Test func emotesSitAboveTheirTagAndHideWithIt() throws {
+        let view = KitchenSceneView(frame: CGRect(x: 0, y: 0, width: 1000, height: 700))
+        let waiting = agent("w", .waiting, attention: .approval), cook = agent("c", .working, tool: "Edit", edits: true)
+        view.apply(agents: [waiting, cook], active: false, reducedMotion: false)
+        let emote = try #require(view.chefEmotes[waiting.id]), tag = try #require(view.chefLabels[waiting.id])
+        #expect(emote.lasting == .alert && !emote.isHidden)
+        #expect(emote.frame.midX == tag.frame.midX)
+        #expect(view.isFlipped ? emote.frame.maxY <= tag.frame.minY : emote.frame.minY >= tag.frame.maxY)
+        #expect(view.chefEmotes[cook.id]?.lasting == nil)
     }
 }

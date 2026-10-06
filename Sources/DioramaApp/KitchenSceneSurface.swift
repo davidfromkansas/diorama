@@ -157,6 +157,11 @@ final class KitchenSceneView: SCNView {
     private(set) var chefs: [String: ChefAvatar] = [:]
     private var chefAgents: [String: SpatialAgent] = [:]
     private(set) var chefLabels: [String: ChefTagView] = [:]
+    /// Pixel emotes above the chefs' tags: reactions to moments, and lasting states.
+    private(set) var chefEmotes: [String: ChefEmoteView] = [:]
+    /// When each chef last showed the thinking bubble during a quiet stretch.
+    private var lastThinking: [String: Date] = [:]
+    private var lastSilenceCheck: TimeInterval = 0
     /// The chef under the pointer: resting chefs show their tag only then.
     private var hoveredID: String?
     private var slots: [String: ChefStation] = [:]
@@ -486,6 +491,7 @@ final class KitchenSceneView: SCNView {
             chefLock.lock(); renderChefs.removeAll { $0.id == id }; chefLock.unlock()
             chefs.removeValue(forKey: id)?.root.removeFromParentNode()
             chefLabels.removeValue(forKey: id)?.removeFromSuperview()
+            chefEmotes.removeValue(forKey: id)?.removeFromSuperview(); lastThinking[id] = nil
             chefAgents[id] = nil; slots[id] = nil; pacing[id] = nil
         }
         guard !ranked.isEmpty, case let .success(assets) = ChefAssets.shared, let world = scene else { updatePlayback(); return }
@@ -519,7 +525,17 @@ final class KitchenSceneView: SCNView {
                 world.rootNode.addChildNode(chef.root)
                 let label = ChefTagView(frame: .zero)
                 chefLabels[agent.id] = label; addSubview(label)
+                let emote = ChefEmoteView(frame: .zero)
+                chefEmotes[agent.id] = emote; addSubview(emote)
             } else {
+                // Moments since the last look (not while catching up or for history): a reaction.
+                if !catchingUp, agent.fresh, let previous = pacing[agent.id]?.agent {
+                    let moments = ChefMoment.detect(previous: previous, current: agent.value)
+                    if !moments.isEmpty {
+                        chefEmotes[agent.id]?.react(moments)
+                        KitchenLog.record(["event": "emote", "agent": agent.value.name, "conversation": agent.conversationID, "emotes": moments.map(\.rawValue).joined(separator: ",")])
+                    }
+                }
                 chefLock.lock()
                 chefs[agent.id]?.director.reducedMotion = reduced
                 // One dish per task: a new turn (new completion key) rolls a new one.
@@ -546,8 +562,12 @@ final class KitchenSceneView: SCNView {
                 if pacing[agent.id]?.arriving == false { let want = wanted(agent.id, claim: false); pacing[agent.id]?.want = want }
                 chefLock.unlock()
             }
-            // The tag shows the task and one live icon for what the agent is doing right now.
+            // The tag shows a short task name; the emote above it what needs noticing.
             chefLabels[agent.id]?.update(ChefTagContent.make(agent, review: review), reducedMotion: reduced)
+            if let emote = chefEmotes[agent.id] {
+                emote.reducedMotion = reduced; emote.name = agent.value.name
+                emote.setLasting(ChefEmote.lasting(agent, review: review))
+            }
         }
         seenScopes.formUnion(ranked.map { $0.projectID ?? $0.conversationID })
         noteObservation()
@@ -733,8 +753,21 @@ final class KitchenSceneView: SCNView {
         logStations()
         updateFlames()
         updateBoards()
+        noticeSilence()
         placeChefLabels()
         updatePlayback()
+    }
+    /// A working agent that has gone quiet (composing a long file, thinking) shows a thought
+    /// bubble now and then.
+    private func noticeSilence(now: Date = Date()) {
+        let time = CACurrentMediaTime()
+        guard time - lastSilenceCheck >= 1, !catchingUp else { return }
+        lastSilenceCheck = time
+        for (id, agent) in chefAgents where agent.fresh && ChefMoment.silent(agent.value, now: now) {
+            guard now.timeIntervalSince(lastThinking[id] ?? .distantPast) >= ChefMoment.thinkingEvery else { continue }
+            lastThinking[id] = now
+            chefEmotes[id]?.react([.thinking], now: now)
+        }
     }
     private var effectiveActive: Bool { active && !isHiddenOrHasHiddenAncestor && (window == nil || window?.occlusionState.contains(.visible) == true) }
     /// Whether someone can see this kitchen. A view outside any window (tests, capture) counts as
@@ -964,6 +997,8 @@ final class KitchenSceneView: SCNView {
         for (id, position) in positions.sorted(by: { $0.key < $1.key }) {
             guard let label = chefLabels[id] else { continue }
             // A selected chef has the stage to itself; resting chefs show their tag on hover.
+            let emote = chefEmotes[id]
+            emote?.isHidden = true
             if let selectedID, selectedID != id { label.isHidden = true; continue }
             if selectedID == nil, label.content?.resting == true, hoveredID != id { label.isHidden = true; continue }
             let head = position + SIMD3(0, 2.05 * KitchenLayout.chefScale, 0)
@@ -981,6 +1016,12 @@ final class KitchenSceneView: SCNView {
             }
             placed.append(frame)
             label.frame = frame
+            // The emote sits just above the tag, centred on it.
+            if let emote {
+                let size = ChefEmoteView.size
+                emote.frame = CGRect(x: frame.midX - size.width / 2, y: isFlipped ? frame.minY - size.height - 2 : frame.maxY + 2, width: size.width, height: size.height)
+                emote.isHidden = false
+            }
         }
     }
     /// Pointer tracking: resting chefs reveal their tag under the pointer.
