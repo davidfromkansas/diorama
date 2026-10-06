@@ -276,6 +276,39 @@ final class KitchenSceneView: SCNView {
     private var motionActivity: NSObjectProtocol?
 
     static let controlsHint = "Scroll to zoom · Arrow keys to move · Q/W rotate · R reset"
+    // MARK: On-screen log
+    /// What each chef last showed, so only changes are logged.
+    private var shown: [String: (intent: String, station: String?)] = [:]
+    /// Logs chefs that set off for, or reach, a station (kitchens in a window only).
+    private func logStations(_ how: String = "") {
+        guard window != nil else { return }
+        chefLock.lock()
+        let states = chefs.mapValues { chef in (intent: chef.director.intent, station: chef.director.station?.area, clip: chef.director.clip.name) }
+        chefLock.unlock()
+        for (id, state) in states {
+            guard let agent = chefAgents[id] else { continue }
+            let key = state.intent?.key ?? "", before = shown[id]
+            if before?.intent == key && before?.station == state.station { continue }
+            shown[id] = (key, state.station)
+            var fields = ["agent": agent.value.name, "conversation": agent.conversationID, "provider": agent.value.provider,
+                          "status": agent.value.status.rawValue, "tool": agent.value.latestTool,
+                          "detail": String(agent.value.latestToolDetail.split(whereSeparator: \.isNewline).first?.prefix(160) ?? "")]
+            if before?.intent != key {
+                fields["event"] = how.isEmpty ? "heading" : how
+                fields["station"] = state.intent?.station?.area ?? "here"
+                fields["loop"] = state.intent?.loop ?? ""
+                if let shot = state.intent?.oneShot?.clip { fields["gesture"] = shot }
+                KitchenLog.record(fields)
+            }
+            if let station = state.station, before?.station != station, how.isEmpty {
+                fields["event"] = "arrived"; fields["station"] = station; fields["clip"] = state.clip
+                fields["gesture"] = nil; fields["loop"] = nil
+                KitchenLog.record(fields)
+            }
+        }
+        for id in shown.keys where states[id] == nil { shown[id] = nil }
+    }
+
     // MARK: Free camera
     /// Scroll to zoom, arrow keys to move, Q/W to turn, R to reset (see `KitchenCameraController`).
     private(set) var freeCamera = KitchenCameraController()
@@ -501,7 +534,7 @@ final class KitchenSceneView: SCNView {
         seenScopes.formUnion(ranked.map { $0.projectID ?? $0.conversationID })
         noteObservation()
         chefLock.lock(); pace(now: now); chefLock.unlock()
-        if catchingUp { catchUp() }
+        if catchingUp { catchUp(); logStations("jumped") } else { logStations() }
         syncSelection()
         updateFlames()
         updateBoards()
@@ -676,6 +709,7 @@ final class KitchenSceneView: SCNView {
             applyFreeCamera()
         }
         chefLock.lock(); pace(now: CACurrentMediaTime()); chefLock.unlock()
+        logStations()
         updateFlames()
         updateBoards()
         placeChefLabels()
