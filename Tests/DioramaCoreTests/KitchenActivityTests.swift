@@ -77,6 +77,7 @@ struct KitchenActivityTests {
         #expect(KitchenActivity.writtenFiles(command: python) == ["tower/sun.js"])
         #expect(KitchenActivity.classify(tool: "Bash", detail: python) == .editing)
         #expect(KitchenActivity.writtenFiles(command: "python3 - <<EOF\nfrom pathlib import Path\nPath('README.md').write_text('x')\nEOF") == ["README.md"])
+        #expect(KitchenActivity.writtenFiles(command: "python3 - <<'PY'\nfrom pathlib import Path\nimport json\np=Path('package.json')\ndata=json.loads(p.read_text()); p.write_text(json.dumps(data))\nPY") == ["package.json"])
         #expect(KitchenActivity.writtenFiles(command: "node - <<'JS'\nconst fs = require('fs')\nconst f = 'index.html'\nfs.writeFileSync(f, html)\nJS") == ["index.html"])
         // Reading files, or writing scratch output, is not editing.
         #expect(KitchenActivity.writtenFiles(command: "python3 - <<'EOF'\nprint(open('package.json').read())\nEOF").isEmpty)

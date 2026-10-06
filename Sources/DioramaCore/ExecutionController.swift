@@ -728,8 +728,12 @@ public final class ExecutionController {
                 let failed = item["status"].string == "failed" || { if case .number(let code) = item["exitCode"] { return code != 0 }; return false }()
                 // File changes name their files; commands and tools their command or path.
                 let files = item["changes"].array.compactMap { $0["path"].string }
-                activity(id, kind: done ? (failed ? "toolFailed" : "toolFinished") : "toolStarted", state: .working, call: itemID, tool: item["tool"].string ?? type,
-                         detail: files.isEmpty ? item["command"].string ?? item["arguments"]["command"].string ?? item["arguments"]["file_path"].string : files.joined(separator: "\n"))
+                // Codex's JavaScript runner driving Computer Use (a browser preview, an app) is
+                // looking at the work, as in saved transcripts (`ActivityParser`).
+                let computerUse = item["tool"].string == "js" && item["arguments"]["code"].string?.contains("cua.") == true
+                activity(id, kind: done ? (failed ? "toolFailed" : "toolFinished") : "toolStarted", state: .working, call: itemID, tool: computerUse ? "computer_use" : item["tool"].string ?? type,
+                         detail: computerUse ? item["arguments"]["title"].string ?? "Computer Use"
+                            : files.isEmpty ? item["command"].string ?? item["arguments"]["command"].string ?? item["arguments"]["file_path"].string : files.joined(separator: "\n"))
             }
             setEntry(id, itemID: itemID, kind: kind, text: text, append: false,
                      image: TranscriptImage(itemType: type, path: item["path"].string), tool: ToolResult(item: item))
@@ -797,7 +801,15 @@ public final class ExecutionController {
         }
         // Merge against live updates that arrived while awaiting reads; never replace newer streamed records.
         var latest = activitySnapshot(provider: session.provider, id: session.sessionID)
-        for record in snapshot.records where !latest.records.contains(where: { $0.id == record.id && $0.observedAt > record.observedAt }) { latest.apply(record) }
+        // A checklist revised meanwhile replaced its steps; the read's older steps must not return.
+        func owner(_ record: SessionActivityRecord) -> String { [record.provider, record.sessionID, record.parentID ?? ""].joined(separator: "\u{1F}") }
+        let revised = Set(latest.records.filter { checklist in
+            checklist.kind == "checklist" && snapshot.records.first(where: { $0.id == checklist.id })?.observedAt != checklist.observedAt
+        }.map(owner))
+        for record in snapshot.records where !latest.records.contains(where: { $0.id == record.id && $0.observedAt > record.observedAt }) {
+            if record.kind == "step", revised.contains(owner(record)) { continue }
+            latest.apply(record)
+        }
         if tasks[session.sessionID] != nil { tasks[session.sessionID]?.structuredActivity = latest; saveActivity(session.sessionID) }
         else { recordedActivity[session.provider.rawValue + ":" + session.sessionID] = latest }
     }
