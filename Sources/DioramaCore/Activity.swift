@@ -195,14 +195,15 @@ public enum ActivityParser {
                 if let input = p["input"] as? String, let inner = codeModeCall(input) {
                     // A wrapped patch keeps its newlines escaped inside the script's string literal.
                     let detail = inner.tool == "apply_patch" ? patchFiles(input.replacingOccurrences(of: "\\n", with: "\n")).joined(separator: "\n")
-                        : inner.tool == "write_stdin" ? polledSession(input).map { "session=" + $0 } : inner.detail
+                        : inner.tool == "write_stdin" ? polledSession(input).map { "session=" + $0 } : inner.detail.map(KitchenActivity.withoutHeredocs)
                     return [event("toolStarted", .working, call: call, tool: inner.tool, detail: detail.map { String($0.prefix(1000)) }, turn: turn)]
                 }
                 let args = (p["arguments"] as? String).flatMap { try? JSONSerialization.jsonObject(with: Data($0.utf8)) } as? [String: Any]
                 // A poll names the session it reads, so its exit settles the command running there.
                 let polled = p["name"] as? String == "write_stdin" ? (args?["session_id"]).map { "session=\($0)" } : nil
                 let command = polled ?? (args?["command"] as? [String])?.joined(separator: " ") ?? args?["command"] ?? args?["cmd"] ?? args?["file_path"]
-                return [event("toolStarted", .working, call: call, tool: p["name"] as? String, detail: clipped(command), turn: turn)]
+                // Heredoc bodies (whole files written inline) would crowd out what the command runs.
+                return [event("toolStarted", .working, call: call, tool: p["name"] as? String, detail: clipped((command as? String).map(KitchenActivity.withoutHeredocs) ?? command), turn: turn)]
             }
             if ["function_call_output", "custom_tool_call_output"].contains(type) {
                 // Shell output reports its exit status, or the session a still-running command

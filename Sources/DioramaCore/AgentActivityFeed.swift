@@ -116,11 +116,18 @@ public enum AgentActivityFeed {
             // Codex code mode's own plumbing (its script runner and waits) is not the agent's work.
             if AgentActivityFeed.plumbing.contains(tool.lowercased()) { return }
             let written = KitchenActivity.commandTools.contains(tool.lowercased()) ? KitchenActivity.writtenFiles(command: detail) : []
+            let alsoTests = !written.isEmpty && KitchenActivity.classify(tool: tool, detail: detail) == .testing
             if KitchenActivity.isEditing(tool: tool) || !written.isEmpty {
                 let files = (written.isEmpty ? detail.split(whereSeparator: \.isNewline).map(String.init) : written).map { Self.name($0) }.filter { !$0.isEmpty }
                 // Consecutive edits of the same files read as one step.
                 if let last = result.last, last.kind == .editing, last.detail == files.joined(separator: "\n") { return }
                 append(FeedEntry(id: id, kind: .editing, title: "Edited " + Self.list(files.isEmpty ? ["a file"] : files), detail: files.joined(separator: "\n"), outcome: .done, time: time))
+                // A command that writes a file and then runs the tests shows both.
+                guard alsoTests else { return }
+                let script = KitchenActivity.withoutHeredocs(KitchenActivity.shellScript(detail))
+                let line = script.split(whereSeparator: \.isNewline).last.map(String.init) ?? script
+                append(FeedEntry(id: id + ":test", kind: .test, title: "Tested · " + (line.count > 60 ? String(line.prefix(59)) + "…" : line), detail: script, outcome: .running, time: time))
+                if let call { open[call] = result.count - 1 }
                 return
             }
             let activity = KitchenActivity.classify(tool: tool, detail: detail)
