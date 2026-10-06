@@ -99,9 +99,7 @@ final class ChefTagView: NSView {
     override init(frame: NSRect) {
         super.init(frame: frame)
         wantsLayer = true
-        layer?.cornerRadius = 5
-        layer?.backgroundColor = NSColor.white.withAlphaComponent(0.93).cgColor
-        layer?.borderColor = NSColor.black.withAlphaComponent(0.08).cgColor; layer?.borderWidth = 0.5
+        layerContentsRedrawPolicy = .onSetNeedsDisplay
         iconView.imageScaling = .scaleProportionallyDown
         addSubview(iconView)
         clip.wantsLayer = true; clip.layer?.masksToBounds = true
@@ -111,8 +109,20 @@ final class ChefTagView: NSView {
         clip.addSubview(label)
         track.backgroundColor = NSColor.black.withAlphaComponent(0.08).cgColor
         fill.backgroundColor = NSColor(red: 0.18, green: 0.7, blue: 0.42, alpha: 1).cgColor
-        layer?.addSublayer(track); layer?.addSublayer(fill)
+        needsDisplay = true
     }
+    // The backing layer can be replaced when the tag joins the kitchen's view, so its look is
+    // applied here rather than once at init.
+    override var wantsUpdateLayer: Bool { true }
+    override func updateLayer() {
+        guard let layer else { return }
+        layer.cornerRadius = 5
+        layer.backgroundColor = NSColor.white.withAlphaComponent(0.93).cgColor
+        layer.borderColor = NSColor.black.withAlphaComponent(0.08).cgColor; layer.borderWidth = 0.5
+        if track.superlayer !== layer { layer.addSublayer(track); layer.addSublayer(fill) }
+        layoutTag()
+    }
+    override func setFrameSize(_ newSize: NSSize) { super.setFrameSize(newSize); layoutTag() }
     required init?(coder: NSCoder) { fatalError("init(coder:) has not been implemented") }
 
     private var textWidth: CGFloat { ceil(label.attributedStringValue.size().width) }
@@ -128,7 +138,9 @@ final class ChefTagView: NSView {
         label.stringValue = content.text
         if iconChanged {
             if let symbol = content.icon.symbol {
-                let config = NSImage.SymbolConfiguration(pointSize: 9.5, weight: .bold).applying(.init(paletteColors: [content.icon.color]))
+                // Filled symbols (the check, the raised hand) draw their mark in white on the colour.
+                let colors: [NSColor] = content.icon == .ready ? [.white, content.icon.color] : [content.icon.color]
+                let config = NSImage.SymbolConfiguration(pointSize: 9.5, weight: .bold).applying(.init(paletteColors: colors))
                 iconView.image = NSImage(systemSymbolName: symbol, accessibilityDescription: content.icon.rawValue)?.withSymbolConfiguration(config)
             } else { iconView.image = nil }
             // Needing you pulses until it's resolved.
@@ -159,9 +171,10 @@ final class ChefTagView: NSView {
         let progress = content?.progress
         track.isHidden = progress == nil; fill.isHidden = progress == nil
         let inset: CGFloat = 6, width = bounds.width - inset * 2
-        // The view is flipped, but its layer is not: the line sits at the bottom edge.
-        track.frame = CGRect(x: inset, y: 2, width: max(0, width), height: 2)
-        fill.frame = CGRect(x: inset, y: 2, width: max(2, width * CGFloat(progress ?? 0)), height: 2)
+        // Along the bottom edge (the view is flipped, and so is its backing layer).
+        let y = bounds.height - 3.5
+        track.frame = CGRect(x: inset, y: y, width: max(0, width), height: 2)
+        fill.frame = CGRect(x: inset, y: y, width: max(2, width * CGFloat(progress ?? 0)), height: 2)
         CATransaction.commit()
     }
 
