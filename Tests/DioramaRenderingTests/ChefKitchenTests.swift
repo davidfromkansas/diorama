@@ -871,3 +871,29 @@ extension ChefKitchenTests {
         _ = emote
     }
 }
+
+extension ChefKitchenTests {
+    @Test func aQuestionLeftForYouSendsTheChefToTheBell() {
+        let asked = [Entry(id: "u", kind: "You", text: "Add a stats dashboard. Ask me which colour theme first.", timestamp: nil),
+                     Entry(id: "q1", kind: "Assistant", text: "Which colour theme should the dashboard use?", timestamp: nil),
+                     Entry(id: "q2", kind: "Assistant", text: "Which colour theme should the dashboard use?", timestamp: nil)]
+        // The turn ended on the question without changing anything: it needs your answer.
+        #expect(WorkspaceAgentPresentation.awaitsAnswer(agent("a", .done).value, entries: asked))
+        // Waiting for the answer mid-turn (Codex sleeps after an asynchronous question).
+        #expect(WorkspaceAgentPresentation.awaitsAnswer(agent("a", .working, tool: "sleep").value, entries: asked))
+        #expect(!WorkspaceAgentPresentation.awaitsAnswer(agent("a", .working, tool: "Edit").value, entries: asked))
+        // Work delivered with a closing offer is a dish, not a question.
+        var delivered = agent("a", .done).value
+        var work = TurnWork(); work.started(tool: "Edit", detail: "dashboard.html", call: "e"); delivered.turnWork = work
+        #expect(!WorkspaceAgentPresentation.awaitsAnswer(delivered, entries: asked))
+        // Once you answer, it isn't waiting any more.
+        #expect(!WorkspaceAgentPresentation.awaitsAnswer(agent("a", .done).value, entries: asked + [Entry(id: "a", kind: "You", text: "Dark blue", timestamp: nil)]))
+        // The repeated question shows once in the conversation.
+        let rows = ConversationHistory.rows(asked, mode: .conversation)
+        #expect(rows.flatMap(\.entries).filter { $0.kind == "Assistant" }.count == 1)
+        #expect(ConversationHistory.rows(asked, mode: .detailed).flatMap(\.entries).count == 3)
+        // At the bell with a question emote.
+        var waiting = agent("a", .done); waiting.value.status = .waiting; waiting.value.attentionReason = .input
+        #expect(KitchenLayout.work(for: waiting.value).area == "bell" && ChefEmote.lasting(waiting, review: nil) == .question)
+    }
+}

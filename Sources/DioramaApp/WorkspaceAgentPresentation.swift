@@ -279,7 +279,28 @@ enum WorkspaceAgentPresentation {
                 ?? (agent.isMain ? source.snapshot.records.reversed().compactMap { $0.data["model"].string }.first : nil)
 
         }
+        // An agent that asked you something and is waiting for the answer (Codex's asynchronous
+        // question, or a turn that ends on a question without changing anything) needs you.
+        if let main = result.indices.first(where: { result[$0].isMain }), let current = sources.last,
+           let transcript = current.task?.transcript ?? current.observation?.transcript,
+           awaitsAnswer(result[main], entries: transcript.entries) {
+            result[main].status = .waiting
+            result[main].attentionReason = .input
+        }
         return result
+    }
+    static func awaitsAnswer(_ agent: WorkspaceAgent, entries: [Entry]) -> Bool {
+        guard [.working, .done, .ready].contains(agent.status) else { return false }
+        let start = entries.lastIndex { $0.kind == "You" }.map { $0 + 1 } ?? 0
+        guard let asked = entries[start...].last(where: { $0.kind == "Assistant" }),
+              asked.text.trimmingCharacters(in: .whitespacesAndNewlines).hasSuffix("?") else { return false }
+        if agent.status == .working {
+            // Still in the turn: only while it waits on the question (Codex sleeps until you answer).
+            return ["sleep", "wait", "request_user_input_async", "request_user_input"].contains(agent.latestTool.lowercased())
+        }
+        // The turn ended on a question: a question, unless it also delivered work (then the
+        // closing "want me to…?" is an offer and the dish is ready).
+        return agent.turnWork.files.isEmpty
     }
 
     static func activityIdentity(_ event: ActivityEvent) -> String {
