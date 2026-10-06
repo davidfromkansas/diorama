@@ -2,41 +2,12 @@ import AppKit
 import DioramaCore
 import QuartzCore
 
-/// What a chef's name tag shows (progressive disclosure: the task and one live icon here; the
-/// rest is in the command bar when the chef is selected).
+/// What a chef's name tag shows: a short task name and the checklist progress line. What the
+/// chef is doing (and needing you, a dish ready) shows as an emote above it (`KitchenEmote`).
 struct ChefTagContent: Equatable {
-    enum Icon: String {
-        case none, commentary, read, plan, edit, command, test, check, pantry, tool, help, ready
-        var symbol: String? {
-            switch self {
-            case .none: nil
-            case .commentary: "text.bubble.fill"
-            case .read: "book.fill"
-            case .plan: "list.clipboard.fill"
-            case .edit: "scissors"
-            case .command: "flame.fill"
-            case .test: "testtube.2"
-            case .check: "eye.fill"
-            case .pantry: "cabinet.fill"
-            case .tool: "wrench.and.screwdriver.fill"
-            case .help: "hand.raised.fill"
-            case .ready: "checkmark.circle.fill"
-            }
-        }
-        var color: NSColor {
-            switch self {
-            case .help: .systemOrange
-            case .ready: NSColor(red: 0.18, green: 0.7, blue: 0.42, alpha: 1)
-            case .commentary: .systemBlue
-            case .command: NSColor(red: 0.93, green: 0.45, blue: 0.16, alpha: 1)
-            case .test, .check: .systemTeal
-            case .pantry: .systemPurple
-            default: NSColor(white: 0.3, alpha: 1)
-            }
-        }
-    }
     var text: String
-    var icon: Icon
+    /// The whole task, for the tooltip and accessibility.
+    var fullText: String
     /// Checklist progress for the current turn, when the agent keeps one.
     var progress: Double?
     /// Last known rather than live: drawn faded.
@@ -44,48 +15,49 @@ struct ChefTagContent: Equatable {
     /// Resting in the break room: shown only on hover.
     var resting: Bool
 
-    /// Seconds a progress note keeps its speech-bubble icon before the tool icon returns.
-    static let commentaryHold: TimeInterval = 3
+    static let maxWords = 4
 
     static func make(_ agent: SpatialAgent, review: KitchenReviews.State?, now: Date = Date()) -> ChefTagContent {
         let value = agent.value
         let work = KitchenLayout.work(for: value, review: review)
-        let icon: Icon
-        if agent.needsAttention || value.status == .failed || value.status == .waiting { icon = .help }
-        else if work.area == "serving" { icon = .ready }
-        else if value.status == .working {
-            if let said = value.lastCommentaryAt, said >= (value.lastToolAt ?? .distantPast), now.timeIntervalSince(said) < commentaryHold { icon = .commentary }
-            else {
-                switch KitchenActivity.classify(tool: value.latestTool, detail: value.latestToolDetail) {
-                case .researching: icon = value.latestTool.isEmpty ? .none : .read
-                case .planning: icon = .plan
-                case .editing: icon = .edit
-                case .commands: icon = .command
-                case .testing: icon = .test
-                case .checking: icon = .check
-                case .resources: icon = .pantry
-                case .other: icon = value.latestTool.isEmpty ? .none : .tool
-                }
-            }
-        } else { icon = .none }
         // Only a list kept this turn fills the line; the tag stays quiet otherwise.
         var progress: Double?
         if case .steps = value.planProgress { progress = value.planProgress.fraction }
         // The task's opening: its first line, up to the end of the first sentence.
         let firstLine = value.task.split(whereSeparator: \.isNewline).first.map(String.init) ?? ""
         let task = TaskTitle.full(firstLine).components(separatedBy: ". ").first ?? ""
-        return ChefTagContent(text: task.isEmpty ? value.name : task, icon: icon, progress: progress,
-                              stale: !agent.fresh, resting: work.area == "break")
+        let short = shortTitle(task)
+        return ChefTagContent(text: short.isEmpty ? value.name : short, fullText: task.isEmpty ? value.name : task,
+                              progress: progress, stale: !agent.fresh, resting: work.area == "break")
+    }
+
+    /// At most `maxWords` words of the task, without a leading request ("can you…", "please…")
+    /// and with "…" when words were cut.
+    static func shortTitle(_ task: String) -> String {
+        var text = task.trimmingCharacters(in: .whitespacesAndNewlines)
+        let requests = ["can you please", "could you please", "can you", "could you", "would you", "please", "i want you to", "i'd like you to", "let's", "lets", "help me", "go ahead and"]
+        var stripped = true
+        while stripped {
+            stripped = false
+            for request in requests where text.lowercased().hasPrefix(request + " ") {
+                text = String(text.dropFirst(request.count)).trimmingCharacters(in: .whitespaces); stripped = true
+            }
+        }
+        let words = text.split(whereSeparator: \.isWhitespace).map(String.init)
+        guard !words.isEmpty else { return "" }
+        var kept = words.prefix(maxWords).joined(separator: " ")
+        while let last = kept.last, ".,;:!?—-".contains(last) { kept.removeLast() }
+        if let first = kept.first, first.isLowercase { kept = first.uppercased() + kept.dropFirst() }
+        return words.count > maxWords ? kept + "…" : kept
     }
 }
 
-/// A chef's name tag: one live icon and the task, scrolling at a calm pace when it is too long,
+/// A chef's name tag: the short task name (scrolling at a calm pace if it is still too long),
 /// with a thin checklist progress line underneath.
 final class ChefTagView: NSView {
     static let maxTextWidth: CGFloat = 150
     static let scrollSpeed: CGFloat = 35 // points per second
     static let edgePause: CFTimeInterval = 1.5
-    private let iconView = NSImageView()
     private let clip = NSView()
     private let label = NSTextField(labelWithString: "")
     private let track = TagBar(color: NSColor.black.withAlphaComponent(0.08)), fill = TagBar(color: NSColor(red: 0.18, green: 0.7, blue: 0.42, alpha: 1))
@@ -99,8 +71,6 @@ final class ChefTagView: NSView {
         super.init(frame: frame)
         wantsLayer = true
         layerContentsRedrawPolicy = .onSetNeedsDisplay
-        iconView.imageScaling = .scaleProportionallyDown
-        addSubview(iconView)
         clip.wantsLayer = true; clip.layer?.masksToBounds = true
         addSubview(clip)
         label.font = .systemFont(ofSize: 10, weight: .semibold); label.textColor = NSColor(white: 0.18, alpha: 1)
@@ -124,34 +94,16 @@ final class ChefTagView: NSView {
     required init?(coder: NSCoder) { fatalError("init(coder:) has not been implemented") }
 
     private var textWidth: CGFloat { ceil(label.attributedStringValue.size().width) }
-    private var iconWidth: CGFloat { content?.icon.symbol == nil ? 0 : 15 }
     /// The tag's size for its current content.
-    var tagSize: NSSize { NSSize(width: 8 + iconWidth + min(Self.maxTextWidth, textWidth) + 8, height: content?.progress == nil ? 17 : 19) }
+    var tagSize: NSSize { NSSize(width: 8 + min(Self.maxTextWidth, textWidth) + 8, height: content?.progress == nil ? 17 : 19) }
 
     func update(_ content: ChefTagContent, reducedMotion: Bool) {
         guard content != self.content || reducedMotion != self.reducedMotion else { return }
         let textChanged = content.text != self.content?.text || reducedMotion != self.reducedMotion
-        let iconChanged = content.icon != self.content?.icon
         self.content = content; self.reducedMotion = reducedMotion
         label.stringValue = content.text
-        if iconChanged {
-            if let symbol = content.icon.symbol {
-                // Filled symbols (the check, the raised hand) draw their mark in white on the colour.
-                let colors: [NSColor] = content.icon == .ready ? [.white, content.icon.color] : [content.icon.color]
-                let config = NSImage.SymbolConfiguration(pointSize: 9.5, weight: .bold).applying(.init(paletteColors: colors))
-                iconView.image = NSImage(systemSymbolName: symbol, accessibilityDescription: content.icon.rawValue)?.withSymbolConfiguration(config)
-            } else { iconView.image = nil }
-            // Needing you pulses until it's resolved.
-            iconView.wantsLayer = true
-            iconView.layer?.removeAnimation(forKey: "pulse")
-            if content.icon == .help, !reducedMotion {
-                let pulse = CABasicAnimation(keyPath: "opacity")
-                pulse.fromValue = 1; pulse.toValue = 0.35; pulse.duration = 0.7; pulse.autoreverses = true; pulse.repeatCount = .infinity
-                iconView.layer?.add(pulse, forKey: "pulse")
-            }
-        }
         alphaValue = content.stale ? 0.6 : 1
-        setAccessibilityLabel(content.text)
+        setAccessibilityLabel(content.fullText); toolTip = content.fullText
         layoutTag()
         if textChanged { restartMarquee() }
     }
@@ -160,10 +112,8 @@ final class ChefTagView: NSView {
 
     private func layoutTag() {
         let height: CGFloat = 17
-        iconView.frame = NSRect(x: 6, y: 3, width: 11, height: 11)
-        iconView.isHidden = iconWidth == 0
         let visible = min(Self.maxTextWidth, textWidth)
-        clip.frame = NSRect(x: 7 + iconWidth, y: 2, width: visible + 2, height: height - 3)
+        clip.frame = NSRect(x: 7, y: 2, width: visible + 2, height: height - 3)
         label.frame = NSRect(x: 0, y: -1, width: textWidth + 4, height: height - 2)
         let progress = content?.progress
         track.isHidden = progress == nil; fill.isHidden = progress == nil

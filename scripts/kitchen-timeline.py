@@ -115,7 +115,8 @@ def main():
         events = [(t, text, "") for t, text in transcript(conversation) if t]
         for r in rows:
             station = r.get("station", "")
-            what = {"heading": "→ " + station, "arrived": "● at " + station, "jumped": "⇢ jumped to " + station}.get(r.get("event"), r.get("event", ""))
+            what = {"heading": "→ " + station, "arrived": "● at " + station, "jumped": "⇢ jumped to " + station,
+                    "emote": "✦ emote " + r.get("emotes", "")}.get(r.get("event"), r.get("event", ""))
             extra = r.get("gesture") or r.get("clip") or r.get("loop") or ""
             events.append((parse_time(r.get("time")), "", f"{what} ({extra})" + (f"  ← {r.get('tool')}" if r.get("event") != "arrived" and r.get("tool") else "")))
         events.sort(key=lambda e: e[0] or datetime.min.replace(tzinfo=timezone.utc))

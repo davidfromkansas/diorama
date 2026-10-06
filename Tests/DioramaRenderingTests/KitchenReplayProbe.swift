@@ -54,7 +54,7 @@ import Testing
             let at = director.station?.area ?? "walking"
             if want != lastArea {
                 let tag = ChefTagContent.make(view.chefs.keys.first.flatMap { _ in state(at: start.addingTimeInterval(t)) } ?? state(at: start), review: nil, now: start.addingTimeInterval(t))
-                print(String(format: "PROBE %6.1fs heading to %@ (%@) · tag icon %@", t, want, director.intent?.loop ?? "", tag.icon.rawValue)); lastArea = want
+                print(String(format: "PROBE %6.1fs heading to %@ (%@) · tag %@", t, want, director.intent?.loop ?? "", tag.text)); lastArea = want
             }
             if at != lastStation && at != "walking" { print(String(format: "PROBE %6.1fs   arrived %@ · clip %@", t, at, director.clip.name)); lastStation = at }
         }
