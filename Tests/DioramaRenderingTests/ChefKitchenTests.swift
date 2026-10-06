@@ -356,15 +356,19 @@ import simd
     @Test func nameTagsShowAShortTaskAndEmotesShowState() {
         var working = agent("main", .working, tool: "Edit", edits: true)
         working.value.task = "Add a clamp function\nwith tests"
-        var tag = ChefTagContent.make(working, review: nil)
-        #expect(tag.text == "Add a clamp function" && !tag.stale && !tag.resting && tag.progress == nil)
-        // At most four words, without the request around it.
-        #expect(ChefTagContent.shortTitle("Build a website that shows a three.js model of Salesforce Tower") == "Build a website that…")
-        #expect(ChefTagContent.shortTitle("can you please fix the login bug") == "Fix the login bug")
-        #expect(ChefTagContent.shortTitle("Refactor math.js.") == "Refactor math.js")
+        // A written four-word label when there is one, a keyword label until then.
+        let labels = TaskLabels(labels: [TaskLabels.key("Add a clamp function with tests"): "Add Clamp Function"])
+        var tag = ChefTagContent.make(working, review: nil, labels: labels)
+        #expect(tag.text == "Add Clamp Function" && tag.fullText == "Add a clamp function with tests" && !tag.stale && !tag.resting && tag.progress == nil)
         working.value.task = "Build a website that shows a three.js model of Salesforce Tower"
-        tag = ChefTagContent.make(working, review: nil)
-        #expect(tag.text == "Build a website that…" && tag.fullText.hasPrefix("Build a website that shows"))
+        tag = ChefTagContent.make(working, review: nil, labels: TaskLabels(labels: [:]))
+        #expect(tag.text == "Build Website Three.js Model" && tag.fullText.hasPrefix("Build a website that shows"))
+        #expect(TaskLabel.fallback("can you please fix the login bug on mobile safari") == "Fix Login Bug Mobile")
+        // Model replies become labels only when they are labels.
+        #expect(TaskLabel.clean("Warning: no stdin data received\nAdd Stats Dashboard\n") == "Add Stats Dashboard")
+        #expect(TaskLabel.clean("**Fix Mobile Safari Login.**") == "Fix Mobile Safari Login")
+        #expect(TaskLabel.clean("I need you to grant permissions to access the Paper design tool. However") == nil)
+        #expect(TaskLabel.clean("") == nil)
         // Lasting emotes: needing you, a dish at the pass; nothing while simply working or resting.
         #expect(ChefEmote.lasting(working, review: nil) == nil)
         #expect(ChefEmote.lasting(agent("a", .waiting, attention: .approval), review: nil) == .alert)

@@ -144,6 +144,8 @@ public final class ExecutionController {
     public internal(set) var permissionRequirements: WireValue = .null
     var changingPermissions: Set<String> = []
     public private(set) var connected = false
+    /// Short one-shot threads (task labels) and what they've said so far, by thread.
+    @ObservationIgnored var labelRuns: [String: LabelRun] = [:]
     public private(set) var connecting = false
     public var error: String?
     public private(set) var creating = false
@@ -564,6 +566,8 @@ public final class ExecutionController {
             }
         }
         let method = event["method"].string ?? "", p = event["params"]
+        // A label run's thread is Diorama's own scratch work, never a task in the library.
+        if let thread = p["threadId"].string, let run = labelRuns[thread] { run.receive(method, p); return }
         if method == "thread/name/updated", let id = p["threadId"].string, let name = p["threadName"].string, !name.isEmpty {
             titleEvent?(id, .codex, name)
         }

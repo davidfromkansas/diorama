@@ -15,40 +15,17 @@ struct ChefTagContent: Equatable {
     /// Resting in the break room: shown only on hover.
     var resting: Bool
 
-    static let maxWords = 4
-
-    static func make(_ agent: SpatialAgent, review: KitchenReviews.State?, now: Date = Date()) -> ChefTagContent {
+    static func make(_ agent: SpatialAgent, review: KitchenReviews.State?, now: Date = Date(), labels: TaskLabels = .shared) -> ChefTagContent {
         let value = agent.value
         let work = KitchenLayout.work(for: value, review: review)
         // Only a list kept this turn fills the line; the tag stays quiet otherwise.
         var progress: Double?
         if case .steps = value.planProgress { progress = value.planProgress.fraction }
-        // The task's opening: its first line, up to the end of the first sentence.
-        let firstLine = value.task.split(whereSeparator: \.isNewline).first.map(String.init) ?? ""
-        let task = TaskTitle.full(firstLine).components(separatedBy: ". ").first ?? ""
-        let short = shortTitle(task)
+        // A four-word summary of the whole task (written by a small model, keyword label meanwhile).
+        let task = TaskTitle.full(value.task)
+        let short = labels.label(for: task, provider: value.provider.lowercased().contains("claude") ? .claude : .codex)
         return ChefTagContent(text: short.isEmpty ? value.name : short, fullText: task.isEmpty ? value.name : task,
                               progress: progress, stale: !agent.fresh, resting: work.area == "break")
-    }
-
-    /// At most `maxWords` words of the task, without a leading request ("can you…", "please…")
-    /// and with "…" when words were cut.
-    static func shortTitle(_ task: String) -> String {
-        var text = task.trimmingCharacters(in: .whitespacesAndNewlines)
-        let requests = ["can you please", "could you please", "can you", "could you", "would you", "please", "i want you to", "i'd like you to", "let's", "lets", "help me", "go ahead and"]
-        var stripped = true
-        while stripped {
-            stripped = false
-            for request in requests where text.lowercased().hasPrefix(request + " ") {
-                text = String(text.dropFirst(request.count)).trimmingCharacters(in: .whitespaces); stripped = true
-            }
-        }
-        let words = text.split(whereSeparator: \.isWhitespace).map(String.init)
-        guard !words.isEmpty else { return "" }
-        var kept = words.prefix(maxWords).joined(separator: " ")
-        while let last = kept.last, ".,;:!?—-".contains(last) { kept.removeLast() }
-        if let first = kept.first, first.isLowercase { kept = first.uppercased() + kept.dropFirst() }
-        return words.count > maxWords ? kept + "…" : kept
     }
 }
 
