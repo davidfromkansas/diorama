@@ -182,6 +182,12 @@ public enum SessionActivityReducer {
     public static func ingest(_ event: WireValue, provider: Provider, sessionID: String, into snapshot: inout SessionActivitySnapshot) {
         var event = event
         let method = event["method"].string
+        // Newer Claude Code writes tool results as `toolUseResult`; older versions `tool_use_result`.
+        if method == "diorama/claudeActivity", event["params"]["event"]["tool_use_result"] == .null, event["params"]["event"]["toolUseResult"] != .null {
+            var claude = event["params"]["event"].object; claude["tool_use_result"] = claude["toolUseResult"]
+            var params = event["params"].object; params["event"] = .object(claude)
+            var object = event.object; object["params"] = .object(params); event = .object(object)
+        }
         if let uuid = event["params"]["event"]["uuid"].string {
             let identity = provider.rawValue + ":" + sessionID + ":" + uuid
             if snapshot.seenEventIDs.contains(identity) { return }

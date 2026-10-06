@@ -78,7 +78,10 @@ struct KitchenActivityTests {
         #expect(KitchenActivity.classify(tool: "exec_command", detail: page) == .editing)
         #expect(KitchenActivity.isEditing(tool: "exec_command", detail: page))
         #expect(KitchenActivity.writtenFiles(command: "curl -fsSL https://x/suncalc.js -o sf-time/dist/suncalc.js && echo done") == ["sf-time/dist/suncalc.js"])
-        #expect(KitchenActivity.writtenFiles(command: "npm run build 2>&1 | tee build.log") == ["build.log"])
+        #expect(KitchenActivity.writtenFiles(command: "node report.js | tee summary.md") == ["summary.md"])
+        // Scratch output isn't editing the project.
+        #expect(KitchenActivity.writtenFiles(command: "npm run build 2>&1 | tee build.log").isEmpty)
+        #expect(KitchenActivity.writtenFiles(command: "python3 -m http.server 5184 > /tmp/server.out 2>&1 &").isEmpty)
         #expect(KitchenActivity.writtenFiles(command: "sed -i '' 's/a/b/' math.js") == ["math.js"])
         #expect(KitchenActivity.writtenFiles(command: "cp a.txt b.txt") == ["b.txt"])
         // Not writes: stream redirects, /dev/null, plain reads, directory setup.
@@ -105,10 +108,14 @@ struct KitchenActivityTests {
         // Remy's first script listed files, then read a skill's instructions.
         let script: [String: Any] = ["type": "response_item", "payload": ["type": "custom_tool_call", "call_id": "a", "name": "exec",
             "input": #"text(await tools.exec_command({cmd:"rg --files"})); text(await tools.exec_command({cmd:"cat /x/skills/sites-building/SKILL.md"}));"#]]
-        let started = ActivityParser.transcript(script, session: session, id: "1", now: Date()).first
-        #expect(started?.detail == "rg --files && cat /x/skills/sites-building/SKILL.md")
+        // Each command in the script is its own event; the second reads the skill.
+        let events = ActivityParser.transcript(script, session: session, id: "1", now: Date()).filter { $0.kind == "toolStarted" }
+        #expect(events.map(\.detail) == ["rg --files", "cat /x/skills/sites-building/SKILL.md"])
+        let started = events.last
         #expect(KitchenActivity.classify(tool: started?.tool ?? "", detail: started?.detail ?? "") == .resources)
         #expect(KitchenActivity.skillName(started?.detail ?? "") == "sites-building")
+        // Listing skill folders is not using a skill.
+        #expect(KitchenActivity.classify(tool: "Bash", detail: "ls ~/.claude/skills/*/SKILL.md") == .researching)
         #expect(KitchenActivity.classify(tool: "Read", detail: "/Users/me/.claude/skills/release/SKILL.md") == .resources)
         // Driving the Computer Use plugin from Codex's JavaScript runner.
         let browser: [String: Any] = ["type": "response_item", "payload": ["type": "function_call", "call_id": "b", "name": "js",
@@ -120,5 +127,20 @@ struct KitchenActivityTests {
         #expect(KitchenActivity.classify(tool: "mcp__linear__create_issue") == .resources)
         var work = TurnWork(); work.started(tool: "exec_command", detail: started?.detail ?? "", call: "a")
         #expect(work.resources == ["sites-building"])
+    }
+
+    @Test func batteryFindingsAreClassifiedAsTheWorkTheyAre() {
+        // Claude edited with a python heredoc; the file text inside is not a test run.
+        #expect(KitchenActivity.classify(command: "python3 - <<'EOF'\np='math.js'; s=open(p).read()\n# node test.js\nEOF") == .commands)
+        // Looping over files to read them, and asking a tool its version, are reading.
+        #expect(KitchenActivity.classify(command: "for p in a b; do if [ -f \"$p\" ]; then cat \"$p\"; fi; done") == .researching)
+        #expect(KitchenActivity.classify(command: "cat test.js .gitignore; node --version") == .researching)
+        // Fetching the local server checks the work.
+        #expect(KitchenActivity.classify(command: "curl -s http://localhost:5191/ | head") == .checking)
+        // One file named two ways counts once.
+        var work = TurnWork()
+        work.started(tool: "Write", detail: "/r/src/stats.js", call: "1")
+        work.started(tool: "Bash", detail: "cat > src/stats.js <<'EOF'\nx\nEOF", call: "2")
+        #expect(work.files == ["/r/src/stats.js"])
     }
 }

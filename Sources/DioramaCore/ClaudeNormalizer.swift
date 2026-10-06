@@ -164,7 +164,7 @@ public enum ClaudeNormalizer {
                                 return output
                             }
                             presentation.outputs += parsed.outputs
-                            if let structured = r["tool_use_result"] {
+                            if let structured = r["tool_use_result"] ?? r["toolUseResult"] {
                                 presentation.detail = pretty(structured)
                                 presentation.resultEvidence = safe(structured)
                             }

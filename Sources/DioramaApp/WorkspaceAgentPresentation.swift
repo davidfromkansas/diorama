@@ -232,7 +232,9 @@ enum WorkspaceAgentPresentation {
                 for event in stream.reversed() {
                     if event.kind == "started" || event.kind == "turnStarted" { break }
                     guard let name = event.tool, !name.isEmpty else { continue }
-                    if tool == nil { tool = event }
+                    // Plan and checklist updates don't change what the chef is doing.
+                    let planning = KitchenActivity.classify(tool: name, detail: event.detail ?? "") == .planning
+                    if tool == nil || (tool?.tool).map({ KitchenActivity.classify(tool: $0) == .planning }) == true, !planning || tool == nil { tool = event }
                     if KitchenActivity.isEditing(tool: name, detail: event.detail ?? "") { edits = true; break }
                 }
                 result[index].latestTool = tool?.tool ?? ""
@@ -246,8 +248,10 @@ enum WorkspaceAgentPresentation {
                 if agent.status != .working { result[index].turnWork.settle() }
             } else {
                 let tools = relevant.filter { $0.kind == "tool" && (latest?.turnID == nil || $0.turnID == latest?.turnID) }
-                result[index].latestTool = tools.last?.title ?? ""
-                result[index].latestToolDetail = String(KitchenActivity.withoutHeredocs(tools.last?.data["command"].string ?? tools.last?.detail ?? "").prefix(500))
+                // Plan and checklist updates don't change what the chef is doing.
+                let working = tools.last { KitchenActivity.classify(tool: $0.title, detail: $0.data["command"].string ?? $0.detail) != .planning } ?? tools.last
+                result[index].latestTool = working?.title ?? ""
+                result[index].latestToolDetail = String(KitchenActivity.withoutHeredocs(working?.data["command"].string ?? working?.detail ?? "").prefix(500))
                 result[index].turnHasEdits = tools.contains { KitchenActivity.isEditing(tool: $0.title, detail: $0.data["command"].string ?? $0.detail) }
                 result[index].turnWork = TurnWork.from(tools)
                 result[index].feed = AgentActivityFeed.entries(from: relevant)

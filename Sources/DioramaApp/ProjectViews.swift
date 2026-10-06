@@ -75,6 +75,7 @@ struct ProjectViewSelection: Codable, Equatable {
         let sessionsRevision: UInt64
         let associationsRevision: UInt64
         let recordsRevision: UInt64
+        let project: DioramaProject
         let commonDirectory: String
         let paths: Set<String>
         let threadIDs: Set<String>
@@ -115,7 +116,7 @@ struct ProjectViewSelection: Codable, Equatable {
         // lookup (tab badges ask on every view update; comparing path sets there was slow).
         if let cached = sessionCache[project.id], cached.libraryID == ObjectIdentifier(library),
            cached.sessionsRevision == library.sessionsRevision, cached.associationsRevision == associationsRevision,
-           cached.recordsRevision == repository.recordsRevision {
+           cached.recordsRevision == repository.recordsRevision, cached.project == project {
             return cached.sessions
         }
         // Check raw membership inputs before doing any filesystem work. Scroll-driven
@@ -150,7 +151,7 @@ struct ProjectViewSelection: Codable, Equatable {
         for id in ids { matches.formUnion(sessionIndex!.threads[id] ?? []) }
         let rows = matches.sorted().map { sessionIndex!.rows[$0] }
         sessionCache[project.id] = ProjectSessionCache(libraryID: ObjectIdentifier(library), sessionsRevision: revision,
-            associationsRevision: associationsRevision, recordsRevision: repository.recordsRevision, commonDirectory: project.commonDirectory, paths: paths, threadIDs: ids, sessions: rows)
+            associationsRevision: associationsRevision, recordsRevision: repository.recordsRevision, project: project, commonDirectory: project.commonDirectory, paths: paths, threadIDs: ids, sessions: rows)
         return rows
     }
 

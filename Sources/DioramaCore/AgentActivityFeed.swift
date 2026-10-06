@@ -208,7 +208,7 @@ public enum AgentActivityFeed {
             if ["read", "view_image", "imageview"].contains(lower), !detail.isEmpty { return name(detail) }
             if KitchenActivity.commandTools.contains(lower) {
                 let script = KitchenActivity.shellScript(detail)
-                let words = script.split(separator: " ")
+                let words = KitchenActivity.commandWords(script).first?.map { Substring($0) } ?? script.split(separator: " ")
                 // Listing the tree reads as browsing the project; `pwd` says nothing.
                 if let first = words.first, ["ls", "find", "fd", "tree", "pwd"].contains(String(first)) || (first == "rg" && words.contains("--files")) {
                     return "project files"
