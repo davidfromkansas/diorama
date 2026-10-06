@@ -44,8 +44,10 @@ public struct AgentPlan: Equatable, Sendable {
     ///   - actedThisTurn: it has already done real (non-planning) work this turn, so an earlier
     ///     list that it didn't revise no longer describes what it's doing.
     public func progress(working: Bool, actedThisTurn: Bool) -> Progress {
-        if hasTasks, !tasksPreviousTurn { return .steps(done: completedTaskCount, total: checklist.count) }
-        if working, hasTasks, !actedThisTurn { return .revising(done: completedTaskCount, total: checklist.count) }
+        // A one-step list ("do the task") is no measure of progress: it reads as activity.
+        guard checklist.count > 1 else { return working ? .working : .none }
+        if !tasksPreviousTurn { return .steps(done: completedTaskCount, total: checklist.count) }
+        if working, !actedThisTurn { return .revising(done: completedTaskCount, total: checklist.count) }
         return working ? .working : .none
     }
 

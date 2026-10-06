@@ -193,7 +193,8 @@ extension AgentPlanTests {
         try ingest(#"{"method":"turn/plan/updated","params":{"turnId":"t2","plan":[{"step":"Rename stats.js","status":"inProgress"}]}}"#, &snapshot)
         plan = AgentPlan.reported(in: snapshot, provider: "Codex", sessionID: "s")
         #expect(plan.checklist.map(\.title) == ["Rename stats.js"] && plan.earlier.isEmpty)
-        #expect(plan.progress(working: true, actedThisTurn: true) == .steps(done: 0, total: 1))
+        // A single catch-all step is activity, not progress.
+        #expect(plan.progress(working: true, actedThisTurn: true) == .working)
     }
 
     @Test func standingInstructionsFollowTheProjectContextAndCanBeTurnedOff() {
