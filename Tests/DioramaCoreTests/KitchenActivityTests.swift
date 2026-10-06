@@ -71,6 +71,18 @@ struct KitchenActivityTests {
         #expect(KitchenActivity.classify(tool: "commandExecution", detail: item["command"].string ?? "") == .testing)
     }
 
+    @Test func scriptsFedThroughHeredocsEditTheFilesTheyWrite() {
+        // How Claude often edits: a Python script that rewrites a file.
+        let python = "cd .. && python3 - <<'EOF'\nimport re\np='tower/sun.js'; s=open(p).read()\ns=s.replace('a', 'b')\nopen(p,'w').write(s)\nEOF"
+        #expect(KitchenActivity.writtenFiles(command: python) == ["tower/sun.js"])
+        #expect(KitchenActivity.classify(tool: "Bash", detail: python) == .editing)
+        #expect(KitchenActivity.writtenFiles(command: "python3 - <<EOF\nfrom pathlib import Path\nPath('README.md').write_text('x')\nEOF") == ["README.md"])
+        #expect(KitchenActivity.writtenFiles(command: "node - <<'JS'\nconst fs = require('fs')\nconst f = 'index.html'\nfs.writeFileSync(f, html)\nJS") == ["index.html"])
+        // Reading files, or writing scratch output, is not editing.
+        #expect(KitchenActivity.writtenFiles(command: "python3 - <<'EOF'\nprint(open('package.json').read())\nEOF").isEmpty)
+        #expect(KitchenActivity.writtenFiles(command: "python3 - <<'EOF'\nopen('/tmp/out.txt','w').write('x')\nEOF").isEmpty)
+        #expect(KitchenActivity.classify(tool: "Bash", detail: "python3 - <<'EOF'\nprint(open('package.json').read())\nEOF") != .editing)
+    }
     @Test func shellWritesCountAsEdits() {
         // Ruby wrote a whole website from the shell and never used an edit tool.
         let page = "cat > sf-time/dist/index.html <<'EOF'\n<!doctype html>\n<div class=\"a\">x > y</div>\nEOF"

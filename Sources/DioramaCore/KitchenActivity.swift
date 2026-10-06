@@ -33,7 +33,8 @@ public enum KitchenActivity: String, Sendable, CaseIterable {
     /// destinations, `touch`, and `sed -i` files. Heredoc bodies are skipped, so markup inside them
     /// is never mistaken for a redirect.
     public static func writtenFiles(command: String) -> [String] {
-        let script = withoutHeredocs(shellScript(command))
+        let full = shellScript(command)
+        let script = withoutHeredocs(full)
         var files: [String] = []
         func add(_ path: String) {
             let path = path.trimmingCharacters(in: CharacterSet(charactersIn: "'\"")).trimmingCharacters(in: .whitespaces)
@@ -62,8 +63,45 @@ public enum KitchenActivity: String, Sendable, CaseIterable {
             default: break
             }
         }
+        // A Python or Node script fed through a heredoc (`python3 - <<'EOF' … open(p,'w')`) edits
+        // the files it opens for writing.
+        for body in heredocBodies(full) {
+            let range = NSRange(body.startIndex..., in: body)
+            var names: [String: String] = [:]
+            for match in scriptAssignment.matches(in: body, range: range) {
+                if let name = Range(match.range(at: 1), in: body), let value = Range(match.range(at: 2), in: body) { names[String(body[name])] = String(body[value]) }
+            }
+            for match in scriptWrite.matches(in: body, range: range) {
+                for group in 1..<match.numberOfRanges {
+                    guard let found = Range(match.range(at: group), in: body) else { continue }
+                    let target = String(body[found])
+                    add([2, 5].contains(group) ? names[target] ?? "" : target)
+                }
+            }
+        }
         return files
     }
+    /// The inline bodies of a command's heredocs.
+    static func heredocBodies(_ script: String) -> [String] {
+        var bodies: [String] = [], current: [Substring] = [], delimiter: String?
+        for line in script.split(separator: "\n", omittingEmptySubsequences: false) {
+            if let end = delimiter {
+                if line.trimmingCharacters(in: .whitespaces) == end { bodies.append(current.joined(separator: "\n")); current = []; delimiter = nil }
+                else { current.append(line) }
+                continue
+            }
+            let text = String(line)
+            if let match = heredoc.firstMatch(in: text, range: NSRange(text.startIndex..., in: text)), let word = Range(match.range(at: 1), in: text) {
+                delimiter = String(text[word])
+            }
+        }
+        return bodies
+    }
+    /// `name = 'path'` in a script.
+    private static let scriptAssignment = try! NSRegularExpression(pattern: #"\b([A-Za-z_][A-Za-z0-9_]*)\s*=\s*['"]([^'"\n]+\.[A-Za-z0-9]+)['"]"#)
+    /// Writes in Python (`open('f', 'w')`, `open(p, 'a')`, `Path('f').write_text`) and Node
+    /// (`writeFileSync('f'`, `writeFile(p`): group 1 a literal path, group 2 a variable.
+    private static let scriptWrite = try! NSRegularExpression(pattern: #"(?:open\(\s*(?:['"]([^'"\n]+)['"]|([A-Za-z_][A-Za-z0-9_]*))\s*,\s*['"][wax])|(?:Path\(\s*['"]([^'"\n]+)['"]\s*\)\.write_(?:text|bytes))|(?:writeFile(?:Sync)?\(\s*(?:['"]([^'"\n]+)['"]|([A-Za-z_][A-Za-z0-9_]*)))"#)
     /// The command with heredoc bodies dropped: what it runs, without the file it writes inline.
     public static func withoutHeredocs(_ script: String) -> String {
         var kept: [Substring] = [], delimiter: String?
