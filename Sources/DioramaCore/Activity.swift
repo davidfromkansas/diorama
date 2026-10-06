@@ -117,18 +117,20 @@ public struct ActivitySummary: Sendable {
 }
 
 public enum ActivityParser {
-    /// The first `tools.<name>(` call in a Codex code-mode script and its `cmd:` string literal.
+    /// The first `tools.<name>(` call in a Codex code-mode script, and its `cmd:` string literals:
+    /// a script may run several commands (for example a listing, then reading a skill), joined
+    /// with `&&` so all of them are seen.
     public static func codeModeCall(_ script: String) -> (tool: String, detail: String?)? {
         let range = NSRange(script.startIndex..., in: script)
         guard let match = codeModeTool.firstMatch(in: script, range: range), let name = Range(match.range(at: 1), in: script) else { return nil }
         let after = NSRange(match.range.upperBound..<range.upperBound)
-        var detail: String?
-        if let cmd = codeModeCommand.firstMatch(in: script, range: after), let literal = Range(cmd.range(at: 1), in: script) {
+        let commands = codeModeCommand.matches(in: script, range: after).compactMap { cmd -> String? in
+            guard let literal = Range(cmd.range(at: 1), in: script) else { return nil }
             let quoted = String(script[literal])
-            if quoted.hasPrefix("\""), let decoded = try? JSONDecoder().decode(String.self, from: Data(quoted.utf8)) { detail = decoded }
-            else { detail = String(quoted.dropFirst().dropLast()) }
+            if quoted.hasPrefix("\""), let decoded = try? JSONDecoder().decode(String.self, from: Data(quoted.utf8)) { return decoded }
+            return String(quoted.dropFirst().dropLast())
         }
-        return (String(script[name]), detail)
+        return (String(script[name]), commands.isEmpty ? nil : commands.joined(separator: " && "))
     }
     private static let codeModeTool = try! NSRegularExpression(pattern: #"\btools\.([A-Za-z_][A-Za-z0-9_]*)\s*\("#)
     private static let codeModeCommand = try! NSRegularExpression(pattern: #"\bcmd\s*:\s*("(?:[^"\\]|\\.)*"|'(?:[^'\\]|\\.)*'|`[^`]*`)"#)
@@ -199,6 +201,10 @@ public enum ActivityParser {
                     return [event("toolStarted", .working, call: call, tool: inner.tool, detail: detail.map { String($0.prefix(1000)) }, turn: turn)]
                 }
                 let args = (p["arguments"] as? String).flatMap { try? JSONSerialization.jsonObject(with: Data($0.utf8)) } as? [String: Any]
+                // Codex's JavaScript runner driving the Computer Use plugin (a browser preview, an app).
+                if p["name"] as? String == "js", let code = args?["code"] as? String, code.contains("cua.") {
+                    return [event("toolStarted", .working, call: call, tool: "computer_use", detail: clipped(args?["title"] ?? "Computer Use"), turn: turn)]
+                }
                 // A poll names the session it reads, so its exit settles the command running there.
                 let polled = p["name"] as? String == "write_stdin" ? (args?["session_id"]).map { "session=\($0)" } : nil
                 let command = polled ?? (args?["command"] as? [String])?.joined(separator: " ") ?? args?["command"] ?? args?["cmd"] ?? args?["file_path"]

@@ -16,6 +16,8 @@ public struct TurnWork: Equatable, Sendable {
     public private(set) var commands = 0
     public private(set) var failedCommands = 0
     public private(set) var tests: [TestRun] = []
+    /// Skills, plugins and MCP tools used (fetched from the pantry), in order.
+    public private(set) var resources: [String] = []
     private var calls: [String: Call] = [:]
     /// Commands still running in a shell session, resolved by a later poll of that session.
     private var sessions: [String: Call] = [:]
@@ -54,6 +56,8 @@ public struct TurnWork: Equatable, Sendable {
         case .commands:
             commands += 1
             if let call { calls[call] = .command }
+        case .resources:
+            resources.append(KitchenActivity.skillName(detail) ?? tool)
         default: break
         }
     }

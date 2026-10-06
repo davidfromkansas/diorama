@@ -408,6 +408,21 @@ import simd
         #expect(highest < height + 0.05)
     }
 
+    @Test func aSkillFetchedInPassingStillGetsAPantryVisit() throws {
+        let view = KitchenSceneView(frame: CGRect(x: 0, y: 0, width: 1000, height: 700))
+        var cook = agent("a", .working, tool: "Edit", edits: true)
+        view.apply(agents: [cook], active: false, reducedMotion: false, now: 0)
+        let chef = try #require(view.chefs[cook.id])
+        var t = 0.0
+        while t < 5 { chef.update(1 / 30); t += 1 / 30; view.apply(agents: [cook], active: false, reducedMotion: false, now: t) }
+        var work = TurnWork(); work.started(tool: "exec_command", detail: "cat /x/skills/release/SKILL.md", call: "s")
+        cook.value.turnWork = work
+        var visited = false
+        while t < 25 { chef.update(1 / 30); t += 1 / 30; view.apply(agents: [cook], active: false, reducedMotion: false, now: t); visited = visited || chef.director.station?.area == "pantry" }
+        #expect(visited)
+        #expect(chef.director.intent?.station?.area == "cooking")
+    }
+
     @Test func everyTestRunGetsTastedEvenWhenTheAgentMovesOnAtOnce() throws {
         let view = KitchenSceneView(frame: CGRect(x: 0, y: 0, width: 1000, height: 700))
         var cook = agent("a", .working, tool: "Edit", edits: true)

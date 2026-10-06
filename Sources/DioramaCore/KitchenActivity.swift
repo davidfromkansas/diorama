@@ -11,6 +11,8 @@ public enum KitchenActivity: String, Sendable, CaseIterable {
     public static func classify(tool: String, detail: String = "") -> KitchenActivity {
         let name = tool.trimmingCharacters(in: .whitespaces).lowercased()
         if commandTools.contains(name) { return classify(command: detail) }
+        // Reading a skill's instructions is how agents pick a skill up.
+        if researchTools.contains(name), isSkillFile(detail) { return .resources }
         // Using a skill or an MCP server's tool: fetching from the pantry.
         if isResource(tool: name) { return .resources }
         if researchTools.contains(name) { return .researching }
@@ -76,7 +78,15 @@ public enum KitchenActivity: String, Sendable, CaseIterable {
         let name = tool.lowercased()
         return name.hasPrefix("mcp__") || resourceTools.contains(name)
     }
-    static let resourceTools: Set<String> = ["skill", "mcptoolcall", "listmcpresources", "readmcpresource", "listmcpresourcestool", "readmcpresourcetool"]
+    /// A skill's instructions (`…/skills/<name>/SKILL.md`).
+    public static func isSkillFile(_ text: String) -> Bool { text.contains("SKILL.md") }
+    /// The skill a command or path reads, by its folder name.
+    public static func skillName(_ text: String) -> String? {
+        guard let range = text.range(of: "/SKILL.md") else { return nil }
+        let folder = text[..<range.lowerBound].split(whereSeparator: { $0 == "/" || $0 == " " || $0 == "'" || $0 == "\"" }).last
+        return folder.map(String.init)
+    }
+    static let resourceTools: Set<String> = ["skill", "mcptoolcall", "computer_use", "listmcpresources", "readmcpresource", "listmcpresourcestool", "readmcpresourcetool"]
 
     /// Tests anywhere in the script → testing; only read-only commands → researching; else commands.
     public static func classify(command: String) -> KitchenActivity {
@@ -85,6 +95,8 @@ public enum KitchenActivity: String, Sendable, CaseIterable {
         if testCommand.firstMatch(in: script, range: range) != nil { return .testing }
         // Writing files from the shell is editing, like an edit tool.
         if !writtenFiles(command: command).isEmpty { return .editing }
+        // Reading a skill's SKILL.md fetches the skill from the pantry.
+        if isSkillFile(script) { return .resources }
         let words = segments(script).compactMap { segment -> [String]? in
             let words = segment.split(whereSeparator: \.isWhitespace).map(String.init)
                 .drop { $0.contains("=") && !$0.hasPrefix("-") } // env assignments

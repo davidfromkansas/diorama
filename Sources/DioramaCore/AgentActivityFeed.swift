@@ -222,6 +222,8 @@ public enum AgentActivityFeed {
         /// A skill by name, or an MCP server's tool as "server tool".
         static func resourceName(tool: String, detail: String) -> String {
             if tool.lowercased() == "skill" { return detail.isEmpty ? "a skill" : detail }
+            if let skill = KitchenActivity.skillName(detail) { return "the " + skill + " skill" }
+            if tool.lowercased() == "computer_use" { return "Computer Use · " + (detail.isEmpty ? "browser" : detail) }
             return toolName(tool)
         }
         static func toolName(_ tool: String) -> String {
