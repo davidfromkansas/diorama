@@ -16,6 +16,12 @@ struct FloatingCard: ViewModifier {
 }
 extension View {
     func floatingCard() -> some View { modifier(FloatingCard()) }
+    /// The agent sidebar's light, warm card floating over the kitchen.
+    func lightFloatingCard() -> some View {
+        self.clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
+            .overlay(RoundedRectangle(cornerRadius: 14, style: .continuous).strokeBorder(Color.black.opacity(0.09), lineWidth: 1))
+            .shadow(color: .black.opacity(0.22), radius: 16, y: 6)
+    }
 }
 
 /// The collapsed agents card: how many agents work and how many are blocked, plus the pantry.

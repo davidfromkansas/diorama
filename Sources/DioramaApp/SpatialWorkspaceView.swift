@@ -316,9 +316,9 @@ struct SpatialWorkspaceView: View {
             if model.collapsed {
                 KitchenAgentSummary(agents: teams.flatMap(\.agents), expand: { model.collapsed = false }, openPantry: { pantryOpen = true })
             } else {
-                rosterPanel(snapshot, focus: focus, model: model, narrow: false, floating: true)
-                    .frame(width: width, height: max(160, height * (pantryOpen ? 0.45 : 0.62)))
-                    .floatingCard()
+                agentSidebar(teams, focus: focus)
+                    .frame(width: 320, height: max(220, pantryOpen ? height * 0.5 : height))
+                    .lightFloatingCard()
             }
             if pantryOpen, let folder = project?.folder ?? teams.first?.session.project {
                 PantryCard(library: library, folder: folder, sessions: sessions, preferred: teams.first?.session.provider ?? .codex,
@@ -330,6 +330,27 @@ struct SpatialWorkspaceView: View {
         .disabled(inspection != nil).accessibilityHidden(inspection != nil)
     }
 
+    /// The agent card: one row per conversation in this project, grouped by what it needs, from
+    /// the same state the kitchen uses (status, pending requests, serving-window reviews).
+    private func agentSidebar(_ teams: [SpatialTeam], focus: SpatialFocus) -> some View {
+        let execution = library.execution
+        let inputs = teams.map { team in
+            AgentSidebar.Input(session: team.session, agents: team.agents,
+                               review: team.agents.first { $0.value.isMain }.flatMap { KitchenReviews.shared.state($0.conversationID) },
+                               model: execution.tasks[team.session.sessionID].flatMap { $0.model.isEmpty ? nil : $0.model },
+                               requests: execution.requests.values.filter { $0.threadID == team.session.sessionID }.count)
+        }
+        let items = AgentSidebar.items(inputs, catalog: execution.models, order: AgentSidebarOrder.shared.order)
+        let mains = Dictionary(teams.compactMap { team in team.agents.first { $0.value.isMain }.map { ($0.id, $0) } }) { first, _ in first }
+        let selected = focus.agentID.flatMap { id in teams.flatMap(\.agents).first { $0.id == id }?.conversationID }
+        return AgentSidebarCard(items: items, projectID: focus.projectID ?? "", selectedConversation: selected,
+            select: { item in if let agent = mains[item.id] { go(agent.focus) } },
+            // Opens the conversation, where the pending request waits; nothing is approved here.
+            reviewRequest: { item in if let agent = mains[item.id] { go(agent.focus) } },
+            // Opens the serving-window review; only its explicit actions take the dish off Done.
+            reviewChanges: { item in if let agent = mains[item.id] { reviewing = agent } },
+            create: { creationProject = AgentCreationDestination(id: focus.projectID ?? "") })
+    }
     /// Camera/monitor updates may arrive every frame. Project the library once per observation
     /// tick instead of repeating provider and membership lookups during those view updates.
     private func refreshWorld() {
