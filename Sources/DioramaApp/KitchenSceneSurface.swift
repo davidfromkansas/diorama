@@ -259,7 +259,10 @@ final class KitchenSceneView: SCNView {
         /// Test runs seen this turn, and whether a newer one still owes a visit to the tasting
         /// station (tests often finish faster than a chef can walk over).
         var testsSeen = 0
-        var tasteOwed = false
+        var resourcesSeen = 0
+        /// Stations a chef still owes a visit for brief work the agent already moved on from:
+        /// tasting for a test run, the pantry for a skill or plugin it fetched.
+        var owed: [String] = []
     }
     private var pacing: [String: Pacing] = [:]
     private let slotTable = KitchenLayout.chefSlots
@@ -433,12 +436,13 @@ final class KitchenSceneView: SCNView {
         let pickup = chef.director.station.flatMap { ["cooking", "stove", "prep", "tasting"].contains($0.area) ? $0 : nil }
         return KitchenLayout.intent(for: state.agent, at: slot, pickup: pickup, restored: restored, review: state.review)
     }
-    /// The tasting visit owed for a test run, whatever the agent is doing by now.
-    private func tastingIntent(_ id: String) -> ChefIntent? {
+    /// The visit owed for brief work (a test run, a skill fetched), whatever the agent does by now.
+    private func owedIntent(_ id: String, area: String) -> ChefIntent? {
         guard var agent = pacing[id]?.agent else { return nil }
         agent.status = .working; agent.turnHasEdits = true
-        agent.latestTool = "Bash"; agent.latestToolDetail = agent.turnWork.tests.last?.command ?? "npm test"
-        let slot = claimSlot(id, area: "tasting")
+        if area == "pantry" { agent.latestTool = "Skill"; agent.latestToolDetail = agent.turnWork.resources.last ?? "" }
+        else { agent.latestTool = "Bash"; agent.latestToolDetail = agent.turnWork.tests.last?.command ?? "npm test" }
+        let slot = claimSlot(id, area: area)
         return KitchenLayout.intent(for: agent, at: slot, pickup: nil, restored: false)
     }
     private func queuedWithFreeSpot(_ id: String) -> Bool {
@@ -492,7 +496,7 @@ final class KitchenSceneView: SCNView {
                     // A new agent joins: it rides the elevator in and reads its order first.
                     chef.director.place(door.stand, heading: door.facing)
                     chef.director.setIntent(KitchenLayout.arrivalIntent(at: order))
-                    pacing[agent.id] = Pacing(agent: agent.value, review: review, arriving: true, testsSeen: agent.value.turnWork.tests.count)
+                    pacing[agent.id] = Pacing(agent: agent.value, review: review, arriving: true, testsSeen: agent.value.turnWork.tests.count, resourcesSeen: agent.value.turnWork.resources.count)
                     openElevator()
                 } else {
                     // Chefs shown from history start in place: no walk-in, no replayed gesture.
@@ -501,7 +505,7 @@ final class KitchenSceneView: SCNView {
                     let home = slotTable["break"] ?? []
                     if let spawn = slot ?? (home.isEmpty ? nil : home[chefs.count % home.count]) { chef.director.place(spawn.stand, heading: spawn.facing) }
                     chef.director.setIntent(KitchenLayout.intent(for: agent.value, at: slot, pickup: nil, restored: true, review: review))
-                    pacing[agent.id] = Pacing(agent: agent.value, review: review, testsSeen: agent.value.turnWork.tests.count)
+                    pacing[agent.id] = Pacing(agent: agent.value, review: review, testsSeen: agent.value.turnWork.tests.count, resourcesSeen: agent.value.turnWork.resources.count)
                     pacing[agent.id]?.want = chef.director.intent
                 }
                 chef.update(0)
@@ -519,9 +523,17 @@ final class KitchenSceneView: SCNView {
                 pacing[agent.id]?.agent = agent.value
                 pacing[agent.id]?.review = review
                 // Every new test run sends the chef to taste, however quickly the agent moves on.
+                // Brief work still gets its station: tasting for each new test run, the pantry for
+                // each skill or plugin fetched, however quickly the agent moves on.
                 let tests = agent.value.turnWork.tests.count, seen = pacing[agent.id]?.testsSeen ?? tests
-                if tests > seen && !catchingUp { pacing[agent.id]?.tasteOwed = true }
+                let fetched = agent.value.turnWork.resources.count, fetchedSeen = pacing[agent.id]?.resourcesSeen ?? fetched
+                if !catchingUp, var state = pacing[agent.id] {
+                    if fetched > fetchedSeen, !state.owed.contains("pantry") { state.owed.append("pantry") }
+                    if tests > seen, !state.owed.contains("tasting") { state.owed.append("tasting") }
+                    pacing[agent.id] = state
+                }
                 pacing[agent.id]?.testsSeen = tests
+                pacing[agent.id]?.resourcesSeen = fetched
                 if pacing[agent.id]?.arriving == false { let want = wanted(agent.id, claim: false); pacing[agent.id]?.want = want }
                 chefLock.unlock()
             }
@@ -552,13 +564,13 @@ final class KitchenSceneView: SCNView {
             let settledFor = state.arrivedAt.map { now - $0 } ?? 0
             let walking = director.intent?.station != nil && director.station == nil
             var apply = false, promote = false
-            if state.tasteOwed, !state.arriving {
-                // Needs-you comes first; otherwise the chef tastes before moving on (even to serve).
-                if state.want?.station?.area == "bell" || (state.want?.urgent == true && state.want?.station == nil) { state.tasteOwed = false }
-                else if director.intent?.station?.area == "tasting" {
-                    if director.station != nil, settledFor >= KitchenLayout.minimumDwell { state.tasteOwed = false }
-                    else { pacing[id] = state; continue }
-                } else if !walking, director.intent?.station == nil || settledFor >= KitchenLayout.minimumDwell, let next = tastingIntent(id) {
+            if let owedArea = state.owed.first, !state.arriving {
+                // Needs-you comes first; otherwise the chef pays the visit before moving on (even to serve).
+                if state.want?.station?.area == "bell" || (state.want?.urgent == true && state.want?.station == nil) { state.owed.removeAll() }
+                else if director.intent?.station?.area == owedArea {
+                    if director.station != nil, settledFor >= KitchenLayout.minimumDwell { state.owed.removeFirst() }
+                    pacing[id] = state; continue
+                } else if !walking, director.intent?.station == nil || settledFor >= KitchenLayout.minimumDwell, let next = owedIntent(id, area: owedArea) {
                     director.setIntent(next)
                     state.arrivedAt = nil
                     pacing[id] = state; continue
@@ -737,7 +749,7 @@ final class KitchenSceneView: SCNView {
         for id in chefs.keys.sorted() {
             guard let chef = chefs[id], var state = pacing[id] else { continue }
             let director = chef.director
-            state.arriving = false; state.tasteOwed = false; pacing[id] = state
+            state.arriving = false; state.owed = []; pacing[id] = state
             let walking = director.intent?.station != nil && director.station == nil
             guard walking || state.want?.key != director.intent?.key || queuedWithFreeSpot(id) else { continue }
             if queuedWithFreeSpot(id) { slots[id] = nil }

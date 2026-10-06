@@ -99,4 +99,23 @@ struct KitchenActivityTests {
         var work = TurnWork(); work.started(tool: "exec_command", detail: command, call: "1"); work.finished(call: "1", failed: false)
         #expect(work.files == ["public/app.js"] && work.tests.map(\.outcome) == [.passed])
     }
+
+    @Test func skillsAndComputerUseAreFetchedFromThePantry() {
+        let session = Session(id: "s", provider: .codex, url: nil, sessionID: "s", title: "t", project: "/", modified: Date(), bytes: 0, archived: false, parentID: nil)
+        // Remy's first script listed files, then read a skill's instructions.
+        let script: [String: Any] = ["type": "response_item", "payload": ["type": "custom_tool_call", "call_id": "a", "name": "exec",
+            "input": #"text(await tools.exec_command({cmd:"rg --files"})); text(await tools.exec_command({cmd:"cat /x/skills/sites-building/SKILL.md"}));"#]]
+        let started = ActivityParser.transcript(script, session: session, id: "1", now: Date()).first
+        #expect(started?.detail == "rg --files && cat /x/skills/sites-building/SKILL.md")
+        #expect(KitchenActivity.classify(tool: started?.tool ?? "", detail: started?.detail ?? "") == .resources)
+        #expect(KitchenActivity.skillName(started?.detail ?? "") == "sites-building")
+        #expect(KitchenActivity.classify(tool: "Read", detail: "/Users/me/.claude/skills/release/SKILL.md") == .resources)
+        // Driving the Computer Use plugin from Codex's JavaScript runner.
+        let browser: [String: Any] = ["type": "response_item", "payload": ["type": "function_call", "call_id": "b", "name": "js",
+            "arguments": #"{"code":"await cua.createBrowserTab('iab','http://localhost:5173')","title":"Preview the clock"}"#]]
+        let preview = ActivityParser.transcript(browser, session: session, id: "2", now: Date()).first
+        #expect(preview?.tool == "computer_use" && KitchenActivity.classify(tool: "computer_use") == .resources)
+        var work = TurnWork(); work.started(tool: "exec_command", detail: started?.detail ?? "", call: "a")
+        #expect(work.resources == ["sites-building"])
+    }
 }
