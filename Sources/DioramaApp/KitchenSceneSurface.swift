@@ -290,7 +290,9 @@ final class KitchenSceneView: SCNView {
         chefLock.unlock()
         for (id, state) in states {
             guard let agent = chefAgents[id] else { continue }
-            let key = state.intent?.key ?? "", before = shown[id]
+            // Where the chef is going (its spot), not the gesture it plays there: a gesture change
+            // alone is not a move.
+            let key = (state.intent?.station?.id ?? "here"), before = shown[id]
             if before?.intent == key && before?.station == state.station { continue }
             shown[id] = (key, state.station)
             var fields = ["agent": agent.value.name, "conversation": agent.conversationID, "provider": agent.value.provider,
@@ -1064,8 +1066,10 @@ final class KitchenSceneView: SCNView {
         var occupied: [CGRect] = []
         let path = CGMutablePath()
         for (index, area) in KitchenLayout.areas.enumerated() {
-            let point = projectPoint(SCNVector3(area.footprint.midX, 2.6, area.footprint.minY))
-            let anchor = CGPoint(x: CGFloat(point.x), y: isFlipped ? bounds.height - CGFloat(point.y) : CGFloat(point.y))
+            // Lock-free, like the name tags: `projectPoint` waits for the renderer, and the signs are
+            // placed on every agent update.
+            guard let point = projectWithoutLock(SIMD3(Float(area.footprint.midX), 2.6, Float(area.footprint.minY))) else { continue }
+            let anchor = CGPoint(x: point.x, y: isFlipped ? bounds.height - point.y : point.y)
             let width: CGFloat = min(110, labels[index].attributedStringValue.size().width + 14)
             let size = labels[index].cell?.cellSize(forBounds: CGRect(x: 0, y: 0, width: width - 8, height: 100)) ?? CGSize(width: width, height: 32)
             let height = max(20, size.height + 4)

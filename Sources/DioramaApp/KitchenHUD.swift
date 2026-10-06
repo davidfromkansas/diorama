@@ -119,7 +119,9 @@ struct PantryCard: View {
             } else {
                 ScrollView {
                     LazyVStack(alignment: .leading, spacing: 2) {
-                        ForEach(items) { item in PantryRow(item: item, armFor: shelf == .skills ? armFor : nil) { arm(item) } }
+                        ForEach(items) { item in
+                            PantryRow(item: item, armFor: shelf == .skills ? armFor : nil, armed: armed.contains(item.source)) { arm(item) }
+                        }
                     }
                 }
             }
@@ -129,6 +131,8 @@ struct PantryCard: View {
         .floatingCard()
         .task(id: context) { await model.load(context) { await library.execution.capabilityLibrary($0) } }
     }
+    /// Skills already armed for the selected chef's next message.
+    private var armed: Set<String> { Set(armFor.map { library.armedCapabilities[$0.conversation] ?? [] }?.map(\.path) ?? []) }
     private func arm(_ item: CapabilityLibraryItem) {
         guard let armFor else { return }
         library.arm(CapabilityInput(name: item.name, path: item.source, kind: "skill"), for: armFor.conversation)
@@ -138,6 +142,7 @@ struct PantryCard: View {
 private struct PantryRow: View {
     let item: CapabilityLibraryItem
     let armFor: (conversation: String, name: String)?
+    var armed = false
     let arm: () -> Void
     @State private var hovered = false
     private static let covers: [Color] = [
@@ -154,7 +159,10 @@ private struct PantryRow: View {
                 if !item.description.isEmpty { Text(item.description).font(.caption2).foregroundStyle(.secondary).lineLimit(1) }
             }
             Spacer(minLength: 4)
-            if let armFor, hovered {
+            if armed {
+                Label("Armed", systemImage: "checkmark.circle.fill").labelStyle(.titleAndIcon).font(.caption2.weight(.semibold))
+                    .foregroundStyle(Color(red: 0.35, green: 1, blue: 0.62)).help("Armed for \(armFor?.name ?? "the chef")'s next message")
+            } else if let armFor, hovered {
                 Button("Arm", action: arm).buttonStyle(.borderedProminent).controlSize(.mini).pointingHand().help("Arm for \(armFor.name)'s next message")
             } else {
                 Circle().fill(dot).frame(width: 6, height: 6).help(item.availability.rawValue)

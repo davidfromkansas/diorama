@@ -160,6 +160,20 @@ import simd
         reviews.clear("c"); #expect(reviews.state("c") == nil)
     }
 
+    @Test func recentUnreviewedDishesWaitAtTheWindowButOldOnesRest() async throws {
+        let reviews = KitchenReviews(defaults: UserDefaults(suiteName: "reviews-" + UUID().uuidString)!)
+        var recent = agent("main", .done, freshness: .lastKnown, conversation: "recent")
+        recent.value.meaningfulUpdatedAt = Date().addingTimeInterval(-3600)
+        var old = agent("main", .done, freshness: .lastKnown, conversation: "old")
+        old.value.meaningfulUpdatedAt = Date().addingTimeInterval(-3 * 86400)
+        reviews.observe([recent, old]); try await Task.sleep(for: .milliseconds(50))
+        #expect(reviews.state("recent") == .awaiting && reviews.state("old") == nil)
+        // A dish already approved isn't reopened.
+        reviews.set("recent", .approved)
+        reviews.observe([recent]); try await Task.sleep(for: .milliseconds(50))
+        #expect(reviews.state("recent") == .approved)
+    }
+
     @Test func feedbackKeepsTheChefWorkingUntilTheNextTurnFinishes() async throws {
         let reviews = KitchenReviews(defaults: UserDefaults(suiteName: "reviews-" + UUID().uuidString)!)
         var done = agent("main", .done)

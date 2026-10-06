@@ -37,7 +37,9 @@ import Observation
     var states: [String: State] { entries.mapValues(\.state) }
 
     /// Records newly finished work and clears reviews whose agent went back to work.
-    func observe(_ agents: [SpatialAgent]) {
+    /// How recently finished work, never reviewed, still goes to the serving window.
+    static let recentWindow: TimeInterval = 12 * 3600
+    func observe(_ agents: [SpatialAgent], now: Date = Date()) {
         var next = entries
         for agent in agents where agent.value.isMain {
             let value = agent.value
@@ -50,6 +52,11 @@ import Observation
                 if next[agent.conversationID]?.completionKey != key {
                     next[agent.conversationID] = Entry(state: .awaiting, completionKey: key)
                 }
+            } else if value.status == .done, next[agent.conversationID] == nil,
+                      let finished = value.meaningfulUpdatedAt ?? value.observedAt, now.timeIntervalSince(finished) < Self.recentWindow {
+                // Finished recently while nobody was watching (the kitchen was paused, the app
+                // closed): its dish still waits for review. Older work stays in the break room.
+                next[agent.conversationID] = Entry(state: .awaiting, completionKey: value.completionKey ?? value.meaningfulEventID)
             }
         }
         guard next != entries else { return }
