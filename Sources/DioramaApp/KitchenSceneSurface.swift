@@ -1,3 +1,4 @@
+import DioramaCore
 import SceneKit
 import SwiftUI
 
@@ -457,6 +458,7 @@ final class KitchenSceneView: SCNView {
         agent.status = .working; agent.turnHasEdits = true
         if area == "pantry" { agent.latestTool = "Skill"; agent.latestToolDetail = agent.turnWork.resources.last ?? "" }
         else if area == "cooking" { agent.latestTool = "Edit"; agent.latestToolDetail = agent.turnWork.files.last ?? "" }
+        else if area == "stove" { agent.latestTool = "Bash"; agent.latestToolDetail = "npm run build" }
         else { agent.latestTool = "Bash"; agent.latestToolDetail = agent.turnWork.tests.last?.command ?? "npm test" }
         let slot = claimSlot(id, area: area)
         return KitchenLayout.intent(for: agent, at: slot, pickup: nil, restored: false)
@@ -560,7 +562,15 @@ final class KitchenSceneView: SCNView {
                     if fetched > fetchedSeen, !state.owed.contains("pantry") { state.owed.append("pantry") }
                     // Edits come before the tests that check them.
                     if files > filesSeen, !state.owed.contains("cooking") { state.owed.insert("cooking", at: state.owed.firstIndex(of: "tasting") ?? state.owed.endIndex) }
-                    if tests > seen, !state.owed.contains("tasting") { state.owed.append("tasting") }
+                    // A command that tests and builds owes both stations, in the order it ran them:
+                    // the kitchen shows recent work at a run, even when the agent has moved on.
+                    if tests > seen {
+                        let steps = agent.value.turnWork.tests.last.map { KitchenActivity.stations(command: $0.command) } ?? []
+                        let areas = steps.compactMap { step -> String? in
+                            switch step { case .testing, .checking: "tasting"; case .commands: "stove"; default: nil }
+                        }
+                        for area in areas.isEmpty ? ["tasting"] : areas where !state.owed.contains(area) { state.owed.append(area) }
+                    }
                     pacing[agent.id] = state
                 }
                 pacing[agent.id]?.filesSeen = files
