@@ -10,7 +10,11 @@ nonisolated enum KitchenLog {
         FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent("Library/Application Support/Diorama/KitchenLog")
     }
     private static let queue = DispatchQueue(label: "diorama.kitchen-log", qos: .utility)
+    /// Test runs build kitchens too; they must not write their fixture chefs into the real log.
+    static let enabled = ProcessInfo.processInfo.environment["XCTestConfigurationFilePath"] == nil
+        && !Bundle.main.bundlePath.hasSuffix(".xctest") && ProcessInfo.processInfo.processName != "swiftpm-testing-helper"
     static func record(_ fields: [String: String]) {
+        guard enabled else { return }
         var line = fields
         let now = Date()
         line["time"] = ISO8601DateFormatter.string(from: now, timeZone: .gmt, formatOptions: [.withInternetDateTime, .withFractionalSeconds])
