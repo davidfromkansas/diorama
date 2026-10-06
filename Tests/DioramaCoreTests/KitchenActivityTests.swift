@@ -114,7 +114,10 @@ struct KitchenActivityTests {
         let browser: [String: Any] = ["type": "response_item", "payload": ["type": "function_call", "call_id": "b", "name": "js",
             "arguments": #"{"code":"await cua.createBrowserTab('iab','http://localhost:5173')","title":"Preview the clock"}"#]]
         let preview = ActivityParser.transcript(browser, session: session, id: "2", now: Date()).first
-        #expect(preview?.tool == "computer_use" && KitchenActivity.classify(tool: "computer_use") == .resources)
+        // Looking at the result in a browser is checking the work: tasting, not the pantry.
+        #expect(preview?.tool == "computer_use" && KitchenActivity.classify(tool: "computer_use") == .checking)
+        #expect(KitchenActivity.classify(tool: "mcp__Claude_Browser__navigate") == .checking)
+        #expect(KitchenActivity.classify(tool: "mcp__linear__create_issue") == .resources)
         var work = TurnWork(); work.started(tool: "exec_command", detail: started?.detail ?? "", call: "a")
         #expect(work.resources == ["sites-building"])
     }
