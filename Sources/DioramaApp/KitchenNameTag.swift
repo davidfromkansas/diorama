@@ -89,7 +89,7 @@ final class ChefTagView: NSView {
     private let iconView = NSImageView()
     private let clip = NSView()
     private let label = NSTextField(labelWithString: "")
-    private let track = CALayer(), fill = CALayer()
+    private let track = TagBar(color: NSColor.black.withAlphaComponent(0.08)), fill = TagBar(color: NSColor(red: 0.18, green: 0.7, blue: 0.42, alpha: 1))
     private(set) var content: ChefTagContent?
     private var reducedMotion = false
     var text: String { label.stringValue }
@@ -107,8 +107,8 @@ final class ChefTagView: NSView {
         label.font = .systemFont(ofSize: 10, weight: .semibold); label.textColor = NSColor(white: 0.18, alpha: 1)
         label.wantsLayer = true; label.lineBreakMode = .byClipping
         clip.addSubview(label)
-        track.backgroundColor = NSColor.black.withAlphaComponent(0.08).cgColor
-        fill.backgroundColor = NSColor(red: 0.18, green: 0.7, blue: 0.42, alpha: 1).cgColor
+        // Views, not loose sublayers: inside the kitchen's layer tree, hand-added layers were scaled.
+        addSubview(track); addSubview(fill)
         needsDisplay = true
     }
     // The backing layer can be replaced when the tag joins the kitchen's view, so its look is
@@ -119,7 +119,6 @@ final class ChefTagView: NSView {
         layer.cornerRadius = 5
         layer.backgroundColor = NSColor.white.withAlphaComponent(0.93).cgColor
         layer.borderColor = NSColor.black.withAlphaComponent(0.08).cgColor; layer.borderWidth = 0.5
-        if track.superlayer !== layer { layer.addSublayer(track); layer.addSublayer(fill) }
         layoutTag()
     }
     override func setFrameSize(_ newSize: NSSize) { super.setFrameSize(newSize); layoutTag() }
@@ -167,7 +166,6 @@ final class ChefTagView: NSView {
         let visible = min(Self.maxTextWidth, textWidth)
         clip.frame = NSRect(x: 7 + iconWidth, y: 2, width: visible + 2, height: height - 3)
         label.frame = NSRect(x: 0, y: -1, width: textWidth + 4, height: height - 2)
-        CATransaction.begin(); CATransaction.setDisableActions(true)
         let progress = content?.progress
         track.isHidden = progress == nil; fill.isHidden = progress == nil
         let inset: CGFloat = 6, width = bounds.width - inset * 2
@@ -175,7 +173,6 @@ final class ChefTagView: NSView {
         let y = bounds.height - 3.5
         track.frame = CGRect(x: inset, y: y, width: max(0, width), height: 2)
         fill.frame = CGRect(x: inset, y: y, width: max(2, width * CGFloat(progress ?? 0)), height: 2)
-        CATransaction.commit()
     }
 
     /// Long tasks scroll to the end and back, pausing at each end (still under Reduce Motion).
@@ -192,4 +189,14 @@ final class ChefTagView: NSView {
         scroll.calculationMode = .linear
         label.layer?.add(scroll, forKey: "marquee")
     }
+}
+
+/// One segment of a tag's progress line.
+private final class TagBar: NSView {
+    let color: NSColor
+    init(color: NSColor) { self.color = color; super.init(frame: .zero); wantsLayer = true }
+    required init?(coder: NSCoder) { fatalError("init(coder:) has not been implemented") }
+    override var wantsUpdateLayer: Bool { true }
+    override func updateLayer() { layer?.backgroundColor = color.cgColor; layer?.cornerRadius = 1 }
+    override func hitTest(_ point: NSPoint) -> NSView? { nil }
 }
