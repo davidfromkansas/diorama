@@ -240,7 +240,8 @@ public enum ActivityParser {
                 }
                 // Code-mode calls wrap real tools in JavaScript, often several per script
                 // (`tools.update_plan(…); tools.apply_patch(…); tools.exec_command({cmd:"…"})`):
-                // each becomes its own event; the script's output finishes the last one.
+                // each becomes its own event. The script's output has one result per call, in
+                // order; shell calls wait for theirs (exit codes, sessions), others return at once.
                 if let input = p["input"] as? String {
                     let inner = codeModeCalls(input)
                     if !inner.isEmpty {
@@ -249,7 +250,7 @@ public enum ActivityParser {
                             let last = index == inner.count - 1
                             let id = last ? call : call.map { $0 + "#\(index)" }
                             events.append(event("toolStarted", .working, call: id, tool: item.tool, detail: item.detail.map { String($0.prefix(1000)) }, turn: turn))
-                            if !last { events.append(event("toolFinished", call: id, turn: turn)) }
+                            if !last, !KitchenActivity.commandTools.contains(item.tool.lowercased()) { events.append(event("toolFinished", call: id, turn: turn)) }
                         }
                         return events
                     }
@@ -268,10 +269,19 @@ public enum ActivityParser {
             if ["function_call_output", "custom_tool_call_output"].contains(type) {
                 // Shell output reports its exit status, or the session a still-running command
                 // continues in (a later `write_stdin` poll reports its exit); the detail carries both.
-                let output = (p["output"] as? String) ?? ((p["output"] as? [[String: Any]])?.compactMap { $0["text"] as? String }.joined(separator: "\n") ?? "")
-                let code = exitCode(output), session = sessionID(output)
-                let detail = [code.map { "exit=\($0)" }, session.map { "session=\($0)" }].compactMap { $0 }.joined(separator: " ")
-                return [event(code.map { $0 != 0 } == true ? "toolFailed" : "toolFinished", call: call, detail: detail.isEmpty ? nil : detail, turn: turn)]
+                func finish(_ output: String, call: String?) -> ActivityEvent {
+                    let code = exitCode(output), session = sessionID(output)
+                    let detail = [code.map { "exit=\($0)" }, session.map { "session=\($0)" }].compactMap { $0 }.joined(separator: " ")
+                    return event(code.map { $0 != 0 } == true ? "toolFailed" : "toolFinished", call: call, detail: detail.isEmpty ? nil : detail, turn: turn)
+                }
+                let parts = (p["output"] as? [[String: Any]])?.compactMap { $0["text"] as? String }
+                // A code-mode script's output: a "Script completed" header, then one result per
+                // inner call. Each finishes its own call (`call#i`, the last one `call`).
+                if let parts, parts.count > 2, parts[0].hasPrefix("Script ") {
+                    let results = parts.dropFirst()
+                    return results.enumerated().map { index, text in finish(text, call: index == results.count - 1 ? call : call.map { $0 + "#\(index)" }) }
+                }
+                return [finish((p["output"] as? String) ?? (parts?.joined(separator: "\n") ?? ""), call: call)]
             }
         } else if let message = r["message"] as? [String: Any] {
             let blocks = message["content"] as? [[String: Any]] ?? []

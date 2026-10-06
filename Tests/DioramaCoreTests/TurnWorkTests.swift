@@ -79,6 +79,32 @@ struct TurnWorkTests {
         #expect(work.tests.map(\.outcome) == [.failed, .unknown])
     }
 
+    @Test func codexScriptsSettleEachCallFromItsOwnResult() {
+        let session = Session(id: "s", provider: .codex, url: nil, sessionID: "s", title: "t", project: "/", modified: Date(), bytes: 0, archived: false, parentID: nil)
+        func call(_ id: String, _ script: String) -> [String: Any] {
+            ["type": "response_item", "payload": ["type": "custom_tool_call", "call_id": id, "name": "exec", "input": script]]
+        }
+        func output(_ id: String, _ results: [String]) -> [String: Any] {
+            ["type": "response_item", "payload": ["type": "custom_tool_call_output", "call_id": id,
+                "output": ([["type": "input_text", "text": "Script completed\nOutput:\n"]] + results.map { ["type": "input_text", "text": $0] }) as [[String: Any]]]]
+        }
+        let lines: [[String: Any]] = [
+            ["type": "event_msg", "payload": ["type": "task_started", "turn_id": "t"]],
+            // The test keeps running in session 18537 after the patch…
+            call("a", #"text(await tools.apply_patch("*** Begin Patch\n*** Update File: /r/math.js\n@@\n-a\n+b\n*** End Patch"));\ntext(await tools.exec_command({cmd:"npm test && npm run build",yield_time_ms:1000}));"#),
+            output("a", ["{}", #"{"chunk_id":"1","session_id":18537,"output":"all tests passed"}"#]),
+            // …and a poll in a script that also runs a smoke check reports its exit.
+            call("b", #"text(await tools.write_stdin({session_id:18537,chars:""}));\ntext(await tools.exec_command({cmd:"node -e 'smoke()'"}));"#),
+            output("b", [#"{"chunk_id":"2","exit_code":0}"#, #"{"chunk_id":"3","exit_code":1}"#]),
+            ["type": "event_msg", "payload": ["type": "task_complete", "turn_id": "t"]],
+        ]
+        let events = lines.enumerated().flatMap { ActivityParser.transcript($1, session: session, id: "\($0)", now: Date()) }
+        let work = TurnWork.from(events)
+        #expect(work.files == ["/r/math.js"])
+        #expect(work.tests.map(\.outcome) == [.passed])
+        #expect(work.commands == 1 && work.failedCommands == 1)
+    }
+
     @Test func codexHistoryCountsEachCallOnceFromItsNativeItem() {
         func record(_ title: String, _ status: String, detail: String = "", data: WireValue = .null) -> SessionActivityRecord {
             SessionActivityRecord(id: UUID().uuidString, provider: "Codex", sessionID: "s", nativeID: UUID().uuidString, kind: "tool", title: title,

@@ -495,6 +495,33 @@ import simd
         #expect(chef.director.intent?.station?.area == "cooking")
     }
 
+    @Test func aQuickTurnStillCooksBeforeItServes() throws {
+        let view = KitchenSceneView(frame: CGRect(x: 0, y: 0, width: 1000, height: 700))
+        var cook = agent("a", .working, tool: "Read", detail: "math.js")
+        view.apply(agents: [cook], active: false, reducedMotion: false, now: 0)
+        let chef = try #require(view.chefs[cook.id])
+        var t = 0.0
+        func run(seconds: Double, _ body: (String) -> Void = { _ in }) {
+            let end = t + seconds
+            while t < end { chef.update(1 / 30); t += 1 / 30; view.apply(agents: [cook], active: false, reducedMotion: false, now: t); body(chef.director.station?.area ?? "") }
+        }
+        run(seconds: 8)
+        #expect(chef.director.station?.area == "prep")
+        // The agent edits, runs its test and finishes within a second.
+        var work = TurnWork()
+        work.started(tool: "Edit", detail: "math.js", call: "e1"); work.finished(call: "e1", failed: false)
+        cook.value.turnWork = work; cook.value.latestTool = "Edit"; cook.value.turnHasEdits = true
+        run(seconds: 0.3)
+        work.started(tool: "Bash", detail: "npm test", call: "t1"); work.finished(call: "t1", failed: false)
+        cook.value.turnWork = work; cook.value.latestTool = "Bash"; cook.value.latestToolDetail = "npm test"
+        run(seconds: 0.3)
+        cook.value.status = .done
+        var visits: [String] = []
+        run(seconds: 30) { if $0 != "" && visits.last != $0 { visits.append($0) } }
+        #expect(visits.first(where: { $0 != "prep" }) == "cooking")
+        #expect(visits.contains("tasting") && visits.last == "serving")
+    }
+
     @Test func eachProjectKeepsItsKitchenWhileYouLookElsewhere() throws {
         let stage = KitchenStage(frame: CGRect(x: 0, y: 0, width: 800, height: 600))
         let a = stage.show("A")

@@ -262,8 +262,10 @@ final class KitchenSceneView: SCNView {
         /// station (tests often finish faster than a chef can walk over).
         var testsSeen = 0
         var resourcesSeen = 0
+        var filesSeen = 0
         /// Stations a chef still owes a visit for brief work the agent already moved on from:
-        /// tasting for a test run, the pantry for a skill or plugin it fetched.
+        /// tasting for a test run, the pantry for a skill or plugin it fetched, the cooking
+        /// station for files edited. Paid before serving, so a quick turn still shows its work.
         var owed: [String] = []
     }
     private var pacing: [String: Pacing] = [:]
@@ -445,6 +447,7 @@ final class KitchenSceneView: SCNView {
         guard var agent = pacing[id]?.agent else { return nil }
         agent.status = .working; agent.turnHasEdits = true
         if area == "pantry" { agent.latestTool = "Skill"; agent.latestToolDetail = agent.turnWork.resources.last ?? "" }
+        else if area == "cooking" { agent.latestTool = "Edit"; agent.latestToolDetail = agent.turnWork.files.last ?? "" }
         else { agent.latestTool = "Bash"; agent.latestToolDetail = agent.turnWork.tests.last?.command ?? "npm test" }
         let slot = claimSlot(id, area: area)
         return KitchenLayout.intent(for: agent, at: slot, pickup: nil, restored: false)
@@ -500,7 +503,7 @@ final class KitchenSceneView: SCNView {
                     // A new agent joins: it rides the elevator in and reads its order first.
                     chef.director.place(door.stand, heading: door.facing)
                     chef.director.setIntent(KitchenLayout.arrivalIntent(at: order))
-                    pacing[agent.id] = Pacing(agent: agent.value, review: review, arriving: true, testsSeen: agent.value.turnWork.tests.count, resourcesSeen: agent.value.turnWork.resources.count)
+                    pacing[agent.id] = Pacing(agent: agent.value, review: review, arriving: true, testsSeen: agent.value.turnWork.tests.count, resourcesSeen: agent.value.turnWork.resources.count, filesSeen: agent.value.turnWork.files.count)
                     openElevator()
                 } else {
                     // Chefs shown from history start in place: no walk-in, no replayed gesture.
@@ -509,7 +512,7 @@ final class KitchenSceneView: SCNView {
                     let home = slotTable["break"] ?? []
                     if let spawn = slot ?? (home.isEmpty ? nil : home[chefs.count % home.count]) { chef.director.place(spawn.stand, heading: spawn.facing) }
                     chef.director.setIntent(KitchenLayout.intent(for: agent.value, at: slot, pickup: nil, restored: true, review: review))
-                    pacing[agent.id] = Pacing(agent: agent.value, review: review, testsSeen: agent.value.turnWork.tests.count, resourcesSeen: agent.value.turnWork.resources.count)
+                    pacing[agent.id] = Pacing(agent: agent.value, review: review, testsSeen: agent.value.turnWork.tests.count, resourcesSeen: agent.value.turnWork.resources.count, filesSeen: agent.value.turnWork.files.count)
                     pacing[agent.id]?.want = chef.director.intent
                 }
                 chef.update(0)
@@ -529,11 +532,15 @@ final class KitchenSceneView: SCNView {
                 let tests = agent.value.turnWork.tests.count, seen = pacing[agent.id]?.testsSeen ?? tests
                 let fetched = agent.value.turnWork.resources.count, fetchedSeen = pacing[agent.id]?.resourcesSeen ?? fetched
                 // Only live work owes visits: history loading after a relaunch also raises the counts.
+                let files = agent.value.turnWork.files.count, filesSeen = pacing[agent.id]?.filesSeen ?? files
                 if !catchingUp, agent.value.status == .working, agent.fresh, var state = pacing[agent.id] {
                     if fetched > fetchedSeen, !state.owed.contains("pantry") { state.owed.append("pantry") }
+                    // Edits come before the tests that check them.
+                    if files > filesSeen, !state.owed.contains("cooking") { state.owed.insert("cooking", at: state.owed.firstIndex(of: "tasting") ?? state.owed.endIndex) }
                     if tests > seen, !state.owed.contains("tasting") { state.owed.append("tasting") }
                     pacing[agent.id] = state
                 }
+                pacing[agent.id]?.filesSeen = files
                 pacing[agent.id]?.testsSeen = tests
                 pacing[agent.id]?.resourcesSeen = fetched
                 if pacing[agent.id]?.arriving == false { let want = wanted(agent.id, claim: false); pacing[agent.id]?.want = want }
@@ -563,7 +570,9 @@ final class KitchenSceneView: SCNView {
             let settledFor = state.arrivedAt.map { now - $0 } ?? 0
             let walking = director.intent?.station != nil && director.station == nil
             var apply = false, promote = false
-            if state.agent.status != .working { state.owed.removeAll() }
+            // A turn that just finished still pays its visits on the way to the pass; anything
+            // else (needs you, stopped, failed) drops them.
+            if ![.working, .done, .ready].contains(state.agent.status) { state.owed.removeAll() }
             if let owedArea = state.owed.first, !state.arriving {
                 // Needs-you comes first; otherwise the chef pays the visit before moving on (even to serve).
                 if state.want?.station?.area == "bell" || (state.want?.urgent == true && state.want?.station == nil) { state.owed.removeAll() }
