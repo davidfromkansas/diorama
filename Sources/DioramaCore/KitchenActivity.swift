@@ -15,6 +15,8 @@ public enum KitchenActivity: String, Sendable, CaseIterable {
         if isVisualCheck(tool: name) { return .checking }
         // Reading a skill's instructions is how agents pick a skill up.
         if researchTools.contains(name), isSkillFile(detail) { return .resources }
+        // Opening a screenshot of the result is looking at the work.
+        if researchTools.contains(name), [".png", ".jpg", ".jpeg", ".webp"].contains(where: { detail.lowercased().hasSuffix($0) }) { return .checking }
         // Using a skill or an MCP server's tool: fetching from the pantry.
         if isResource(tool: name) { return .resources }
         if researchTools.contains(name) { return .researching }
@@ -152,6 +154,10 @@ public enum KitchenActivity: String, Sendable, CaseIterable {
         }
         // Fetching the agent's own local server is checking the work.
         if words.contains(where: { ["curl", "wget", "http"].contains(($0[0] as NSString).lastPathComponent) && $0.contains { $0.contains("localhost") || $0.contains("127.0.0.1") || $0.contains("0.0.0.0") } }) {
+            return .checking
+        }
+        // A headless browser or a screen capture renders the result to look at it.
+        if script.contains("--headless") || script.contains("--screenshot") || words.contains(where: { ["screencapture"].contains(($0[0] as NSString).lastPathComponent) }) {
             return .checking
         }
         guard !words.isEmpty else { return .commands }

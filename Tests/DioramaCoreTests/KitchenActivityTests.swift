@@ -83,6 +83,12 @@ struct KitchenActivityTests {
         #expect(KitchenActivity.writtenFiles(command: "python3 - <<'EOF'\nopen('/tmp/out.txt','w').write('x')\nEOF").isEmpty)
         #expect(KitchenActivity.classify(tool: "Bash", detail: "python3 - <<'EOF'\nprint(open('package.json').read())\nEOF") != .editing)
     }
+    @Test func screenshotsOfTheResultAreChecking() {
+        let chrome = #"CH="/Applications/Google Chrome.app/Contents/MacOS/Google Chrome"; OUT="/private/tmp/shots"; "$CH" --headless=new --screenshot="$OUT/noon.png" --window-size=1280,800 http://localhost:5173/"#
+        #expect(KitchenActivity.classify(tool: "Bash", detail: chrome) == .checking)
+        #expect(KitchenActivity.classify(tool: "Read", detail: "/private/tmp/shots/noon.png") == .checking)
+        #expect(KitchenActivity.classify(tool: "Read", detail: "src/main.js") == .researching)
+    }
     @Test func shellWritesCountAsEdits() {
         // Ruby wrote a whole website from the shell and never used an edit tool.
         let page = "cat > sf-time/dist/index.html <<'EOF'\n<!doctype html>\n<div class=\"a\">x > y</div>\nEOF"
