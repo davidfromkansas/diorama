@@ -227,6 +227,9 @@ public enum SessionActivityReducer {
                     if let title = args["subject"].string { step.title = title }
                     if let status = args["status"].string { step.status = status }
                     if let description = args["description"].string { step.detail = String(description.prefix(4000)) }
+                    // An update belongs to the turn that made it: a list ticked off after a
+                    // follow-up message is this turn's plan, not the previous one's.
+                    if let turn = event["params"]["turnId"].string { step.turnID = turn }
                     step.recordedAt = ActivityParser.date(e["timestamp"].string); step.observedAt = Date(); snapshot.apply(step)
                 }
                 if tool.title == "TodoWrite" {

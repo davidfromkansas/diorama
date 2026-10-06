@@ -100,6 +100,13 @@ struct WorkspaceAgent: Identifiable, Equatable {
     }
     var isMain: Bool { id == "main" }
     var isWorking: Bool { status == .working && (freshness == .live || freshness == .recentlyObserved) }
+    /// What progress can honestly be shown: the agent's own list when it keeps one this turn,
+    /// otherwise activity. Shared by the name tag, the command bar and the roster.
+    var planProgress: AgentPlan.Progress {
+        let acted = !latestTool.isEmpty && KitchenActivity.classify(tool: latestTool, detail: latestToolDetail) != .planning
+        guard let plan else { return isWorking ? .working : .none }
+        return plan.progress(working: isWorking, actedThisTurn: acted)
+    }
     var statusLabel: String {
         if freshness == .unverified || freshness == .unavailable { return freshness.rawValue }
         if freshness == .recentlyObserved { return "Recently observed · " + status.rawValue }

@@ -68,10 +68,9 @@ struct ChefTagContent: Equatable {
                 }
             }
         } else { icon = .none }
+        // Only a list kept this turn fills the line; the tag stays quiet otherwise.
         var progress: Double?
-        if let plan = value.plan, plan.hasTasks, !plan.tasksPreviousTurn, !plan.checklist.isEmpty {
-            progress = Double(plan.completedTaskCount) / Double(plan.checklist.count)
-        }
+        if case .steps = value.planProgress { progress = value.planProgress.fraction }
         // The task's opening: its first line, up to the end of the first sentence.
         let firstLine = value.task.split(whereSeparator: \.isNewline).first.map(String.init) ?? ""
         let task = TaskTitle.full(firstLine).components(separatedBy: ". ").first ?? ""

@@ -223,6 +223,8 @@ private actor ExecutionStub: ExecutionTransport {
         #expect(await stub.calls.contains("turn/start") == false)
         #expect(await stub.parameters["thread/read"]?["includeTurns"] == .bool(false))
         #expect(await stub.parameters["thread/resume"]?["excludeTurns"] == .bool(true))
+        // Continuing a conversation started elsewhere still asks for a live task list.
+        #expect(await stub.parameters["thread/resume"]?["developerInstructions"] == AgentInstructions.compose(nil).map(WireValue.string))
         #expect(await stub.parameters["thread/turns/list"]?["limit"] == .number(1))
         #expect(await stub.parameters["thread/turns/list"]?["itemsView"] == .string("notLoaded"))
         try await controller.send(id: session.sessionID, prompt: "Explicit new message")
@@ -434,10 +436,23 @@ extension ExecutionTests {
         await controller.connect()
         let context = "Use the Project instructions and selected references."
         let id = try await controller.prepare(folder: "/tmp", title: "Project task", model: "fixture", projectContext: context)
-        #expect(await stub.parameters["thread/start"]?["developerInstructions"] == .string(context))
+        #expect(await stub.parameters["thread/start"]?["developerInstructions"] == AgentInstructions.compose(context).map(WireValue.string))
+        #expect(await stub.parameters["thread/start"]?["developerInstructions"].string?.hasPrefix(context) == true)
+        #expect(controller.tasks[id]?.projectContext == context)
         #expect(await stub.parameters["thread/start"]?["cwd"] == .string("/tmp"))
         #expect(await stub.calls.contains("turn/start") == false)
         try await controller.send(id: id, prompt: "Hello")
         #expect(await stub.parameters["turn/start"]?["input"].array.first?["text"] == .string("Hello"))
+    }
+}
+
+extension ExecutionTests {
+    @Test func everyNewConversationAsksForALiveTaskList() async throws {
+        let stub = ExecutionStub(); let controller = ExecutionController(transport: stub)
+        await controller.connect()
+        _ = try await controller.prepare(folder: "/tmp", title: "Plain task", model: "fixture")
+        let instructions = await stub.parameters["thread/start"]?["developerInstructions"].string
+        #expect(instructions == AgentInstructions.compose(nil))
+        #expect(instructions?.contains("update_plan") == true)
     }
 }

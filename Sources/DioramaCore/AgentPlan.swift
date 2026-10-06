@@ -2,7 +2,12 @@ import Foundation
 
 /// Published provider evidence, independent of execution status. Completed plans remain inspectable.
 public struct AgentPlan: Equatable, Sendable {
+    /// The current list: steps touched this turn plus earlier steps still open. Without any step
+    /// touched this turn, the whole last list (flagged `tasksPreviousTurn`).
     public var checklist: [SessionActivityRecord]
+    /// Steps finished in earlier turns, kept for the plan's history but out of this turn's count
+    /// (Claude's task list lasts the whole session).
+    public var earlier: [SessionActivityRecord] = []
     public var proposal: SessionActivityRecord?
     public var taskUpdatedAt: Date?
     public var proposalUpdatedAt: Date?
@@ -17,13 +22,40 @@ public struct AgentPlan: Equatable, Sendable {
     public var taskProgress: String { "\(completedTaskCount)/\(checklist.count)" }
     public var hasContent: Bool { hasTasks || hasProposal }
 
+    /// What a progress indicator can honestly show.
+    public enum Progress: Equatable, Sendable {
+        /// A list kept this turn: a real fraction.
+        case steps(done: Int, total: Int)
+        /// A new turn began (feedback, a follow-up) and the agent hasn't revised its earlier
+        /// list yet: show that list dimmed as being updated.
+        case revising(done: Int, total: Int)
+        /// Working without a list: activity, not a fraction.
+        case working
+        case none
+        public var fraction: Double? {
+            switch self {
+            case .steps(let done, let total), .revising(let done, let total): total > 0 ? Double(done) / Double(total) : nil
+            default: nil
+            }
+        }
+    }
+    /// - Parameters:
+    ///   - working: the agent's turn is running.
+    ///   - actedThisTurn: it has already done real (non-planning) work this turn, so an earlier
+    ///     list that it didn't revise no longer describes what it's doing.
+    public func progress(working: Bool, actedThisTurn: Bool) -> Progress {
+        if hasTasks, !tasksPreviousTurn { return .steps(done: completedTaskCount, total: checklist.count) }
+        if working, hasTasks, !actedThisTurn { return .revising(done: completedTaskCount, total: checklist.count) }
+        return working ? .working : .none
+    }
+
     public static func reported(in snapshot: SessionActivitySnapshot, provider: String, sessionID: String,
                                 owners: Set<String> = [], currentTurn: String? = nil) -> Self {
         let records = snapshot.records.filter {
             $0.provider == provider && $0.sessionID == sessionID &&
                 (owners.isEmpty ? ($0.parentID == nil || $0.parentID == sessionID) : $0.parentID.map(owners.contains) == true)
         }
-        let steps = records.filter { $0.kind == "step" && $0.status != "deleted" }
+        var steps = records.filter { $0.kind == "step" && $0.status != "deleted" }
         let proposal = records.filter { $0.kind == "proposal" }.max {
             ($0.recordedAt ?? $0.observedAt) < ($1.recordedAt ?? $1.observedAt)
         }
@@ -33,7 +65,12 @@ public struct AgentPlan: Equatable, Sendable {
             turn.map { current in !items.isEmpty && items.allSatisfy { $0.turnID != nil && $0.turnID != current } } ?? false
         }
         let taskEvidence = records.filter { ["step", "checklist"].contains($0.kind) }
-        return Self(checklist: steps, proposal: proposal,
+        var earlier: [SessionActivityRecord] = []
+        if let turn, steps.contains(where: { $0.turnID == turn }) {
+            earlier = steps.filter { $0.turnID != turn && $0.status == "completed" }
+            steps.removeAll { $0.turnID != turn && $0.status == "completed" }
+        }
+        return Self(checklist: steps, earlier: earlier, proposal: proposal,
                     taskUpdatedAt: taskEvidence.compactMap(\.recordedAt).max(), proposalUpdatedAt: proposal?.recordedAt,
                     tasksPreviousTurn: previous(steps), proposalPreviousTurn: previous([proposal].compactMap { $0 }), updatedAt: evidence.compactMap(\.recordedAt).max(),
                     previousTurn: turn.map { current in !evidence.isEmpty && evidence.allSatisfy { $0.turnID != nil && $0.turnID != current } } ?? false,

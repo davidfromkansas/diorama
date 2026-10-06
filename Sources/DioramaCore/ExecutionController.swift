@@ -55,6 +55,9 @@ public struct ExecutedTask: Identifiable, Sendable {
     public var settings = ""
     public var permissionFolder: String?
     public var permissionPreference: ApprovalReviewChoice?
+    /// The project context this conversation was started with, re-sent (with Diorama's standing
+    /// instructions) whenever it is resumed.
+    public var projectContext: String?
     public var permissionsUnconfirmed = false
     public var permissionNotice: String?
     public var activePermissionProfile: WireValue = .null
@@ -98,6 +101,7 @@ private struct TaskBookmark: Codable {
     var model: String? = nil
     var permissionPreference: ApprovalReviewChoice? = nil
     var permissionFolder: String? = nil
+    var projectContext: String? = nil
 }
 
 @Observable @MainActor
@@ -169,6 +173,7 @@ public final class ExecutionController {
                 tasks[item.id]?.model = item.model ?? ""
                 tasks[item.id]?.permissionPreference = item.permissionPreference
                 tasks[item.id]?.permissionFolder = item.permissionFolder ?? item.folder
+                tasks[item.id]?.projectContext = item.projectContext
                 tasks[item.id]?.provider = Provider(rawValue: item.provider ?? "") ?? .codex
                 if let activityDirectory {
                     let provider = tasks[item.id]!.provider
@@ -245,7 +250,7 @@ public final class ExecutionController {
         if !model.hasPrefix("claude/"), initialPermission != .fullAccess { params["config"] = .object(["sandbox_workspace_write.network_access": .bool(false)]) }
         if model.hasPrefix("claude/") { params["permissionMode"] = .string(initialPermission.claudeMode ?? "auto") }
         if !model.isEmpty { params["model"] = .string(model) }
-        if let projectContext { params["developerInstructions"] = .string(projectContext) }
+        if let instructions = AgentInstructions.compose(projectContext) { params["developerInstructions"] = .string(instructions) }
         let reply = try await transport.request("thread/start", .object(params))
         guard let id = reply["thread"]["id"].string else { throw AppServerFailure("Task creation outcome unknown; inspect imported history before trying again") }
         var task = ExecutedTask(id: id, title: String(title.prefix(100)), folder: folder, attached: true)
@@ -253,6 +258,7 @@ public final class ExecutionController {
         applySettings(reply, to: &task)
         task.permissionPreference = initialPermission
         task.permissionFolder = folder
+        task.projectContext = projectContext
         tasks[id] = task; persist()
         if projectContext != nil, URL(fileURLWithPath: task.folder).resolvingSymlinksInPath() != URL(fileURLWithPath: folder).resolvingSymlinksInPath() {
             throw AppServerFailure("Codex created task \(id) in a different working folder. No message was sent; inspect the prepared conversation.")
@@ -423,12 +429,16 @@ public final class ExecutionController {
             if goal["goal"]["status"].string == "active" { throw AppServerFailure("This conversation has an active goal. Finish or pause it in the original client before continuing here.") }
             var resumeIdentity = identity
             resumeIdentity["excludeTurns"] = .bool(true)
+            // Continued conversations keep Diorama's standing instructions (and the project
+            // context they started with), also after a relaunch or when started elsewhere.
+            if let instructions = AgentInstructions.compose(tasks[id]?.projectContext) { resumeIdentity["developerInstructions"] = .string(instructions) }
             let reply = try await transport.request("thread/resume", .object(resumeIdentity))
             guard reply["thread"]["id"].string == id else { throw AppServerFailure("Resume returned an unexpected conversation identity; no prompt was sent") }
             var task = ExecutedTask(id: id, provider: session.provider, title: session.title, folder: folder, attached: true)
             applySettings(reply, to: &task)
             task.permissionPreference = tasks[id]?.permissionPreference
             task.permissionFolder = tasks[id]?.permissionFolder
+            task.projectContext = tasks[id]?.projectContext
             if session.provider == .claude, let previous = tasks[id]?.model, !previous.isEmpty { task.model = previous }
             if reply["thread"]["status"]["type"].string == "active" {
                 task.phase = .working; task.requiresReconciliation = true
@@ -528,7 +538,7 @@ public final class ExecutionController {
         guard let journal else { return }
         do {
             try FileManager.default.createDirectory(at: journal.deletingLastPathComponent(), withIntermediateDirectories: true, attributes: [.posixPermissions: 0o700])
-            let records = tasks.values.map { TaskBookmark(id: $0.id, folder: $0.folder, title: $0.title, parentID: $0.parentID, pendingQueueSteers: $0.workflow.steeredQueueIDs, provider: $0.provider.rawValue, model: $0.model, permissionPreference: $0.permissionPreference, permissionFolder: $0.permissionFolder) }
+            let records = tasks.values.map { TaskBookmark(id: $0.id, folder: $0.folder, title: $0.title, parentID: $0.parentID, pendingQueueSteers: $0.workflow.steeredQueueIDs, provider: $0.provider.rawValue, model: $0.model, permissionPreference: $0.permissionPreference, permissionFolder: $0.permissionFolder, projectContext: $0.projectContext) }
             try JSONEncoder().encode(records).write(to: journal, options: .atomic)
             try FileManager.default.setAttributes([.posixPermissions: 0o600], ofItemAtPath: journal.path)
         } catch {
