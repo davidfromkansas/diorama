@@ -13,6 +13,7 @@ import Testing
     static let prompts = [
         "t1": "Add a negate(n) function to math.js, export it, add a test for it in test.js, and run npm test.",
         "t5": "Build a small command-line calculator for this project: add cli.js that supports add, subtract, multiply, mean and median subcommands with argument validation and helpful error messages; add mean and median to math.js; add tests for every subcommand and for the error cases; document usage in README.md; include cli.js in the build output in build.js; and make sure npm test and npm run build both pass.",
+        "t6": "Build a website that shows a three.js model of Salesforce Tower in San Francisco where the sun rises and sets in real time.",
         "t3": "Refactor this project: split math.js into src/arithmetic.js (add, subtract, multiply) and src/stats.js (add sum and average helpers), keep math.js as a thin re-export so existing imports keep working, update build.js so the build still works, add tests for the new helpers, and make sure npm test and npm run build both pass.",
     ]
     static let feedback = "Feedback: also add a mode(list) helper to src/stats.js with a test, and rename average to mean everywhere. Make sure npm test still passes."
@@ -28,7 +29,8 @@ import Testing
         let transport = AgentExecutionTransport()
         let c = ExecutionController(transport: transport)
         await c.connect(); await c.refreshModels(); await c.loadModes()
-        let claudeModel = c.models.first { $0.id.hasPrefix("claude/") && $0.id.contains("sonnet") }?.id ?? c.models.first { $0.id.hasPrefix("claude/") }?.id
+        let wanted = ProcessInfo.processInfo.environment["DIORAMA_TASKLIST_CLAUDE_MODEL"] ?? "sonnet"
+        let claudeModel = c.models.first { $0.id.hasPrefix("claude/") && $0.id.contains(wanted) }?.id ?? c.models.first { $0.id.hasPrefix("claude/") && $0.id.contains("sonnet") }?.id ?? c.models.first { $0.id.hasPrefix("claude/") }?.id
         var runs: [Run] = []
         let env = ProcessInfo.processInfo.environment
         let providers = (env["DIORAMA_TASKLIST_PROVIDERS"] ?? "claude,codex").split(separator: ",").map { $0 == "claude" ? Provider.claude : .codex }
@@ -61,7 +63,7 @@ import Testing
             let plan = AgentPlan.reported(in: task?.structuredActivity ?? .init(), provider: run.provider.rawValue, sessionID: run.id)
             let row: [String: Any] = [
                 "provider": run.provider.rawValue, "task": run.task, "instruction": run.on, "turn": turn,
-                "seconds": Int(Date().timeIntervalSince(started)), "phase": task?.phase.rawValue ?? "?",
+                "seconds": Int(Date().timeIntervalSince(started)), "model": c.tasks[run.id]?.model ?? "", "phase": task?.phase.rawValue ?? "?",
                 "tools": tools.count, "planTools": tools.filter { Self.planTools.contains($0.lowercased()) }.count,
                 "plan": plan.checklist.map { "\($0.status): \($0.title)" }, "earlier": plan.earlier.count,
                 "previousTurn": plan.tasksPreviousTurn, "folder": run.folder,
@@ -75,7 +77,7 @@ import Testing
             Task { @MainActor in
                 let started = Date()
                 try await c.sendWithGoal(id: run.id, prompt: Self.prompts[run.task]!, goal: false)
-                try await finish(run.id, timeout: 900)
+                try await finish(run.id, timeout: 2400)
                 try report(run, turn: "first", started: started)
                 // Feedback after the work is served: the list should follow the new goal.
                 if run.task == "t3", run.on {
