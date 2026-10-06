@@ -113,6 +113,12 @@ struct AgentPlanModal: View {
                                     }
                                 }.id(row.id)
                             }
+                            if !plan.earlier.isEmpty {
+                                Text("Done in earlier turns · \(plan.earlier.count)").font(.subheadline.weight(.semibold)).foregroundStyle(.secondary).id("earlier")
+                                ForEach(plan.earlier, id: \.id) { step in
+                                    Label(step.title, systemImage: "checkmark.circle").foregroundStyle(.secondary)
+                                }
+                            }
                         }
                         if kind == .proposal, let proposal = plan.proposal {
                             Text(proposal.status == "draft" ? "Proposed plan · Draft" : "Proposed plan").font(.headline).id("proposal")

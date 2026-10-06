@@ -53,7 +53,7 @@ actor SwitchTransport: ExecutionTransport {
         #expect(controller.tasks[id]?.workflow.goal["status"].string == "paused")
         let calls = await transport.calls
         #expect(!calls.contains { ["turn/start", "thread/queue/start", "thread/fork"].contains($0.0) })
-        #expect(calls.first { $0.0 == "thread/start" }?.1["developerInstructions"].string == "Context")
+        #expect(calls.first { $0.0 == "thread/start" }?.1["developerInstructions"].string == AgentInstructions.compose("Context"))
         controller.retireProviderSession("source")
         await #expect(throws: (any Error).self) { try await controller.resumeImported(session) }
     }

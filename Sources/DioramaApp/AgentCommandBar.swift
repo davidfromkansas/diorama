@@ -60,9 +60,7 @@ struct AgentCommandBar: View {
                     VStack(alignment: .leading, spacing: 8) {
                         Text(TaskTitle.full(value.task)).font(.callout.weight(.medium)).foregroundStyle(Palette.paper)
                             .lineLimit(4).fixedSize(horizontal: false, vertical: true).textSelection(.enabled)
-                        if let plan = value.plan, plan.hasTasks, !plan.tasksPreviousTurn {
-                            ProgressBar(fraction: Double(plan.completedTaskCount) / Double(max(1, plan.checklist.count)))
-                        }
+                        PlanProgressRow(progress: value.planProgress, running: value.isWorking)
                         AgentProgressSections(agent: value, fileLimit: 4, compact: true)
                     }
                 }
@@ -193,6 +191,34 @@ struct CommandBarPanel<Content: View>: View {
 }
 
 /// A thin progress track in the selection ring's green.
+/// The agent's own list as a bar with its step count; while it revises an earlier list after
+/// feedback, that list dimmed; while it works without one, a sweep (never a made-up fraction).
+struct PlanProgressRow: View {
+    let progress: AgentPlan.Progress
+    /// The turn is still running: the label names the current step ("Finishing" once all are
+    /// done); afterwards it says how many were done, so a turn that stopped short shows it.
+    var running = false
+    var body: some View {
+        switch progress {
+        case .steps(let done, let total):
+            row(ProgressBar(fraction: Double(done) / Double(max(1, total))),
+                label: !running ? "\(done) of \(total) steps done" : done >= total ? "Finishing" : "Step \(done + 1) of \(total)")
+        case .revising(let done, let total):
+            row(ProgressBar(fraction: Double(done) / Double(max(1, total))).opacity(0.4), label: "Updating plan…")
+        case .working:
+            row(SweepBar(), label: "Working · no checklist")
+        case .none:
+            EmptyView()
+        }
+    }
+    private func row(_ bar: some View, label: String) -> some View {
+        VStack(alignment: .leading, spacing: 3) {
+            bar
+            Text(label).font(.caption2.monospacedDigit()).foregroundStyle(Palette.paper.opacity(0.6))
+        }
+        .accessibilityElement(children: .combine)
+    }
+}
 private struct ProgressBar: View {
     let fraction: Double
     var body: some View {
@@ -200,10 +226,35 @@ private struct ProgressBar: View {
             ZStack(alignment: .leading) {
                 Capsule().fill(.white.opacity(0.1))
                 Capsule().fill(Palette.ring.gradient).frame(width: max(4, geometry.size.width * min(1, max(0, fraction))))
+                    .animation(.easeOut(duration: 0.35), value: fraction)
             }
         }
         .frame(height: 4)
         .accessibilityLabel("\(Int((fraction * 100).rounded())) percent done")
+    }
+}
+/// Activity without a known end: a short highlight gliding along the track (still under
+/// Reduce Motion).
+private struct SweepBar: View {
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    var body: some View {
+        GeometryReader { geometry in
+            ZStack(alignment: .leading) {
+                Capsule().fill(.white.opacity(0.1))
+                if reduceMotion {
+                    Capsule().fill(Palette.ring.opacity(0.5)).frame(width: geometry.size.width * 0.3)
+                } else {
+                    TimelineView(.animation) { context in
+                        let phase = context.date.timeIntervalSinceReferenceDate.truncatingRemainder(dividingBy: 1.6) / 1.6
+                        Capsule().fill(Palette.ring.gradient).frame(width: geometry.size.width * 0.3)
+                            .offset(x: (geometry.size.width * 1.3) * phase - geometry.size.width * 0.3)
+                    }
+                }
+            }
+            .clipShape(Capsule())
+        }
+        .frame(height: 4)
+        .accessibilityLabel("Working, no checklist")
     }
 }
 private typealias Panel = CommandBarPanel

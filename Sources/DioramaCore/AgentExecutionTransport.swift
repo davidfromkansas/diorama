@@ -7,6 +7,9 @@ public actor AgentExecutionTransport: ExecutionTransport {
     private let codex: any ExecutionTransport
     private let claudeProbe: (@Sendable () async throws -> [WireValue])?
     private var claude: [String: ClaudeExecutionTransport] = [:]
+    /// The appended system prompt each Claude conversation was started or resumed with, so a
+    /// process spawned again for it (resume, queued work) keeps the same instructions.
+    private var contexts: [String: String] = [:]
     private var readers: [Task<Void, Never>] = []
     private var requestOwners: [String: String] = [:]
     private var codexConnected = false
@@ -98,6 +101,7 @@ public actor AgentExecutionTransport: ExecutionTransport {
         if method == "thread/start", params["model"].string?.hasPrefix("claude/") == true {
             guard !catalog.isEmpty else { throw ExecutionRPCRejection(claudeError ?? "Connect Claude in Settings") }
             let newID = UUID().uuidString.lowercased()
+            contexts[newID] = params["developerInstructions"].string
             let transport = ClaudeExecutionTransport(folder: params["cwd"].string ?? "", sessionID: newID, context: params["developerInstructions"].string, initialPermission: params["permissionMode"].string, initialModel: params["model"].string.map { String($0.dropFirst(7)) })
             try await transport.connect(); attach(transport, id: newID)
             var reply = try await transport.request(method, params).object; reply["model"] = params["model"]; reply["provider"] = .string(Provider.claude.rawValue)
@@ -107,14 +111,16 @@ public actor AgentExecutionTransport: ExecutionTransport {
             return .object(["thread": .object(["id": .string(id), "cwd": params["cwd"], "turns": .array([])])])
         }
         if method == "thread/resume", params["dioramaProvider"].string == Provider.claude.rawValue {
+            if let instructions = params["developerInstructions"].string { contexts[id] = instructions }
             if claude[id] == nil {
-                let transport = ClaudeExecutionTransport(folder: params["cwd"].string ?? "", sessionID: id, resume: true)
+                // A resumed process gets the same appended system prompt a new one would.
+                let transport = ClaudeExecutionTransport(folder: params["cwd"].string ?? "", sessionID: id, resume: true, context: contexts[id] ?? AgentInstructions.compose(nil))
                 try await transport.connect(); attach(transport, id: id)
             }
         }
         if method.hasPrefix("thread/queue/"), params["dioramaProvider"].string == Provider.claude.rawValue, claude[id] == nil {
             guard let folder = params["cwd"].string else { throw AppServerFailure("Original Claude working folder unavailable") }
-            let transport = ClaudeExecutionTransport(folder: folder, sessionID: id, resume: true)
+            let transport = ClaudeExecutionTransport(folder: folder, sessionID: id, resume: true, context: contexts[id] ?? AgentInstructions.compose(nil))
             try await transport.connect(); attach(transport, id: id)
         }
         if let transport = claude[id] { return try await transport.request(method, params) }

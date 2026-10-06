@@ -385,6 +385,12 @@ import simd
         #expect(ChefTagContent.make(working, review: nil).progress == 0.5)
         working.value.plan = AgentPlan.reported(in: snapshot, provider: "Claude", sessionID: "s", currentTurn: "t3")
         #expect(ChefTagContent.make(working, review: nil).progress == nil)
+        // After feedback (turn t3) the agent ticks a step off: the open steps are this turn's
+        // list again, without the steps it finished before.
+        snapshot.records[2].turnID = "t3"; snapshot.records[2].status = "completed"
+        working.value.plan = AgentPlan.reported(in: snapshot, provider: "Claude", sessionID: "s", currentTurn: "t3")
+        #expect(ChefTagContent.make(working, review: nil).progress == 0.5)
+        #expect(working.value.planProgress == .steps(done: 1, total: 2))
     }
 
     @Test func armedSkillsGoAsStructuredCodexSkillsOrAsNamesInTheText() {

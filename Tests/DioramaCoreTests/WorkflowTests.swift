@@ -218,7 +218,7 @@ private actor WorkflowStub: ExecutionTransport {
         let id = try await c.fork(session: session, through: "earlier-turn", folder: "/tmp/isolated-fork", projectContext: "New Project context")
         #expect(id == "fork")
         #expect(await stub.params("thread/fork")?["cwd"] == .string("/tmp/isolated-fork"))
-        #expect(await stub.params("thread/fork")?["developerInstructions"] == .string("New Project context"))
+        #expect(await stub.params("thread/fork")?["developerInstructions"] == AgentInstructions.compose("New Project context").map(WireValue.string))
         #expect(await stub.params("thread/fork")?["deferGoalContinuation"] == .bool(true))
         #expect(await stub.params("thread/fork")?["lastTurnId"] == .string("earlier-turn"))
         #expect(await stub.count("turn/start") == 0)
