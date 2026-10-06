@@ -234,7 +234,6 @@ import SceneKit
         let width = area.footprint.height, depth = area.footprint.width
         let oak = material(NSColor(red: 0.47, green: 0.3, blue: 0.16, alpha: 1))
         let shelfWood = material(NSColor(red: 0.62, green: 0.43, blue: 0.24, alpha: 1))
-        let crate = material(NSColor(red: 0.72, green: 0.55, blue: 0.32, alpha: 1))
         let steel = material(NSColor(white: 0.78, alpha: 1), metal: 0.6)
         let glass = SCNMaterial()
         glass.diffuse.contents = NSColor(red: 0.85, green: 0.95, blue: 1, alpha: 1)
@@ -263,12 +262,21 @@ import SceneKit
             add(SCNCylinder(radius: 0.115, height: 0.05), "skill jar lid", material(lids[i % lids.count]), x, shelves[1] + 0.31, back + 0.2)
             add(SCNCylinder(radius: 0.085, height: 0.12), "skill jar contents", material(lids[(i + 2) % lids.count].withAlphaComponent(1)), x, shelves[1] + 0.09, back + 0.2)
         }
-        // Middle shelf: crates of plugins.
-        let crates = 7
-        for i in 0..<crates {
-            let x = -width / 2 + 0.55 + CGFloat(i) * (width - 1.1) / CGFloat(crates - 1)
-            add(SCNBox(width: 0.5, height: 0.28, length: 0.34, chamferRadius: 0.02), "plugin crate", crate, x, shelves[0] + 0.165, back + 0.2)
-            add(SCNBox(width: 0.52, height: 0.04, length: 0.36, chamferRadius: 0.01), "plugin crate slat", oak, x, shelves[0] + 0.2, back + 0.2)
+        // Middle shelf: a second row of jars (the top shelf hides most of it from above).
+        for i in 0..<jars {
+            let x = -width / 2 + 0.35 + CGFloat(i) * (width - 0.7) / CGFloat(jars - 1)
+            add(SCNCylinder(radius: 0.1, height: 0.22), "skill jar", glass, x, shelves[0] + 0.135, back + 0.2)
+            add(SCNCylinder(radius: 0.105, height: 0.045), "skill jar lid", material(lids[(i + 3) % lids.count]), x, shelves[0] + 0.27, back + 0.2)
+        }
+        // Worktop, between the appliances: crates of plugins, big enough to read from above.
+        let crateWood = material(NSColor(red: 0.84, green: 0.62, blue: 0.34, alpha: 1))
+        for x in [-width * 0.43, -width * 0.15, width * 0.15, width * 0.43] {
+            add(SCNBox(width: 0.62, height: 0.32, length: 0.46, chamferRadius: 0.02), "plugin crate", crateWood, x, 1.23, back + 0.34)
+            for dz in [-0.12, 0.0, 0.12] as [CGFloat] {
+                add(SCNBox(width: 0.64, height: 0.03, length: 0.06, chamferRadius: 0.005), "plugin crate slat", oak, x, 1.4, back + 0.34 + dz)
+            }
+            add(SCNSphere(radius: 0.07), "plugin produce", material(lids[Int((x + width) * 3) % lids.count]), x - 0.12, 1.43, back + 0.3)
+            add(SCNSphere(radius: 0.06), "plugin produce", material(lids[Int((x + width) * 5) % lids.count]), x + 0.1, 1.42, back + 0.38)
         }
         // Worktop: appliances for MCP servers, each with a small green status light.
         let light = material(NSColor(red: 0.35, green: 1, blue: 0.62, alpha: 1))

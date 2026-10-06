@@ -201,8 +201,13 @@ struct ExecutionControls: View {
     @State private var retryingWriter = false
     @State private var sending = false
     @State private var recoveredGoal: WireValue = .null
-    /// Skills armed from the kitchen's command bar (or dropped here), sent with the next message.
-    @State private var armed: [CapabilityInput] = []
+    /// Skills armed from the pantry (or dropped here), sent with the next message. They live in
+    /// the library so the pantry can show what is armed.
+    private var armed: [CapabilityInput] {
+        get { library.armedCapabilities[session.id] ?? [] }
+        nonmutating set { library.armedCapabilities[session.id] = newValue.isEmpty ? nil : newValue }
+    }
+    private var armedBinding: Binding<[CapabilityInput]> { Binding(get: { armed }, set: { armed = $0 }) }
     var body: some View {
         Group {
         if session.observationOnly {
@@ -244,7 +249,7 @@ struct ExecutionControls: View {
                 }
                 if task.parentID == nil {
                     WorkflowControls(controller: library.execution, task: task, mode: $mode, capabilities: $capabilities, queueNext: $queueNext)
-                        ArmedSkillsRow(skills: $armed, provider: session.provider)
+                        ArmedSkillsRow(skills: armedBinding, provider: session.provider)
                         ConversationComposer(controller: library.execution, model: $model, effort: $effort, prompt: $prompt, attachments: $attachments, approvalReview: $approvalReview,
                                              effectiveModel: task.model, effectiveEffort: task.effort, reviewer: task.approvalReviewer, policy: task.approvalPolicy, sandbox: task.sandbox, sending: sending, active: task.phase.active, canSteer: library.execution.canSteer(id: task.id) || (queueNext && !library.execution.workflowBusy.contains(task.id) && !task.workflow.queueUncertain), queued: queueNext, capabilities: $capabilities, folder: task.folder, threadID: task.id, mode: $mode, goalMode: $goalMode, queueMode: $queueNext) {
                             submit()
@@ -302,7 +307,7 @@ struct ExecutionControls: View {
                         }
                     }.pointingHand().disabled(library.execution.resuming.contains(session.sessionID))
                 } else {
-                    ArmedSkillsRow(skills: $armed, provider: session.provider)
+                    ArmedSkillsRow(skills: armedBinding, provider: session.provider)
                     ConversationComposer(controller: library.execution, model: $model, effort: $effort, prompt: $prompt, attachments: $attachments, approvalReview: $approvalReview,
                                          effectiveModel: session.provider == .claude ? "claude/default" : "", sending: sending, active: false, queued: queueNext, capabilities: $capabilities, folder: session.project, threadID: session.sessionID, mode: $mode, goalMode: $goalMode, queueMode: $queueNext) { submit() }
                 }
@@ -318,10 +323,8 @@ struct ExecutionControls: View {
         .task(id: session.id) {
             recoveredGoal = session.provider == .claude ? ClaudeExecutionTransport.savedGoal(sessionID: session.sessionID) : .null
         }
-        .onAppear { takeArmed() }
-        .onChange(of: library.armedCapabilities[session.id]) { takeArmed() }
         .dropDestination(for: ArmedSkill.self) { items, _ in
-            for skill in items.map(\.input) where !armed.contains(where: { $0.id == skill.id }) { armed.append(skill) }
+            for skill in items.map(\.input) { library.arm(skill, for: session.id) }
             return !items.isEmpty
         }
         .onAppear {
@@ -342,12 +345,6 @@ struct ExecutionControls: View {
         .onChange(of: attachments) { library.saveDraft(session.id, text: prompt, attachments: attachments) }
     }
 
-    /// Moves skills armed from the command bar into this composer.
-    private func takeArmed() {
-        guard let incoming = library.armedCapabilities[session.id], !incoming.isEmpty else { return }
-        for skill in incoming where !armed.contains(where: { $0.id == skill.id }) { armed.append(skill) }
-        library.armedCapabilities[session.id] = nil
-    }
     private func submit(retrying: Bool = false) {
         guard !sending else { return }
         let command = prompt.trimmingCharacters(in: .whitespacesAndNewlines)
