@@ -50,7 +50,7 @@ struct AgentCommandBar: View {
                         Button("Review", action: review).buttonStyle(.borderedProminent).tint(Palette.accent).controlSize(.small).pointingHand()
                             .help("Open the serving-window review")
                     }
-                    Button(action: close) { Image(systemName: "xmark").font(.system(size: 10, weight: .bold)).frame(width: 18, height: 18) }
+                    Button(action: close) { Image(systemName: "xmark").font(.system(size: 10, weight: .bold)).frame(width: 22, height: 22).contentShape(Rectangle()) }
                         .buttonStyle(.plain).foregroundStyle(Palette.paper.opacity(0.6)).pointingHand()
                         .help("Deselect (Esc)").accessibilityLabel("Deselect " + value.name)
                 }

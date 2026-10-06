@@ -38,10 +38,12 @@ struct KitchenAgentSummary: View {
                     }
                 }
                 .font(.caption.weight(.semibold))
+                // A plain button only takes clicks on drawn pixels; the whole pill should count.
+                .contentShape(Rectangle())
             }
             .buttonStyle(.plain).pointingHand().help("Show agents (⌘B)").accessibilityLabel("\(counts.working) working, \(counts.blocked) blocked. Show agents")
             Divider().frame(height: 14)
-            Button(action: openPantry) { Image(systemName: "cabinet").font(.system(size: 12)) }
+            Button(action: openPantry) { Image(systemName: "cabinet").font(.system(size: 12)).frame(width: 22, height: 22).contentShape(Rectangle()) }
                 .buttonStyle(.plain).pointingHand().help("Pantry: skills, plugins and MCP").accessibilityLabel("Open pantry")
         }
         .padding(.horizontal, 12).padding(.vertical, 8)
@@ -96,7 +98,7 @@ struct PantryCard: View {
                 Picker("Provider", selection: $provider) {
                     Text("Codex").tag(Provider.codex); Text("Claude").tag(Provider.claude)
                 }.pickerStyle(.segmented).labelsHidden().controlSize(.mini).frame(width: 110)
-                Button(action: close) { Image(systemName: "minus").font(.system(size: 11, weight: .bold)).frame(width: 18, height: 18) }
+                Button(action: close) { Image(systemName: "minus").font(.system(size: 11, weight: .bold)).frame(width: 22, height: 22).contentShape(Rectangle()) }
                     .buttonStyle(.plain).foregroundStyle(.secondary).pointingHand().help("Close pantry").accessibilityLabel("Close pantry")
             }
             HStack(spacing: 4) {
@@ -105,6 +107,7 @@ struct PantryCard: View {
                         Label(value.rawValue, systemImage: value.icon).font(.caption.weight(.semibold)).labelStyle(.titleAndIcon)
                             .padding(.horizontal, 8).padding(.vertical, 4)
                             .background(Capsule().fill(shelf == value ? Color.white.opacity(0.16) : .clear))
+                            .contentShape(Capsule())
                     }
                     .buttonStyle(.plain).pointingHand().help(value.detail)
                 }
