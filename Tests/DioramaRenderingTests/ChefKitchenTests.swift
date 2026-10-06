@@ -353,21 +353,38 @@ import simd
         #expect(!calm.stepNames.contains("once:celebrate_done"))
     }
 
-    @Test func nameTagsShowTheCurrentTurnsChecklistProgress() {
-        var value = agent("main", .working).value
-        value.name = "Leo"
-        #expect(KitchenSceneView.tagText(value, doing: "Editing a file") == "Leo · Editing a file")
+    @Test func nameTagsShowTheTaskAndOneLiveIcon() {
+        var working = agent("main", .working, tool: "Edit", edits: true)
+        working.value.task = "Add a clamp function\nwith tests"
+        var tag = ChefTagContent.make(working, review: nil)
+        #expect(tag.text == "Add a clamp function" && tag.icon == .edit && !tag.stale && !tag.resting && tag.progress == nil)
+        // A fresh progress note shows the speech bubble, until the next tool call or a few seconds pass.
+        let now = Date()
+        working.value.lastToolAt = now.addingTimeInterval(-5); working.value.lastCommentaryAt = now.addingTimeInterval(-1)
+        #expect(ChefTagContent.make(working, review: nil, now: now).icon == .commentary)
+        #expect(ChefTagContent.make(working, review: nil, now: now.addingTimeInterval(5)).icon == .edit)
+        working.value.lastToolAt = now
+        #expect(ChefTagContent.make(working, review: nil, now: now).icon == .edit)
+        // Each kind of work has its icon.
+        #expect(ChefTagContent.make(agent("a", .working, tool: "Bash", detail: "npm test"), review: nil).icon == .test)
+        #expect(ChefTagContent.make(agent("a", .working, tool: "Bash", detail: "npm run build"), review: nil).icon == .command)
+        #expect(ChefTagContent.make(agent("a", .working, tool: "mcp__linear__create_issue"), review: nil).icon == .pantry)
+        // Needing you wins; a dish waiting for review shows a check; resting chefs hide until hovered.
+        #expect(ChefTagContent.make(agent("a", .waiting, attention: .approval), review: nil).icon == .help)
+        #expect(ChefTagContent.make(agent("a", .done), review: .awaiting).icon == .ready)
+        let resting = ChefTagContent.make(agent("a", .done, freshness: .lastKnown), review: nil)
+        #expect(resting.resting && resting.stale)
+        // The checklist shows as progress for this turn only.
         func step(_ status: String, turn: String) -> SessionActivityRecord {
             SessionActivityRecord(id: UUID().uuidString, provider: "Claude", sessionID: "s", turnID: turn, nativeID: UUID().uuidString, kind: "step",
                                   title: "Step", status: status, detail: "", source: "test", observedAt: Date(), data: .null)
         }
         var snapshot = SessionActivitySnapshot()
         snapshot.records = [step("completed", turn: "t2"), step("completed", turn: "t2"), step("inProgress", turn: "t2"), step("pending", turn: "t2")]
-        value.plan = AgentPlan.reported(in: snapshot, provider: "Claude", sessionID: "s", currentTurn: "t2")
-        #expect(KitchenSceneView.tagText(value, doing: "Editing a file") == "Leo · ✓ 2/4 · Editing a file")
-        // A checklist from an earlier turn is not this turn's progress.
-        value.plan = AgentPlan.reported(in: snapshot, provider: "Claude", sessionID: "s", currentTurn: "t3")
-        #expect(KitchenSceneView.tagText(value, doing: "Editing a file") == "Leo · Editing a file")
+        working.value.plan = AgentPlan.reported(in: snapshot, provider: "Claude", sessionID: "s", currentTurn: "t2")
+        #expect(ChefTagContent.make(working, review: nil).progress == 0.5)
+        working.value.plan = AgentPlan.reported(in: snapshot, provider: "Claude", sessionID: "s", currentTurn: "t3")
+        #expect(ChefTagContent.make(working, review: nil).progress == nil)
     }
 
     @Test func armedSkillsGoAsStructuredCodexSkillsOrAsNamesInTheText() {
@@ -398,8 +415,9 @@ import simd
         let pose = try #require(view.cameraPose)
         #expect(simd_distance(pose.look, follow.look) < 0.1 && simd_distance(pose.eye, follow.eye) < 0.2)
         view.apply(agents: [cook, other], active: false, reducedMotion: false, now: 1)
-        let labels = view.subviews.compactMap { $0 as? NSTextField }.filter { !$0.isHidden && $0.stringValue.hasPrefix("Agent ") }
-        #expect(labels.map(\.stringValue).allSatisfy { $0.hasPrefix("Agent a") })
+        let shown = view.chefLabels.filter { !$0.value.isHidden }.map(\.key)
+        #expect(shown == [cook.id])
+        #expect(view.chefs[other.id]?.root.opacity ?? 1 < 1)
         // Letting go returns the camera to the whole kitchen and drops the ring.
         view.setSelection(nil, immediately: true)
         #expect(chef.root.childNode(withName: "selection ring", recursively: false) == nil)
@@ -608,8 +626,8 @@ import simd
     @Test func neighbouringNameTagsNeverOverlap() throws {
         let view = KitchenSceneView(frame: CGRect(x: 0, y: 0, width: 1000, height: 700))
         view.layoutSubtreeIfNeeded(); view.fitFloor()
-        view.apply(agents: (0..<10).map { agent("r\($0)", .done, freshness: .lastKnown) }, active: false, reducedMotion: false)
-        let tags = view.subviews.compactMap { $0 as? NSTextField }.filter { $0.stringValue.hasPrefix("Agent ") }.map(\.frame)
+        view.apply(agents: (0..<10).map { agent("r\($0)", .working, tool: "Read", conversation: "c\($0)") }, active: false, reducedMotion: false)
+        let tags = view.chefLabels.values.map(\.frame)
         #expect(tags.count == 10)
         for (i, a) in tags.enumerated() { for b in tags.dropFirst(i + 1) { #expect(!a.intersects(b)) } }
     }

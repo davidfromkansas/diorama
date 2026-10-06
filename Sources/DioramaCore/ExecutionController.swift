@@ -701,7 +701,10 @@ public final class ExecutionController {
             if done { tasks[id]?.toolProgress.removeValue(forKey: itemID) }
             if type == "reasoning" { return }
             let kind: String; let text: String
-            if type == "agentMessage" || type == "plan" { kind = type == "plan" ? "Proposed plan" : "Assistant"; text = item["text"].string ?? "" }
+            if type == "agentMessage" || type == "plan" {
+                kind = type == "plan" ? "Proposed plan" : "Assistant"; text = item["text"].string ?? ""
+                if type == "agentMessage", done, !text.isEmpty { activity(id, kind: "commentary", detail: String(text.prefix(1000))) }
+            }
             else if type == "userMessage" {
                 let content = item["content"].array.compactMap { $0["text"].string ?? ($0["type"].string == "localImage" ? "Image: \($0["path"].string ?? "attachment")" : "[Image attachment]") }.joined(separator: "\n")
                 for (index, part) in MessageContent.split(content, provider: .codex).enumerated() {

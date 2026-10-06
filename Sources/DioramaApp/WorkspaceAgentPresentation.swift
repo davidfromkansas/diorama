@@ -65,6 +65,10 @@ struct WorkspaceAgent: Identifiable, Equatable {
     var turnWork = TurnWork()
     /// The distilled activity feed for the command bar (oldest first).
     var feed: [FeedEntry] = []
+    /// When the agent last wrote a progress note, and last called a tool, in this turn (for the
+    /// icon on its kitchen name tag).
+    var lastCommentaryAt: Date?
+    var lastToolAt: Date?
     var meaningfulUpdatedAt: Date?
     var meaningfulEventID = ""
     var meaningfulUpdateID: String { [meaningfulEventID, reportedStatus, latestActivity].joined(separator: "\u{1E}") }
@@ -74,6 +78,7 @@ struct WorkspaceAgent: Identifiable, Equatable {
         latestTool = previous.latestTool; latestToolDetail = previous.latestToolDetail; turnHasEdits = previous.turnHasEdits
         turnWork = previous.turnWork
         feed = previous.feed
+        lastCommentaryAt = previous.lastCommentaryAt; lastToolAt = previous.lastToolAt
         meaningfulUpdatedAt = previous.meaningfulUpdatedAt; meaningfulEventID = previous.meaningfulEventID
         attentionReason = previous.attentionReason
         completionKey = previous.completionKey
@@ -235,6 +240,9 @@ enum WorkspaceAgentPresentation {
                 result[index].turnHasEdits = edits
                 result[index].turnWork = TurnWork.from(stream)
                 result[index].feed = AgentActivityFeed.entries(from: stream)
+                let turn = stream.lastIndex { $0.kind == "started" || $0.kind == "turnStarted" }.map { stream[($0 + 1)...] } ?? stream[...]
+                result[index].lastCommentaryAt = turn.last { $0.kind == "commentary" }?.time
+                result[index].lastToolAt = turn.last { $0.kind == "toolStarted" }?.time
                 if agent.status != .working { result[index].turnWork.settle() }
             } else {
                 let tools = relevant.filter { $0.kind == "tool" && (latest?.turnID == nil || $0.turnID == latest?.turnID) }
