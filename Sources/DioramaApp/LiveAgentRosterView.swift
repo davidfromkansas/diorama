@@ -29,7 +29,7 @@ struct LiveAgentRosterPanel: View {
                         .accessibilityLabel("Create agent")
                 }
                 if let collapse {
-                    Button(action: collapse) { Image(systemName: "minus").font(.system(size: 11, weight: .bold)).frame(width: 18, height: 18) }
+                    Button(action: collapse) { Image(systemName: "minus").font(.system(size: 11, weight: .bold)).frame(width: 22, height: 22).contentShape(Rectangle()) }
                         .buttonStyle(.plain).foregroundStyle(.secondary).pointingHand().help("Collapse (⌘B)").accessibilityLabel("Collapse agents")
                 }
             }.padding(.horizontal, floating ? 12 : 6).padding(.vertical, floating ? 10 : 14)
