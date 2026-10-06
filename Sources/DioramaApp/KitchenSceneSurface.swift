@@ -162,6 +162,8 @@ final class KitchenSceneView: SCNView {
     /// When each chef last showed the thinking bubble during a quiet stretch.
     private var lastThinking: [String: Date] = [:]
     private var lastSilenceCheck: TimeInterval = 0
+    /// The task-label revision the tags were last written with.
+    private var labelRevision = TaskLabels.shared.revision
     /// The chef under the pointer: resting chefs show their tag only then.
     private var hoveredID: String?
     private var slots: [String: ChefStation] = [:]
@@ -754,8 +756,15 @@ final class KitchenSceneView: SCNView {
         updateFlames()
         updateBoards()
         noticeSilence()
+        refreshLabels()
         placeChefLabels()
         updatePlayback()
+    }
+    /// Written task labels arrive a few seconds after a chef appears; swap them into the tags.
+    private func refreshLabels() {
+        guard TaskLabels.shared.revision != labelRevision else { return }
+        labelRevision = TaskLabels.shared.revision
+        for (id, agent) in chefAgents { chefLabels[id]?.update(ChefTagContent.make(agent, review: pacing[id]?.review), reducedMotion: reduced) }
     }
     /// A working agent that has gone quiet (composing a long file, thinking) shows a thought
     /// bubble now and then.
