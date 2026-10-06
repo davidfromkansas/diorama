@@ -238,7 +238,7 @@ public enum KitchenActivity: String, Sendable, CaseIterable {
     static let researchTools: Set<String> = ["read", "grep", "glob", "websearch", "webfetch", "web__run", "web.search", "toolsearch", "view_image", "imageview"]
     static let planningTools: Set<String> = ["todowrite", "taskcreate", "taskupdate", "enterplanmode", "exitplanmode", "update_plan", "plan"]
     static let editingTools: Set<String> = ["edit", "write", "multiedit", "notebookedit", "filechange", "apply_patch"]
-    static let commandTools: Set<String> = ["bash", "commandexecution", "shell", "local_shell", "exec_command", "write_stdin"]
+    public static let commandTools: Set<String> = ["bash", "commandexecution", "shell", "local_shell", "exec_command", "write_stdin"]
     static let readOnlyCommands: Set<String> = ["cat", "sed", "head", "tail", "grep", "egrep", "rg", "ag", "ls", "find", "fd", "tree", "wc", "nl",
                                                 "file", "stat", "du", "less", "more", "pwd", "jq", "echo", "printf", "which", "awk", "sort", "uniq", "cut", "diff", "realpath", "basename", "dirname"]
     static let readOnlyGit: Set<String> = ["log", "show", "diff", "status", "blame", "grep", "ls-files", "rev-parse", "branch", "remote", "describe"]
