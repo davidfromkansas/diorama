@@ -4,13 +4,15 @@ import Foundation
 /// first ported from the chef avatar prototype (`app/src/agent/mapping.ts`), then extended with
 /// shell-command understanding: both providers mostly read files through the shell.
 public enum KitchenActivity: String, Sendable, CaseIterable {
-    case planning, researching, editing, commands, testing, resources, other
+    case planning, researching, editing, commands, testing, checking, resources, other
 
     /// Tool names arrive as Claude Code tool titles (`Read`, `Bash`…), Codex item types
     /// (`commandExecution`, `fileChange`…) or Codex function names (`exec_command`, `apply_patch`…).
     public static func classify(tool: String, detail: String = "") -> KitchenActivity {
         let name = tool.trimmingCharacters(in: .whitespaces).lowercased()
         if commandTools.contains(name) { return classify(command: detail) }
+        // Looking at the result in a browser or app is checking the work, like tasting.
+        if isVisualCheck(tool: name) { return .checking }
         // Reading a skill's instructions is how agents pick a skill up.
         if researchTools.contains(name), isSkillFile(detail) { return .resources }
         // Using a skill or an MCP server's tool: fetching from the pantry.
@@ -74,6 +76,11 @@ public enum KitchenActivity: String, Sendable, CaseIterable {
     }
     private static let heredoc = try! NSRegularExpression(pattern: #"<<-?\s*['"]?([A-Za-z_][A-Za-z0-9_]*)['"]?"#)
     private static let redirectTarget = try! NSRegularExpression(pattern: #"(?<![0-9&<>])>>?\s*([^\s;&|<>]+)"#)
+    /// Browser and screen tools: Computer Use, browser automation (Playwright, Puppeteer, Chrome).
+    public static func isVisualCheck(tool: String) -> Bool {
+        let name = tool.lowercased()
+        return name == "computer_use" || ["browser", "chrome", "playwright", "puppeteer", "computer-use", "computer_use", "screenshot"].contains { name.contains($0) }
+    }
     public static func isResource(tool: String) -> Bool {
         let name = tool.lowercased()
         return name.hasPrefix("mcp__") || resourceTools.contains(name)
@@ -86,7 +93,7 @@ public enum KitchenActivity: String, Sendable, CaseIterable {
         let folder = text[..<range.lowerBound].split(whereSeparator: { $0 == "/" || $0 == " " || $0 == "'" || $0 == "\"" }).last
         return folder.map(String.init)
     }
-    static let resourceTools: Set<String> = ["skill", "mcptoolcall", "computer_use", "listmcpresources", "readmcpresource", "listmcpresourcestool", "readmcpresourcetool"]
+    static let resourceTools: Set<String> = ["skill", "mcptoolcall", "listmcpresources", "readmcpresource", "listmcpresourcestool", "readmcpresourcetool"]
 
     /// Tests anywhere in the script → testing; only read-only commands → researching; else commands.
     public static func classify(command: String) -> KitchenActivity {

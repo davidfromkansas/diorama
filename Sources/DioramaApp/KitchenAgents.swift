@@ -18,7 +18,7 @@ extension KitchenLayout {
 
     /// How long a chef stays at a station before a non-urgent change of work moves it (seconds).
     /// Agents make many tool calls a minute; this keeps the kitchen calm.
-    static let minimumDwell: Double = 3
+    static let minimumDwell: Double = 2
     /// How long a newly arrived chef reads its order at the rail.
     static let orderReading: Double = 3
 
@@ -56,10 +56,12 @@ extension KitchenLayout {
         case .done where fresh: return .init(area: "serving", loop: "wait_review", oneShot: "present_review", urgent: true, deliversPlate: true)
         case .working where fresh:
             switch (KitchenActivity.classify(tool: agent.latestTool, detail: agent.latestToolDetail), agent.turnHasEdits) {
-            case (.testing, _): return .init(area: "tasting", loop: "testing_dish", hand: .spoon)
+            case (.testing, _), (.checking, _): return .init(area: "tasting", loop: "testing_dish", hand: .spoon)
             // Skills and MCP tools come from the pantry, at any point in the turn.
             case (.resources, _): return .init(area: "pantry", loop: "idle_available", oneShot: "pickup")
             case (.planning, false): return .init(area: "prep", loop: "planning_recipe", hand: .card)
+            // Installs, builds and scripts cook at the stove, before the first edit too.
+            case (.commands, _): return .init(area: "stove", loop: "waiting_tool")
             case (_, false): return .init(area: "prep", loop: "researching_book", hand: .book)
             case (.commands, true): return .init(area: "stove", loop: "waiting_tool")
             case (_, true): return .init(area: "cooking", loop: "working_chop", hand: .knife)

@@ -69,7 +69,9 @@ import simd
         // Before the first edit everything is prep, except tests.
         #expect(KitchenLayout.work(for: agent("a", .working, tool: "Read").value) == .init(area: "prep", loop: "researching_book", hand: .book))
         #expect(KitchenLayout.work(for: agent("a", .working, tool: "TaskCreate").value).hand == .card)
-        #expect(area(agent("a", .working, tool: "Bash", detail: "make")) == "prep")
+        // Installs, builds and scripts cook at the stove even before the first edit.
+        #expect(area(agent("a", .working, tool: "Bash", detail: "make")) == "stove")
+        #expect(area(agent("a", .working, tool: "computer_use")) == "tasting")
         #expect(area(agent("a", .working, tool: "Bash", detail: "swift test")) == "tasting")
         // After it: editing at the island, commands at the stove, reads keep chopping.
         #expect(KitchenLayout.work(for: agent("a", .working, tool: "Edit", edits: true).value) == .init(area: "cooking", loop: "working_chop", hand: .knife))

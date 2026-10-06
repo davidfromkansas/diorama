@@ -143,6 +143,10 @@ public enum AgentActivityFeed {
                     return
                 }
                 append(FeedEntry(id: id, kind: .research, title: "Looked at " + item, detail: item, outcome: .done, time: time))
+            case .checking:
+                let what = detail.isEmpty ? Self.toolName(tool) : String(detail.prefix(60))
+                if let last = result.last, last.kind == .test, last.detail == what { return }
+                append(FeedEntry(id: id, kind: .test, title: "Checked · " + what, detail: what, time: time))
             case .resources:
                 let item = Self.resourceName(tool: tool, detail: detail)
                 if let last = result.last, last.kind == .resource, last.detail == item { return }
