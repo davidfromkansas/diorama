@@ -527,7 +527,8 @@ final class KitchenSceneView: SCNView {
                 // each skill or plugin fetched, however quickly the agent moves on.
                 let tests = agent.value.turnWork.tests.count, seen = pacing[agent.id]?.testsSeen ?? tests
                 let fetched = agent.value.turnWork.resources.count, fetchedSeen = pacing[agent.id]?.resourcesSeen ?? fetched
-                if !catchingUp, var state = pacing[agent.id] {
+                // Only live work owes visits: history loading after a relaunch also raises the counts.
+                if !catchingUp, agent.value.status == .working, agent.fresh, var state = pacing[agent.id] {
                     if fetched > fetchedSeen, !state.owed.contains("pantry") { state.owed.append("pantry") }
                     if tests > seen, !state.owed.contains("tasting") { state.owed.append("tasting") }
                     pacing[agent.id] = state
@@ -564,6 +565,7 @@ final class KitchenSceneView: SCNView {
             let settledFor = state.arrivedAt.map { now - $0 } ?? 0
             let walking = director.intent?.station != nil && director.station == nil
             var apply = false, promote = false
+            if state.agent.status != .working { state.owed.removeAll() }
             if let owedArea = state.owed.first, !state.arriving {
                 // Needs-you comes first; otherwise the chef pays the visit before moving on (even to serve).
                 if state.want?.station?.area == "bell" || (state.want?.urgent == true && state.want?.station == nil) { state.owed.removeAll() }
