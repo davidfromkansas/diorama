@@ -6,9 +6,21 @@ import Foundation
 /// without Claude).
 public enum TaskLabel {
     public static let maxWords = 4
-    static let instructions = "You label coding tasks for a dashboard. You never perform the task and never ask questions. Reply with only a label of at most 4 words in Title Case that names the main thing being built, fixed or changed. No punctuation, no quotes, no markdown."
+    static let instructions = "You label coding tasks for a dashboard. You never perform the task and never ask questions. Reply with only a label of at most 4 words in Title Case that names what the agent is working on now: the main thing being built, fixed or changed. When there is a latest request, label that work in the context of the original task. No punctuation, no quotes, no markdown."
 
-    static func prompt(_ task: String) -> String { "Label this task: <task>" + String(task.prefix(2000)) + "</task>" }
+    static func prompt(_ task: String, latest: String? = nil) -> String {
+        let original = "<task>" + String(task.prefix(2000)) + "</task>"
+        guard let latest, !latest.isEmpty else { return "Label this task: " + original }
+        return "Original task: " + original + "\nLatest request: <latest>" + String(latest.prefix(2000)) + "</latest>\nLabel what the agent is working on now."
+    }
+    /// A follow-up that carries no new work ("yes", "ok, go ahead", "continue"): the label stays.
+    public static func isAcknowledgement(_ message: String) -> Bool {
+        let words = message.lowercased().split(whereSeparator: { !$0.isLetter && $0 != "'" })
+        let filler: Set<String> = ["yes", "yeah", "yep", "yup", "ok", "okay", "k", "sure", "continue", "go", "ahead", "proceed", "please", "thanks",
+                                   "thank", "you", "do", "it", "that", "sounds", "good", "great", "perfect", "lgtm", "looks", "nice", "cool", "keep",
+                                   "going", "carry", "on", "approved", "approve", "fine", "alright", "right", "y", "again", "try", "retry", "the", "and", "now"]
+        return words.count <= 6 && words.allSatisfy { filler.contains(String($0)) }
+    }
     /// The model's reply as a label, or nil when it isn't one (too long, empty, chatty).
     public static func clean(_ output: String) -> String? {
         let line = output.split(whereSeparator: \.isNewline).map { $0.trimmingCharacters(in: .whitespaces) }
@@ -33,14 +45,14 @@ public enum TaskLabel {
     }
 
     /// Asks Claude Haiku for the label (through the person's Claude Code login; no session is saved); nil when Claude Code isn't installed, fails or answers off-script.
-    @concurrent public static func generate(_ task: String, timeout: TimeInterval = 45) async -> String? {
+    @concurrent public static func generate(_ task: String, latest: String? = nil, timeout: TimeInterval = 45) async -> String? {
         guard let binary = ClaudeExecutionTransport.binary() else { return nil }
         let process = Process(), output = Pipe()
         process.executableURL = binary
         let folder = FileManager.default.temporaryDirectory.path
         process.arguments = ["-p", "--model", "haiku", "--tools", "", "--strict-mcp-config", "--mcp-config", #"{"mcpServers":{}}"#,
                              "--setting-sources", "", "--disable-slash-commands", "--no-session-persistence", "--system-prompt", instructions,
-                             prompt(task)]
+                             prompt(task, latest: latest)]
         process.currentDirectoryURL = URL(fileURLWithPath: folder)
         process.environment = ClaudeExecutionTransport.childEnvironment(ProcessInfo.processInfo.environment, folder: folder, executable: binary)
         process.standardInput = FileHandle.nullDevice

@@ -40,6 +40,8 @@ struct WorkspaceAgent: Identifiable, Equatable {
     var name: String
     var provider: String
     var task: String
+    /// The person's newest message (what this turn is about), when it differs from the task.
+    var latestRequest: String? = nil
     var action: String
     var status: WorkspaceAgentStatus
     var reportedStatus: String
@@ -177,6 +179,7 @@ enum WorkspaceAgentPresentation {
             status: mainStatus, reportedStatus: phase,
             freshness: uncertain ? .unverified : current.hasLiveExecution ? .live : current.externalFreshness,
             observedAt: task?.activity.last(where: { $0.state != nil })?.time ?? current.observation?.activity.latestState?.time, attentionReason: WorkspaceAttentionReason(reported: phase))]
+        result[0].latestRequest = ((task?.transcript ?? current.observation?.transcript)?.entries.last { $0.kind == "You" }?.text).map(TaskTitle.full)
         var seen: Set<String> = []
         for source in sources {
             let records = source.snapshot.records.filter { $0.kind == "agent" }

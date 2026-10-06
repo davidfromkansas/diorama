@@ -22,6 +22,11 @@ import Testing
                 #expect(label.map { $0.split(separator: " ").count <= 4 } ?? true)
             }
         }
+        // A follow-up turn: the label describes the new work in the task's context.
+        for provider in [Provider.codex, .claude] {
+            let label = await c.taskLabel(tasks[0], latest: "Looks great. Now also add a moon that rises and sets, and make the office windows glow at night.", provider: provider)
+            print("LABEL follow-up", provider.rawValue, "→", label ?? "nil")
+        }
         #expect(c.tasks.isEmpty)
         await transport.shutdown()
     }

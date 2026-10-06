@@ -2,13 +2,13 @@ import AppKit
 import DioramaCore
 import QuartzCore
 
-/// What a chef's name tag shows: a short task name and the checklist progress line. What the
-/// chef is doing (and needing you, a dish ready) shows as an emote above it (`KitchenEmote`).
+/// What a chef's name tag shows: a short task name. Checklist progress shows as a bar between the
+/// tag and the chef (`ChefProgressView`); needing you, a dish ready, as an emote above it.
 struct ChefTagContent: Equatable {
     var text: String
     /// The whole task, for the tooltip and accessibility.
     var fullText: String
-    /// Checklist progress for the current turn, when the agent keeps one.
+    /// Checklist progress for the current turn, when the agent keeps one (drawn by the bar).
     var progress: Double?
     /// Last known rather than live: drawn faded.
     var stale: Bool
@@ -21,23 +21,21 @@ struct ChefTagContent: Equatable {
         // Only a list kept this turn fills the line; the tag stays quiet otherwise.
         var progress: Double?
         if case .steps = value.planProgress { progress = value.planProgress.fraction }
-        // A four-word summary of the whole task (written by a small model, keyword label meanwhile).
+        // A four-word summary of what the chef works on now: the task, updated by each turn's request.
         let task = TaskTitle.full(value.task)
-        let short = labels.label(for: task, provider: value.provider.lowercased().contains("claude") ? .claude : .codex)
+        let short = labels.label(agent: agent.id, for: task, latest: value.latestRequest, provider: value.provider.lowercased().contains("claude") ? .claude : .codex)
         return ChefTagContent(text: short.isEmpty ? value.name : short, fullText: task.isEmpty ? value.name : task,
                               progress: progress, stale: !agent.fresh, resting: work.area == "break")
     }
 }
 
-/// A chef's name tag: the short task name (scrolling at a calm pace if it is still too long),
-/// with a thin checklist progress line underneath.
+/// A chef's name tag: the short task name (scrolling at a calm pace if it is still too long).
 final class ChefTagView: NSView {
     static let maxTextWidth: CGFloat = 150
     static let scrollSpeed: CGFloat = 35 // points per second
     static let edgePause: CFTimeInterval = 1.5
     private let clip = NSView()
     private let label = NSTextField(labelWithString: "")
-    private let track = TagBar(color: NSColor.black.withAlphaComponent(0.08)), fill = TagBar(color: NSColor(red: 0.18, green: 0.7, blue: 0.42, alpha: 1))
     private(set) var content: ChefTagContent?
     private var reducedMotion = false
     var text: String { label.stringValue }
@@ -53,8 +51,6 @@ final class ChefTagView: NSView {
         label.font = .systemFont(ofSize: 10, weight: .semibold); label.textColor = NSColor(white: 0.18, alpha: 1)
         label.wantsLayer = true; label.lineBreakMode = .byClipping
         clip.addSubview(label)
-        // Views, not loose sublayers: inside the kitchen's layer tree, hand-added layers were scaled.
-        addSubview(track); addSubview(fill)
         needsDisplay = true
     }
     // The backing layer can be replaced when the tag joins the kitchen's view, so its look is
@@ -72,7 +68,7 @@ final class ChefTagView: NSView {
 
     private var textWidth: CGFloat { ceil(label.attributedStringValue.size().width) }
     /// The tag's size for its current content.
-    var tagSize: NSSize { NSSize(width: 8 + min(Self.maxTextWidth, textWidth) + 8, height: content?.progress == nil ? 17 : 19) }
+    var tagSize: NSSize { NSSize(width: 8 + min(Self.maxTextWidth, textWidth) + 8, height: 17) }
 
     func update(_ content: ChefTagContent, reducedMotion: Bool) {
         guard content != self.content || reducedMotion != self.reducedMotion else { return }
@@ -92,13 +88,6 @@ final class ChefTagView: NSView {
         let visible = min(Self.maxTextWidth, textWidth)
         clip.frame = NSRect(x: 7, y: 2, width: visible + 2, height: height - 3)
         label.frame = NSRect(x: 0, y: -1, width: textWidth + 4, height: height - 2)
-        let progress = content?.progress
-        track.isHidden = progress == nil; fill.isHidden = progress == nil
-        let inset: CGFloat = 6, width = bounds.width - inset * 2
-        // Along the bottom edge (the view is flipped, and so is its backing layer).
-        let y = bounds.height - 3.5
-        track.frame = CGRect(x: inset, y: y, width: max(0, width), height: 2)
-        fill.frame = CGRect(x: inset, y: y, width: max(2, width * CGFloat(progress ?? 0)), height: 2)
     }
 
     /// Long tasks scroll to the end and back, pausing at each end (still under Reduce Motion).
@@ -117,12 +106,43 @@ final class ChefTagView: NSView {
     }
 }
 
-/// One segment of a tag's progress line.
-private final class TagBar: NSView {
+/// The checklist progress bar between a chef's name tag and its head: only while the agent keeps
+/// a list this turn (hidden otherwise), filling as steps are done.
+final class ChefProgressView: NSView {
+    static let size = NSSize(width: 46, height: 6)
+    private let track = BarSegment(color: NSColor(white: 0.1, alpha: 0.55)), fill = BarSegment(color: NSColor(red: 0.27, green: 0.85, blue: 0.5, alpha: 1))
+    private(set) var fraction: Double?
+    override var isFlipped: Bool { true }
+    override func hitTest(_ point: NSPoint) -> NSView? { nil }
+    override init(frame: NSRect) {
+        super.init(frame: NSRect(origin: frame.origin, size: Self.size))
+        wantsLayer = true
+        // Views, not loose sublayers: inside the kitchen's layer tree, hand-added layers were scaled.
+        addSubview(track); addSubview(fill)
+        isHidden = true
+    }
+    required init?(coder: NSCoder) { fatalError("init(coder:) has not been implemented") }
+    func update(_ fraction: Double?) {
+        guard fraction != self.fraction else { return }
+        self.fraction = fraction
+        setAccessibilityLabel(fraction.map { "\(Int(($0 * 100).rounded())) percent of the checklist done" })
+        needsLayout = true
+    }
+    override func layout() {
+        super.layout()
+        track.frame = bounds.insetBy(dx: 0, dy: 1)
+        let inner = track.frame.insetBy(dx: 1, dy: 1)
+        fill.frame = CGRect(x: inner.minX, y: inner.minY, width: max(inner.height, inner.width * CGFloat(min(1, max(0, fraction ?? 0)))), height: inner.height)
+        fill.isHidden = (fraction ?? 0) <= 0
+    }
+}
+
+private final class BarSegment: NSView {
     let color: NSColor
     init(color: NSColor) { self.color = color; super.init(frame: .zero); wantsLayer = true }
     required init?(coder: NSCoder) { fatalError("init(coder:) has not been implemented") }
     override var wantsUpdateLayer: Bool { true }
-    override func updateLayer() { layer?.backgroundColor = color.cgColor; layer?.cornerRadius = 1 }
+    override func updateLayer() { layer?.backgroundColor = color.cgColor; layer?.cornerRadius = min(bounds.height, bounds.width) / 2 }
+    override func layout() { super.layout(); needsDisplay = true }
     override func hitTest(_ point: NSPoint) -> NSView? { nil }
 }
