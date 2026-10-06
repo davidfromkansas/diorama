@@ -423,6 +423,22 @@ import simd
         #expect(chef.director.intent?.station?.area == "cooking")
     }
 
+    @Test func historyLoadingAfterARelaunchOwesNoVisits() throws {
+        let view = KitchenSceneView(frame: CGRect(x: 0, y: 0, width: 1000, height: 700))
+        var done = agent("a", .done)
+        view.apply(agents: [done], active: false, reducedMotion: false, now: 0)
+        let chef = try #require(view.chefs[done.id])
+        var t = 0.0
+        while t < 5 { chef.update(1 / 30); t += 1 / 30; view.apply(agents: [done], active: false, reducedMotion: false, now: t) }
+        // The saved history arrives: a test run and a skill, long finished.
+        var work = TurnWork(); work.started(tool: "Bash", detail: "npm test", call: "1"); work.finished(call: "1", failed: false)
+        work.started(tool: "exec_command", detail: "cat /x/skills/a/SKILL.md", call: "2")
+        done.value.turnWork = work
+        var areas = Set<String>()
+        while t < 25 { chef.update(1 / 30); t += 1 / 30; view.apply(agents: [done], active: false, reducedMotion: false, now: t); areas.insert(chef.director.intent?.station?.area ?? "") }
+        #expect(areas == ["serving"])
+    }
+
     @Test func everyTestRunGetsTastedEvenWhenTheAgentMovesOnAtOnce() throws {
         let view = KitchenSceneView(frame: CGRect(x: 0, y: 0, width: 1000, height: 700))
         var cook = agent("a", .working, tool: "Edit", edits: true)
