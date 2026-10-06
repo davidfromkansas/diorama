@@ -832,3 +832,42 @@ extension ChefKitchenTests {
         #expect(view.chefEmotes[cook.id]?.lasting == nil)
     }
 }
+
+extension ChefKitchenTests {
+    @Test func labelsFollowEachTurnsRequestAndKeepTheirPlaceMeanwhile() {
+        let task = "Build a website that shows a three.js model of Salesforce Tower"
+        let labels = TaskLabels(labels: [TaskLabels.key(task): "Salesforce Tower Website",
+                                         TaskLabels.key(task + "\u{1F}" + "Also add a moon that rises and sets"): "Add Moon To Tower"])
+        #expect(labels.label(agent: "a", for: task, latest: task, provider: .claude) == "Salesforce Tower Website")
+        // A new request this turn: its written label.
+        #expect(labels.label(agent: "a", for: task, latest: "Also add a moon that rises and sets", provider: .claude) == "Add Moon To Tower")
+        // "ok, go ahead" carries no new work: the label stays.
+        #expect(labels.label(agent: "a", for: task, latest: "ok, go ahead", provider: .claude) == "Add Moon To Tower")
+        // A request without a written label yet keeps the chef's current one (no generator in tests).
+        #expect(labels.label(agent: "a", for: task, latest: "Make the windows glow at night", provider: .claude) == "Add Moon To Tower")
+        #expect(TaskLabel.isAcknowledgement("yes please continue") && TaskLabel.isAcknowledgement("LGTM!") && !TaskLabel.isAcknowledgement("yes, and add tests"))
+        #expect(TaskLabel.prompt(task, latest: "Add a moon").contains("Latest request: <latest>Add a moon</latest>"))
+    }
+
+    @Test func theProgressBarSitsBetweenTheTagAndTheChefOnlyWithAList() throws {
+        let view = KitchenSceneView(frame: CGRect(x: 0, y: 0, width: 1000, height: 700))
+        var cook = agent("c", .working, tool: "Edit", edits: true)
+        view.apply(agents: [cook], active: false, reducedMotion: false)
+        let bar = try #require(view.chefBars[cook.id]), tag = try #require(view.chefLabels[cook.id])
+        #expect(bar.isHidden && bar.fraction == nil)
+        func step(_ status: String) -> SessionActivityRecord {
+            SessionActivityRecord(id: UUID().uuidString, provider: "Claude", sessionID: "s", turnID: "t", nativeID: UUID().uuidString, kind: "step",
+                                  title: "Step", status: status, detail: "", source: "test", observedAt: Date(), data: .null)
+        }
+        var snapshot = SessionActivitySnapshot()
+        snapshot.records = [step("completed"), step("inProgress"), step("pending"), step("pending")]
+        cook.value.plan = AgentPlan.reported(in: snapshot, provider: "Claude", sessionID: "s", currentTurn: "t")
+        view.apply(agents: [cook], active: false, reducedMotion: false)
+        #expect(!bar.isHidden && bar.fraction == 0.25)
+        let emote = try #require(view.chefEmotes[cook.id])
+        // Emote above the tag, the bar below it (nearer the head), all centred.
+        #expect(bar.frame.midX == tag.frame.midX)
+        if view.isFlipped { #expect(bar.frame.minY >= tag.frame.maxY) } else { #expect(bar.frame.maxY <= tag.frame.minY) }
+        _ = emote
+    }
+}

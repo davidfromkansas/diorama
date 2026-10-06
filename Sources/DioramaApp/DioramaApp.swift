@@ -175,7 +175,7 @@ final class LibraryModel {
         guard sharedOwner == nil else { return }
         restoreConversationMembership()
         // Chef name tags get four-word task labels from the agent's own provider.
-        TaskLabels.shared.generator = { [weak execution = self.execution] task, provider in await execution?.taskLabel(task, provider: provider) }
+        TaskLabels.shared.generator = { [weak execution = self.execution] task, latest, provider in await execution?.taskLabel(task, latest: latest, provider: provider) }
         self.execution.titleEvent = { [weak self] id, provider, name in
             guard let self else { return }
             for index in self.sessions.indices where self.sessions[index].sessionID == id && self.sessions[index].provider == provider {
