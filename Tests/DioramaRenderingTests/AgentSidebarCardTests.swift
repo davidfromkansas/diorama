@@ -89,21 +89,48 @@ import Testing
         #expect(AgentSidebarCollapse.load("p", defaults: defaults) == [.done, .idle])
     }
 
+    func plan(done: Int, total: Int) -> AgentPlan {
+        var snapshot = SessionActivitySnapshot()
+        snapshot.records = (0..<total).map { index in
+            SessionActivityRecord(id: "s\(index)", provider: "Codex", sessionID: "s", turnID: "t", nativeID: "s\(index)", kind: "step",
+                                  title: "Step \(index)", status: index < done ? "completed" : "pending", detail: "", source: "test", observedAt: Date(), data: .null)
+        }
+        return AgentPlan.reported(in: snapshot, provider: "Codex", sessionID: "s", currentTurn: "t")
+    }
+    @Test func statusBarsShowStepsWhileWorkingOrWaitingNeverWhenDoneOrIdle() {
+        var working = agent("w", .working, tool: "Edit", detail: "a.swift"); working.value.plan = plan(done: 3, total: 5)
+        var waiting = agent("n", .waiting, attention: .approval); waiting.value.plan = plan(done: 2, total: 4)
+        var done = agent("d", .done); done.value.plan = plan(done: 4, total: 4)
+        let list = items([
+            .init(session: session("w", "W"), agents: [working]),
+            .init(session: session("x", "X"), agents: [agent("x", .working, tool: "Bash", detail: "npm test")]),
+            .init(session: session("n", "N"), agents: [waiting]),
+            .init(session: session("q", "Q"), agents: [agent("q", .waiting, attention: .input)]),
+            .init(session: session("d", "D"), agents: [done], review: .awaiting),
+            .init(session: session("i", "I"), agents: [agent("i", .ready)]),
+        ])
+        func progress(_ id: String) -> AgentSidebarProgress? { list.first { $0.conversationID == id }?.progress }
+        #expect(progress("w") == .steps(done: 3, total: 5))
+        #expect(progress("x") == .working)
+        #expect(progress("n") == .steps(done: 2, total: 4))
+        #expect(progress("q") == nil && progress("d") == nil && progress("i") == nil)
+    }
+
     @Test func captureSidebarCard() throws {
         guard ProcessInfo.processInfo.environment["DIORAMA_SIDEBAR_CAPTURE"] == "1" else { return }
         let fixtures = items([
-            .init(session: session("1", "Fix sign-in flow"), agents: [agent("1", .waiting, attention: .approval, provider: .claude, model: "claude-opus-5-5")]),
-            .init(session: session("2", "Build settings page"), agents: [agent("2", .working, tool: "apply_patch", detail: "SettingsView.swift", model: "gpt-6-astra")]),
+            .init(session: session("1", "Fix sign-in flow"), agents: [{ var a = agent("1", .waiting, attention: .approval, provider: .claude, model: "claude-opus-5-5"); a.value.plan = plan(done: 2, total: 4); return a }()]),
+            .init(session: session("2", "Build settings page"), agents: [{ var a = agent("2", .working, tool: "apply_patch", detail: "SettingsView.swift", model: "gpt-6-astra"); a.value.plan = plan(done: 3, total: 5); return a }()]),
             .init(session: session("3", "Improve search"), agents: [agent("3", .working, tool: "Bash", detail: "npm test", provider: .claude, model: "claude-sonnet-5-5")]),
-            .init(session: session("4", "Research auth options for the new sign-in screen and compare providers"), agents: [agent("4", .working, tool: "update_plan", model: "gpt-6-astra")]),
+            .init(session: session("4", "Research auth options for the new sign-in screen and compare providers"), agents: [{ var a = agent("4", .working, tool: "update_plan", model: "gpt-6-astra"); a.value.plan = plan(done: 1, total: 4); return a }()]),
             .init(session: session("5", "Update app icon"), agents: [agent("5", .done, model: "gpt-6-astra")], review: .awaiting),
             .init(session: session("6", "Refactor navigation"), agents: [agent("6", .ready, provider: .claude, model: "claude-opus-5-5")]),
         ])
         for width in [320.0, 280] {
             let card = AgentSidebarCard(items: fixtures, projectID: "fixture", selectedConversation: "2", select: { _ in }, reviewRequest: { _ in }, reviewChanges: { _ in }, create: {})
-                .frame(width: width, height: 640).lightFloatingCard().padding(20).background(Color(red: 0.55, green: 0.42, blue: 0.3))
+                .frame(width: width, height: 720).lightFloatingCard().padding(20).background(Color(red: 0.55, green: 0.42, blue: 0.3))
             let host = NSHostingView(rootView: card)
-            host.frame = NSRect(x: 0, y: 0, width: width + 40, height: 680)
+            host.frame = NSRect(x: 0, y: 0, width: width + 40, height: 760)
             host.layoutSubtreeIfNeeded()
             let rep = try #require(host.bitmapImageRepForCachingDisplay(in: host.bounds))
             host.cacheDisplay(in: host.bounds, to: rep)

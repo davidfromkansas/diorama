@@ -17,6 +17,13 @@ enum AgentSidebarGroup: Int, CaseIterable, Identifiable, Codable {
     }
 }
 
+/// The status bar under a row: checklist steps, or a sweep while the agent works without one.
+enum AgentSidebarProgress: Equatable {
+    case steps(done: Int, total: Int)
+    /// Working without a checklist: activity, not a fraction.
+    case working
+}
+
 /// One sidebar row: a conversation (its main agent; helpers stay inside it).
 struct AgentSidebarItem: Identifiable, Equatable {
     /// The main agent's identity (what the kitchen selects).
@@ -36,6 +43,9 @@ struct AgentSidebarItem: Identifiable, Equatable {
     let requests: Int
     /// When the sidebar first saw this conversation: rows keep their place as activity changes.
     let order: Date
+    /// In progress: steps or a sweep. Needs you: the steps reached before it paused. Done and
+    /// Idle: none.
+    var progress: AgentSidebarProgress? = nil
     var hasAction: Bool { group == .needsYou || group == .done }
     var actionTitle: String {
         if group == .done { return "Review changes" }
@@ -94,11 +104,18 @@ enum AgentSidebar {
                 default: status = "Idle"; activity = "Waiting for a task"
                 }
             }
+            var progress: AgentSidebarProgress?
+            let plan = value.plan.flatMap { $0.hasTasks && !$0.tasksPreviousTurn && $0.checklist.count > 1 ? $0 : nil }
+            switch group {
+            case .inProgress: progress = plan.map { .steps(done: $0.completedTaskCount, total: $0.checklist.count) } ?? .working
+            case .needsYou: progress = plan.map { .steps(done: $0.completedTaskCount, total: $0.checklist.count) }
+            case .done, .idle: progress = nil
+            }
             return AgentSidebarItem(id: main.id, conversationID: main.conversationID, projectID: main.projectID,
                                     title: TaskTitle.full(input.session.displayTitle), group: group, status: status,
                                     model: modelName(input.model ?? value.reportedModel, provider: value.provider, catalog: catalog),
                                     activity: activity, requests: input.requests,
-                                    order: order(main.conversationID, value.meaningfulUpdatedAt ?? input.session.modified))
+                                    order: order(main.conversationID, value.meaningfulUpdatedAt ?? input.session.modified), progress: progress)
         }
         // Newest conversation first within each group; a row's place is fixed by its first sighting.
         .sorted { $0.group != $1.group ? $0.group.rawValue < $1.group.rawValue : $0.order != $1.order ? $0.order > $1.order : $0.id < $1.id }

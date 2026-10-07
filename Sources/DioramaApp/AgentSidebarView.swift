@@ -12,6 +12,8 @@ enum SidebarStyle {
     static let accent = Color(red: 0.16, green: 0.42, blue: 0.93)
     static let horizontal: CGFloat = 12
     static let rowHeight: CGFloat = 72, actionRowHeight: CGFloat = 80, bandHeight: CGFloat = 30
+    /// Extra height for a row's status bar.
+    static let statusBarHeight: CGFloat = 12
     struct Tint { let band: Color; let text: Color; let dot: Color }
     static func tint(_ group: AgentSidebarGroup) -> Tint {
         switch group {
@@ -191,11 +193,14 @@ struct AgentSidebarRow: View {
                     Text(item.activity).font(.system(size: 11.5)).foregroundStyle(SidebarStyle.secondary)
                         .lineLimit(1).truncationMode(.tail).frame(height: 15)
                 }
+                if let progress = item.progress {
+                    AgentSidebarStatusBar(progress: progress, paused: item.group == .needsYou).padding(.top, 3)
+                }
             }
             .frame(maxWidth: .infinity, alignment: .leading)
         }
         .padding(.horizontal, SidebarStyle.horizontal).padding(.top, 11)
-        .frame(height: item.hasAction ? SidebarStyle.actionRowHeight : SidebarStyle.rowHeight, alignment: .top)
+        .frame(height: (item.hasAction ? SidebarStyle.actionRowHeight : SidebarStyle.rowHeight) + (item.progress == nil ? 0 : SidebarStyle.statusBarHeight), alignment: .top)
         .background(selected ? SidebarStyle.selected : hovered ? Color.black.opacity(0.03) : Color.clear)
         .overlay(alignment: .leading) { if selected { Rectangle().fill(SidebarStyle.accent).frame(width: 3) } }
         .overlay(alignment: .bottom) { Rectangle().fill(SidebarStyle.divider).frame(height: 1).padding(.leading, SidebarStyle.horizontal + 34) }
@@ -212,6 +217,60 @@ struct AgentSidebarRow: View {
         .accessibilityAddTraits(selected ? [.isButton, .isSelected] : .isButton)
         .accessibilityAction { select() }
         .accessibilityAction(named: item.actionTitle) { if item.hasAction { action() } }
+    }
+}
+
+/// A row's status bar: checklist steps filled in the group's colour with the count beside it;
+/// amber and "paused" while the agent waits for you; a soft sweep when it works without a list.
+struct AgentSidebarStatusBar: View {
+    let progress: AgentSidebarProgress
+    let paused: Bool
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    var body: some View {
+        let tint = SidebarStyle.tint(paused ? .needsYou : .inProgress)
+        HStack(spacing: 8) {
+            GeometryReader { geometry in
+                ZStack(alignment: .leading) {
+                    Capsule().fill(Color.black.opacity(0.08))
+                    switch progress {
+                    case .steps(let done, let total):
+                        Capsule().fill(paused ? tint.dot.opacity(0.75) : tint.dot)
+                            .frame(width: max(4, geometry.size.width * CGFloat(done) / CGFloat(max(1, total))))
+                            .animation(.easeOut(duration: 0.3), value: done)
+                    case .working:
+                        if reduceMotion {
+                            Capsule().fill(tint.dot.opacity(0.35)).frame(width: geometry.size.width * 0.3)
+                        } else {
+                            TimelineView(.animation(minimumInterval: 1 / 30)) { context in
+                                let phase = context.date.timeIntervalSinceReferenceDate.truncatingRemainder(dividingBy: 1.8) / 1.8
+                                Capsule().fill(LinearGradient(colors: [tint.dot.opacity(0), tint.dot, tint.dot.opacity(0)], startPoint: .leading, endPoint: .trailing))
+                                    .frame(width: geometry.size.width * 0.3)
+                                    .offset(x: geometry.size.width * 1.3 * phase - geometry.size.width * 0.3)
+                            }
+                        }
+                    }
+                }
+                .clipShape(Capsule())
+            }
+            .frame(height: 4)
+            Text(label).font(.system(size: 10.5, weight: .semibold)).monospacedDigit()
+                .foregroundStyle(progress == .working ? SidebarStyle.secondary : tint.text).lineLimit(1).fixedSize()
+        }
+        .frame(height: 9)
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel(accessibilityText)
+    }
+    private var label: String {
+        switch progress {
+        case .steps(let done, let total): "\(done)/\(total)" + (paused ? " · paused" : "")
+        case .working: "no checklist"
+        }
+    }
+    private var accessibilityText: String {
+        switch progress {
+        case .steps(let done, let total): "\(done) of \(total) steps done" + (paused ? ", paused" : "")
+        case .working: "Working, no checklist"
+        }
     }
 }
 
