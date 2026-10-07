@@ -112,74 +112,17 @@ struct NewExecutionTaskView: View {
     }
 }
 
+/// A pending request in the conversation panel: the same body and actions as the Review
+/// request modal (`RequestReviewContent`), in a light card.
 struct ExecutionRequestView: View {
     let request: ExecutionRequest
     let controller: ExecutionController
-    @State private var answers: [String: String] = [:]
-    @State private var error: String?
     var body: some View {
-        if !request.isInput && !request.isElicitation {
-            VStack(alignment: .leading, spacing: 8) {
-                PermissionReviewCard(request: request, relatedItem: controller.tasks[request.threadID]?.transcript.entries.last(where: {
-                    $0.tool?.item["id"] == request.params["itemId"] && $0.turnID == request.params["turnId"].string
-                })?.tool?.item ?? .null, connected: controller.connected, respond: respond)
-                if let error { Text(error).foregroundStyle(.red).textSelection(.enabled) }
-            }
-        } else { legacyRequest }
-    }
-    private var legacyRequest: some View {
-        VStack(alignment: .leading, spacing: 10) {
-            Text(request.isInput ? (request.isBlocking ? "Input required · work paused" : "Question · work continues") : request.isElicitation ? "Connector request" : "Approval requested").font(.headline)
-            if let reason = request.params["reason"].string { Text(reason) }
-            if let command = request.params["command"].string { Text(command).font(.body.monospaced()).textSelection(.enabled) }
-            if request.isElicitation {
-                ElicitationFormView(request: request, respond: respond)
-            } else if request.isInput {
-                ForEach(request.params["questions"].array, id: \.pretty) { question in
-                    let id = question["id"].string ?? ""
-                    Text(question["question"].string ?? "Question")
-                    ForEach(question["options"].array, id: \.pretty) { option in
-                        Button { answers[id] = option["label"].string ?? "" } label: {
-                            VStack(alignment: .leading) {
-                                Text(option["label"].string ?? "Option")
-                                Text(option["description"].string ?? "").font(.caption).foregroundStyle(.secondary)
-                            }
-                        }.pointingHand()
-                    }
-                    if question["isSecret"].bool {
-                        SecureField("Answer", text: Binding(get: { answers[id, default: ""] }, set: { answers[id] = $0 }))
-                    } else {
-                        TextField("Answer", text: Binding(get: { answers[id, default: ""] }, set: { answers[id] = $0 }))
-                    }
-                }
-                Button("Submit answers") {
-                    let values = answers.mapValues { WireValue.object(["answers": .array([.string($0)])]) }
-                    respond(.object(["answers": .object(values)]))
-                }.pointingHand().disabled(request.params["questions"].array.contains { answers[$0["id"].string ?? "", default: ""].trimmingCharacters(in: .whitespacesAndNewlines).isEmpty })
-            } else if request.method == "item/permissions/requestApproval" {
-                Text(request.params["permissions"].pretty).font(.caption.monospaced()).textSelection(.enabled)
-                HStack {
-                    Button("Allow for this turn") { respond(.object(["permissions": request.params["permissions"], "scope": .string("turn")])) }.pointingHand()
-                    Button("Deny") { respond(.object(["permissions": .object([:]), "scope": .string("turn")])) }.pointingHand()
-                }
-            } else {
-                VStack(alignment: .leading, spacing: 10) {
-                    ForEach(request.approvalDecisions) { decision in
-                        VStack(alignment: .leading, spacing: 4) {
-                            if let scope = decision.scope { Text(scope).font(.caption.monospaced()).textSelection(.enabled) }
-                            Button(decision.title) { respond(.object(["decision": decision.value])) }.pointingHand()
-                        }
-                    }
-                }
-                if request.approvalDecisions.isEmpty { Text("This approval requires an unsupported decision type. Use the square Stop button in the composer to cancel.").foregroundStyle(.orange) }
-            }
-            DisclosureGroup { Text(request.params.pretty).font(.caption.monospaced()).textSelection(.enabled) } label: { Text("Request details").disclosurePointingHand() }
-            if request.responding { Text("Response sent · awaiting provider resolution").font(.caption) }
-            if let error { Text(error).foregroundStyle(.red) }
-        }.padding(12).background(Color.orange.opacity(0.08), in: RoundedRectangle(cornerRadius: 10)).disabled(request.responding || !controller.connected)
-    }
-    private func respond(_ result: WireValue) {
-        Task { do { try await controller.answer(id: request.id, result: result, expectedInstance: request.instanceID) } catch { self.error = error.localizedDescription } }
+        RequestReviewContent(request: request, controller: controller, compact: true) { EmptyView() }
+            .background(SidebarStyle.background)
+            .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
+            .overlay(RoundedRectangle(cornerRadius: 12, style: .continuous).strokeBorder(Color.black.opacity(0.1)))
+            .environment(\.colorScheme, .light)
     }
 }
 

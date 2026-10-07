@@ -68,6 +68,8 @@ struct KitchenSceneSurface: NSViewRepresentable {
     var select: (SpatialFocus) -> Void = { _ in }
     /// Clicking a chef waiting at the serving window opens the review panel instead.
     var review: ((SpatialAgent) -> Void)? = nil
+    /// Clicking a chef waiting at the bell opens its pending request.
+    var requestReview: ((SpatialAgent) -> Void)? = nil
     /// Clicking a chef's name tag opens its progress panel.
     var progress: ((SpatialAgent) -> Void)? = nil
     /// The selected agent: ringed, followed by the camera, the only one with a name tag.
@@ -85,6 +87,7 @@ struct KitchenSceneSurface: NSViewRepresentable {
         let view = stage.show(scope ?? "")
         view.select = select
         view.review = review
+        view.requestReview = requestReview
         view.progress = progress
         view.reviews = reviews
         view.deselect = deselect
@@ -151,6 +154,7 @@ final class KitchenSceneView: SCNView {
     let floorSize = SIMD3<Float>(Float(KitchenLayout.floor.width), 0.2, Float(KitchenLayout.floor.height))
     var select: ((SpatialFocus) -> Void)?
     var review: ((SpatialAgent) -> Void)?
+    var requestReview: ((SpatialAgent) -> Void)?
     var progress: ((SpatialAgent) -> Void)?
     var deselect: (() -> Void)?
     var openPantry: (() -> Void)?
@@ -1087,9 +1091,12 @@ final class KitchenSceneView: SCNView {
             var node: SCNNode? = hit.node
             while let current = node {
                 if let name = current.name, name.hasPrefix("agent:"), let agent = chefAgents[String(name.dropFirst(6))] {
-                    chefLock.lock(); let serving = chefs[agent.id]?.director.intent?.station?.area == "serving"; chefLock.unlock()
-                    // The first click selects; clicking the selected chef at the pass opens its review.
-                    if let review, serving, selectedID == agent.id || selectedID == nil && deselect == nil { review(agent); return }
+                    chefLock.lock(); let area = chefs[agent.id]?.director.intent?.station?.area; chefLock.unlock()
+                    // The first click selects; clicking the selected chef at the pass opens its review,
+                    // and at the bell its pending request.
+                    let ready = selectedID == agent.id || selectedID == nil && deselect == nil
+                    if let review, area == "serving", ready { review(agent); return }
+                    if let requestReview, area == "bell", ready { requestReview(agent); return }
                     select?(.agent(project: agent.projectID, conversation: agent.conversationID, agent: agent.id, expanded: true))
                     return
                 }
