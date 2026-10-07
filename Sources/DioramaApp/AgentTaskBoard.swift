@@ -122,16 +122,9 @@ struct AgentTaskBoard: View {
     }
 
     private func card(_ item: AgentSidebarItem) -> some View {
-        let selected = item.conversationID == selectedConversation
-        let shape = RoundedRectangle(cornerRadius: 10, style: .continuous)
-        let row = AgentSidebarRow(item: item, selected: selected, card: true,
-                                  select: { select(item) },
-                                  action: { item.group == .done ? reviewChanges(item) : reviewRequest(item) })
-        return row
-            .background(selected ? Color.clear : Color.white)
-            .clipShape(shape)
-            .overlay(shape.strokeBorder(Color.black.opacity(0.08), lineWidth: 1))
-            .shadow(color: .black.opacity(0.08), radius: 1, y: 1)
+        AgentBoardCard(item: item, selected: item.conversationID == selectedConversation,
+                       select: { select(item) },
+                       action: { item.group == .done ? reviewChanges(item) : reviewRequest(item) })
             // A task that moves column is a new card there.
             .id(item.id + "\u{1F}" + String(item.group.rawValue))
     }
@@ -140,5 +133,173 @@ struct AgentTaskBoard: View {
         let count = { (group: AgentSidebarGroup) in items.filter { $0.group == group }.count }
         let needs = count(.needsYou)
         return "\(count(.inProgress)) active · \(needs) \(needs == 1 ? "needs" : "need") you · \(count(.done)) done · \(count(.idle)) idle"
+    }
+}
+
+/// A task on the board: more than the side panel's row, since there's room. The title over up
+/// to two lines (longer ones scroll), the question it waits on, its progress, a meta line
+/// (branch, files, model and provider) and a status footer with its action.
+struct AgentBoardCard: View {
+    let item: AgentSidebarItem
+    let selected: Bool
+    let select: () -> Void
+    let action: () -> Void
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @FocusState private var focused: Bool
+    @State private var hovered = false
+
+    var body: some View {
+        let tint = SidebarStyle.tint(item.group)
+        let shape = RoundedRectangle(cornerRadius: 10, style: .continuous)
+        VStack(alignment: .leading, spacing: 8) {
+            BoardCardTitle(text: item.title, scrolls: !reduceMotion)
+            if let question = item.question, !question.isEmpty {
+                Text(question).font(.system(size: 12)).foregroundStyle(tint.text).lineLimit(3)
+                    .fixedSize(horizontal: false, vertical: true)
+                    .padding(.horizontal, 8).padding(.vertical, 6)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .background(RoundedRectangle(cornerRadius: 6, style: .continuous).fill(tint.band))
+                    .help(question)
+            }
+            if let progress = item.progress {
+                AgentSidebarStatusBar(progress: progress, paused: item.group == .needsYou)
+            }
+            meta
+            Rectangle().fill(Color.black.opacity(0.06)).frame(height: 1)
+            HStack(spacing: 6) {
+                AgentSidebarIcon(group: item.group).frame(width: 24, height: 24).scaleEffect(14 / 24).frame(width: 14, height: 14)
+                Text(footer).font(.system(size: 12, weight: .semibold)).foregroundStyle(tint.text)
+                    .lineLimit(1).truncationMode(.tail)
+                Spacer(minLength: 4)
+                if item.hasAction { ReviewActionButton(title: actionTitle, action: action) }
+            }
+            .frame(minHeight: 24)
+        }
+        .padding(.horizontal, 12).padding(.vertical, 11)
+        .background(selected ? SidebarStyle.selected.opacity(0.6) : hovered ? Color(white: 0.99) : Color.white)
+        .clipShape(shape)
+        .overlay(alignment: .leading) { if selected { Rectangle().fill(SidebarStyle.accent).frame(width: 3) } }
+        .clipShape(shape)
+        .overlay(shape.strokeBorder(focused ? SidebarStyle.accent.opacity(0.8) : Color.black.opacity(0.08), lineWidth: focused ? 2 : 1))
+        .shadow(color: .black.opacity(hovered ? 0.14 : 0.08), radius: hovered ? 4 : 1, y: 1)
+        .contentShape(shape)
+        .onTapGesture(perform: select)
+        .onHover { hovered = $0 }
+        .focusable().focused($focused)
+        .onKeyPress(.return) { select(); return .handled }
+        .onKeyPress(.space) { select(); return .handled }
+        .accessibilityElement(children: .contain)
+        .accessibilityLabel([item.title, item.status, item.question ?? "", metaText, item.model].filter { !$0.isEmpty }.joined(separator: ". "))
+        .accessibilityAddTraits(selected ? [.isButton, .isSelected] : .isButton)
+        .accessibilityAction { select() }
+        .accessibilityAction(named: actionTitle) { if item.hasAction { action() } }
+    }
+
+    private var meta: some View {
+        HStack(spacing: 8) {
+            HStack(spacing: 4) {
+                if item.branch != nil { Image(systemName: "arrow.triangle.branch").font(.system(size: 10, weight: .medium)) }
+                Text(metaText).font(.system(size: 11, design: .monospaced)).lineLimit(1).truncationMode(.tail)
+            }
+            .foregroundStyle(SidebarStyle.secondary)
+            Spacer(minLength: 4)
+            // The model always shows in full; a long branch gives way first.
+            Text(shortModel).font(.system(size: 11.5)).foregroundStyle(SidebarStyle.secondary).lineLimit(1).fixedSize()
+            ProviderAvatar(provider: item.provider)
+        }
+    }
+    /// "settings-page · 4 files" (after a branch mark), or what there is of it.
+    private var metaText: String {
+        var parts: [String] = []
+        if let branch = item.branch { parts.append(branch) }
+        if item.files > 0 { parts.append("\(item.files) file" + (item.files == 1 ? "" : "s")) }
+        return parts.isEmpty ? "no branch" : parts.joined(separator: " · ")
+    }
+    /// The model without its provider's name ("Opus 5.5"), since the avatar says who.
+    private var shortModel: String {
+        for prefix in ["Claude ", "Codex "] where item.model.hasPrefix(prefix) { return String(item.model.dropFirst(prefix.count)) }
+        return item.model
+    }
+    /// What it's doing now: its activity while it works, the wait while it needs you, when it finished.
+    private var footer: String {
+        switch item.group {
+        case .inProgress:
+            let activity = item.activity.trimmingCharacters(in: CharacterSet(charactersIn: "…. "))
+            return activity.isEmpty ? item.status : activity
+        case .needsYou: return item.status
+        case .done: return item.finishedAt.map { "Finished " + $0.formatted(date: .omitted, time: .shortened) } ?? item.status
+        case .idle: return item.activity.isEmpty ? item.status : item.activity
+        }
+    }
+    private var actionTitle: String {
+        if item.group == .done { return "Review" }
+        return item.status == "Needs an answer" ? "Answer" : "Review"
+    }
+}
+
+/// A small round mark for who runs the task: Claude's spark on its orange, Codex on black.
+struct ProviderAvatar: View {
+    let provider: String
+    var body: some View {
+        let claude = provider.lowercased().contains("claude")
+        Image(systemName: claude ? "asterisk" : "chevron.left.forwardslash.chevron.right")
+            .font(.system(size: claude ? 11 : 8, weight: .bold)).foregroundStyle(.white)
+            .frame(width: 20, height: 20)
+            .background(Circle().fill(claude ? Color(red: 0.85, green: 0.47, blue: 0.34) : Color(red: 0.11, green: 0.11, blue: 0.12)))
+            .help(claude ? "Claude" : "Codex")
+            .accessibilityLabel(claude ? "Claude" : "Codex")
+    }
+}
+
+/// A card title on up to two lines; a longer one glides up to show the rest, pauses, and
+/// glides back (the side panel's one-line titles scroll sideways the same way).
+struct BoardCardTitle: View {
+    let text: String
+    let scrolls: Bool
+    @State private var height: CGFloat = 0
+    /// The height of exactly two lines in this font, measured.
+    @State private var limit: CGFloat = 36
+    private static let font = Font.system(size: 13, weight: .semibold)
+    var body: some View {
+        let overflow = max(0, height - limit)
+        let title = Text(text).font(Self.font).foregroundStyle(SidebarStyle.title)
+            .lineSpacing(1).fixedSize(horizontal: false, vertical: true)
+            .frame(maxWidth: .infinity, alignment: .leading)
+        Group {
+            if overflow > 1 && scrolls {
+                TimelineView(.animation(minimumInterval: 1 / 30)) { context in
+                    title.offset(y: -overflow * Self.phase(context.date, overflow: overflow))
+                }
+            } else {
+                title
+            }
+        }
+        .background(GeometryReader { proxy in Color.clear.onAppear { height = proxy.size.height }.onChange(of: proxy.size.height) { _, value in height = value } })
+        .background(alignment: .topLeading) {
+            Text("A\nA").font(Self.font).lineSpacing(1).fixedSize().hidden()
+                .background(GeometryReader { proxy in Color.clear.onAppear { limit = proxy.size.height } })
+        }
+        .frame(height: height == 0 ? nil : min(height, limit), alignment: .top)
+        .clipped()
+        .overlay(alignment: .bottomTrailing) {
+            // Without scrolling (Reduce Motion), a long title ends in a fade.
+            if overflow > 1 && !scrolls {
+                LinearGradient(colors: [.white.opacity(0), .white], startPoint: .leading, endPoint: .trailing).frame(width: 40, height: limit / 2)
+            }
+        }
+        .help(text)
+        .accessibilityLabel(text)
+    }
+    /// 0 at the top, 1 at the end: two seconds still, glide, two seconds still, glide back.
+    static func phase(_ date: Date, overflow: CGFloat) -> CGFloat {
+        let travel = max(1.2, Double(overflow) / 14), cycle = 4 + 2 * travel
+        let t = date.timeIntervalSinceReferenceDate.truncatingRemainder(dividingBy: cycle)
+        func ease(_ x: Double) -> Double { x * x * (3 - 2 * x) }
+        switch t {
+        case ..<2: return 0
+        case ..<(2 + travel): return CGFloat(ease((t - 2) / travel))
+        case ..<(4 + travel): return 1
+        default: return CGFloat(1 - ease((t - 4 - travel) / travel))
+        }
     }
 }

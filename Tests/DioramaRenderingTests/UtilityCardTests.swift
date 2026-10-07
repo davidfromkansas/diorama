@@ -66,19 +66,25 @@ import Testing
     /// Opt-in render of the task board with the sidebar's card fixtures.
     @Test func captureTaskBoard() throws {
         guard ProcessInfo.processInfo.environment["DIORAMA_UTILITY_CAPTURE"] == "1" else { return }
-        func item(_ id: String, _ title: String, _ group: AgentSidebarGroup, _ status: String, progress: AgentSidebarProgress? = nil) -> AgentSidebarItem {
-            AgentSidebarItem(id: id, conversationID: id, projectID: "p", title: title, group: group, status: status, model: "GPT-6 Astra",
-                             activity: group == .idle ? "Waiting for a task" : "Editing SettingsView.swift…", requests: 0, order: Date(), progress: progress)
+        func item(_ id: String, _ title: String, _ group: AgentSidebarGroup, _ status: String, progress: AgentSidebarProgress? = nil,
+                  provider: String = "Codex", branch: String? = nil, files: Int = 0, question: String? = nil) -> AgentSidebarItem {
+            AgentSidebarItem(id: id, conversationID: id, projectID: "p", title: title, group: group, status: status,
+                             model: provider == "Claude" ? "Claude Opus 5.5" : "GPT-6 Astra",
+                             activity: group == .idle ? "Waiting for a task" : "Editing SettingsView.swift…", requests: 0, order: Date(), progress: progress,
+                             finishedAt: group == .done ? Date() : nil, provider: provider, branch: branch, files: files, question: question)
         }
-        let items = [item("1", "Fix sign-in flow", .needsYou, "Needs approval", progress: .steps(done: 2, total: 4)),
-                     item("2", "Build settings page", .inProgress, "Working", progress: .steps(done: 3, total: 5)),
-                     item("3", "Improve search", .inProgress, "Testing", progress: .working),
-                     item("4", "Update app icon", .done, "Done"),
-                     item("5", "Refactor navigation", .idle, "Idle")]
+        let items = [item("1", "Fix the sign-in flow so expired sessions redirect to the login screen", .needsYou, "Needs approval", progress: .steps(done: 2, total: 4),
+                          provider: "Claude", branch: "fix/sign-in", files: 3, question: "Wants to run npm test -- auth"),
+                     item("6", "Add a stats dashboard", .needsYou, "Needs an answer", branch: "stats", question: "Which colour theme should the dashboard use?"),
+                     item("2", "Build a settings page with a General section: launch at login, sounds, a theme picker and a keyboard shortcuts editor", .inProgress, "Working",
+                          progress: .steps(done: 3, total: 5), branch: "settings-page", files: 4),
+                     item("3", "Improve search", .inProgress, "Testing", progress: .working, provider: "Claude", branch: "search-trigram"),
+                     item("4", "Update app icon", .done, "Done", branch: "app-icon", files: 4),
+                     item("5", "Refactor navigation", .idle, "Idle", provider: "Claude")]
         let board = AgentTaskBoard(items: items, selectedConversation: "2", select: { _ in }, reviewRequest: { _ in }, reviewChanges: { _ in }, create: {}, dock: {})
-            .frame(width: 1240, height: 600).padding(30).background(Color(red: 0.3, green: 0.2, blue: 0.14))
+            .frame(width: 1240, height: 680).padding(30).background(Color(red: 0.3, green: 0.2, blue: 0.14))
         let host = NSHostingView(rootView: board)
-        host.frame = NSRect(x: 0, y: 0, width: 1300, height: 660)
+        host.frame = NSRect(x: 0, y: 0, width: 1300, height: 740)
         host.layoutSubtreeIfNeeded()
         let rep = try #require(host.bitmapImageRepForCachingDisplay(in: host.bounds))
         host.cacheDisplay(in: host.bounds, to: rep)
