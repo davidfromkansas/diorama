@@ -71,7 +71,9 @@ extension BrandMark {
         var pulses = 0
         var id: String { resource.id }
     }
-    struct Pick: Equatable { let resource: LiveResource; let chef: String; let at: Date }
+    struct Pick: Equatable { let resource: LiveResource; let chef: String; let at: Date; var agentID = "" }
+    /// A spark from the chef who picked something up to where it lands on the bar.
+    struct Spark: Equatable, Identifiable { let id = UUID(); let agentID: String; let skill: Bool }
     struct Caption: Equatable, Identifiable { let id = UUID(); let chef: String; let text: String; let at: Date }
 
     static let capacity = 5
@@ -81,6 +83,7 @@ extension BrandMark {
     private(set) var slots: [Slot] = []
     private(set) var skill: Pick?
     private(set) var caption: Caption?
+    private(set) var sparks: [Spark] = []
     /// The pointer is over the bar: changes wait.
     var frozen = false { didSet { if !frozen { flush() } } }
 
@@ -103,7 +106,7 @@ extension BrandMark {
             seen[agent.id] = signature
             // What was already running when the bar appeared fills it without a show.
             if !seeded || !fresh { place(resource, users: [], at: value.lastToolAt ?? now, quietly: true); continue }
-            pending.append(Pick(resource: resource, chef: chef, at: now))
+            pending.append(Pick(resource: resource, chef: chef, at: now, agentID: agent.id))
         }
         seeded = true
         for index in slots.indices { slots[index].users = using[slots[index].id] ?? [] }
@@ -115,6 +118,7 @@ extension BrandMark {
         guard !frozen, !pending.isEmpty, now.timeIntervalSince(lastApplied) >= Self.calm else { return }
         let batch = pending; pending = []
         for pick in batch {
+            if !pick.agentID.isEmpty { sparks.append(Spark(agentID: pick.agentID, skill: pick.resource.kind == .skill)) }
             if pick.resource.kind == .skill { skill = pick } else { place(pick.resource, users: [pick.chef], at: pick.at, quietly: false) }
         }
         if let last = batch.last {
@@ -123,6 +127,7 @@ extension BrandMark {
         }
         lastApplied = now
     }
+    func landed(_ spark: Spark) { sparks.removeAll { $0.id == spark.id } }
     /// Clears a caption that has been up for a while.
     func expireCaption(now: Date = Date()) {
         if let caption, now.timeIntervalSince(caption.at) > 3.5 { self.caption = nil }

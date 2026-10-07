@@ -41,6 +41,10 @@ import Testing
         model.observe([chef("a", "Sage", tool: "mcp__github__get", at: start + 1)], now: start + 1)
         #expect(model.slots.map(\.id) == ["server:github"] && model.slots[0].users == ["Sage"])
         #expect(model.caption?.text == "called GitHub")
+        // The chef who picked it up sends a spark to the bar, cleared once it lands.
+        #expect(model.sparks.count == 1 && model.sparks[0].agentID.hasSuffix("1:a") && !model.sparks[0].skill)
+        model.landed(model.sparks[0])
+        #expect(model.sparks.isEmpty)
         // Inside the 1.5 s window a second pick waits, then lands in front.
         model.observe([chef("a", "Sage", tool: "mcp__github__get", at: start + 1), chef("b", "Eli", tool: "mcp__linear__list", at: start + 1.5)], now: start + 1.5)
         #expect(model.slots.first?.id == "server:github")
