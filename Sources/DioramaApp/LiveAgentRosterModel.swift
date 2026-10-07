@@ -100,6 +100,9 @@ struct AgentRosterAnchor: Equatable {
 
 @Observable final class LiveAgentRosterModel {
     var collapsed = false
+    /// The kitchen's agents open as the task board rather than the side panel. Kept while
+    /// collapsed, so ⌘B returns to whichever larger size was last used.
+    var board = false
     var recentExpanded = false
     private(set) var rows: [AgentRosterRow] = []
     var newActivity = false
