@@ -21,12 +21,12 @@ struct AgentCommandBar: View {
             // Skills live in the pantry now (armed from there for the selected chef).
             activity.frame(minWidth: 180, maxWidth: .infinity)
         }
-        .padding(8)
+        .padding(10)
         .frame(height: Self.height)
         .frame(maxWidth: .infinity)
         .background(Palette.frame)
-        .overlay(alignment: .top) { Rectangle().fill(Palette.trim.opacity(0.8)).frame(height: 2) }
-        .environment(\.colorScheme, .dark)
+        .overlay(alignment: .top) { Rectangle().fill(Color.black.opacity(0.14)).frame(height: 1) }
+        .environment(\.colorScheme, .light)
         .accessibilityElement(children: .contain)
         .accessibilityLabel("Command bar for " + value.name)
     }
@@ -39,15 +39,12 @@ struct AgentCommandBar: View {
         Panel {
             VStack(alignment: .leading, spacing: 8) {
                 HStack(spacing: 8) {
-                    Image(systemName: "frying.pan.fill").font(.system(size: 13)).foregroundStyle(.white)
-                        .frame(width: 26, height: 26)
-                        .background(Circle().fill(Palette.accent.gradient))
-                        .overlay(Circle().stroke(Palette.ring.opacity(0.9), lineWidth: 1.5))
-                    Text(value.name).font(.headline).lineLimit(1)
-                    StatusPill(text: statusText, color: statusColor)
+                    AgentSidebarIcon(group: group).frame(width: 24, height: 24)
+                    Text(value.name).font(.system(size: 14, weight: .semibold)).foregroundStyle(Palette.paper).lineLimit(1)
+                    StatusPill(text: statusText, tint: SidebarStyle.tint(group))
                     Spacer(minLength: 4)
                     if let review, KitchenReviews.shared.state(agent.conversationID) != nil || value.status == .done {
-                        Button("Review", action: review).buttonStyle(.borderedProminent).tint(Palette.accent).controlSize(.small).pointingHand()
+                        Button("Review", action: review).buttonStyle(ModalPrimaryButtonStyle(height: 26)).pointingHand()
                             .help("Open the serving-window review")
                     }
                     Button(action: close) { Image(systemName: "xmark").font(.system(size: 10, weight: .bold)).frame(width: 22, height: 22).contentShape(Rectangle()) }
@@ -55,7 +52,7 @@ struct AgentCommandBar: View {
                         .help("Deselect (Esc)").accessibilityLabel("Deselect " + value.name)
                 }
                 Text(facts).font(.caption2).foregroundStyle(Palette.paper.opacity(0.6)).lineLimit(1).truncationMode(.middle)
-                Divider().overlay(Palette.paper.opacity(0.08))
+                Rectangle().fill(SidebarStyle.divider).frame(height: 1)
                 ScrollView {
                     VStack(alignment: .leading, spacing: 8) {
                         Text(TaskTitle.full(value.task)).font(.callout.weight(.medium)).foregroundStyle(Palette.paper)
@@ -87,13 +84,11 @@ struct AgentCommandBar: View {
         if KitchenReviews.shared.state(agent.conversationID) == .awaiting { return "Ready for review" }
         return value.status.rawValue
     }
-    private var statusColor: Color {
-        if agent.needsAttention || value.status == .failed { return .orange }
-        switch value.status {
-        case .working: return Palette.ring
-        case .done: return .teal
-        default: return .gray
-        }
+    /// The agent panel's group for this chef, for the icon and status colours.
+    private var group: AgentSidebarGroup {
+        if agent.needsAttention || value.status == .failed { return .needsYou }
+        if KitchenReviews.shared.state(agent.conversationID) != nil || value.status == .done { return .done }
+        return value.isWorking ? .inProgress : .idle
     }
 
     // MARK: Activity
@@ -165,8 +160,8 @@ private struct FeedRow: View {
     private func outcomeColor(_ outcome: FeedEntry.Outcome) -> Color {
         switch outcome {
         case .running: Palette.paper.opacity(0.6)
-        case .done: Palette.ring
-        case .failed: .orange
+        case .done: SidebarStyle.tint(.done).text
+        case .failed: SidebarStyle.tint(.needsYou).text
         }
     }
 }
@@ -178,15 +173,14 @@ struct CommandBarPanel<Content: View>: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 6) {
             if let title {
-                Text(title.uppercased()).font(.system(size: 9.5, weight: .bold, design: .rounded)).tracking(1)
-                    .foregroundStyle(Palette.trim.opacity(0.85))
+                Text(title).font(.system(size: 12, weight: .semibold)).foregroundStyle(Color(red: 0.33, green: 0.33, blue: 0.35))
             }
             content.frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
         }
-        .padding(10)
+        .padding(12)
         .frame(maxHeight: .infinity, alignment: .top)
-        .background(RoundedRectangle(cornerRadius: 10, style: .continuous).fill(Palette.panel))
-        .overlay(RoundedRectangle(cornerRadius: 10, style: .continuous).stroke(.white.opacity(0.07), lineWidth: 1))
+        .background(RoundedRectangle(cornerRadius: 12, style: .continuous).fill(Palette.panel))
+        .overlay(RoundedRectangle(cornerRadius: 12, style: .continuous).strokeBorder(Color.black.opacity(0.08), lineWidth: 1))
     }
 }
 
@@ -224,7 +218,7 @@ private struct ProgressBar: View {
     var body: some View {
         GeometryReader { geometry in
             ZStack(alignment: .leading) {
-                Capsule().fill(.white.opacity(0.1))
+                Capsule().fill(Color.black.opacity(0.08))
                 Capsule().fill(Palette.ring.gradient).frame(width: max(4, geometry.size.width * min(1, max(0, fraction))))
                     .animation(.easeOut(duration: 0.35), value: fraction)
             }
@@ -240,7 +234,7 @@ private struct SweepBar: View {
     var body: some View {
         GeometryReader { geometry in
             ZStack(alignment: .leading) {
-                Capsule().fill(.white.opacity(0.1))
+                Capsule().fill(Color.black.opacity(0.08))
                 if reduceMotion {
                     Capsule().fill(Palette.ring.opacity(0.5)).frame(width: geometry.size.width * 0.3)
                 } else {
@@ -261,22 +255,21 @@ private typealias Panel = CommandBarPanel
 
 private struct StatusPill: View {
     let text: String
-    let color: Color
+    let tint: SidebarStyle.Tint
     var body: some View {
-        Text(text).font(.caption2.weight(.bold)).padding(.horizontal, 7).padding(.vertical, 2)
-            .background(Capsule().fill(color.opacity(0.22))).overlay(Capsule().stroke(color, lineWidth: 1)).foregroundStyle(color)
+        Text(text).font(.system(size: 11, weight: .semibold)).padding(.horizontal, 8).padding(.vertical, 2)
+            .background(Capsule().fill(tint.band)).foregroundStyle(tint.text)
     }
 }
 
-/// Kitchen colours: dark steel frame, brass trim, ticket paper and the selection ring's green.
+/// The command bar's colours, in the agent panel's light style: a warm strip holding two
+/// light cards, dark text, and the panel's blue for progress.
 enum CommandBarPalette {
-    static let frame = Color(red: 0.13, green: 0.16, blue: 0.17)
-    static let panel = Color(red: 0.19, green: 0.23, blue: 0.24)
-    static let trim = Color(red: 0.85, green: 0.66, blue: 0.33)
-    static let paper = Color(red: 0.97, green: 0.94, blue: 0.86)
-    static let ink = Color(red: 0.2, green: 0.17, blue: 0.13)
-    static let accent = Color(red: 0.86, green: 0.36, blue: 0.24)
-    static let ring = Color(red: 0.35, green: 1, blue: 0.62)
+    static let frame = Color(red: 0.969, green: 0.957, blue: 0.937)
+    static let panel = SidebarStyle.background
+    static let paper = SidebarStyle.title
+    static let accent = SidebarStyle.accent
+    static let ring = SidebarStyle.accent
 }
 private typealias Palette = CommandBarPalette
 
