@@ -30,6 +30,9 @@ struct SpatialWorkspaceView: View {
     @State private var pantryOpen = false
     /// The group to show when the agent card opens from a count on the collapsed pill.
     @State private var sidebarReveal: AgentSidebarGroup?
+    /// The docked agents panel's width in the kitchen (drag its right edge).
+    @AppStorage("kitchenAgentsWidth") private var kitchenAgentsWidth: Double = 300
+    @State private var kitchenAgentsDrag: Double?
     /// The kitchen camera left its home view (zoomed or turned), and a request to send it back.
     @State private var kitchenCameraAway = false
     @State private var kitchenCameraResets = 0
@@ -85,6 +88,14 @@ struct SpatialWorkspaceView: View {
                 if kitchenSelected {
                     let cooks = kitchenAgents(snapshot, focus: focus)
                     let _ = KitchenReviews.shared.observe(cooks)
+                    HStack(spacing: 0) {
+                    // The agents panel docks full height at the kitchen's left; collapsed, it's the pill
+                    // floating in the kitchen's top left (kitchenHUD).
+                    if visible, focus != .portfolio, !roster.collapsed {
+                        dockedAgents(snapshot, focus: focus, model: roster)
+                            .transition(reduced ? .opacity : .move(edge: .leading).combined(with: .opacity))
+                            .zIndex(1)
+                    }
                     VStack(spacing: 0) {
                         KitchenSceneSurface(agents: cooks, scope: focus == .portfolio ? nil : focus.projectID ?? focus.conversationID,
                                             reviews: KitchenReviews.shared.states, active: visible,
@@ -132,6 +143,7 @@ struct SpatialWorkspaceView: View {
                         if let id = focus.agentID { commandBarAgent = id; return }
                         do { try await Task.sleep(for: .seconds(KitchenSceneView.deselectGrace)) } catch { return }
                         commandBarAgent = nil
+                    }
                     }
                 }
                 if !kitchenSelected && focus != .portfolio && !ScenePerformance.disabled("OVERLAYS") {
@@ -221,7 +233,7 @@ struct SpatialWorkspaceView: View {
         }
         .sheet(item: $requestReview) { agent in
             if let session = world.team(.team(project: agent.projectID, conversation: agent.conversationID))?.session {
-                RequestReviewModal(agent: agent, session: session, library: library) { go(agent.focus) }
+                RequestReviewModal(agent: agent, session: session, library: library) { go(conversationFocus(agent)) }
             }
         }
         .environment(\.avatarPopoverDismissals, avatarPopovers)
@@ -318,27 +330,14 @@ struct SpatialWorkspaceView: View {
         for team in teams where sessions[team.session.provider] == nil { sessions[team.session.provider] = team.session.sessionID }
         let selected = focus.agentID.flatMap { id in teams.flatMap(\.agents).first { $0.id == id } }
         return VStack(alignment: .leading, spacing: 10) {
-            // The card folds toward the top left into the pill, and grows back out of it.
-            let fold: AnyTransition = reduced ? .opacity : .scale(scale: 0.2, anchor: .topLeading).combined(with: .opacity)
+            // Open, the agents are docked beside the kitchen (dockedAgents); collapsed, this pill
+            // stands in for them.
             if model.collapsed {
                 AgentSidebarPill(summary: AgentSidebar.summary(sidebarItems(teams))) { group in
                     sidebarReveal = group
                     withAnimation(reduced ? nil : .spring(duration: 0.25)) { model.collapsed = false }
                 }
-                .transition(fold)
-            } else {
-                agentSidebar(teams, focus: focus, reveal: sidebarReveal)
-                    .frame(width: 320, height: max(220, pantryOpen ? height * 0.5 : height))
-                    .lightFloatingCard()
-                    // Half off the card's top-right corner, so it covers nothing inside the card.
-                    .overlay(alignment: .topTrailing) {
-                        SidebarCornerButton(grow: false) {
-                            sidebarReveal = nil
-                            withAnimation(reduced ? nil : .spring(duration: 0.25)) { model.collapsed = true }
-                        }
-                        .offset(x: 14, y: -14)
-                    }
-                    .transition(fold)
+                .transition(reduced ? .opacity : .scale(scale: 0.2, anchor: .topLeading).combined(with: .opacity))
             }
             if pantryOpen, let folder = project?.folder ?? teams.first?.session.project {
                 PantryCard(library: library, folder: folder, sessions: sessions, preferred: teams.first?.session.provider ?? .codex,
@@ -350,6 +349,34 @@ struct SpatialWorkspaceView: View {
         .disabled(inspection != nil).accessibilityHidden(inspection != nil)
     }
 
+    /// The agents panel docked at the kitchen's left edge, full height beside the kitchen and its
+    /// command bar. The corner button straddles its edge; the edge itself resizes it.
+    private func dockedAgents(_ snapshot: SpatialWorld, focus: SpatialFocus, model: LiveAgentRosterModel) -> some View {
+        let teams = focus.projectID.flatMap { id in snapshot.projects.first { $0.id == id }?.teams } ?? snapshot.team(focus).map { [$0] } ?? []
+        return agentSidebar(teams, focus: focus, reveal: sidebarReveal)
+            .frame(width: kitchenAgentsWidth)
+            .frame(maxHeight: .infinity)
+            .overlay(alignment: .trailing) {
+                Rectangle().fill(Color.black.opacity(0.14)).frame(width: 1)
+                    .overlay {
+                        Color.clear.frame(width: 7).contentShape(Rectangle())
+                            .gesture(DragGesture().onChanged { value in
+                                if kitchenAgentsDrag == nil { kitchenAgentsDrag = kitchenAgentsWidth }
+                                kitchenAgentsWidth = min(420, max(260, (kitchenAgentsDrag ?? 300) + value.translation.width))
+                            }.onEnded { _ in kitchenAgentsDrag = nil })
+                            .onHover { inside in if inside { NSCursor.resizeLeftRight.push() } else { NSCursor.pop() } }
+                    }
+                    .accessibilityLabel("Resize agents panel")
+            }
+            .overlay(alignment: .topTrailing) {
+                SidebarCornerButton(grow: false) {
+                    sidebarReveal = nil
+                    withAnimation(reduced ? nil : .spring(duration: 0.25)) { model.collapsed = true }
+                }
+                .offset(x: 14, y: 11)
+            }
+            .disabled(inspection != nil).accessibilityHidden(inspection != nil)
+    }
     /// The agent card: one row per conversation in this project, grouped by what it needs, from
     /// the same state the kitchen uses (status, pending requests, serving-window reviews).
     private func sidebarItems(_ teams: [SpatialTeam]) -> [AgentSidebarItem] {
@@ -367,7 +394,8 @@ struct SpatialWorkspaceView: View {
         let mains = Dictionary(teams.compactMap { team in team.agents.first { $0.value.isMain }.map { ($0.id, $0) } }) { first, _ in first }
         let selected = focus.agentID.flatMap { id in teams.flatMap(\.agents).first { $0.id == id }?.conversationID }
         return AgentSidebarCard(items: items, projectID: focus.projectID ?? "", selectedConversation: selected,
-            select: { item in if let agent = mains[item.id] { go(agent.focus) } },
+            // Like clicking the chef in the kitchen: selects it and opens its conversation.
+            select: { item in if let agent = mains[item.id] { go(conversationFocus(agent)) } },
             // Opens the conversation, where the pending request waits; nothing is approved here.
             reviewRequest: { item in if let agent = mains[item.id] { openRequest(agent) } },
             // Opens the serving-window review; only its explicit actions take the dish off Done.
@@ -378,7 +406,7 @@ struct SpatialWorkspaceView: View {
     /// the conversation, where the agent asked it.
     private func openRequest(_ agent: SpatialAgent) {
         let thread = world.team(.team(project: agent.projectID, conversation: agent.conversationID))?.session.sessionID
-        if let thread, !RequestReviewModal.pending(library.execution, thread: thread).isEmpty { requestReview = agent } else { go(agent.focus) }
+        if let thread, !RequestReviewModal.pending(library.execution, thread: thread).isEmpty { requestReview = agent } else { go(conversationFocus(agent)) }
     }
     /// Camera/monitor updates may arrive every frame. Project the library once per observation
     /// tick instead of repeating provider and membership lookups during those view updates.
@@ -644,6 +672,10 @@ struct SpatialWorkspaceView: View {
         return world.team(focus)?.agents ?? []
     }
     /// Back to the whole kitchen: the camera returns to the overview and the command bar closes.
+    /// An agent selected with its conversation panel open.
+    private func conversationFocus(_ agent: SpatialAgent) -> SpatialFocus {
+        .agent(project: agent.projectID, conversation: agent.conversationID, agent: agent.id, expanded: true)
+    }
     private func deselectAgent(_ focus: SpatialFocus) {
         go(focus.projectID.map { .project($0) } ?? focus.officeReturn)
         // Letting go of a chef closes its conversation along with the command bar.
