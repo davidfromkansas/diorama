@@ -48,4 +48,18 @@ import Testing
         host.cacheDisplay(in: host.bounds, to: rep)
         try #require(rep.representation(using: .png, properties: [:])).write(to: URL(fileURLWithPath: "/tmp/diorama-utility-cards.png"))
     }
+
+    /// Opt-in render of the selected chef's command bar in the light style.
+    @Test func captureCommandBar() throws {
+        guard ProcessInfo.processInfo.environment["DIORAMA_UTILITY_CAPTURE"] == "1" else { return }
+        let agent = SpatialAgent(projectID: "p", conversationID: "c", value: WorkspaceAgent(id: "a", name: "Sage", provider: "Codex",
+            task: "Build a settings page with a General section", action: "Editing", status: .working, reportedStatus: "working", freshness: .live, observedAt: Date()))
+        let bar = AgentCommandBar(agent: agent, library: LibraryModel(), review: {}, close: {}).frame(width: 880)
+        let host = NSHostingView(rootView: bar)
+        host.frame = NSRect(x: 0, y: 0, width: 880, height: AgentCommandBar.height)
+        host.layoutSubtreeIfNeeded()
+        let rep = try #require(host.bitmapImageRepForCachingDisplay(in: host.bounds))
+        host.cacheDisplay(in: host.bounds, to: rep)
+        try #require(rep.representation(using: .png, properties: [:])).write(to: URL(fileURLWithPath: "/tmp/diorama-command-bar.png"))
+    }
 }
