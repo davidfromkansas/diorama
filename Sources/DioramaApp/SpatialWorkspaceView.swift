@@ -92,13 +92,9 @@ struct SpatialWorkspaceView: View {
                                             selectedAgentID: focus.agentID, deselect: { deselectAgent(focus) }, openPantry: { pantryOpen = true },
                                             cameraMoved: { away in DispatchQueue.main.async { kitchenCameraAway = away } }, resetCamera: kitchenCameraResets)
                             .overlay(alignment: .bottomLeading) {
-                                if visible, focus.agentID == nil {
-                                    HStack(spacing: 10) {
-                                        if kitchenCameraAway {
-                                            Button("Reset View") { kitchenCameraResets += 1 }.controlSize(.small).pointingHand().help("Back to the whole kitchen (R)")
-                                        }
-                                        Text(KitchenSceneView.controlsHint).font(.caption2).foregroundStyle(.secondary)
-                                    }
+                                // Only once the camera has moved; the controls stay in the kitchen's accessibility help.
+                                if visible, focus.agentID == nil, kitchenCameraAway {
+                                    Button("Reset View") { kitchenCameraResets += 1 }.controlSize(.small).pointingHand().help("Back to the whole kitchen (R)")
                                     .padding(.horizontal, 10).padding(.vertical, 6)
                                     .background(Capsule().fill(.regularMaterial)).padding(12)
                                 }
