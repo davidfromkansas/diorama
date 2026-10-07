@@ -397,7 +397,7 @@ struct SpatialWorkspaceView: View {
         let project = focus.projectID.flatMap { id in library.projects.projects.first { $0.id == id } }
         VStack(spacing: 12) {
             if width >= 900 {
-                LiveToolsBar(agents: cooks, total: nil) { allToolsOpen.toggle() }
+                LiveToolsBar(agents: cooks, total: nil, openAll: { allToolsOpen.toggle() }, chefPoint: { ChefLocator.head($0) })
                     .padding(.top, 12)
             }
             if allToolsOpen, let folder = project?.folder ?? teams.first?.session.project {
@@ -411,6 +411,9 @@ struct SpatialWorkspaceView: View {
             }
         }
         .animation(reduced ? nil : .easeOut(duration: 0.18), value: allToolsOpen)
+        // The kitchen view's own space, so a chef's head and the bar's slots line up for sparks.
+        .frame(width: width, height: height, alignment: .top)
+        .coordinateSpace(name: "kitchenTools")
     }
     /// The agents panel docked at the kitchen's left edge, full height beside the kitchen and its
     /// command bar. The corner button straddles its edge; the edge itself resizes it.

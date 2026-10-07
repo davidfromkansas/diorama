@@ -62,7 +62,13 @@ struct LiveToolsBar: View {
     /// How many resources All lists, when known.
     let total: Int?
     let openAll: () -> Void
+    /// Where a chef's head is, in the "kitchenTools" coordinate space, for the spark it sends.
+    var chefPoint: ((String) -> CGPoint?)? = nil
     @State private var model = LiveToolsModel()
+    /// The bar, its first icon slot and its skill slot, in the "kitchenTools" space.
+    @State private var barFrame: CGRect = .zero
+    @State private var iconsFrame: CGRect = .zero
+    @State private var skillFrame: CGRect = .zero
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     var body: some View {
@@ -83,6 +89,7 @@ struct LiveToolsBar: View {
                     }
                 }
                 .animation(reduceMotion ? .easeInOut(duration: 0.2) : .spring(response: 0.45, dampingFraction: 0.62), value: model.slots.map(\.id))
+                .background(GeometryReader { proxy in Color.clear.onAppear { iconsFrame = proxy.frame(in: .named("kitchenTools")) }.onChange(of: proxy.frame(in: .named("kitchenTools"))) { _, frame in iconsFrame = frame } })
                 Rectangle().fill(Color.black.opacity(0.1)).frame(width: 1, height: 22)
                 skillSlot
             }
@@ -122,6 +129,20 @@ struct LiveToolsBar: View {
             }
         }
         .animation(.easeOut(duration: 0.2), value: model.caption)
+        .background(GeometryReader { proxy in Color.clear.onAppear { barFrame = proxy.frame(in: .named("kitchenTools")) }.onChange(of: proxy.frame(in: .named("kitchenTools"))) { _, frame in barFrame = frame } })
+        // Sparks fly from the chef up to the slot the tool lands in.
+        .overlay(alignment: .topLeading) {
+            if !reduceMotion, let chefPoint {
+                ForEach(model.sparks) { spark in
+                    if let from = chefPoint(spark.agentID) {
+                        let target = spark.skill ? skillFrame : iconsFrame
+                        let to = target == .zero ? CGPoint(x: barFrame.midX, y: barFrame.midY) : CGPoint(x: spark.skill ? target.minX + 16 : target.minX + 15, y: target.midY)
+                        ChefSpark(from: CGPoint(x: from.x - barFrame.minX, y: from.y - barFrame.minY), to: CGPoint(x: to.x - barFrame.minX, y: to.y - barFrame.minY),
+                                  color: spark.skill ? SidebarStyle.tint(.done).dot : SidebarStyle.accent) { model.landed(spark) }
+                    }
+                }
+            }
+        }
         .environment(\.colorScheme, .light)
         .onHover { model.frozen = $0 }
         .onAppear { model.observe(agents) }
@@ -159,6 +180,7 @@ struct LiveToolsBar: View {
             }
         }
         .frame(width: 160, height: 30, alignment: .leading)
+        .background(GeometryReader { proxy in Color.clear.onAppear { skillFrame = proxy.frame(in: .named("kitchenTools")) }.onChange(of: proxy.frame(in: .named("kitchenTools"))) { _, frame in skillFrame = frame } })
         .animation(.easeInOut(duration: 0.35), value: model.skill)
         .accessibilityLabel(model.skill.map { "Latest skill: \($0.resource.name)" } ?? "No skills used yet")
     }
@@ -421,5 +443,64 @@ struct AllResourcesPalette: View {
         }
         .buttonStyle(.plain).pointingHand().disabled(armFor == nil)
         .help(armFor.map { "Arm \(entry.item.name) for \($0.name)'s next message" } ?? entry.item.description)
+    }
+}
+
+/// A glowing dot that arcs from a chef to the bar and fades as it lands.
+private struct ChefSpark: View {
+    let from: CGPoint
+    let to: CGPoint
+    let color: Color
+    let done: () -> Void
+    @State private var t: Double = 0
+    var body: some View {
+        Circle().fill(color).frame(width: 13, height: 13)
+            .shadow(color: color, radius: 6)
+            .modifier(SparkPath(t: t, from: from, to: to))
+            .allowsHitTesting(false)
+            .accessibilityHidden(true)
+            .onAppear {
+                withAnimation(.easeIn(duration: 0.55)) { t = 1 }
+                Task { try? await Task.sleep(for: .milliseconds(620)); done() }
+            }
+    }
+}
+/// Position along an arc above the straight line, shrinking toward the end.
+private struct SparkPath: ViewModifier, Animatable {
+    var t: Double
+    let from: CGPoint
+    let to: CGPoint
+    var animatableData: Double { get { t } set { t = newValue } }
+    func body(content: Content) -> some View {
+        let control = CGPoint(x: (from.x + to.x) / 2, y: min(from.y, to.y) - 60)
+        let u = 1 - t
+        let x = u * u * from.x + 2 * u * t * control.x + t * t * to.x
+        let y = u * u * from.y + 2 * u * t * control.y + t * t * to.y
+        content.scaleEffect(1 - 0.45 * t).opacity(t > 0.92 ? (1 - t) / 0.08 : 1).position(x: x, y: y)
+    }
+}
+
+/// Finds a chef's head on screen, from the kitchen view that shows it.
+@MainActor enum ChefLocator {
+    /// The head of the chef for `agentID`, in the kitchen view's top-left coordinates.
+    static func head(_ agentID: String) -> CGPoint? {
+        for window in NSApp.windows where window.isVisible {
+            guard let view = find(window.contentView, agentID) else { continue }
+            view.chefLock.lock()
+            let position = view.chefs[agentID]?.root.simdPosition
+            view.chefLock.unlock()
+            guard let position, let point = view.projectWithoutLock(position + SIMD3(0, 2.05 * KitchenLayout.chefScale, 0)) else { return nil }
+            return CGPoint(x: point.x, y: view.isFlipped ? point.y : view.bounds.height - point.y)
+        }
+        return nil
+    }
+    private static func find(_ root: NSView?, _ agentID: String) -> KitchenSceneView? {
+        guard let root, !root.isHidden else { return nil }
+        if let kitchen = root as? KitchenSceneView {
+            kitchen.chefLock.lock(); defer { kitchen.chefLock.unlock() }
+            return kitchen.chefs[agentID] != nil ? kitchen : nil
+        }
+        for child in root.subviews { if let found = find(child, agentID) { return found } }
+        return nil
     }
 }
