@@ -409,9 +409,25 @@ struct SpatialWorkspaceView: View {
             AgentSidebar.Input(session: team.session, agents: team.agents,
                                review: team.agents.first { $0.value.isMain }.flatMap { KitchenReviews.shared.state($0.conversationID) },
                                model: execution.tasks[team.session.sessionID].flatMap { $0.model.isEmpty ? nil : $0.model },
-                               requests: execution.requests.values.filter { $0.threadID == team.session.sessionID }.count)
+                               requests: execution.requests.values.filter { $0.threadID == team.session.sessionID }.count,
+                               question: pendingQuestion(team))
         }
         return AgentSidebar.items(inputs, catalog: execution.models, order: AgentSidebarOrder.shared.order)
+    }
+    /// What a conversation is waiting on you for, in a line: the oldest pending request's question
+    /// or command, else (a question asked in chat) the agent's last message.
+    private func pendingQuestion(_ team: SpatialTeam) -> String? {
+        let execution = library.execution
+        if let request = RequestReviewModal.pending(execution, thread: team.session.sessionID).first {
+            if let question = request.params["questions"].array.first?["question"].string { return question }
+            if let command = request.params["command"].string { return "Wants to run " + command }
+            return request.params["reason"].string
+        }
+        guard team.agents.contains(where: { $0.value.isMain && $0.value.attentionReason == .input && $0.value.status == .waiting }),
+              let asked = execution.tasks[team.session.sessionID]?.transcript.entries.last(where: { $0.kind == "Assistant" })?.text else { return nil }
+        // The question itself: the message's last sentence that asks something.
+        let sentences = asked.split(whereSeparator: { ".!\n".contains($0) }).map { $0.trimmingCharacters(in: .whitespaces) }.filter { !$0.isEmpty }
+        return sentences.last { $0.hasSuffix("?") } ?? sentences.last
     }
     private func agentSidebar(_ teams: [SpatialTeam], focus: SpatialFocus, reveal: AgentSidebarGroup? = nil, openBoard: (() -> Void)? = nil) -> some View {
         let items = sidebarItems(teams)

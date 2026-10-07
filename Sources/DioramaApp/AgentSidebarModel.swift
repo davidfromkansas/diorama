@@ -48,6 +48,14 @@ struct AgentSidebarItem: Identifiable, Equatable {
     var progress: AgentSidebarProgress? = nil
     /// When finished work was reported done (Done rows): shown on the status line, newest first.
     var finishedAt: Date? = nil
+    // Shown on the task board's larger cards.
+    /// "Claude" or "Codex".
+    var provider = ""
+    var branch: String? = nil
+    /// Files edited in the latest turn.
+    var files = 0
+    /// What the agent is asking, while it waits on you.
+    var question: String? = nil
     var hasAction: Bool { group == .needsYou || group == .done }
     var actionTitle: String {
         if group == .done { return "Review changes" }
@@ -68,6 +76,8 @@ enum AgentSidebar {
         /// The model the conversation runs on, when the execution layer knows it.
         var model: String?
         var requests = 0
+        /// The pending question or request, in a line (from the protocol request or the chat).
+        var question: String? = nil
     }
 
     /// One row per conversation, grouped from its lifecycle: pending input first, then a running
@@ -118,7 +128,9 @@ enum AgentSidebar {
                                     model: modelName(input.model ?? value.reportedModel, provider: value.provider, catalog: catalog),
                                     activity: activity, requests: input.requests,
                                     order: order(main.conversationID, value.meaningfulUpdatedAt ?? input.session.modified), progress: progress,
-                                    finishedAt: group == .done ? value.meaningfulUpdatedAt ?? input.session.modified : nil)
+                                    finishedAt: group == .done ? value.meaningfulUpdatedAt ?? input.session.modified : nil,
+                                    provider: value.provider, branch: value.branch.flatMap { $0.isEmpty ? nil : $0 },
+                                    files: value.turnWork.files.count, question: group == .needsYou ? input.question : nil)
         }
         // Newest conversation first within each group; a row's place is fixed by its first sighting.
         // Done is ranked by when the work finished, latest first.
