@@ -105,7 +105,7 @@ public enum SessionActivityReducer {
                     if name == "ExitPlanMode", let plan = args["plan"].string {
                         out.append(record("proposal", id + ":plan", "Proposed plan", status: "proposed", detail: plan, parent: parent, time: time))
                     }
-                    out.append(record("tool", id, name, status: "running", detail: args["description"].string ?? args["command"].string ?? args["file_path"].string ?? "", parent: parent, data: ["TaskCreate", "TaskUpdate", "TodoWrite", "ExitPlanMode"].contains(name) ? .object(["input": args]) : name == "Bash" ? .object(["command": args["command"]]) : .null, time: time))
+                    out.append(record("tool", id, name, status: "running", detail: args["description"].string ?? args["command"].string ?? args["file_path"].string ?? args["skill"].string ?? "", parent: parent, data: ["TaskCreate", "TaskUpdate", "TodoWrite", "ExitPlanMode"].contains(name) ? .object(["input": args]) : name == "Bash" ? .object(["command": args["command"]]) : .null, time: time))
                 }
                 return out
             }
@@ -167,7 +167,9 @@ public enum SessionActivityReducer {
             }
             if type == "contextCompaction" { return [record("state", id, "Context compaction", status: method == "item/completed" ? "completed" : "running")] }
             if ["commandExecution", "mcpToolCall", "fileChange", "webSearch", "dynamicToolCall"].contains(type) {
-                return [record("tool", id, i["tool"].string ?? type, status: method == "item/started" ? "running" : ToolResult(item: i)?.status ?? "Reported", detail: i["command"].string ?? "", data: .object(["nativeItem": .bool(true), "durationMs": i["durationMs"], "exitCode": i["exitCode"], "files": .array(i["changes"].array.map { .object(["path": $0["path"], "kind": $0["kind"]]) })]))]
+                // An MCP call is named like Claude's (`mcp__server__tool`), so its server is known downstream.
+                let tool = type == "mcpToolCall" ? i["server"].string.map { "mcp__" + $0 + "__" + (i["tool"].string ?? "tool") } ?? i["tool"].string : i["tool"].string
+                return [record("tool", id, tool ?? type, status: method == "item/started" ? "running" : ToolResult(item: i)?.status ?? "Reported", detail: i["command"].string ?? "", data: .object(["nativeItem": .bool(true), "durationMs": i["durationMs"], "exitCode": i["exitCode"], "files": .array(i["changes"].array.map { .object(["path": $0["path"], "kind": $0["kind"]]) })]))]
             }
         }
         if method == "thread/tokenUsage/updated" { return [record("usage", turn ?? "thread", "Reported token usage", status: "reported", data: p["tokenUsage"])] }

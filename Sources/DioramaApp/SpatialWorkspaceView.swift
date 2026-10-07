@@ -33,6 +33,8 @@ struct SpatialWorkspaceView: View {
     /// The docked agents panel's width in the kitchen (drag its right edge).
     @AppStorage("kitchenAgentsWidth") private var kitchenAgentsWidth: Double = 300
     @State private var kitchenAgentsDrag: Double?
+    /// Every MCP server, app, plugin and skill, opened from the live tools bar.
+    @State private var allToolsOpen = false
     /// The kitchen camera left its home view (zoomed or turned), and a request to send it back.
     @State private var kitchenCameraAway = false
     @State private var kitchenCameraResets = 0
@@ -113,6 +115,15 @@ struct SpatialWorkspaceView: View {
                             .overlay(alignment: .topLeading) {
                                 if visible, focus != .portfolio {
                                     GeometryReader { scene in kitchenHUD(snapshot, focus: focus, model: roster, height: scene.size.height - 24) }
+                                }
+                            }
+                            .overlay(alignment: .top) {
+                                // What the chefs are reaching for, live, between the agents and the inbox.
+                                if visible, focus != .portfolio, inspection == nil {
+                                    GeometryReader { scene in
+                                        liveTools(snapshot, focus: focus, cooks: cooks, width: scene.size.width, height: scene.size.height)
+                                            .frame(maxWidth: .infinity, alignment: .top)
+                                    }
                                 }
                             }
                             .overlay(alignment: .topTrailing) {
@@ -249,6 +260,12 @@ struct SpatialWorkspaceView: View {
             }
         }
         .environment(\.avatarPopoverDismissals, avatarPopovers)
+        // ⇧⌘K: every tool the agents can use.
+        .background {
+            Button("All tools") { if visible, kitchenSelected, state.focus != .portfolio { allToolsOpen.toggle() } }
+                .keyboardShortcut("k", modifiers: [.command, .shift])
+                .opacity(0).frame(width: 0, height: 0).accessibilityHidden(true)
+        }
         // ⇧⌘B: the task board, from the panel or the pill, and back to the panel.
         .background {
             Button("Task board") {
@@ -373,6 +390,28 @@ struct SpatialWorkspaceView: View {
         .disabled(inspection != nil).accessibilityHidden(inspection != nil)
     }
 
+    /// The live tools bar, centred at the top of the kitchen when there's room beside the agents
+    /// and inbox pills, and the All palette under it.
+    @ViewBuilder private func liveTools(_ snapshot: SpatialWorld, focus: SpatialFocus, cooks: [SpatialAgent], width: CGFloat, height: CGFloat) -> some View {
+        let teams = focus.projectID.flatMap { id in snapshot.projects.first { $0.id == id }?.teams } ?? snapshot.team(focus).map { [$0] } ?? []
+        let project = focus.projectID.flatMap { id in library.projects.projects.first { $0.id == id } }
+        VStack(spacing: 12) {
+            if width >= 900 {
+                LiveToolsBar(agents: cooks, total: nil) { allToolsOpen.toggle() }
+                    .padding(.top, 12)
+            }
+            if allToolsOpen, let folder = project?.folder ?? teams.first?.session.project {
+                let sessions = Dictionary(teams.map { ($0.session.provider, $0.session.sessionID) }) { first, _ in first }
+                let selected = focus.agentID.flatMap { id in teams.flatMap(\.agents).first { $0.id == id } }
+                AllResourcesPalette(library: library, folder: folder, sessions: sessions,
+                                    armFor: selected.map { ($0.conversationID, $0.value.name) }) { allToolsOpen = false }
+                    .frame(width: min(1220, width - 32), height: min(620, max(320, height - 90)))
+                    .padding(.top, width >= 900 ? 0 : 12)
+                    .transition(.opacity.combined(with: .offset(y: -8)))
+            }
+        }
+        .animation(reduced ? nil : .easeOut(duration: 0.18), value: allToolsOpen)
+    }
     /// The agents panel docked at the kitchen's left edge, full height beside the kitchen and its
     /// command bar. The corner button straddles its edge; the edge itself resizes it.
     private func dockedAgents(_ snapshot: SpatialWorld, focus: SpatialFocus, model: LiveAgentRosterModel) -> some View {
