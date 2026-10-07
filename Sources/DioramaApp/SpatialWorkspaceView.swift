@@ -118,7 +118,7 @@ struct SpatialWorkspaceView: View {
                                                 active: liveRefresh && !library.paused,
                                                 inboxExpanded: Binding(get: { inboxExpanded }, set: { inboxExpanded = $0 }), serversExpanded: Binding(get: { serversExpanded }, set: { serversExpanded = $0 }), selected: Binding(get: { inboxSelection }, set: { inboxSelection = $0 }),
                                                 reply: { thread in openInboxConversation(thread, world: snapshot) },
-                                                canReply: { thread in snapshot.teams.first { $0.session.id == thread.conversation }?.session.observationOnly == false })
+                                                canReply: { thread in snapshot.teams.first { $0.session.id == thread.conversation }?.session.observationOnly == false }, dockedTop: true)
                                                 .id(project)
                                                 .frame(width: max(100, min(400, scene.size.width - library.navigation.layout.sidebarWidth - 48)))
                                         }.padding(12)

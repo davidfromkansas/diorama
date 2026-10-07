@@ -288,14 +288,15 @@ struct AgentSidebarStatusBar: View {
     }
 }
 
-private struct ReviewActionButton: View {
+struct ReviewActionButton: View {
     let title: String
+    var symbol = "arrow.right"
     let action: () -> Void
     @State private var hovered = false
     @FocusState private var focused: Bool
     var body: some View {
         Button(action: action) {
-            HStack(spacing: 4) { Text(title); Image(systemName: "arrow.right").font(.system(size: 10, weight: .semibold)) }
+            HStack(spacing: 4) { Text(title); Image(systemName: symbol).font(.system(size: 10, weight: .semibold)) }
                 .font(.system(size: 12, weight: .medium)).foregroundStyle(SidebarStyle.title)
                 .padding(.horizontal, 9).frame(height: 24)
                 .background(RoundedRectangle(cornerRadius: 6, style: .continuous).fill(hovered ? Color.black.opacity(0.05) : Color.white))
