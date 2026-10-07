@@ -62,6 +62,9 @@ struct AgentSidebarCard: View {
                                         AgentSidebarRow(item: item, selected: item.conversationID == selectedConversation,
                                                         select: { select(item) },
                                                         action: { item.group == .done ? reviewChanges(item) : reviewRequest(item) })
+                                        // A row that moves to another group is a new row there: the lazy
+                                        // list would otherwise keep showing its old icon, status and button.
+                                        .id(item.id + "\u{1F}" + String(item.group.rawValue))
                                     }
                                 }
                             }
