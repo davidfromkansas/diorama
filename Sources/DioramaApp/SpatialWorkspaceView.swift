@@ -19,6 +19,8 @@ struct SpatialWorkspaceView: View {
     private var inboxSelection: InboxThread? { get { state.inboxSelection } nonmutating set { state.inboxSelection = newValue } }
     @State private var creationProject: AgentCreationDestination?
     @State private var reviewing: SpatialAgent?
+    /// The conversation whose pending request is open in the Review request modal.
+    @State private var requestReview: SpatialAgent?
     /// The kitchen chef whose progress panel is open.
     @State private var progressAgent: String?
     /// The chef whose command bar is shown. Clearing waits a moment, like the kitchen camera, so
@@ -84,7 +86,7 @@ struct SpatialWorkspaceView: View {
                     VStack(spacing: 0) {
                         KitchenSceneSurface(agents: cooks, scope: focus == .portfolio ? nil : focus.projectID ?? focus.conversationID,
                                             reviews: KitchenReviews.shared.states, active: visible,
-                                            reducedMotion: reduced, select: go, review: { reviewing = $0 }, progress: { progressAgent = $0.id },
+                                            reducedMotion: reduced, select: go, review: { reviewing = $0 }, requestReview: { openRequest($0) }, progress: { progressAgent = $0.id },
                                             selectedAgentID: focus.agentID, deselect: { deselectAgent(focus) }, openPantry: { pantryOpen = true },
                                             cameraMoved: { away in DispatchQueue.main.async { kitchenCameraAway = away } }, resetCamera: kitchenCameraResets)
                             .overlay(alignment: .bottomLeading) {
@@ -219,6 +221,11 @@ struct SpatialWorkspaceView: View {
                 ServingWindowView(agent: agent, session: session, library: library)
             }
         }
+        .sheet(item: $requestReview) { agent in
+            if let session = world.team(.team(project: agent.projectID, conversation: agent.conversationID))?.session {
+                RequestReviewModal(agent: agent, session: session, library: library) { go(agent.focus) }
+            }
+        }
         .environment(\.avatarPopoverDismissals, avatarPopovers)
         // Let native menus and popovers consume Escape before spatial navigation.
         .onExitCommand {
@@ -346,10 +353,16 @@ struct SpatialWorkspaceView: View {
         return AgentSidebarCard(items: items, projectID: focus.projectID ?? "", selectedConversation: selected,
             select: { item in if let agent = mains[item.id] { go(agent.focus) } },
             // Opens the conversation, where the pending request waits; nothing is approved here.
-            reviewRequest: { item in if let agent = mains[item.id] { go(agent.focus) } },
+            reviewRequest: { item in if let agent = mains[item.id] { openRequest(agent) } },
             // Opens the serving-window review; only its explicit actions take the dish off Done.
             reviewChanges: { item in if let agent = mains[item.id] { reviewing = agent } },
             create: { creationProject = AgentCreationDestination(id: focus.projectID ?? "") })
+    }
+    /// Review request: the modal when a request is waiting; otherwise (a question asked in chat)
+    /// the conversation, where the agent asked it.
+    private func openRequest(_ agent: SpatialAgent) {
+        let thread = world.team(.team(project: agent.projectID, conversation: agent.conversationID))?.session.sessionID
+        if let thread, !RequestReviewModal.pending(library.execution, thread: thread).isEmpty { requestReview = agent } else { go(agent.focus) }
     }
     /// Camera/monitor updates may arrive every frame. Project the library once per observation
     /// tick instead of repeating provider and membership lookups during those view updates.

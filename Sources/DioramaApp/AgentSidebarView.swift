@@ -105,27 +105,13 @@ private struct SidebarHeader: View {
             .accessibilityElement(children: .ignore).accessibilityLabel(AgentSidebar.summaryText(summary))
             Spacer(minLength: 6)
             if let create {
-                Button("Create", action: create).buttonStyle(CreateButtonStyle()).accessibilityLabel("Create agent")
+                Button("Create", action: create).buttonStyle(ModalPrimaryButtonStyle()).accessibilityLabel("Create agent")
                     .help("Create an agent in this project")
             }
         }
     }
     private func count(_ value: Int, _ group: AgentSidebarGroup) -> some View {
         HStack(spacing: 4) { Circle().fill(SidebarStyle.tint(group).dot).frame(width: 7, height: 7); Text("\(value)") }
-    }
-}
-
-private struct CreateButtonStyle: ButtonStyle {
-    @Environment(\.isEnabled) private var enabled
-    @State private var hovered = false
-    func makeBody(configuration: Configuration) -> some View {
-        configuration.label
-            .font(.system(size: 13, weight: .semibold)).foregroundStyle(.white)
-            .padding(.horizontal, 14).frame(height: 30)
-            .background(RoundedRectangle(cornerRadius: 8, style: .continuous)
-                .fill(SidebarStyle.accent.opacity(enabled ? 1 : 0.4)).brightness(configuration.isPressed ? -0.12 : hovered ? 0.06 : 0))
-            .contentShape(RoundedRectangle(cornerRadius: 8))
-            .onHover { hovered = $0 }.pointingHand()
     }
 }
 
