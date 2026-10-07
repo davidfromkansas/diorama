@@ -35,7 +35,7 @@ import Testing
         guard ProcessInfo.processInfo.environment["DIORAMA_MODAL_CAPTURE"] == "1" else { return }
         let controller = ExecutionController()
         func shot<V: View>(_ view: V, _ name: String, height: CGFloat) throws {
-            let host = NSHostingView(rootView: view.frame(width: 560).fixedSize(horizontal: false, vertical: true).background(SidebarStyle.background).environment(\.colorScheme, .light))
+            let host = NSHostingView(rootView: view.fixedSize(horizontal: false, vertical: true).background(SidebarStyle.background).environment(\.colorScheme, .light))
             host.frame = NSRect(x: 0, y: 0, width: 560, height: height); host.layoutSubtreeIfNeeded()
             host.frame.size = host.fittingSize; host.layoutSubtreeIfNeeded()
             let rep = try #require(host.bitmapImageRepForCachingDisplay(in: host.bounds))
@@ -46,12 +46,12 @@ import Testing
         try shot(VStack(spacing: 0) {
             ModalHeader(group: .needsYou, title: "Fix sign-in flow", status: "Needs approval", model: "Claude Opus 5.5") {}
             RequestReviewContent(request: approval(["accept", "acceptForSession", "decline"]), controller: controller, position: "1 of 2") { link }
-        }, "approval", height: 520)
-        try shot(ExecutionRequestView(request: approval(["accept", "acceptForSession", "decline"]), controller: controller).padding(12), "compact", height: 260)
+        }.frame(width: 560), "approval", height: 520)
+        try shot(ExecutionRequestView(request: approval(["accept", "acceptForSession", "decline"]), controller: controller).padding(12).frame(width: 560), "compact", height: 260)
         try shot(VStack(spacing: 0) {
             ModalHeader(group: .needsYou, title: "Add stats dashboard", status: "Needs an answer", model: "GPT-6 Astra") {}
-            RequestReviewContent(request: question, controller: controller) { link } skip: {}
-        }, "question", height: 560)
+            RequestReviewContent(request: question, controller: controller, wide: true) { link } skip: {}
+        }.frame(width: 720), "question", height: 560)
         var agent = SpatialAgent(projectID: nil, conversationID: "c", value: WorkspaceAgent(id: "main", name: "Remy", provider: Provider.codex.rawValue, task: "Update app icon",
                                     action: "", status: .done, reportedStatus: "Done", freshness: .live))
         agent.value.reportedModel = "gpt-6-astra"

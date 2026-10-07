@@ -158,8 +158,8 @@ struct ModalFooter<Leading: View, Actions: View>: View {
 
 extension View {
     /// The modal surface: warm, light, rounded, at the review width.
-    func reviewModalSurface() -> some View {
-        self.frame(width: ModalStyle.width)
+    func reviewModalSurface(width: CGFloat = ModalStyle.width) -> some View {
+        self.frame(width: width)
             .background(SidebarStyle.background)
             .environment(\.colorScheme, .light).tint(SidebarStyle.accent)
             .presentationBackground(SidebarStyle.background)
