@@ -47,7 +47,7 @@ import Testing
         let quiet = items([.init(session: session("q", "Q"), agents: [agent("q", .working, tool: "Edit", detail: "a.swift", freshness: .lastKnown)])])
         #expect(quiet.first?.group == .inProgress && quiet.first?.activity == "No recent updates")
         // Finished but unreviewed stays Done, never Needs you; reworking is back In progress.
-        #expect(items([.init(session: session("d", "D"), agents: [agent("d", .done)], review: .committed)]).first?.status == "Committed")
+        #expect(items([.init(session: session("d", "D"), agents: [agent("d", .done)], review: .committed)]).first?.status.hasPrefix("Committed") == true)
         #expect(items([.init(session: session("r", "R"), agents: [agent("r", .done)], review: .reworking)]).first?.group == .inProgress)
         // Helpers never get their own row.
         #expect(items([.init(session: session("h", "H"), agents: [agent("h", .working), agent("h", .working, main: false)])]).count == 1)
@@ -114,6 +114,18 @@ import Testing
         #expect(progress("x") == .working)
         #expect(progress("n") == .steps(done: 2, total: 4))
         #expect(progress("q") == nil && progress("d") == nil && progress("i") == nil)
+    }
+
+    @Test func doneShowsWhenItFinishedLatestFirst() {
+        let now = Date()
+        func finished(_ id: String, _ ago: TimeInterval) -> AgentSidebar.Input {
+            var value = agent(id, .done); value.value.meaningfulUpdatedAt = now.addingTimeInterval(-ago)
+            return .init(session: session(id, id), agents: [value], review: .awaiting)
+        }
+        let list = AgentSidebar.items([finished("old", 3 * 86_400), finished("recent", 60), finished("hour", 3_600)], catalog: [], order: { _, date in date }, now: now)
+        #expect(list.map(\.conversationID) == ["recent", "hour", "old"])
+        #expect(list[0].status == "Done " + now.addingTimeInterval(-60).formatted(date: .omitted, time: .shortened))
+        #expect(AgentSidebar.finishedText(now.addingTimeInterval(-86_400), now: now) == " yesterday")
     }
 
     @Test func captureSidebarCard() throws {

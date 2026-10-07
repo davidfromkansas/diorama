@@ -46,6 +46,8 @@ struct AgentSidebarItem: Identifiable, Equatable {
     /// In progress: steps or a sweep. Needs you: the steps reached before it paused. Done and
     /// Idle: none.
     var progress: AgentSidebarProgress? = nil
+    /// When finished work was reported done (Done rows): shown on the status line, newest first.
+    var finishedAt: Date? = nil
     var hasAction: Bool { group == .needsYou || group == .done }
     var actionTitle: String {
         if group == .done { return "Review changes" }
@@ -95,7 +97,7 @@ enum AgentSidebar {
                 activity = main.fresh || input.review == .reworking ? phrase(value) : "No recent updates"
             } else if let review = input.review, [.awaiting, .committed, .shipped].contains(review) {
                 group = .done
-                status = review == .committed ? "Committed" : review == .shipped ? "PR open" : "Done"
+                status = (review == .committed ? "Committed" : review == .shipped ? "PR open" : "Done") + finishedText(value.meaningfulUpdatedAt ?? input.session.modified, now: now)
             } else {
                 group = .idle
                 switch value.status {
@@ -115,10 +117,24 @@ enum AgentSidebar {
                                     title: TaskTitle.full(input.session.displayTitle), group: group, status: status,
                                     model: modelName(input.model ?? value.reportedModel, provider: value.provider, catalog: catalog),
                                     activity: activity, requests: input.requests,
-                                    order: order(main.conversationID, value.meaningfulUpdatedAt ?? input.session.modified), progress: progress)
+                                    order: order(main.conversationID, value.meaningfulUpdatedAt ?? input.session.modified), progress: progress,
+                                    finishedAt: group == .done ? value.meaningfulUpdatedAt ?? input.session.modified : nil)
         }
         // Newest conversation first within each group; a row's place is fixed by its first sighting.
-        .sorted { $0.group != $1.group ? $0.group.rawValue < $1.group.rawValue : $0.order != $1.order ? $0.order > $1.order : $0.id < $1.id }
+        // Done is ranked by when the work finished, latest first.
+        .sorted {
+            if $0.group != $1.group { return $0.group.rawValue < $1.group.rawValue }
+            if $0.group == .done, let a = $0.finishedAt, let b = $1.finishedAt, a != b { return a > b }
+            return $0.order != $1.order ? $0.order > $1.order : $0.id < $1.id
+        }
+    }
+
+    /// " 2:41 PM" today, " yesterday", or " Oct 5": when the work was finished.
+    static func finishedText(_ date: Date, now: Date) -> String {
+        let calendar = Calendar.current
+        if calendar.isDate(date, inSameDayAs: now) { return " " + date.formatted(date: .omitted, time: .shortened) }
+        if let yesterday = calendar.date(byAdding: .day, value: -1, to: now), calendar.isDate(date, inSameDayAs: yesterday) { return " yesterday" }
+        return " " + date.formatted(.dateTime.month(.abbreviated).day())
     }
 
     struct Summary: Equatable { var active = 0, needsYou = 0, done = 0 }
