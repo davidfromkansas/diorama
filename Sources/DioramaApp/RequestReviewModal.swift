@@ -61,6 +61,8 @@ struct RequestReviewContent<Leading: View>: View {
     /// The conversation panel's card: a status line instead of the band, tighter spacing, and
     /// request details behind a footer link, so the composer below keeps its room.
     var compact = false
+    /// Desktop modal: a single question's own answer moves to a right-hand column.
+    var wide = false
     @ViewBuilder var leading: Leading
     var skip: (() -> Void)? = nil
     @State private var answers: [String: String] = [:]
@@ -73,6 +75,21 @@ struct RequestReviewContent<Leading: View>: View {
         let band = kind.band(blocking: request.isBlocking)
         VStack(spacing: 0) {
             if !compact { ModalBand(group: .needsYou, title: band.title, detail: band.detail, trailing: position) }
+            if let wideQuestion {
+                HStack(alignment: .top, spacing: 0) {
+                    VStack(alignment: .leading, spacing: 12) {
+                        questionText(wideQuestion.question)
+                        options(wideQuestion.question, id: wideQuestion.id)
+                        statusLines
+                    }
+                    .padding(16).frame(maxWidth: .infinity, alignment: .leading)
+                    ownAnswer(wideQuestion.question, id: wideQuestion.id, tall: true)
+                        .padding(16).frame(width: 280).frame(maxHeight: .infinity, alignment: .top)
+                        .background(Color(red: 0.976, green: 0.965, blue: 0.945))
+                        .overlay(alignment: .leading) { Rectangle().fill(SidebarStyle.divider).frame(width: 1) }
+                }
+                .fixedSize(horizontal: false, vertical: true)
+            } else {
             VStack(alignment: .leading, spacing: compact ? 10 : 14) {
                 if compact {
                     HStack(spacing: 6) {
@@ -86,13 +103,10 @@ struct RequestReviewContent<Leading: View>: View {
                 case .connector: ElicitationFormView(request: request, respond: respond)
                 case .approval, .permissions: approval
                 }
-                if unavailable {
-                    Text(request.responding ? "Sending… waiting for the agent" : "Connection lost · reconnect to respond")
-                        .font(.system(size: 12)).foregroundStyle(SidebarStyle.secondary)
-                }
-                if let error { Text(error).font(.system(size: 12)).foregroundStyle(ModalStyle.red).textSelection(.enabled) }
+                statusLines
             }
             .padding(compact ? 12 : 16).frame(maxWidth: .infinity, alignment: .leading)
+            }
             ModalFooter {
                 leading
                 if compact, kind == .approval || kind == .permissions {
@@ -102,6 +116,14 @@ struct RequestReviewContent<Leading: View>: View {
             } actions: { actions }
         }
         .foregroundStyle(SidebarStyle.title)
+    }
+
+    @ViewBuilder private var statusLines: some View {
+        if unavailable {
+            Text(request.responding ? "Sending… waiting for the agent" : "Connection lost · reconnect to respond")
+                .font(.system(size: 12)).foregroundStyle(SidebarStyle.secondary)
+        }
+        if let error { Text(error).font(.system(size: 12)).foregroundStyle(ModalStyle.red).textSelection(.enabled) }
     }
 
     // MARK: Approval
@@ -168,53 +190,81 @@ struct RequestReviewContent<Leading: View>: View {
     }
 
     // MARK: Question
+    /// On desktop a single question with options goes side by side: the options on the left,
+    /// your own answer in a taller box on the right (a wider, shorter modal).
+    private var wideQuestion: (question: WireValue, id: String)? {
+        guard wide, RequestReviewModal.sideBySide(request) else { return nil }
+        let question = request.params["questions"].array[0]
+        return (question, question["id"].string ?? "")
+    }
     private var questions: some View {
         VStack(alignment: .leading, spacing: 14) {
             ForEach(request.params["questions"].array, id: \.pretty) { question in
                 let id = question["id"].string ?? ""
                 VStack(alignment: .leading, spacing: 10) {
-                    Text(question["question"].string ?? "Question").font(.system(size: 14, weight: .semibold)).fixedSize(horizontal: false, vertical: true)
-                    let options = question["options"].array
-                    if !options.isEmpty {
-                        VStack(spacing: 0) {
-                            ModalDivider()
-                            ForEach(options, id: \.pretty) { option in
-                                let label = option["label"].string ?? "Option"
-                                let chosen = answers[id] == label
-                                Button { answers[id] = label } label: {
-                                    HStack(spacing: 10) {
-                                        Image(systemName: chosen ? "largecircle.fill.circle" : "circle").font(.system(size: 14))
-                                            .foregroundStyle(chosen ? SidebarStyle.accent : SidebarStyle.secondary)
-                                        VStack(alignment: .leading, spacing: 2) {
-                                            Text(label).font(.system(size: 13, weight: .semibold))
-                                            if let description = option["description"].string, !description.isEmpty {
-                                                Text(description).font(.system(size: 11.5)).foregroundStyle(SidebarStyle.secondary).lineLimit(2)
-                                            }
-                                        }
-                                        Spacer(minLength: 0)
-                                    }
-                                    .padding(.horizontal, 10).frame(minHeight: 52)
-                                    .background(chosen ? SidebarStyle.selected : Color.clear)
-                                    .overlay(alignment: .leading) { if chosen { Rectangle().fill(SidebarStyle.accent).frame(width: 3) } }
-                                    .overlay(alignment: .bottom) { ModalDivider() }
-                                    .contentShape(Rectangle())
-                                }
-                                .buttonStyle(.plain).pointingHand()
-                                .accessibilityAddTraits(chosen ? [.isSelected] : [])
-                            }
-                        }
-                    }
-                    VStack(alignment: .leading, spacing: 6) {
-                        Text(options.isEmpty ? "Your answer" : "Or write your own answer").font(.system(size: 12)).foregroundStyle(SidebarStyle.secondary)
-                        let binding = Binding(get: { answers[id, default: ""] }, set: { answers[id] = $0 })
-                        Group {
-                            if question["isSecret"].bool { SecureField("Answer", text: binding) } else { TextField("Something else…", text: binding) }
-                        }
-                        .textFieldStyle(.plain).font(.system(size: 13)).padding(.horizontal, 10).frame(height: 30)
-                        .background(RoundedRectangle(cornerRadius: 8).fill(ModalStyle.field))
-                        .overlay(RoundedRectangle(cornerRadius: 8).strokeBorder(ModalStyle.border))
-                    }
+                    questionText(question)
+                    options(question, id: id)
+                    ownAnswer(question, id: id, tall: false)
                 }
+            }
+        }
+    }
+    private func questionText(_ question: WireValue) -> some View {
+        Text(question["question"].string ?? "Question").font(.system(size: 14, weight: .semibold)).fixedSize(horizontal: false, vertical: true)
+    }
+    @ViewBuilder private func options(_ question: WireValue, id: String) -> some View {
+        let options = question["options"].array
+        if !options.isEmpty {
+            VStack(spacing: 0) {
+                ModalDivider()
+                ForEach(options, id: \.pretty) { option in
+                    let label = option["label"].string ?? "Option"
+                    let chosen = answers[id] == label
+                    Button { answers[id] = label } label: {
+                        HStack(spacing: 10) {
+                            Image(systemName: chosen ? "largecircle.fill.circle" : "circle").font(.system(size: 14))
+                                .foregroundStyle(chosen ? SidebarStyle.accent : SidebarStyle.secondary)
+                            VStack(alignment: .leading, spacing: 2) {
+                                Text(label).font(.system(size: 13, weight: .semibold))
+                                if let description = option["description"].string, !description.isEmpty {
+                                    Text(description).font(.system(size: 11.5)).foregroundStyle(SidebarStyle.secondary).lineLimit(2)
+                                }
+                            }
+                            Spacer(minLength: 0)
+                        }
+                        .padding(.horizontal, 10).frame(minHeight: 52)
+                        .background(chosen ? SidebarStyle.selected : Color.clear)
+                        .overlay(alignment: .leading) { if chosen { Rectangle().fill(SidebarStyle.accent).frame(width: 3) } }
+                        .overlay(alignment: .bottom) { ModalDivider() }
+                        .contentShape(Rectangle())
+                    }
+                    .buttonStyle(.plain).pointingHand()
+                    .accessibilityAddTraits(chosen ? [.isSelected] : [])
+                }
+            }
+        }
+    }
+    private func ownAnswer(_ question: WireValue, id: String, tall: Bool) -> some View {
+        let hasOptions = !question["options"].array.isEmpty
+        let binding = Binding(get: { answers[id, default: ""] }, set: { answers[id] = $0 })
+        return VStack(alignment: .leading, spacing: tall ? 8 : 6) {
+            Text(hasOptions ? "Or write your own answer" : "Your answer")
+                .font(.system(size: tall ? 13 : 12, weight: tall ? .semibold : .regular))
+                .foregroundStyle(tall ? SidebarStyle.title : SidebarStyle.secondary)
+            if tall {
+                Text("Typing here replaces the option you picked.").font(.system(size: 12)).foregroundStyle(SidebarStyle.secondary)
+                TextField("Something else…", text: binding, axis: .vertical).lineLimit(5...9)
+                    .textFieldStyle(.plain).font(.system(size: 13)).padding(8)
+                    .frame(maxHeight: .infinity, alignment: .top)
+                    .background(RoundedRectangle(cornerRadius: 8).fill(ModalStyle.field))
+                    .overlay(RoundedRectangle(cornerRadius: 8).strokeBorder(ModalStyle.border))
+            } else {
+                Group {
+                    if question["isSecret"].bool { SecureField("Answer", text: binding) } else { TextField("Something else…", text: binding) }
+                }
+                .textFieldStyle(.plain).font(.system(size: 13)).padding(.horizontal, 10).frame(height: 30)
+                .background(RoundedRectangle(cornerRadius: 8).fill(ModalStyle.field))
+                .overlay(RoundedRectangle(cornerRadius: 8).strokeBorder(ModalStyle.border))
             }
         }
     }
@@ -258,6 +308,11 @@ struct RequestReviewModal: View {
     @Bindable var library: LibraryModel
     let openConversation: () -> Void
     @Environment(\.dismiss) private var dismiss
+    /// One question with options and a plain answer: laid out side by side, 720 pt wide.
+    static func sideBySide(_ request: ExecutionRequest) -> Bool {
+        let list = request.params["questions"].array
+        return RequestKind(request) == .question && list.count == 1 && !list[0]["options"].array.isEmpty && !list[0]["isSecret"].bool
+    }
     static func pending(_ controller: ExecutionController, thread: String) -> [ExecutionRequest] {
         controller.requests.values.filter { $0.threadID == thread }.sorted { $0.receivedAt < $1.receivedAt }
     }
@@ -271,14 +326,14 @@ struct RequestReviewModal: View {
                             model: AgentSidebar.modelName(execution.tasks[session.sessionID].flatMap { $0.model.isEmpty ? nil : $0.model } ?? agent.value.reportedModel,
                                                           provider: agent.value.provider, catalog: execution.models),
                             question: kind == .question) { dismiss() }
-                RequestReviewContent(request: request, controller: execution, position: pending.count > 1 ? "1 of \(pending.count)" : nil) {
+                RequestReviewContent(request: request, controller: execution, position: pending.count > 1 ? "1 of \(pending.count)" : nil, wide: true) {
                     Button("Open conversation") { openConversation(); dismiss() }
                         .buttonStyle(.plain).font(.system(size: 12)).foregroundStyle(SidebarStyle.accent).pointingHand()
                 } skip: { dismiss() }
                 .id(request.id)
             }
         }
-        .reviewModalSurface()
+        .reviewModalSurface(width: pending.first.map(Self.sideBySide) == true ? 720 : ModalStyle.width)
         .onChange(of: pending.isEmpty, initial: true) { _, empty in if empty { dismiss() } }
     }
 }

@@ -27,14 +27,21 @@ struct ServingWindowView: View {
         VStack(spacing: 0) {
             ModalHeader(group: band.group, title: TaskTitle.full(session.displayTitle), status: statusWord, model: modelName, detail: finished) { dismiss() }
             ModalBand(group: band.group, title: band.title, detail: band.detail)
-            ScrollView {
-                VStack(spacing: 0) {
-                    changesSection
-                    doneSection
-                    feedbackSection
+            // Desktop layout: what changed on the left, your feedback in its own column on the right.
+            HStack(alignment: .top, spacing: 0) {
+                ScrollView {
+                    VStack(spacing: 0) {
+                        changesSection
+                        doneSection
+                    }
                 }
+                .frame(maxWidth: .infinity)
+                feedbackSection
+                    .frame(width: 300).frame(maxHeight: .infinity, alignment: .top)
+                    .background(Color(red: 0.976, green: 0.965, blue: 0.945))
+                    .overlay(alignment: .leading) { Rectangle().fill(SidebarStyle.divider).frame(width: 1) }
             }
-            .frame(maxHeight: 600)
+            .frame(minHeight: 340, maxHeight: 520)
             if error != nil || notice != nil {
                 VStack(alignment: .leading, spacing: 4) {
                     if let error { Text(error).foregroundStyle(ModalStyle.red) }
@@ -50,7 +57,7 @@ struct ServingWindowView: View {
             } actions: { footerActions }
         }
         .foregroundStyle(SidebarStyle.title)
-        .reviewModalSurface()
+        .reviewModalSurface(width: 820)
         .task { message = Self.defaultMessage(agent.value.task); await refresh() }
         .sheet(isPresented: $showPR, onDismiss: { Task { await afterPR() } }) {
             if let project, let workspace { GitHubPRView(projectID: project.id, workspace: workspace, library: library) }
@@ -201,10 +208,10 @@ struct ServingWindowView: View {
     // MARK: Feedback
     private var feedbackSection: some View {
         VStack(spacing: 0) {
-            ModalSectionBand(title: "Not quite right?") { EmptyView() }.overlay(alignment: .top) { ModalDivider() }
+            ModalSectionBand(title: "Not quite right?") { EmptyView() }
             VStack(alignment: .leading, spacing: 8) {
                 Text("Tell \(providerName) what to change. It goes back to work on this task.").font(.system(size: 12)).foregroundStyle(SidebarStyle.secondary)
-                TextField("e.g. Keep the old icon for the dock…", text: $feedback, axis: .vertical).lineLimit(3...5)
+                TextField("e.g. Keep the old icon for the dock…", text: $feedback, axis: .vertical).lineLimit(6...12)
                     .textFieldStyle(.plain).font(.system(size: 13)).padding(8)
                     .background(RoundedRectangle(cornerRadius: 8).fill(ModalStyle.field))
                     .overlay(RoundedRectangle(cornerRadius: 8).strokeBorder(ModalStyle.border))
