@@ -62,4 +62,26 @@ import Testing
         host.cacheDisplay(in: host.bounds, to: rep)
         try #require(rep.representation(using: .png, properties: [:])).write(to: URL(fileURLWithPath: "/tmp/diorama-command-bar.png"))
     }
+
+    /// Opt-in render of the task board with the sidebar's card fixtures.
+    @Test func captureTaskBoard() throws {
+        guard ProcessInfo.processInfo.environment["DIORAMA_UTILITY_CAPTURE"] == "1" else { return }
+        func item(_ id: String, _ title: String, _ group: AgentSidebarGroup, _ status: String, progress: AgentSidebarProgress? = nil) -> AgentSidebarItem {
+            AgentSidebarItem(id: id, conversationID: id, projectID: "p", title: title, group: group, status: status, model: "GPT-6 Astra",
+                             activity: group == .idle ? "Waiting for a task" : "Editing SettingsView.swift…", requests: 0, order: Date(), progress: progress)
+        }
+        let items = [item("1", "Fix sign-in flow", .needsYou, "Needs approval", progress: .steps(done: 2, total: 4)),
+                     item("2", "Build settings page", .inProgress, "Working", progress: .steps(done: 3, total: 5)),
+                     item("3", "Improve search", .inProgress, "Testing", progress: .working),
+                     item("4", "Update app icon", .done, "Done"),
+                     item("5", "Refactor navigation", .idle, "Idle")]
+        let board = AgentTaskBoard(items: items, selectedConversation: "2", select: { _ in }, reviewRequest: { _ in }, reviewChanges: { _ in }, create: {}, dock: {})
+            .frame(width: 1240, height: 600).padding(30).background(Color(red: 0.3, green: 0.2, blue: 0.14))
+        let host = NSHostingView(rootView: board)
+        host.frame = NSRect(x: 0, y: 0, width: 1300, height: 660)
+        host.layoutSubtreeIfNeeded()
+        let rep = try #require(host.bitmapImageRepForCachingDisplay(in: host.bounds))
+        host.cacheDisplay(in: host.bounds, to: rep)
+        try #require(rep.representation(using: .png, properties: [:])).write(to: URL(fileURLWithPath: "/tmp/diorama-task-board.png"))
+    }
 }

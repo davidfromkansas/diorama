@@ -91,7 +91,7 @@ struct SpatialWorkspaceView: View {
                     HStack(spacing: 0) {
                     // The agents panel docks full height at the kitchen's left; collapsed, it's the pill
                     // floating in the kitchen's top left (kitchenHUD).
-                    if visible, focus != .portfolio, !roster.collapsed {
+                    if visible, focus != .portfolio, !roster.collapsed, !roster.board {
                         dockedAgents(snapshot, focus: focus, model: roster)
                             .transition(reduced ? .opacity : .move(edge: .leading).combined(with: .opacity))
                             .zIndex(1)
@@ -204,6 +204,18 @@ struct SpatialWorkspaceView: View {
                         .disabled(inspection != nil).accessibilityHidden(inspection != nil)
                 }
                 }
+                // The agents at their largest: the task board over the middle of the window.
+                if visible, kitchenSelected, focus != .portfolio, !roster.collapsed, roster.board, inspection == nil {
+                    ZStack {
+                        Color(red: 0.08, green: 0.05, blue: 0.04).opacity(0.42).contentShape(Rectangle())
+                            .onTapGesture { setBoard(false, roster) }
+                            .accessibilityHidden(true)
+                        agentBoard(snapshot, focus: focus, model: roster)
+                            .frame(width: min(1240, max(320, geometry.size.width - 64)), height: min(780, max(300, geometry.size.height - 64)))
+                    }
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
+                    .transition(reduced ? .opacity : .opacity.combined(with: .scale(scale: 0.96)))
+                }
                 if visible, let id = progressAgent, let agent = snapshot.teams.flatMap(\.agents).first(where: { $0.id == id }) {
                     ZStack {
                         Color.black.opacity(0.12).contentShape(Rectangle()).onTapGesture { progressAgent = nil }
@@ -237,10 +249,22 @@ struct SpatialWorkspaceView: View {
             }
         }
         .environment(\.avatarPopoverDismissals, avatarPopovers)
+        // ⇧⌘B: the task board, from the panel or the pill, and back to the panel.
+        .background {
+            Button("Task board") {
+                guard visible, kitchenSelected, state.focus != .portfolio else { return }
+                let roster = state.roster(for: state.focus.projectID ?? state.focus.conversationID ?? "portfolio")
+                if roster.collapsed { roster.collapsed = false; setBoard(true, roster) } else { setBoard(!roster.board, roster) }
+            }
+            .keyboardShortcut("b", modifiers: [.command, .shift])
+            .opacity(0).frame(width: 0, height: 0).accessibilityHidden(true)
+        }
         // Let native menus and popovers consume Escape before spatial navigation.
         .onExitCommand {
             guard visible else { return }
             if avatarPopovers.dismissTop() { return }
+            // The task board steps back down to the side panel first.
+            if kitchenSelected, !roster.collapsed, roster.board { setBoard(false, roster); return }
             // A selected chef is let go first, closing its conversation and command bar.
             if kitchenSelected, state.focus.agentID != nil, inspection == nil { deselectAgent(state.focus); return }
             if inspection != nil { closePlan() }
@@ -353,7 +377,7 @@ struct SpatialWorkspaceView: View {
     /// command bar. The corner button straddles its edge; the edge itself resizes it.
     private func dockedAgents(_ snapshot: SpatialWorld, focus: SpatialFocus, model: LiveAgentRosterModel) -> some View {
         let teams = focus.projectID.flatMap { id in snapshot.projects.first { $0.id == id }?.teams } ?? snapshot.team(focus).map { [$0] } ?? []
-        return agentSidebar(teams, focus: focus, reveal: sidebarReveal)
+        return agentSidebar(teams, focus: focus, reveal: sidebarReveal, openBoard: { setBoard(true, model) })
             .frame(width: kitchenAgentsWidth)
             .frame(maxHeight: .infinity)
             .overlay(alignment: .trailing) {
@@ -389,7 +413,7 @@ struct SpatialWorkspaceView: View {
         }
         return AgentSidebar.items(inputs, catalog: execution.models, order: AgentSidebarOrder.shared.order)
     }
-    private func agentSidebar(_ teams: [SpatialTeam], focus: SpatialFocus, reveal: AgentSidebarGroup? = nil) -> some View {
+    private func agentSidebar(_ teams: [SpatialTeam], focus: SpatialFocus, reveal: AgentSidebarGroup? = nil, openBoard: (() -> Void)? = nil) -> some View {
         let items = sidebarItems(teams)
         let mains = Dictionary(teams.compactMap { team in team.agents.first { $0.value.isMain }.map { ($0.id, $0) } }) { first, _ in first }
         let selected = focus.agentID.flatMap { id in teams.flatMap(\.agents).first { $0.id == id }?.conversationID }
@@ -400,7 +424,7 @@ struct SpatialWorkspaceView: View {
             reviewRequest: { item in if let agent = mains[item.id] { openRequest(agent) } },
             // Opens the serving-window review; only its explicit actions take the dish off Done.
             reviewChanges: { item in if let agent = mains[item.id] { reviewing = agent } },
-            create: { creationProject = AgentCreationDestination(id: focus.projectID ?? "") }, reveal: reveal)
+            create: { creationProject = AgentCreationDestination(id: focus.projectID ?? "") }, reveal: reveal, openBoard: openBoard)
     }
     /// Review request: the modal when a request is waiting; otherwise (a question asked in chat)
     /// the conversation, where the agent asked it.
@@ -672,6 +696,22 @@ struct SpatialWorkspaceView: View {
         return world.team(focus)?.agents ?? []
     }
     /// Back to the whole kitchen: the camera returns to the overview and the command bar closes.
+    /// The task board: the agent panel's items as columns of cards. Picking a card steps back
+    /// to the side panel, so the conversation it opens isn't hidden behind the board.
+    private func agentBoard(_ snapshot: SpatialWorld, focus: SpatialFocus, model: LiveAgentRosterModel) -> some View {
+        let teams = focus.projectID.flatMap { id in snapshot.projects.first { $0.id == id }?.teams } ?? snapshot.team(focus).map { [$0] } ?? []
+        let mains = Dictionary(teams.compactMap { team in team.agents.first { $0.value.isMain }.map { ($0.id, $0) } }) { first, _ in first }
+        let selected = focus.agentID.flatMap { id in teams.flatMap(\.agents).first { $0.id == id }?.conversationID }
+        return AgentTaskBoard(items: sidebarItems(teams), selectedConversation: selected,
+            select: { item in if let agent = mains[item.id] { setBoard(false, model); go(conversationFocus(agent)) } },
+            reviewRequest: { item in if let agent = mains[item.id] { openRequest(agent) } },
+            reviewChanges: { item in if let agent = mains[item.id] { reviewing = agent } },
+            create: { creationProject = AgentCreationDestination(id: focus.projectID ?? "") },
+            dock: { setBoard(false, model) })
+    }
+    private func setBoard(_ open: Bool, _ model: LiveAgentRosterModel) {
+        withAnimation(reduced ? nil : .spring(duration: 0.28)) { model.board = open }
+    }
     /// An agent selected with its conversation panel open.
     private func conversationFocus(_ agent: SpatialAgent) -> SpatialFocus {
         .agent(project: agent.projectID, conversation: agent.conversationID, agent: agent.id, expanded: true)

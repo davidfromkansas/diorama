@@ -37,6 +37,8 @@ struct AgentSidebarCard: View {
     let create: (() -> Void)?
     /// A group to show when the card opens (a count clicked on the collapsed pill).
     var reveal: AgentSidebarGroup? = nil
+    /// Grows the panel into the task board.
+    var openBoard: (() -> Void)? = nil
     @State private var query = ""
     @State private var collapsed: Set<AgentSidebarGroup> = []
     @FocusState private var searchFocused: Bool
@@ -45,7 +47,7 @@ struct AgentSidebarCard: View {
         let summary = AgentSidebar.summary(items)
         let shown = items.filter { $0.matches(query) }
         VStack(spacing: 0) {
-            SidebarHeader(summary: summary, create: create)
+            SidebarHeader(summary: summary, create: create, openBoard: openBoard)
                 .padding(.horizontal, SidebarStyle.horizontal).padding(.top, 12).padding(.bottom, 8)
             SidebarSearchField(query: $query, focused: $searchFocused)
                 .padding(.horizontal, SidebarStyle.horizontal).padding(.bottom, 10)
@@ -110,6 +112,7 @@ struct AgentSidebarCard: View {
 private struct SidebarHeader: View {
     let summary: AgentSidebar.Summary
     let create: (() -> Void)?
+    var openBoard: (() -> Void)? = nil
     var body: some View {
         HStack(spacing: 8) {
             ViewThatFits(in: .horizontal) {
@@ -123,6 +126,17 @@ private struct SidebarHeader: View {
             .lineLimit(1)
             .accessibilityElement(children: .ignore).accessibilityLabel(AgentSidebar.summaryText(summary))
             Spacer(minLength: 6)
+            if let openBoard {
+                Button(action: openBoard) {
+                    AgentBoardGlyph().stroke(SidebarStyle.secondary, lineWidth: 1.4).frame(width: 14, height: 12)
+                        .frame(width: 30, height: 30)
+                        .background(RoundedRectangle(cornerRadius: 8, style: .continuous).fill(Color.white))
+                        .overlay(RoundedRectangle(cornerRadius: 8, style: .continuous).strokeBorder(Color.black.opacity(0.12), lineWidth: 1))
+                        .contentShape(Rectangle())
+                }
+                    .buttonStyle(.plain).pointingHand()
+                    .help("Task board (⇧⌘B)").accessibilityLabel("Open task board")
+            }
             if let create {
                 Button("Create", action: create).buttonStyle(ModalPrimaryButtonStyle()).accessibilityLabel("Create agent")
                     .help("Create an agent in this project")
@@ -188,6 +202,8 @@ private struct SidebarGroupHeader: View {
 struct AgentSidebarRow: View {
     let item: AgentSidebarItem
     let selected: Bool
+    /// Drawn as a task-board card: no list divider, the selection as the card's tint.
+    var card = false
     let select: () -> Void
     let action: () -> Void
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
@@ -217,7 +233,7 @@ struct AgentSidebarRow: View {
         .frame(height: (item.hasAction ? SidebarStyle.actionRowHeight : SidebarStyle.rowHeight) + (item.progress == nil ? 0 : SidebarStyle.statusBarHeight), alignment: .top)
         .background(selected ? SidebarStyle.selected : hovered ? Color.black.opacity(0.03) : Color.clear)
         .overlay(alignment: .leading) { if selected { Rectangle().fill(SidebarStyle.accent).frame(width: 3) } }
-        .overlay(alignment: .bottom) { Rectangle().fill(SidebarStyle.divider).frame(height: 1).padding(.leading, SidebarStyle.horizontal + 34) }
+        .overlay(alignment: .bottom) { if !card { Rectangle().fill(SidebarStyle.divider).frame(height: 1).padding(.leading, SidebarStyle.horizontal + 34) } }
         .overlay { if focused { RoundedRectangle(cornerRadius: 4).strokeBorder(SidebarStyle.accent.opacity(0.8), lineWidth: 2).padding(1) } }
         .contentShape(Rectangle())
         .onTapGesture(perform: select)
