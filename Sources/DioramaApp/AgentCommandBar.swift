@@ -40,7 +40,9 @@ struct AgentCommandBar: View {
             VStack(alignment: .leading, spacing: 8) {
                 HStack(spacing: 8) {
                     AgentSidebarIcon(group: group).frame(width: 24, height: 24)
-                    Text(value.name).font(.system(size: 14, weight: .semibold)).foregroundStyle(Palette.paper).lineLimit(1)
+                    // The conversation's title, as the agent panel shows it; the chef's name is in the facts line.
+                    Text(title).font(.system(size: 14, weight: .semibold)).foregroundStyle(Palette.paper).lineLimit(1).truncationMode(.tail)
+                        .help(title)
                     StatusPill(text: statusText, tint: SidebarStyle.tint(group))
                     Spacer(minLength: 4)
                     if let review, KitchenReviews.shared.state(agent.conversationID) != nil || value.status == .done {
@@ -55,8 +57,10 @@ struct AgentCommandBar: View {
                 Rectangle().fill(SidebarStyle.divider).frame(height: 1)
                 ScrollView {
                     VStack(alignment: .leading, spacing: 8) {
-                        Text(TaskTitle.full(value.task)).font(.callout.weight(.medium)).foregroundStyle(Palette.paper)
-                            .lineLimit(4).fixedSize(horizontal: false, vertical: true).textSelection(.enabled)
+                        if TaskTitle.full(value.task) != title {
+                            Text(TaskTitle.full(value.task)).font(.callout.weight(.medium)).foregroundStyle(Palette.paper)
+                                .lineLimit(4).fixedSize(horizontal: false, vertical: true).textSelection(.enabled)
+                        }
                         PlanProgressRow(progress: value.planProgress, running: value.isWorking)
                         AgentProgressSections(agent: value, fileLimit: 4, compact: true)
                     }
@@ -64,9 +68,14 @@ struct AgentCommandBar: View {
             }
         }
     }
-    /// Provider and model, branch and usage on one line.
+    /// The task title: the conversation's, else the agent's own task.
+    private var title: String {
+        let conversation = session.map { TaskTitle.full($0.displayTitle) } ?? ""
+        return conversation.isEmpty ? TaskTitle.full(value.task) : conversation
+    }
+    /// The chef, provider and model, branch and usage on one line.
     private var facts: String {
-        var parts = [[value.provider, model].compactMap { $0 }.filter { !$0.isEmpty }.joined(separator: " · ")]
+        var parts = [[value.name, value.provider, model].compactMap { $0 }.filter { !$0.isEmpty }.joined(separator: " · ")]
         if let branch = value.branch, !branch.isEmpty { parts.append("⎇ " + branch) }
         if let tokens { parts.append(tokens) }
         return parts.filter { !$0.isEmpty }.joined(separator: "   ")
