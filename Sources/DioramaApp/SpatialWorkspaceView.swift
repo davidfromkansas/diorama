@@ -28,6 +28,8 @@ struct SpatialWorkspaceView: View {
     @State private var commandBarAgent: String?
     /// The pantry card (skills, plugins, MCP) floating under the agents card.
     @State private var pantryOpen = false
+    /// The group to show when the agent card opens from a count on the collapsed pill.
+    @State private var sidebarReveal: AgentSidebarGroup?
     /// The kitchen camera left its home view (zoomed or turned), and a request to send it back.
     @State private var kitchenCameraAway = false
     @State private var kitchenCameraResets = 0
@@ -320,12 +322,27 @@ struct SpatialWorkspaceView: View {
         for team in teams where sessions[team.session.provider] == nil { sessions[team.session.provider] = team.session.sessionID }
         let selected = focus.agentID.flatMap { id in teams.flatMap(\.agents).first { $0.id == id } }
         return VStack(alignment: .leading, spacing: 10) {
+            // The card folds toward the top left into the pill, and grows back out of it.
+            let fold: AnyTransition = reduced ? .opacity : .scale(scale: 0.2, anchor: .topLeading).combined(with: .opacity)
             if model.collapsed {
-                KitchenAgentSummary(agents: teams.flatMap(\.agents), expand: { model.collapsed = false }, openPantry: { pantryOpen = true })
+                AgentSidebarPill(summary: AgentSidebar.summary(sidebarItems(teams))) { group in
+                    sidebarReveal = group
+                    withAnimation(reduced ? nil : .spring(duration: 0.25)) { model.collapsed = false }
+                }
+                .transition(fold)
             } else {
-                agentSidebar(teams, focus: focus)
+                agentSidebar(teams, focus: focus, reveal: sidebarReveal)
                     .frame(width: 320, height: max(220, pantryOpen ? height * 0.5 : height))
                     .lightFloatingCard()
+                    // Half off the card's top-right corner, so it covers nothing inside the card.
+                    .overlay(alignment: .topTrailing) {
+                        SidebarCornerButton(grow: false) {
+                            sidebarReveal = nil
+                            withAnimation(reduced ? nil : .spring(duration: 0.25)) { model.collapsed = true }
+                        }
+                        .offset(x: 14, y: -14)
+                    }
+                    .transition(fold)
             }
             if pantryOpen, let folder = project?.folder ?? teams.first?.session.project {
                 PantryCard(library: library, folder: folder, sessions: sessions, preferred: teams.first?.session.provider ?? .codex,
@@ -339,7 +356,7 @@ struct SpatialWorkspaceView: View {
 
     /// The agent card: one row per conversation in this project, grouped by what it needs, from
     /// the same state the kitchen uses (status, pending requests, serving-window reviews).
-    private func agentSidebar(_ teams: [SpatialTeam], focus: SpatialFocus) -> some View {
+    private func sidebarItems(_ teams: [SpatialTeam]) -> [AgentSidebarItem] {
         let execution = library.execution
         let inputs = teams.map { team in
             AgentSidebar.Input(session: team.session, agents: team.agents,
@@ -347,7 +364,10 @@ struct SpatialWorkspaceView: View {
                                model: execution.tasks[team.session.sessionID].flatMap { $0.model.isEmpty ? nil : $0.model },
                                requests: execution.requests.values.filter { $0.threadID == team.session.sessionID }.count)
         }
-        let items = AgentSidebar.items(inputs, catalog: execution.models, order: AgentSidebarOrder.shared.order)
+        return AgentSidebar.items(inputs, catalog: execution.models, order: AgentSidebarOrder.shared.order)
+    }
+    private func agentSidebar(_ teams: [SpatialTeam], focus: SpatialFocus, reveal: AgentSidebarGroup? = nil) -> some View {
+        let items = sidebarItems(teams)
         let mains = Dictionary(teams.compactMap { team in team.agents.first { $0.value.isMain }.map { ($0.id, $0) } }) { first, _ in first }
         let selected = focus.agentID.flatMap { id in teams.flatMap(\.agents).first { $0.id == id }?.conversationID }
         return AgentSidebarCard(items: items, projectID: focus.projectID ?? "", selectedConversation: selected,
@@ -356,7 +376,7 @@ struct SpatialWorkspaceView: View {
             reviewRequest: { item in if let agent = mains[item.id] { openRequest(agent) } },
             // Opens the serving-window review; only its explicit actions take the dish off Done.
             reviewChanges: { item in if let agent = mains[item.id] { reviewing = agent } },
-            create: { creationProject = AgentCreationDestination(id: focus.projectID ?? "") })
+            create: { creationProject = AgentCreationDestination(id: focus.projectID ?? "") }, reveal: reveal)
     }
     /// Review request: the modal when a request is waiting; otherwise (a question asked in chat)
     /// the conversation, where the agent asked it.

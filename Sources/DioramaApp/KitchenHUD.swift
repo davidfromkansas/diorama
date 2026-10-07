@@ -24,39 +24,6 @@ extension View {
     }
 }
 
-/// The collapsed agents card: how many agents work and how many are blocked, plus the pantry.
-struct KitchenAgentSummary: View {
-    let agents: [SpatialAgent]
-    let expand: () -> Void
-    let openPantry: () -> Void
-    static func counts(_ agents: [SpatialAgent]) -> (working: Int, blocked: Int) {
-        let main = agents.filter { $0.value.isMain }
-        return (main.filter { $0.value.isWorking }.count, main.filter { $0.needsAttention || $0.value.status == .failed }.count)
-    }
-    var body: some View {
-        let counts = Self.counts(agents)
-        HStack(spacing: 12) {
-            Button(action: expand) {
-                HStack(spacing: 10) {
-                    Label { Text("\(counts.working) working") } icon: { Circle().fill(Color(red: 0.35, green: 1, blue: 0.62)).frame(width: 7, height: 7) }
-                    Label { Text("\(counts.blocked) blocked") } icon: {
-                        Image(systemName: "exclamationmark.triangle.fill").font(.system(size: 9)).foregroundStyle(counts.blocked > 0 ? .orange : .secondary)
-                    }
-                }
-                .font(.caption.weight(.semibold))
-                // A plain button only takes clicks on drawn pixels; the whole pill should count.
-                .contentShape(Rectangle())
-            }
-            .buttonStyle(.plain).pointingHand().help("Show agents (⌘B)").accessibilityLabel("\(counts.working) working, \(counts.blocked) blocked. Show agents")
-            Divider().frame(height: 14)
-            Button(action: openPantry) { Image(systemName: "cabinet").font(.system(size: 12)).frame(width: 22, height: 22).contentShape(Rectangle()) }
-                .buttonStyle(.plain).pointingHand().help("Pantry: skills, plugins and MCP").accessibilityLabel("Open pantry")
-        }
-        .padding(.horizontal, 12).padding(.vertical, 8)
-        .floatingCard()
-    }
-}
-
 /// The pantry: everything agents can fetch, as jars (skills), crates (plugins and apps) and
 /// appliances (MCP servers). With a chef selected, skills can be armed for its next message.
 struct PantryCard: View {
