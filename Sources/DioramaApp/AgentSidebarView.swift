@@ -35,6 +35,8 @@ struct AgentSidebarCard: View {
     let reviewRequest: (AgentSidebarItem) -> Void
     let reviewChanges: (AgentSidebarItem) -> Void
     let create: (() -> Void)?
+    /// A group to show when the card opens (a count clicked on the collapsed pill).
+    var reveal: AgentSidebarGroup? = nil
     @State private var query = ""
     @State private var collapsed: Set<AgentSidebarGroup> = []
     @FocusState private var searchFocused: Bool
@@ -53,12 +55,14 @@ struct AgentSidebarCard: View {
             } else if shown.isEmpty {
                 emptyState("No matching agents")
             } else {
+                ScrollViewReader { proxy in
                 ScrollView(.vertical) {
                     LazyVStack(spacing: 0) {
                         ForEach(AgentSidebarGroup.allCases) { group in
                             let rows = shown.filter { $0.group == group }
                             if !rows.isEmpty {
                                 SidebarGroupHeader(group: group, count: rows.count, expanded: !collapsed.contains(group)) { toggle(group) }
+                                    .id(Self.groupAnchor(group))
                                 if !collapsed.contains(group) {
                                     ForEach(rows) { item in
                                         AgentSidebarRow(item: item, selected: item.conversationID == selectedConversation,
@@ -75,13 +79,23 @@ struct AgentSidebarCard: View {
                     .accessibilityElement(children: .contain).accessibilityLabel("Agents")
                 }
                 .scrollIndicators(.automatic)
+                .onAppear {
+                    guard let reveal else { return }
+                    DispatchQueue.main.async { proxy.scrollTo(Self.groupAnchor(reveal), anchor: .top) }
+                }
+                }
             }
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
         .background(SidebarStyle.background)
         .environment(\.colorScheme, .light)
-        .onChange(of: projectID, initial: true) { _, project in collapsed = AgentSidebarCollapse.load(project) }
+        .onChange(of: projectID, initial: true) { _, project in
+            collapsed = AgentSidebarCollapse.load(project)
+            // The group asked for from the collapsed pill opens even if it was folded away.
+            if let reveal, collapsed.contains(reveal) { toggle(reveal) }
+        }
     }
+    static func groupAnchor(_ group: AgentSidebarGroup) -> String { "group-\(group.rawValue)" }
     private func toggle(_ group: AgentSidebarGroup) {
         if collapsed.contains(group) { collapsed.remove(group) } else { collapsed.insert(group) }
         AgentSidebarCollapse.save(collapsed, project: projectID)
