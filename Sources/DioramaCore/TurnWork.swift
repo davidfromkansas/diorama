@@ -55,7 +55,8 @@ public struct TurnWork: Equatable, Sendable {
             commands += 1
             if let call { calls[call] = .command }
         case .resources:
-            resources.append(KitchenActivity.skillName(detail) ?? tool)
+            // A skill fetched by MCP resource keeps its URI, which names the skill (and its plugin).
+            resources.append(KitchenActivity.skillName(detail) ?? (detail.hasPrefix("skill://") ? detail : tool))
         default: break
         }
     }

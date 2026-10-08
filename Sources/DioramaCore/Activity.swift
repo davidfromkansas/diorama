@@ -155,7 +155,10 @@ public enum ActivityParser {
                     if quoted.hasPrefix("\""), let decoded = try? JSONDecoder().decode(String.self, from: Data(quoted.utf8)) { return decoded }
                     return String(quoted.dropFirst().dropLast())
                 }
-                return (tool, command.map(KitchenActivity.withoutHeredocs))
+                if let command { return (tool, KitchenActivity.withoutHeredocs(command)) }
+                // An MCP resource read names what it fetched by URI (`skill://…` for a skill).
+                let uri = codeModeURI.firstMatch(in: body, range: range).flatMap { Range($0.range(at: 1), in: body) }.map { String(body[$0]) }
+                return (tool, uri)
             }
         }
     }
@@ -173,6 +176,7 @@ public enum ActivityParser {
     }
     private static let codeModePlanStep = try! NSRegularExpression(pattern: #"step\s*:\s*"((?:[^"\\]|\\.)*)"\s*,\s*status\s*:\s*"(\w+)""#)
     private static let codeModeTool = try! NSRegularExpression(pattern: #"\btools\.([A-Za-z_][A-Za-z0-9_]*)\s*\("#)
+    private static let codeModeURI = try! NSRegularExpression(pattern: #"\buri\s*:\s*["'`]([^"'`]+)["'`]"#)
     private static let codeModeCommand = try! NSRegularExpression(pattern: #"\bcmd\s*:\s*("(?:[^"\\]|\\.)*"|'(?:[^'\\]|\\.)*'|`[^`]*`)"#)
 
     public static func date(_ value: Any?) -> Date? {
