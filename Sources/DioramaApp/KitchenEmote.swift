@@ -5,7 +5,7 @@ import QuartzCore
 /// A pixel emote that pops up above a chef, Stardew-style: brief reactions to notable moments
 /// (a step done, tests passing, a long think) and lasting states (needing you, a dish ready).
 enum ChefEmote: String, CaseIterable, Comparable {
-    case alert, question, angry, star, check, note, idea, plus, thinking
+    case alert, question, wrench, angry, star, check, note, idea, plus, thinking
 
     /// Lower shows first when several happen at once.
     var priority: Int { Self.allCases.firstIndex(of: self)! }
@@ -14,7 +14,7 @@ enum ChefEmote: String, CaseIterable, Comparable {
     var color: NSColor {
         switch self {
         case .alert, .question: NSColor(red: 0.96, green: 0.62, blue: 0.13, alpha: 1)
-        case .angry: NSColor(red: 0.88, green: 0.27, blue: 0.23, alpha: 1)
+        case .angry, .wrench: NSColor(red: 0.88, green: 0.27, blue: 0.23, alpha: 1)
         case .star: NSColor(red: 0.93, green: 0.66, blue: 0.1, alpha: 1)
         case .check: NSColor(red: 0.18, green: 0.64, blue: 0.35, alpha: 1)
         case .note: NSColor(red: 0.12, green: 0.6, blue: 0.55, alpha: 1)
@@ -28,6 +28,7 @@ enum ChefEmote: String, CaseIterable, Comparable {
         case .alert: "needs you"
         case .question: "has a question"
         case .angry: "hit a failure"
+        case .wrench: "needs a fix"
         case .star: "has a dish ready"
         case .check: "tests passed"
         case .note: "finished a step"
@@ -41,6 +42,7 @@ enum ChefEmote: String, CaseIterable, Comparable {
         switch self {
         case .alert: ["...XXX...", "...XXX...", "...XXX...", "...XXX...", "....X....", "....X....", ".........", "...XXX...", "...XXX..."]
         case .question: ["..XXXXX..", ".XX...XX.", "......XX.", ".....XX..", "....XX...", "....XX...", ".........", "....XX...", "....XX..."]
+        case .wrench: [".....XX..", "....X..X.", "....X.XX.", "...XXXX..", "..XXX....", ".XXX.....", "XXX......", "XX.......", "........."]
         case .angry: ["..X...X..", ".XX...XX.", "XX.....XX", ".........", ".........", ".........", "XX.....XX", ".XX...XX.", "..X...X.."]
         case .star: [".........", "....X....", "...XXX...", "XXXXXXXXX", ".XXXXXXX.", "..XXXXX..", ".XXX.XXX.", ".XX...XX.", "........."]
         case .check: [".........", ".......XX", "......XX.", ".....XX..", "XX..XX...", ".XXXX....", "..XX.....", ".........", "........."]
@@ -61,6 +63,9 @@ enum ChefEmote: String, CaseIterable, Comparable {
         if agent.needsAttention || value.status == .failed || value.status == .waiting {
             return value.status == .waiting && value.attentionReason == .input ? .question : .alert
         }
+        // A pull request: a wrench while it needs a fix, a check once it's ready to merge.
+        if review == .needsFix, value.status != .working { return .wrench }
+        if review == .shipped, value.status != .working { return .check }
         return KitchenLayout.work(for: value, review: review).area == "serving" ? .star : nil
     }
 

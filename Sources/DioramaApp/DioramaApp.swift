@@ -562,6 +562,8 @@ struct DioramaApp: App {
                     delegate.developmentReload = model.developmentReload
                     model.syncOwnedSessions()
                 }
+                // Pull requests: CI, conflicts and merges move the chefs; finished fixes get pushed.
+                .task { await PRWatcher.shared.run(library: model) }
                 .sheet(isPresented: Binding(get: { !onboarded }, set: { if !$0 { onboarded = true } })) {
                     AgentSettingsView(controller: model.execution, onboarding: true, finish: { onboarded = true })
                 }

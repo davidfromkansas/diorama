@@ -64,7 +64,7 @@ struct GitHubPRView: View {
                 TextField("Pull request title", text: $title).textFieldStyle(.roundedBorder).disabled(submitted)
                 TextEditor(text: $description).font(.body).frame(height: 80).padding(6).background(.quaternary.opacity(0.3), in: RoundedRectangle(cornerRadius: 8))
                     .accessibilityLabel("Pull request description").disabled(submitted)
-                Text("Submitting commits the selected files, pushes this branch, and \(preview.existing == nil ? "creates" : "updates") the pull request. Review and merge on GitHub.").font(.caption).foregroundStyle(.secondary)
+                Text("Submitting commits the selected files, pushes this branch, and \(preview.existing == nil ? "creates" : "updates") the pull request. The serving window then follows its checks, and merges it once they pass.").font(.caption).foregroundStyle(.secondary)
             }
             if let error { Text(error).font(.callout).foregroundStyle(.orange).textSelection(.enabled) }
             if active { Text("Wait for active work in this checkout to finish.").font(.callout).foregroundStyle(.secondary) }

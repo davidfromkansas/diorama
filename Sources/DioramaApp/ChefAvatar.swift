@@ -9,7 +9,8 @@ import simd
                         "working_chop", "waiting_tool", "testing_dish", "request_input", "wait_input", "blocked_wait",
                         "error_react", "present_review", "wait_review", "unknown_wait", "cancel_cleanup", "pickup",
                         "blocked_react", "celebrate_done", "arrive_wave", "read_ticket", "sit_down", "stand_up",
-                        "sit_idle", "sit_sip", "sit_chat", "cover_dish"],
+                        "sit_idle", "sit_sip", "sit_chat", "cover_dish",
+                        "merge_ready", "merge_ready_wait", "fix_react", "fix_wait"],
         instanceName: "chef")
     static let shared: Result<ChefAssets, Error> = Result { try ChefAssets() }
     let rig: WorkspaceCapybaraAsset

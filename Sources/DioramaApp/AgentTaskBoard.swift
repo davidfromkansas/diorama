@@ -1,3 +1,4 @@
+import DioramaCore
 import SwiftUI
 
 /// Three columns in a rounded frame: the task board's icon.
@@ -22,8 +23,13 @@ struct AgentTaskBoard: View {
     let reviewRequest: (AgentSidebarItem) -> Void
     let reviewChanges: (AgentSidebarItem) -> Void
     let create: (() -> Void)?
+    /// Merges every green pull request on the board; returns what happened.
+    var mergeAllGreen: (([AgentSidebarItem]) async -> String)? = nil
     /// Back to the side panel.
     let dock: () -> Void
+    @AppStorage("taskBoard.branches") private var branches = false
+    @State private var merging = false
+    @State private var mergeResult: String?
     @State private var query = ""
     @FocusState private var searchFocused: Bool
 
@@ -32,15 +38,23 @@ struct AgentTaskBoard: View {
         VStack(spacing: 0) {
             header
             Rectangle().fill(SidebarStyle.divider).frame(height: 1)
-            HStack(alignment: .top, spacing: 12) {
-                ForEach(AgentSidebarGroup.allCases) { group in
-                    column(group, shown.filter { $0.group == group })
+            if branches {
+                ServiceBoardTable(items: shown, selectedConversation: selectedConversation, select: select,
+                                  action: { item in item.group == .done ? reviewChanges(item) : reviewRequest(item) })
+                    .padding(.horizontal, 16).padding(.vertical, 14)
+                    .frame(maxHeight: .infinity, alignment: .top)
+            } else {
+                HStack(alignment: .top, spacing: 12) {
+                    ForEach(AgentSidebarGroup.allCases) { group in
+                        column(group, shown.filter { $0.group == group })
+                    }
                 }
+                .padding(.horizontal, 16).padding(.vertical, 14)
+                .frame(maxHeight: .infinity, alignment: .top)
             }
-            .padding(.horizontal, 16).padding(.vertical, 14)
-            .frame(maxHeight: .infinity, alignment: .top)
             HStack(spacing: 14) {
-                Text("Click a card to select its chef and open the conversation")
+                if let mergeResult { Text(mergeResult).foregroundStyle(SidebarStyle.title); Text("·") }
+                Text(branches ? "Click a row to open the conversation" : "Click a card to select its chef and open the conversation")
                 Text("·")
                 Text("Esc or Side panel returns to the panel")
                 Spacer(minLength: 8)
@@ -66,6 +80,20 @@ struct AgentTaskBoard: View {
             Text("Task board").font(.system(size: 16, weight: .semibold)).foregroundStyle(SidebarStyle.title)
             Text(Self.summary(items)).font(.system(size: 13)).foregroundStyle(SidebarStyle.secondary).lineLimit(1)
             Spacer(minLength: 8)
+            Picker("View", selection: $branches) {
+                Text("Columns").tag(false)
+                Text("Branches").tag(true)
+            }
+            .pickerStyle(.segmented).labelsHidden().fixedSize().help("Columns by status, or one row per branch and pull request")
+            if branches, let mergeAllGreen {
+                let green = items.filter { $0.pullRequest?.health == .ready }
+                Button(merging ? "Merging…" : "Merge all green (\(green.count))") {
+                    merging = true; mergeResult = nil
+                    Task { mergeResult = await mergeAllGreen(green); merging = false }
+                }
+                .buttonStyle(ModalSecondaryButtonStyle()).disabled(green.isEmpty || merging)
+                .help("Squash-merges each pull request whose checks passed, one at a time, re-checking each before it merges.")
+            }
             HStack(spacing: 6) {
                 Image(systemName: "magnifyingglass").font(.system(size: 12)).foregroundStyle(SidebarStyle.secondary)
                 TextField("Search agents…", text: $query).textFieldStyle(.plain).font(.system(size: 13))
@@ -132,7 +160,88 @@ struct AgentTaskBoard: View {
     static func summary(_ items: [AgentSidebarItem]) -> String {
         let count = { (group: AgentSidebarGroup) in items.filter { $0.group == group }.count }
         let needs = count(.needsYou)
-        return "\(count(.inProgress)) active · \(needs) \(needs == 1 ? "needs" : "need") you · \(count(.done)) done · \(count(.idle)) idle"
+        let prs = items.filter { $0.pullRequest?.state == "OPEN" }.count
+        return "\(count(.inProgress)) active · \(needs) \(needs == 1 ? "needs" : "need") you · \(count(.done)) done · \(count(.idle)) idle" + (prs > 0 ? " · \(prs) PR\(prs == 1 ? "" : "s") open" : "")
+    }
+}
+
+/// The task board's Branches view: one row per task with its branch, pull request and where it
+/// stands, so several agents' work can be followed to the base branch at a glance.
+struct ServiceBoardTable: View {
+    let items: [AgentSidebarItem]
+    let selectedConversation: String?
+    let select: (AgentSidebarItem) -> Void
+    let action: (AgentSidebarItem) -> Void
+    var body: some View {
+        VStack(spacing: 0) {
+            HStack(spacing: 12) {
+                Color.clear.frame(width: 18)
+                Text("Task").frame(maxWidth: .infinity, alignment: .leading)
+                Text("Branch").frame(width: 210, alignment: .leading)
+                Text("PR").frame(width: 52, alignment: .leading)
+                Text("Status").frame(width: 150, alignment: .leading)
+                Color.clear.frame(width: 70)
+            }
+            .padding(.horizontal, 14).frame(height: 30)
+            .overlay(alignment: .bottom) { ModalDivider() }
+            .font(.system(size: 11.5, weight: .semibold)).foregroundStyle(SidebarStyle.secondary)
+            .background(SidebarStyle.tint(.idle).band)
+            ScrollView(.vertical) {
+                LazyVStack(spacing: 0) {
+                    if items.isEmpty {
+                        Text("No tasks yet").font(.system(size: 12)).foregroundStyle(SidebarStyle.secondary).padding(.top, 18)
+                    }
+                    ForEach(items) { item in line(item) }
+                }
+            }
+        }
+        .background(RoundedRectangle(cornerRadius: 12, style: .continuous).fill(Color.white))
+        .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
+        .overlay(RoundedRectangle(cornerRadius: 12, style: .continuous).strokeBorder(Color.black.opacity(0.08), lineWidth: 1))
+        .accessibilityElement(children: .contain).accessibilityLabel("Branches")
+    }
+    private func line(_ item: AgentSidebarItem) -> some View {
+        let tint = SidebarStyle.tint(item.group)
+        return Button { select(item) } label: {
+            HStack(spacing: 12) {
+                AgentSidebarIcon(group: item.group).frame(width: 24, height: 24).scaleEffect(16 / 24).frame(width: 18, height: 18)
+                Text(item.title).font(.system(size: 12.5, weight: .medium)).foregroundStyle(SidebarStyle.title)
+                    .lineLimit(1).truncationMode(.tail).frame(maxWidth: .infinity, alignment: .leading)
+                Text(item.branch ?? "—").font(.system(size: 11.5, design: .monospaced)).foregroundStyle(SidebarStyle.title)
+                    .lineLimit(1).truncationMode(.middle).frame(width: 210, alignment: .leading)
+                Group {
+                    if let pr = item.pullRequest, let url = URL(string: pr.url) {
+                        Link("#\(pr.number)", destination: url).pointingHand()
+                    } else { Text("—").foregroundStyle(SidebarStyle.secondary) }
+                }
+                .font(.system(size: 12)).monospacedDigit().frame(width: 52, alignment: .leading)
+                status(item).frame(width: 150, alignment: .leading)
+                Group {
+                    if item.hasAction { ReviewActionButton(title: item.fixesPullRequest ? "Fix" : item.group == .done ? "Review" : "Answer", action: { action(item) }) }
+                    else { Color.clear }
+                }
+                .frame(width: 70, alignment: .trailing)
+            }
+            .padding(.horizontal, 14).frame(height: 40)
+            .background(item.conversationID == selectedConversation ? SidebarStyle.selected : Color.clear)
+            .overlay(alignment: .leading) { Rectangle().fill(tint.dot).frame(width: 3).opacity(item.group == .needsYou ? 1 : 0) }
+            .overlay(alignment: .bottom) { ModalDivider() }
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .accessibilityElement(children: .combine)
+        .accessibilityLabel("\(item.title). \(item.branch ?? "no branch"). \(item.pullRequest.map { "Pull request \($0.number), \(PRHealthStyle.pill($0))" } ?? item.status)")
+    }
+    @ViewBuilder private func status(_ item: AgentSidebarItem) -> some View {
+        if let pr = item.pullRequest, item.group != .inProgress || pr.health == .checking {
+            let tint = PRHealthStyle.tint(pr.health)
+            Text(PRHealthStyle.pill(pr)).font(.system(size: 11, weight: .semibold)).foregroundStyle(tint.text).lineLimit(1)
+                .padding(.horizontal, 8).padding(.vertical, 2).background(Capsule().fill(tint.dot.opacity(0.14)))
+        } else {
+            let tint = SidebarStyle.tint(item.group)
+            Text(item.status).font(.system(size: 11, weight: .semibold)).foregroundStyle(tint.text).lineLimit(1)
+                .padding(.horizontal, 8).padding(.vertical, 2).background(Capsule().fill(tint.dot.opacity(0.14)))
+        }
     }
 }
 

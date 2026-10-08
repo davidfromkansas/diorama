@@ -187,8 +187,9 @@ public actor GitHubPRSubmission {
             pr = try GitHubPullRequests.decode(await GitHubAccount.shared.api("/repos/\(record.repository)/pulls", method: "POST", body: .object([
                 "title": .string(record.title), "body": .string(record.body), "head": .string(record.source), "base": .string(record.base)])))
         }
-        record.pr = pr; try save(record, folder: folder)
-        return pr
+        var pushed = pr; pushed.pushedAt = Date()
+        record.pr = pushed; try save(record, folder: folder)
+        return pushed
     }
     public func acknowledge(folder: String) throws { if FileManager.default.fileExists(atPath: file(folder).path) { try FileManager.default.removeItem(at: file(folder)) } }
     public func hasPending(folder: String) -> Bool { FileManager.default.fileExists(atPath: file(folder).path) }

@@ -3,7 +3,7 @@ import Foundation
 public enum GitHubBranchUpdate {
     public static func update(projectFolder: String, pullRequest: LinkedPullRequest,
                               isActive: @escaping @Sendable (String) async -> Bool) async throws {
-        let pr = try await GitHubPullRequests.get(pullRequest.url)
+        let pr = try await GitHubPullRequests.confirmMerged(pullRequest.url)
         guard pr.state == "MERGED", let base = pr.baseRefName else { throw AppServerFailure("GitHub has not confirmed this PR was merged.") }
         _ = try await ProjectCommand.git(projectFolder, ["check-ref-format", "refs/heads/" + base])
         let identity = try GitHubPullRequests.identity(pr.url)

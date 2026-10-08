@@ -53,6 +53,13 @@ public struct LinkedPullRequest: Codable, Equatable, Identifiable, Sendable {
     public var mergedAt: String? = nil
     public var mergeCommit: String? = nil
     public var body: String? = nil
+    /// GitHub's merge test: nil while GitHub is still computing it.
+    public var mergeable: Bool? = nil
+    /// GitHub's `mergeable_state`: clean, dirty (conflicts), behind, blocked, unstable, draft or unknown.
+    public var mergeableState: String? = nil
+    /// When Diorama last pushed this PR's branch. CI takes a moment to report, so a PR without
+    /// checks right after a push is still waiting for them, not ready.
+    public var pushedAt: Date? = nil
     public struct RepositoryName: Codable, Equatable, Sendable { public var name: String }
     public struct RepositoryOwner: Codable, Equatable, Sendable { public var login: String }
     public var checks: [PRCheck] { statusCheckRollup ?? [] }

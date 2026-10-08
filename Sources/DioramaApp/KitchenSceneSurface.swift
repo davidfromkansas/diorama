@@ -586,7 +586,7 @@ final class KitchenSceneView: SCNView {
                 chefLock.unlock()
             }
             // The tag shows a short task name; the emote above it what needs noticing.
-            let content = ChefTagContent.make(agent, review: review)
+            let content = ChefTagContent.make(agent, review: review, note: KitchenReviews.shared.note(agent.conversationID))
             chefLabels[agent.id]?.update(content, reducedMotion: reduced)
             chefBars[agent.id]?.update(content.progress)
             if let emote = chefEmotes[agent.id] {
@@ -788,7 +788,7 @@ final class KitchenSceneView: SCNView {
         guard TaskLabels.shared.revision != labelRevision else { return }
         labelRevision = TaskLabels.shared.revision
         for (id, agent) in chefAgents {
-            let content = ChefTagContent.make(agent, review: pacing[id]?.review)
+            let content = ChefTagContent.make(agent, review: pacing[id]?.review, note: KitchenReviews.shared.note(agent.conversationID))
             chefLabels[id]?.update(content, reducedMotion: reduced); chefBars[id]?.update(content.progress)
         }
     }

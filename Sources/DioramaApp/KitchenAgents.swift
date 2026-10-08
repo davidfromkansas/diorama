@@ -40,10 +40,17 @@ extension KitchenLayout {
         // Finished work waits at the serving window until you decide, even after a restart.
         if let review, agent.isMain, ![.working, .waiting, .failed].contains(agent.status) {
             switch review {
-            case .approved: return breakRoom(agent, urgent: true)
+            case .approved, .merged: return breakRoom(agent, urgent: true)
+            // CI tastes the pull request; a conflict or failed check rings the bell; a green PR
+            // waits at the pass for you to merge.
+            case .checking: return .init(area: "tasting", loop: "testing_dish", hand: .spoon, urgent: true)
+            // A facepalm, then scratching its head at the bell until you send it back to fix.
+            case .needsFix: return .init(area: "bell", loop: "fix_wait", oneShot: "fix_react", urgent: true)
+            // A fist pump, then hands on hips at the pass, waiting for you to merge.
+            case .shipped: return .init(area: "serving", loop: "merge_ready_wait", oneShot: "merge_ready", urgent: true)
             case .reworking: return .init(area: "prep", loop: "planning_recipe", hand: .card, urgent: true)
             case .committed: return .init(area: "serving", loop: "wait_review", oneShot: "cover_dish", urgent: true)
-            case .awaiting, .shipped: return .init(area: "serving", loop: "wait_review", oneShot: "present_review", urgent: true, deliversPlate: true)
+            case .awaiting: return .init(area: "serving", loop: "wait_review", oneShot: "present_review", urgent: true, deliversPlate: true)
             }
         }
         switch agent.status {

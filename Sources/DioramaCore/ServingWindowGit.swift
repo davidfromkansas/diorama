@@ -39,10 +39,34 @@ public enum ServingWindowGit {
         }
     }
 
-    /// Merges an open pull request on GitHub (merge commit). Requires a connected GitHub account.
-    public static func mergeOnGitHub(_ pullRequest: LinkedPullRequest) async throws {
+    public enum MergeMethod: String, CaseIterable, Sendable {
+        case squash, merge, rebase
+        public var title: String {
+            switch self { case .squash: "Squash and merge"; case .merge: "Merge commit"; case .rebase: "Rebase and merge" }
+        }
+    }
+
+    /// Merges an open pull request on GitHub. Refuses unless its checks passed and GitHub says it
+    /// merges cleanly; `override` merges anyway (GitHub's own branch protection still applies).
+    public static func mergeOnGitHub(_ pullRequest: LinkedPullRequest, method: MergeMethod = .merge, override: Bool = false) async throws {
+        if !override {
+            switch pullRequest.health {
+            case .ready: break
+            case .checking: throw AppServerFailure("Checks are still running on #\(pullRequest.number). Merge when they pass.")
+            case .checksFailed: throw AppServerFailure("Checks failed on #\(pullRequest.number). Send it back to fix them first.")
+            case .conflicted: throw AppServerFailure("#\(pullRequest.number) conflicts with \(pullRequest.baseRefName ?? "the base branch"). Send it back to resolve them first.")
+            case .behind: throw AppServerFailure("#\(pullRequest.number) is behind \(pullRequest.baseRefName ?? "the base branch"). Update the branch first.")
+            case .blocked: throw AppServerFailure("GitHub is blocking #\(pullRequest.number) (a required review, or it's a draft).")
+            case .merged: return
+            case .closed: throw AppServerFailure("#\(pullRequest.number) is closed.")
+            }
+        }
         let target = try GitHubPullRequests.identity(pullRequest.url)
-        _ = try await GitHubAccount.shared.api("/repos/\(target.repository)/pulls/\(target.number)/merge", method: "PUT",
-                                               body: .object(["merge_method": .string("merge")]))
+        var body: [String: WireValue] = ["merge_method": .string(method.rawValue), "sha": .string(pullRequest.headRefOid)]
+        if method == .squash { body["commit_title"] = .string("\(pullRequest.title) (#\(pullRequest.number))") }
+        let reply = try await GitHubAccount.shared.api("/repos/\(target.repository)/pulls/\(target.number)/merge", method: "PUT", body: .object(body))
+        guard (try? JSONDecoder().decode(WireValue.self, from: reply))?["merged"].bool ?? true else {
+            throw AppServerFailure("GitHub didn't merge #\(pullRequest.number).")
+        }
     }
 }

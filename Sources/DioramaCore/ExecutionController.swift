@@ -148,7 +148,9 @@ public final class ExecutionController {
     @ObservationIgnored var labelRuns: [String: LabelRun] = [:]
     public private(set) var connecting = false
     public var error: String?
-    public private(set) var creating = false
+    /// Conversations being created right now. Several can start at once (each agent in its own worktree).
+    public private(set) var creatingCount = 0
+    public var creating: Bool { creatingCount > 0 }
     public private(set) var stopping = false
     public private(set) var resuming: Set<String> = []
     public private(set) var resumeErrors: [String: String] = [:]
@@ -237,7 +239,8 @@ public final class ExecutionController {
         (try? await transport.request("diorama/connections", .object([:]))) ?? .null
     }
     public func prepare(folder: String, title: String, model: String, projectContext: String? = nil, permission: ApprovalReviewChoice = .autoReview) async throws -> String {
-        guard connected, !creating, !stopping else { throw AppServerFailure("Connect an account before creating a task") }
+        guard !stopping else { throw AppServerFailure("Diorama is shutting down agents. Try again in a moment.") }
+        guard connected else { throw AppServerFailure("Connect an account before creating a task") }
         var isDirectory: ObjCBool = false
         guard folder.hasPrefix("/"), FileManager.default.fileExists(atPath: folder, isDirectory: &isDirectory), isDirectory.boolValue else { throw AppServerFailure("Choose an existing working folder") }
         if !model.isEmpty, !models.contains(where: { $0.id == model }) { throw AppServerFailure("Choose a model from the provider catalog") }
@@ -246,7 +249,7 @@ public final class ExecutionController {
             throw ExecutionRPCRejection("Automatic review is unavailable for this model. Choose Accept edits or Ask for approval.")
         }
         if !model.hasPrefix("claude/"), let reason = permissionUnavailable(initialPermission, model: model) { throw ExecutionRPCRejection(reason) }
-        creating = true; defer { creating = false }
+        creatingCount += 1; defer { creatingCount -= 1 }
         var params: [String: WireValue] = ["cwd": .string(folder), "threadSource": .string("user")]
         if !model.hasPrefix("claude/") { params["sandbox"] = .string(initialPermission == .fullAccess ? "danger-full-access" : "workspace-write"); params["approvalPolicy"] = .string(initialPermission == .fullAccess ? "never" : "on-request"); params["approvalsReviewer"] = .string(initialPermission == .autoReview ? "auto_review" : "user") }
         if !model.hasPrefix("claude/"), initialPermission != .fullAccess { params["config"] = .object(["sandbox_workspace_write.network_access": .bool(false)]) }

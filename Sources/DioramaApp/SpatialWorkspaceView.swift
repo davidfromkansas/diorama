@@ -454,12 +454,16 @@ struct SpatialWorkspaceView: View {
     /// the same state the kitchen uses (status, pending requests, serving-window reviews).
     private func sidebarItems(_ teams: [SpatialTeam]) -> [AgentSidebarItem] {
         let execution = library.execution
+        let workspaces = Dictionary(library.projects.projects.flatMap(\.workspaces).compactMap { w in w.threadID.map { ($0, w) } }) { first, _ in first }
         let inputs = teams.map { team in
             AgentSidebar.Input(session: team.session, agents: team.agents,
                                review: team.agents.first { $0.value.isMain }.flatMap { KitchenReviews.shared.state($0.conversationID) },
+                               reviewNote: team.agents.first { $0.value.isMain }.flatMap { KitchenReviews.shared.note($0.conversationID) },
                                model: execution.tasks[team.session.sessionID].flatMap { $0.model.isEmpty ? nil : $0.model },
                                requests: execution.requests.values.filter { $0.threadID == team.session.sessionID }.count,
-                               question: pendingQuestion(team))
+                               question: pendingQuestion(team),
+                               workspaceBranch: workspaces[team.session.sessionID]?.branch,
+                               pullRequest: workspaces[team.session.sessionID]?.pullRequest)
         }
         return AgentSidebar.items(inputs, catalog: execution.models, order: AgentSidebarOrder.shared.order)
     }
@@ -495,6 +499,8 @@ struct SpatialWorkspaceView: View {
     /// Review request: the modal when a request is waiting; otherwise (a question asked in chat)
     /// the conversation, where the agent asked it.
     private func openRequest(_ agent: SpatialAgent) {
+        // A pull request that needs a fix is handled at the serving window.
+        if KitchenReviews.shared.state(agent.conversationID) == .needsFix { reviewing = agent; return }
         let thread = world.team(.team(project: agent.projectID, conversation: agent.conversationID))?.session.sessionID
         // A pending request, or a question asked in the chat, opens the modal to answer it.
         if let thread, !RequestReviewModal.pending(library.execution, thread: thread).isEmpty || RequestReviewModal.chatQuestion(library.execution, thread: thread) != nil { requestReview = agent } else { go(conversationFocus(agent)) }
@@ -774,6 +780,7 @@ struct SpatialWorkspaceView: View {
             reviewRequest: { item in if let agent = mains[item.id] { openRequest(agent) } },
             reviewChanges: { item in if let agent = mains[item.id] { reviewing = agent } },
             create: { creationProject = AgentCreationDestination(id: focus.projectID ?? "") },
+            mergeAllGreen: { items in await PRWatcher.shared.mergeAllGreen(items, library: library) },
             dock: { setBoard(false, model) })
     }
     private func setBoard(_ open: Bool, _ model: LiveAgentRosterModel) {

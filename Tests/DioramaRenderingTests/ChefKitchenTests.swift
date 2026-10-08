@@ -23,7 +23,7 @@ import simd
 
     @Test func chefAssetsLoadWithSocketsClipsAndProps() throws {
         let assets = try ChefAssets.shared.get()
-        #expect(assets.rig.clips.count == 30)
+        #expect(assets.rig.clips.count == 34)
         #expect(Set(assets.manifest.clips.keys) == Set(assets.rig.clips.keys))
         let chef = assets.rig.makeInstance()
         #expect(chef.nodes.contains { $0.skinner?.bones.count == 26 })
@@ -150,6 +150,19 @@ import simd
         #expect(KitchenLayout.work(for: stale, review: .shipped).area == "serving")
         #expect(KitchenLayout.work(for: stale, review: .committed).oneShot == "cover_dish")
         #expect(KitchenLayout.work(for: stale, review: .approved).area == "break")
+        // A pull request: CI tastes it, a problem rings the bell, a green one waits at the pass, merged rests.
+        #expect(KitchenLayout.work(for: stale, review: .checking).area == "tasting")
+        #expect(KitchenLayout.work(for: stale, review: .needsFix).area == "bell")
+        #expect(KitchenLayout.work(for: stale, review: .merged).area == "break")
+        // With their own animations: a facepalm then head-scratching, a fist pump then hands on hips.
+        #expect(KitchenLayout.work(for: stale, review: .needsFix).oneShot == "fix_react" && KitchenLayout.work(for: stale, review: .needsFix).loop == "fix_wait")
+        #expect(KitchenLayout.work(for: stale, review: .shipped).oneShot == "merge_ready" && KitchenLayout.work(for: stale, review: .shipped).loop == "merge_ready_wait")
+        // And say so above the chef: a badge on the name tag.
+        #expect(ChefTagContent.Badge.make(.shipped, note: "Ready to merge")?.text == "Ready to merge")
+        #expect(ChefTagContent.Badge.make(.needsFix, note: "Needs a fix · test failed")?.text == "Needs a fix")
+        #expect(ChefTagContent.Badge.make(.checking, note: nil) == .testing)
+        #expect(ChefTagContent.Badge.make(.shipped, note: "Behind main") == .other("Behind main"))
+        #expect(ChefTagContent.Badge.make(.awaiting, note: nil) == nil)
         // Feedback sends the chef back to work, not to the break room, before the new turn is reported.
         #expect(KitchenLayout.work(for: stale, review: .reworking).area == "prep")
         // Live work always wins over an old review.
@@ -373,6 +386,9 @@ import simd
         #expect(ChefEmote.lasting(working, review: nil) == nil)
         #expect(ChefEmote.lasting(agent("a", .waiting, attention: .approval), review: nil) == .alert)
         #expect(ChefEmote.lasting(agent("a", .waiting, attention: .input), review: nil) == .question)
+        // A pull request that needs a fix shows a wrench; one ready to merge, a check.
+        #expect(ChefEmote.lasting(agent("a", .done), review: .needsFix) == .wrench)
+        #expect(ChefEmote.lasting(agent("a", .done), review: .shipped) == .check)
         #expect(ChefEmote.lasting(agent("a", .done), review: .awaiting) == .star)
         #expect(ChefEmote.lasting(agent("main", .done), review: .approved) == nil)
         let resting = ChefTagContent.make(agent("a", .done, freshness: .lastKnown), review: nil)
