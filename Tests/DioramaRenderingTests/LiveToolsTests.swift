@@ -135,9 +135,9 @@ import Testing
         let snapshot = CapabilityLibrarySnapshot(context: .init(provider: .codex, folder: "/tmp"), items: items)
         let palette = AllResourcesPalette(library: LibraryModel(), folder: "/tmp", sessions: [:], armFor: ("c", "Sage"),
                                           claude: CapabilityLibrarySnapshot(context: .init(provider: .claude, folder: "/tmp")), codex: snapshot) {}
-            .frame(width: 1000, height: 760).padding(20).background(Color(red: 0.48, green: 0.31, blue: 0.2))
+            .frame(width: 1240, height: 560).padding(20).background(Color(red: 0.48, green: 0.31, blue: 0.2))
         let host = NSHostingView(rootView: palette)
-        host.frame = NSRect(x: 0, y: 0, width: 1040, height: 800)
+        host.frame = NSRect(x: 0, y: 0, width: 1280, height: 600)
         host.layoutSubtreeIfNeeded()
         RunLoop.main.run(until: Date().addingTimeInterval(0.4))
         let rep = try #require(host.bitmapImageRepForCachingDisplay(in: host.bounds))

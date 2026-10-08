@@ -304,20 +304,23 @@ struct AllResourcesPalette: View {
                 Text(claude.loading || codex.loading ? "Stocking the shelves…" : "Nothing matches").font(.system(size: 12)).foregroundStyle(SidebarStyle.secondary)
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
             } else {
-                ScrollView(.vertical) {
-                    LazyVStack(alignment: .leading, spacing: 14, pinnedViews: [.sectionHeaders]) {
-                        Section { tiles { ForEach(servers) { serverTile($0) } } } header: {
-                            sectionHeader("MCP servers and apps", count: servers.count, shelf: "Appliances", symbol: "server.rack", tint: SidebarStyle.tint(.inProgress), note: "To connect first, then A–Z")
-                        }
-                        Section { tiles { ForEach(plugins) { pluginTile($0) } } } header: {
-                            sectionHeader("Plugins", count: plugins.count, shelf: "Crates", symbol: "shippingbox.fill", tint: SidebarStyle.tint(.needsYou), note: "Click one to see what it brings")
-                        }
-                        Section { skillShelf(skills) } header: {
-                            sectionHeader("Skills", count: skills.count, shelf: "Jars", symbol: "sparkles", tint: SidebarStyle.tint(.done), note: "Grouped by namespace · click a stack to open it")
-                        }
-                    }
-                    .padding(.horizontal, 12).padding(.bottom, 12)
+                // One column per kind, each four icons wide and scrolling on its own, so a long
+                // skills list never pushes servers and plugins off screen.
+                let groups = Self.skillGroups(skills)
+                HStack(alignment: .top, spacing: 12) {
+                    PaletteColumn(items: servers.count) {
+                        sectionHeader("Servers & apps", count: servers.count, shelf: "Appliances", symbol: "server.rack", tint: SidebarStyle.tint(.inProgress))
+                    } content: { tiles { ForEach(servers) { serverTile($0) } } }
+                    Rectangle().fill(SidebarStyle.divider).frame(width: 1)
+                    PaletteColumn(items: plugins.count) {
+                        sectionHeader("Plugins", count: plugins.count, shelf: "Crates", symbol: "shippingbox.fill", tint: SidebarStyle.tint(.needsYou))
+                    } content: { tiles { ForEach(plugins) { pluginTile($0) } } }
+                    Rectangle().fill(SidebarStyle.divider).frame(width: 1)
+                    PaletteColumn(items: groups.stacks.count + groups.loose.count) {
+                        sectionHeader("Skills", count: skills.count, shelf: "Jars", symbol: "sparkles", tint: SidebarStyle.tint(.done))
+                    } content: { skillShelf(groups) }
                 }
+                .padding(.horizontal, 12).padding(.top, 10).padding(.bottom, 2)
             }
             HStack(spacing: 16) {
                 Text(armFor.map { "Click a skill to arm it for \($0.name)" } ?? "Select a chef to arm skills for it")
@@ -370,26 +373,23 @@ struct AllResourcesPalette: View {
         switch item.availability { case .connectionNeeded: 0; case .available: 1; case .unverified: 2; case .disabled: 3 }
     }
     /// A section's title: big, in its kind's colour, pinned while its tiles scroll under it.
-    private func sectionHeader(_ title: String, count: Int, shelf: String, symbol: String, tint: SidebarStyle.Tint, note: String) -> some View {
+    private func sectionHeader(_ title: String, count: Int, shelf: String, symbol: String, tint: SidebarStyle.Tint) -> some View {
         HStack(spacing: 10) {
             Image(systemName: symbol).font(.system(size: 13, weight: .semibold)).foregroundStyle(.white)
                 .frame(width: 26, height: 26).background(RoundedRectangle(cornerRadius: 7, style: .continuous).fill(tint.dot))
             Text(title).font(.system(size: 16, weight: .bold)).foregroundStyle(SidebarStyle.title)
             Text("\(count)").font(.system(size: 12, weight: .bold)).monospacedDigit().foregroundStyle(tint.text)
                 .padding(.horizontal, 8).frame(minHeight: 20).background(Capsule().fill(tint.dot.opacity(0.18)))
-            Text("pantry " + shelf.lowercased()).font(.system(size: 12)).foregroundStyle(SidebarStyle.secondary)
-            Spacer(minLength: 8)
-            Text(note).font(.system(size: 11.5)).foregroundStyle(SidebarStyle.secondary).lineLimit(1)
+            Spacer(minLength: 6)
+            Text("pantry " + shelf.lowercased()).font(.system(size: 11.5)).foregroundStyle(SidebarStyle.secondary).lineLimit(1)
         }
         .padding(.horizontal, 12).frame(height: 42)
         .background(RoundedRectangle(cornerRadius: 10, style: .continuous).fill(tint.band))
         .overlay(alignment: .leading) { RoundedRectangle(cornerRadius: 2).fill(tint.dot).frame(width: 4).padding(.vertical, 8) }
-        .padding(.top, 10)
-        .background(SidebarStyle.background)
         .accessibilityElement(children: .combine).accessibilityAddTraits(.isHeader)
     }
     private func tiles<Content: View>(@ViewBuilder _ content: () -> Content) -> some View {
-        LazyVGrid(columns: [GridItem(.adaptive(minimum: 80, maximum: 96), spacing: 2)], alignment: .leading, spacing: 4) { content() }
+        LazyVGrid(columns: Array(repeating: GridItem(.flexible(), spacing: 2), count: 4), alignment: .leading, spacing: 4) { content() }
     }
     private func providers(_ entry: Entry) -> String {
         entry.providers.map { $0 == .claude ? "Claude" : "Codex" }.sorted().joined(separator: " · ")
@@ -488,8 +488,8 @@ struct AllResourcesPalette: View {
         let grouped = Set(stacks.flatMap { $0.skills.map(\.id) })
         return (stacks, skills.filter { !grouped.contains($0.id) })
     }
-    @ViewBuilder private func skillShelf(_ skills: [Entry]) -> some View {
-        let groups = Self.skillGroups(skills)
+    @ViewBuilder private func skillShelf(_ groups: (stacks: [(name: String, skills: [Entry])], loose: [Entry])) -> some View {
+        openStackPanel(groups)
         tiles {
             ForEach(groups.stacks, id: \.name) { stack in
                 Button { openStack = openStack == stack.name ? nil : stack.name } label: {
@@ -511,6 +511,8 @@ struct AllResourcesPalette: View {
             }
             ForEach(groups.loose) { skillTile($0) }
         }
+    }
+    @ViewBuilder private func openStackPanel(_ groups: (stacks: [(name: String, skills: [Entry])], loose: [Entry])) -> some View {
         if let name = openStack, let stack = groups.stacks.first(where: { $0.name == name }) {
             VStack(alignment: .leading, spacing: 6) {
                 HStack {
@@ -601,5 +603,53 @@ private struct SparkPath: ViewModifier, Animatable {
         }
         for child in root.subviews { if let found = find(child, agentID) { return found } }
         return nil
+    }
+}
+
+/// One kind's column in the All palette: its header on top, then a grid that scrolls on its
+/// own with a fade and a "↓ N more" count while more sits below.
+private struct PaletteColumn<Header: View, Content: View>: View {
+    /// How many tiles the grid holds, for the count of those still below.
+    let items: Int
+    @ViewBuilder let header: Header
+    @ViewBuilder let content: Content
+    @State private var below: CGFloat = 0
+    @State private var rowHeight: CGFloat = 72
+    private let space = UUID().uuidString
+    var body: some View {
+        VStack(spacing: 6) {
+            header
+            GeometryReader { viewport in
+                ScrollView(.vertical) {
+                    VStack(alignment: .leading, spacing: 10) { content }
+                        .padding(.bottom, 24)
+                        .background(GeometryReader { proxy in
+                            let frame = proxy.frame(in: .named(space))
+                            Color.clear
+                                .onAppear { below = max(0, frame.maxY - viewport.size.height) }
+                                .onChange(of: frame) { _, value in below = max(0, value.maxY - viewport.size.height) }
+                        })
+                }
+                .coordinateSpace(name: space)
+                .scrollIndicators(.automatic)
+                .overlay(alignment: .bottom) {
+                    if below > 30 {
+                        let hidden = min(items, Int((below / rowHeight).rounded(.up)) * 4)
+                        LinearGradient(colors: [SidebarStyle.background.opacity(0), SidebarStyle.background], startPoint: .top, endPoint: .bottom)
+                            .frame(height: 56).allowsHitTesting(false)
+                            .overlay(alignment: .bottom) {
+                                Text("↓ \(hidden) more").font(.system(size: 11.5)).foregroundStyle(SidebarStyle.secondary)
+                                    .padding(.horizontal, 9).padding(.vertical, 2)
+                                    .background(Capsule().fill(Color.white)).overlay(Capsule().strokeBorder(Color.black.opacity(0.1), lineWidth: 1))
+                                    .padding(.bottom, 6)
+                            }
+                            .transition(.opacity)
+                            .accessibilityLabel("\(hidden) more below")
+                    }
+                }
+                .animation(.easeOut(duration: 0.15), value: below > 30)
+            }
+        }
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
     }
 }
