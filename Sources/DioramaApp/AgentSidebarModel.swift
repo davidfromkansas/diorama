@@ -186,8 +186,9 @@ enum AgentSidebar {
             if let name = written ?? (file.isEmpty ? nil : file) { return "Editing \(name)…" }
             return "Editing files…"
         case .researching:
-            if ["grep", "rg ", "find ", "search", "glob"].contains(where: { script.contains($0) || tool.lowercased().contains($0) }) { return "Searching the code…" }
+            // Web tools first: "webSearch" also contains "search".
             if tool.lowercased().contains("web") { return "Researching online…" }
+            if ["grep", "rg ", "find ", "search", "glob"].contains(where: { script.contains($0) || tool.lowercased().contains($0) }) { return "Searching the code…" }
             return file.isEmpty ? "Reading the project…" : "Reading \(file)…"
         case .testing: return "Running tests…"
         case .checking: return "Checking the result…"
