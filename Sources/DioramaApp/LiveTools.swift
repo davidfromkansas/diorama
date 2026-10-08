@@ -20,10 +20,6 @@ enum LiveResources {
     /// reading a `SKILL.md`). Built-in tools (shell, edits, search) are the kitchen's stations.
     static func resource(tool: String, detail: String) -> LiveResource? {
         if let skill = KitchenActivity.skillName(detail) { return LiveResource(id: "skill:" + skill, name: skill, kind: .skill) }
-        if tool.lowercased() == "skill" {
-            let name = detail.trimmingCharacters(in: .whitespacesAndNewlines).split(whereSeparator: \.isWhitespace).first.map(String.init) ?? ""
-            return name.isEmpty ? nil : LiveResource(id: "skill:" + name, name: name, kind: .skill)
-        }
         // A skill read as an MCP resource: `skill://<name>`, or `skill://plugin_…/<name>` from a plugin.
         if detail.hasPrefix("skill://") {
             let parts = detail.dropFirst(8).split(separator: "/").map(String.init)
@@ -32,9 +28,21 @@ enum LiveResources {
             let plugin = parts.count > 1 && parts[0].hasPrefix("plugin") ? PluginRegistry.shared.name(for: parts[0]) ?? parts[0] : nil
             return LiveResource(id: "skill:" + name, name: name, kind: .skill, plugin: plugin)
         }
+        if tool.lowercased() == "skill" {
+            let name = detail.trimmingCharacters(in: .whitespacesAndNewlines).split(whereSeparator: \.isWhitespace).first.map(String.init) ?? ""
+            return name.isEmpty ? nil : LiveResource(id: "skill:" + name, name: name, kind: .skill)
+        }
+        // Browsing what's on the shelves (listing resources, or a resource read that names
+        // nothing) isn't fetching anything.
+        if isBrowsing(tool) { return nil }
         guard tool.hasPrefix("mcp__") else { return nil }
         let parts = tool.dropFirst(5).components(separatedBy: "__")
         guard var server = parts.first, !server.isEmpty else { return nil }
+        if parts.count > 1, isBrowsing(parts[1]) { return nil }
+        // Codex's app connectors share one server; the tool names the app (`github_search_…`).
+        if server == "codex_apps", parts.count > 1, let app = parts[1].split(separator: "_").first.map(String.init), !app.isEmpty {
+            return LiveResource(id: "server:" + app.lowercased(), name: BrandMark.match(app)?.title ?? title(app), kind: .server)
+        }
         // Connectors with opaque ids (claude.ai's UUID servers) can't be named or branded.
         if server.count >= 32, server.filter({ $0 == "-" }).count >= 4 { return nil }
         var plugin: String?
@@ -46,6 +54,10 @@ enum LiveResources {
         if server.hasPrefix("claude_ai_") { server = String(server.dropFirst(10)) }
         let key = server.lowercased()
         return LiveResource(id: "server:" + key, name: BrandMark.match(key)?.title ?? title(server), kind: .server, plugin: plugin)
+    }
+    static func isBrowsing(_ tool: String) -> Bool {
+        ["listmcpresources", "listmcpresourcetemplates", "readmcpresource", "listmcpresourcestool", "readmcpresourcetool", "listmcpresourcetemplatestool"]
+            .contains(tool.lowercased().replacingOccurrences(of: "_", with: ""))
     }
     /// "google-calendar" → "Google Calendar", "computer_use" → "Computer Use".
     static func title(_ raw: String) -> String {

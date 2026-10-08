@@ -137,6 +137,13 @@ public enum KitchenActivity: String, Sendable, CaseIterable {
     }
     /// A skill's instructions (`…/skills/<name>/SKILL.md`).
     public static func isSkillFile(_ text: String) -> Bool { text.contains("SKILL.md") }
+    /// A skill read from an installed plugin (`…/plugins/cache/<marketplace>/<plugin>/…/skills/<skill>/SKILL.md`),
+    /// named the way Claude names plugin skills: `<plugin>:<skill>`.
+    public static func pluginSkillName(_ text: String) -> String? {
+        guard let skill = skillName(text), let range = text.range(of: "/plugins/cache/") else { return nil }
+        let parts = text[range.upperBound...].split(separator: "/")
+        return parts.count > 2 ? String(parts[1]) + ":" + skill : nil
+    }
     /// The skill a command or path reads, by its folder name.
     public static func skillName(_ text: String) -> String? {
         guard let range = text.range(of: "/SKILL.md") else { return nil }

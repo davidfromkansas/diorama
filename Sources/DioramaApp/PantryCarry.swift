@@ -16,14 +16,19 @@ enum PantryCarry {
     /// last resource of the turn (an owed pantry visit replays that one).
     static func item(for agent: WorkspaceAgent) -> Item? {
         if let item = item(tool: agent.latestTool, detail: agent.latestToolDetail) { return item }
-        guard let last = agent.turnWork.resources.last, !last.isEmpty else { return nil }
-        if last.hasPrefix("skill://") { return item(tool: "read_mcp_resource", detail: last) }
-        return last.hasPrefix("mcp__") ? item(tool: last, detail: "") : item(tool: "Skill", detail: last)
+        // The latest resource of the turn that names something (listings and plumbing don't).
+        for entry in agent.turnWork.resources.reversed() where !entry.isEmpty {
+            let found = entry.hasPrefix("skill://") ? item(tool: "read_mcp_resource", detail: entry)
+                : entry.hasPrefix("mcp__") || LiveResources.isBrowsing(entry) ? item(tool: entry, detail: "")
+                : entry.lowercased() == "skill" ? nil : item(tool: "Skill", detail: entry)
+            if let found { return found }
+        }
+        return nil
     }
     static func item(tool: String, detail: String) -> Item? {
         // A skill read from an installed plugin (…/plugins/cache/<marketplace>/<plugin>/…/SKILL.md)
         // is that plugin's.
-        if KitchenActivity.isSkillFile(detail), let plugin = pluginFolder(detail) { return Item(kind: .plugin, name: plugin) }
+        if KitchenActivity.isSkillFile(detail), let plugin = pluginFolder(detail) { return Item(kind: .plugin, name: BrandMark.match(plugin)?.title ?? plugin) }
         guard let resource = LiveResources.resource(tool: tool, detail: detail) else { return nil }
         switch resource.kind {
         case .skill:
@@ -31,11 +36,12 @@ enum PantryCarry {
             if let plugin = resource.plugin { return Item(kind: .plugin, name: plugin.hasPrefix("plugin_") ? resource.name : plugin) }
             // A namespaced skill ("vercel:deploy") comes from its plugin.
             if let colon = resource.name.firstIndex(of: ":"), colon != resource.name.startIndex {
-                return Item(kind: .plugin, name: String(resource.name[..<colon]))
+                let plugin = String(resource.name[..<colon])
+                return Item(kind: .plugin, name: BrandMark.match(plugin)?.title ?? plugin)
             }
             return Item(kind: .skill, name: resource.name)
         case .server:
-            if let plugin = resource.plugin { return Item(kind: .plugin, name: plugin) }
+            if let plugin = resource.plugin { return Item(kind: .plugin, name: BrandMark.match(plugin)?.title ?? plugin) }
             return Item(kind: .connector, name: resource.name)
         }
     }
