@@ -283,7 +283,7 @@ enum WorkspaceAgentPresentation {
         // question, or a turn that ends on a question without changing anything) needs you.
         if let main = result.indices.first(where: { result[$0].isMain }), let current = sources.last,
            let transcript = current.task?.transcript ?? current.observation?.transcript,
-           awaitsAnswer(result[main], entries: transcript.entries) {
+           awaitsAnswer(result[main], entries: transcript.entries) || endsAsking(result[main], entries: transcript.entries) {
             result[main].status = .waiting
             result[main].attentionReason = .input
         }
