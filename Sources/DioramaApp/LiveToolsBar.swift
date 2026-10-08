@@ -197,7 +197,7 @@ struct LiveToolsBar: View {
     @ViewBuilder private var onHand: some View {
         if let inventory, inventory.loaded {
             HStack(spacing: 6) {
-                countChip(inventory.servers, inventory.servers == 1 ? "server or app" : "servers & apps", band: SidebarStyle.tint(.inProgress).band) {
+                countChip(inventory.servers, inventory.servers == 1 ? "connector" : "connectors", band: SidebarStyle.tint(.inProgress).band) {
                     HStack(spacing: -6) {
                         ForEach(Array(inventory.featured.prefix(3).enumerated()), id: \.offset) { _, name in
                             BrandIcon(name: name, size: 20).overlay(RoundedRectangle(cornerRadius: 6, style: .continuous).strokeBorder(SidebarStyle.background, lineWidth: 2).padding(-1))
@@ -319,7 +319,7 @@ private struct LiveToolIcon: View {
     }
 }
 
-/// Every resource the agents can use, grouped like the pantry: MCP servers and apps
+/// Every resource the agents can use, grouped like the pantry: connectors (MCP servers and apps)
 /// (appliances, crates), plugins with what they bring, and skills (jars). Enter on a skill arms
 /// it for the selected chef.
 struct AllResourcesPalette: View {
@@ -373,7 +373,7 @@ struct AllResourcesPalette: View {
             HStack(spacing: 10) {
                 HStack(spacing: 8) {
                     Image(systemName: "magnifyingglass").font(.system(size: 13)).foregroundStyle(SidebarStyle.secondary)
-                    TextField("Search servers, apps, plugins and skills…", text: $query).textFieldStyle(.plain).font(.system(size: 14))
+                    TextField("Search connectors, plugins and skills…", text: $query).textFieldStyle(.plain).font(.system(size: 14))
                         .focused($searchFocused).accessibilityLabel("Search tools")
                 }
                 .padding(.horizontal, 12).frame(height: 34)
@@ -400,7 +400,7 @@ struct AllResourcesPalette: View {
                 let loading = loadingLabel
                 HStack(alignment: .top, spacing: 12) {
                     PaletteColumn(items: servers.count, loading: loading, tint: SidebarStyle.tint(.inProgress)) {
-                        sectionHeader("Servers & apps", count: servers.count, shelf: "Appliances", symbol: "server.rack", tint: SidebarStyle.tint(.inProgress))
+                        sectionHeader("Connectors", count: servers.count, shelf: "Appliances", symbol: "point.3.connected.trianglepath.dotted", tint: SidebarStyle.tint(.inProgress))
                     } content: { tiles { ForEach(servers) { serverTile($0) } } }
                     Rectangle().fill(SidebarStyle.divider).frame(width: 1)
                     PaletteColumn(items: plugins.count, loading: loading, tint: SidebarStyle.tint(.needsYou)) {
