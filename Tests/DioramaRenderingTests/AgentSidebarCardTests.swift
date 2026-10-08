@@ -49,6 +49,15 @@ import Testing
         // Finished but unreviewed stays Done, never Needs you; reworking is back In progress.
         #expect(items([.init(session: session("d", "D"), agents: [agent("d", .done)], review: .committed)]).first?.status.hasPrefix("Committed") == true)
         #expect(items([.init(session: session("r", "R"), agents: [agent("r", .done)], review: .reworking)]).first?.group == .inProgress)
+        // A pull request: CI running is In progress; a conflict or failed check needs you, with a fix action;
+        // a green one waits in Done.
+        let checking = items([.init(session: session("c", "C"), agents: [agent("c", .done)], review: .checking, reviewNote: "PR #4 · 2 of 5 checks done")]).first
+        #expect(checking?.group == .inProgress && checking?.activity == "PR #4 · 2 of 5 checks done")
+        let broken = items([.init(session: session("f", "F"), agents: [agent("f", .done)], review: .needsFix, reviewNote: "Conflicts with main")]).first
+        #expect(broken?.group == .needsYou && broken?.status == "Conflicts with main" && broken?.actionTitle == "Fix pull request")
+        #expect(items([.init(session: session("g", "G"), agents: [agent("g", .done)], review: .shipped, reviewNote: "Ready to merge")]).first?.status.hasPrefix("Ready to merge") == true)
+        // A fix in progress is live work, not a stale alarm.
+        #expect(items([.init(session: session("w", "W"), agents: [agent("w", .working)], review: .needsFix)]).first?.group == .inProgress)
         // Helpers never get their own row.
         #expect(items([.init(session: session("h", "H"), agents: [agent("h", .working), agent("h", .working, main: false)])]).count == 1)
     }

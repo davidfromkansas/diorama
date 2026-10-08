@@ -23,7 +23,7 @@ import simd
 
     @Test func chefAssetsLoadWithSocketsClipsAndProps() throws {
         let assets = try ChefAssets.shared.get()
-        #expect(assets.rig.clips.count == 30)
+        #expect(assets.rig.clips.count == 34)
         #expect(Set(assets.manifest.clips.keys) == Set(assets.rig.clips.keys))
         let chef = assets.rig.makeInstance()
         #expect(chef.nodes.contains { $0.skinner?.bones.count == 26 })
@@ -147,9 +147,27 @@ import simd
         let stale = agent("main", .done, freshness: .lastKnown).value
         #expect(KitchenLayout.work(for: stale).area == "break")
         #expect(KitchenLayout.work(for: stale, review: .awaiting).area == "serving")
+        // Committed, merged, or marked done: accepted, so the chef celebrates and rests.
+        for accepted in [KitchenReviews.State.committed, .merged, .approved] {
+            let work = KitchenLayout.work(for: stale, review: accepted)
+            #expect(work.area == "break" && work.prelude == "celebrate_done")
+            #expect(KitchenLayout.intent(for: stale, at: nil, pickup: nil, restored: false, review: accepted).prelude == "celebrate_done")
+            // Shown from history it just sits there.
+            #expect(KitchenLayout.intent(for: stale, at: nil, pickup: nil, restored: true, review: accepted).prelude == nil)
+        }
+        // A pull request: CI tastes it, a problem rings the bell, a green one waits at the pass.
+        #expect(KitchenLayout.work(for: stale, review: .checking).area == "tasting")
+        #expect(KitchenLayout.work(for: stale, review: .needsFix).area == "bell")
         #expect(KitchenLayout.work(for: stale, review: .shipped).area == "serving")
-        #expect(KitchenLayout.work(for: stale, review: .committed).oneShot == "cover_dish")
-        #expect(KitchenLayout.work(for: stale, review: .approved).area == "break")
+        // With their own animations: a facepalm then head-scratching, a fist pump then hands on hips.
+        #expect(KitchenLayout.work(for: stale, review: .needsFix).oneShot == "fix_react" && KitchenLayout.work(for: stale, review: .needsFix).loop == "fix_wait")
+        #expect(KitchenLayout.work(for: stale, review: .shipped).oneShot == "merge_ready" && KitchenLayout.work(for: stale, review: .shipped).loop == "merge_ready_wait")
+        // And say so above the chef: a badge on the name tag.
+        #expect(ChefTagContent.Badge.make(.shipped, note: "Ready to merge")?.text == "Ready to merge")
+        #expect(ChefTagContent.Badge.make(.needsFix, note: "Needs a fix · test failed")?.text == "Needs a fix")
+        #expect(ChefTagContent.Badge.make(.checking, note: nil) == .testing)
+        #expect(ChefTagContent.Badge.make(.shipped, note: "Behind main") == .other("Behind main"))
+        #expect(ChefTagContent.Badge.make(.awaiting, note: nil) == nil)
         // Feedback sends the chef back to work, not to the break room, before the new turn is reported.
         #expect(KitchenLayout.work(for: stale, review: .reworking).area == "prep")
         // Live work always wins over an old review.
@@ -373,6 +391,9 @@ import simd
         #expect(ChefEmote.lasting(working, review: nil) == nil)
         #expect(ChefEmote.lasting(agent("a", .waiting, attention: .approval), review: nil) == .alert)
         #expect(ChefEmote.lasting(agent("a", .waiting, attention: .input), review: nil) == .question)
+        // A pull request that needs a fix shows a wrench; one ready to merge, a check.
+        #expect(ChefEmote.lasting(agent("a", .done), review: .needsFix) == .wrench)
+        #expect(ChefEmote.lasting(agent("a", .done), review: .shipped) == .check)
         #expect(ChefEmote.lasting(agent("a", .done), review: .awaiting) == .star)
         #expect(ChefEmote.lasting(agent("main", .done), review: .approved) == nil)
         let resting = ChefTagContent.make(agent("a", .done, freshness: .lastKnown), review: nil)
@@ -568,9 +589,9 @@ import simd
         let waiting = (0..<8).map { agent("w\($0)", .done, conversation: "dish\($0)") }
         view.apply(agents: resting + waiting, active: false, reducedMotion: false, now: 0)
         for _ in 0..<(30 * 20) { for chef in view.chefs.values { chef.update(1 / 30) } }
-        // Every dish waiting for review is shown; resting chefs only fill the rest of the cap.
+        // Every dish waiting for review is shown, and resting chefs up to the break room's seats.
         #expect(waiting.allSatisfy { view.chefs[$0.id] != nil })
-        #expect(view.chefs.count == KitchenSceneView.maxChefs)
+        #expect(view.chefs.count == waiting.count + min(resting.count, view.maxResting))
         let line = waiting.compactMap { view.chefs[$0.id]?.director }.filter { $0.intent?.station?.id.contains("~") == true }
         #expect(line.count == 3)
         #expect(line.allSatisfy { $0.held.contains(.plate) && $0.clip.name == "carry_idle" })
@@ -682,7 +703,7 @@ import simd
         #expect(view.chefs.count == 1)
         let crowd = (0..<20).map { agent("x\($0)", .working, tool: "Edit") }
         view.apply(agents: crowd, active: false, reducedMotion: false)
-        #expect(view.chefs.count == KitchenSceneView.maxChefs)
+        #expect(view.chefs.count == 20)
     }
 
     @Test func captureKitchenWithChefs() throws {
@@ -924,5 +945,282 @@ extension ChefKitchenTests {
         run(seconds: 40) { if $0 != "" && visits.last != $0 { visits.append($0) } }
         let tasting = try #require(visits.firstIndex(of: "tasting")), stove = try #require(visits.firstIndex(of: "stove"))
         #expect(tasting < stove && visits.last == "serving")
+    }
+}
+
+extension ChefKitchenTests {
+    @Test func codexAsyncQuestionSendsTheChefToTheBellWhateverTheLastWords() {
+        // Codex asked with request_user_input_async, then ended its turn on a statement.
+        var question = Entry(id: "q", kind: "Assistant", text: "Should quantities be shown in metric or imperial?\n- Metric\n- Imperial", timestamp: nil)
+        question.asksYou = true
+        let asked = [Entry(id: "u", kind: "You", text: "Build a recipe scaler. Ask me metric or imperial first.", timestamp: nil), question,
+                     Entry(id: "w", kind: "Assistant", text: "I'll wait for your metric or imperial preference before continuing.", timestamp: nil)]
+        #expect(WorkspaceAgentPresentation.awaitsAnswer(agent("a", .done).value, entries: asked))
+        // Without the question tool, a statement is not a question.
+        #expect(!WorkspaceAgentPresentation.awaitsAnswer(agent("a", .done).value, entries: [asked[0], asked[2]]))
+        #expect(!WorkspaceAgentPresentation.awaitsAnswer(agent("a", .done).value, entries: asked + [Entry(id: "a", kind: "You", text: "Imperial", timestamp: nil)]))
+    }
+
+    @Test func codexAsyncQuestionKeepsItsMessageInTheTranscript() {
+        let lines = [
+            #"{"type":"event_msg","payload":{"type":"task_started","turn_id":"t"}}"#,
+            #"{"type":"response_item","payload":{"type":"function_call","name":"request_user_input_async","arguments":"{}","call_id":"call_q","turn_id":"t"}}"#,
+            #"{"type":"event_msg","payload":{"type":"item_completed","turn_id":"t","item":{"type":"AgentMessage","id":"call_q","content":[{"type":"Text","text":"Metric or imperial?"}],"delivery":"async","questions":[{"title":"Metric or imperial?","options":["Metric","Imperial"]}]}}}"#,
+            #"{"type":"response_item","payload":{"type":"function_call_output","call_id":"call_q","output":"{\"accepted\":true}","turn_id":"t"}}"#,
+        ]
+        let transcript = CodexTranscriptNormalizer.parse(Data((lines.joined(separator: "\n") + "\n").utf8), scope: "s", start: 0, limit: 100)
+        let shown = transcript.entries.filter { $0.kind != "Event" }
+        #expect(shown.count == 1)
+        #expect(shown.first?.kind == "Assistant" && shown.first?.text == "Metric or imperial?" && shown.first?.asksYou == true)
+    }
+
+    @Test func aChefWithHistoryNeverArrivesByElevator() throws {
+        let view = KitchenSceneView(frame: CGRect(x: 0, y: 0, width: 1000, height: 700))
+        view.apply(agents: [], scope: "p", active: false, reducedMotion: false, now: 0)
+        let cook = agent("a", .working, tool: "Read")
+        view.apply(agents: [cook], scope: "p", active: false, reducedMotion: false, now: 1)
+        #expect(view.chefs[cook.id]?.director.intent?.key.hasPrefix("arrival") == true)
+        // Pushed out (the cap, a review state) and back for a new turn: it walks back to work
+        // from where it stood instead of riding the elevator again.
+        let stood = try #require(view.chefs[cook.id]?.director.position)
+        view.apply(agents: [], scope: "p", active: false, reducedMotion: false, now: 2)
+        view.apply(agents: [cook], scope: "p", active: false, reducedMotion: false, now: 3)
+        let back = try #require(view.chefs[cook.id])
+        #expect(back.director.intent?.key.hasPrefix("arrival") == false && back.director.intent?.station?.area == "prep")
+        #expect(simd_distance(back.director.position, stood) < 0.01)
+        // A conversation you already followed up on is not new either.
+        var followed = agent("b", .working, tool: "Read", conversation: "d"); followed.value.latestRequest = "Use imperial units"
+        view.apply(agents: [cook, followed], scope: "p", active: false, reducedMotion: false, now: 4)
+        #expect(view.chefs[followed.id]?.director.intent?.key.hasPrefix("arrival") == false)
+    }
+
+    @Test func acceptedWorkWalksToTheBreakRoomEvenWhenItIsFull() throws {
+        let view = KitchenSceneView(frame: CGRect(x: 0, y: 0, width: 1000, height: 700))
+        // The break room is full of chefs who rested more recently than this one finished.
+        let resters = (0..<view.maxResting).map { index -> SpatialAgent in
+            var rester = agent("r\(index)", .done, freshness: .lastKnown, conversation: "r\(index)")
+            rester.value.meaningfulUpdatedAt = Date(timeIntervalSinceNow: -Double(index)); return rester
+        }
+        var served = agent("main", .done, conversation: "c"); served.value.meaningfulUpdatedAt = Date(timeIntervalSinceNow: -3600)
+        view.reviews = ["c": .awaiting]
+        view.apply(agents: resters + [served], active: false, reducedMotion: false, now: 0)
+        #expect(view.chefs[served.id] != nil && resters.allSatisfy { view.chefs[$0.id] != nil })
+        // Marked done: it still celebrates and walks off.
+        view.reviews = ["c": .approved]
+        view.apply(agents: resters + [served], active: false, reducedMotion: false, now: 1)
+        let chef = try #require(view.chefs[served.id])
+        #expect(chef.director.intent?.station?.area == "break" && chef.director.intent?.prelude == "celebrate_done")
+        // Once it has had time to sit down, only the most recent resters keep the seats.
+        view.apply(agents: resters + [served], active: false, reducedMotion: false, now: 1 + KitchenSceneView.walkOff + 1)
+        #expect(view.chefs[served.id] == nil && view.chefs.count == view.maxResting)
+        // Feedback counts as work: a reworking chef is always in the kitchen.
+        view.reviews = ["c": .reworking]
+        view.apply(agents: resters + [served], active: false, reducedMotion: false, now: 40)
+        #expect(view.chefs[served.id]?.director.intent?.station?.area == "prep")
+    }
+
+    @Test func everyoneWithWorkIsShownAndTheBreakRoomKeepsTheMostRecent() {
+        let view = KitchenSceneView(frame: CGRect(x: 0, y: 0, width: 1000, height: 700))
+        let working = (0..<16).map { agent("w\($0)", .working, tool: "Edit", edits: true, conversation: "w\($0)") }
+        let idle = (0..<(view.maxResting + 4)).map { index -> SpatialAgent in
+            var rester = agent("i\(index)", .done, freshness: .lastKnown, conversation: "i\(index)")
+            rester.value.meaningfulUpdatedAt = Date(timeIntervalSince1970: Double(index) * 60); return rester
+        }
+        view.apply(agents: working + idle, active: false, reducedMotion: false, now: 0)
+        #expect(working.allSatisfy { view.chefs[$0.id] != nil })
+        // The newest idle conversations rest; the oldest four aren't shown.
+        #expect(idle.suffix(view.maxResting).allSatisfy { view.chefs[$0.id] != nil })
+        #expect(idle.prefix(4).allSatisfy { view.chefs[$0.id] == nil })
+    }
+}
+
+extension ChefKitchenTests {
+    @Test func aHeldChefDanglesSquirmsAndWalksBackWhenPutDown() throws {
+        let view = KitchenSceneView(frame: CGRect(x: 0, y: 0, width: 1000, height: 700))
+        let cook = agent("a", .working, tool: "Edit", edits: true)
+        view.apply(agents: [cook], active: false, reducedMotion: false, now: 0)
+        let chef = try #require(view.chefs[cook.id])
+        for _ in 0..<300 { chef.update(1 / 30) } // walk to the cooking station
+        let start = chef.director.position
+        #expect(chef.director.station?.area == "cooking")
+        chef.held = ChefAvatar.Hold(target: SIMD2(2, 1), point: start)
+        let arm = try #require(chef.rig.bone("upperarm.L"))
+        var arms: [simd_quatf] = []
+        for frame in 0..<90 {
+            chef.update(1 / 30)
+            if frame == 60 || frame == 75 { arms.append(arm.simdOrientation) }
+        }
+        // Lifted off the floor, carried toward the pointer, its director paused.
+        #expect(chef.root.simdPosition.y > 0.5 && simd_distance(SIMD2(chef.root.simdPosition.x, chef.root.simdPosition.z), SIMD2(2, 1)) < 0.1)
+        #expect(chef.director.position == start && chef.animating)
+        // Squirming: the arms keep moving.
+        #expect(abs(arms[0].angle - arms[1].angle) > 0.01 || simd_length(arms[0].axis - arms[1].axis) > 0.01)
+        // Put down away from its station, it isn't there any more and walks back.
+        let floor = view.freeFloor(near: SIMD2(2, 1))
+        chef.release(at: floor)
+        #expect(chef.held == nil && chef.director.position == floor && chef.director.station == nil)
+        #expect(chef.director.stepNames.contains("goto:cooking"))
+        chef.update(1 / 30)
+        #expect(chef.root.simdPosition.y == 0)
+    }
+
+    @Test func pointerRaysMeetTheFloorWhereTheSceneProjects() throws {
+        let view = KitchenSceneView(frame: CGRect(x: 0, y: 0, width: 1000, height: 700))
+        view.layoutSubtreeIfNeeded(); view.fitFloor()
+        for point in [SIMD3<Float>(0, 0, 0), SIMD3(-6, 0, -3), SIMD3(5, 2.6, 4), SIMD3(3, 2.6, -2)] {
+            let screen = try #require(view.projectWithoutLock(point))
+            let hit = try #require(view.floorRay(screen, planeY: point.y))
+            #expect(simd_distance(hit, SIMD2(point.x, point.z)) < 0.02, "\(point): \(hit)")
+        }
+        // Counters and walls aren't floor: a drop there lands next to them.
+        let navigation = KitchenLayout.chefNavigation
+        let counter = try #require(navigation.obstacles.first.map { ($0.min + $0.max) / 2 })
+        #expect(!navigation.isFree(counter))
+        let landed = view.freeFloor(near: counter)
+        #expect(navigation.isFree(landed) && simd_distance(landed, counter) < 6)
+    }
+
+    @Test func onlyIdleMainConversationsGoInTheTrash() {
+        let library = LibraryModel()
+        library.sessions = [Session(id: "c", provider: .codex, url: nil, sessionID: "c", title: "T", project: "/tmp", modified: Date(), bytes: 0, archived: false, parentID: nil)]
+        #expect(library.archiveBlocker(agent("main", .done)) == nil)
+        #expect(library.archiveBlocker(agent("main", .working, tool: "Edit")) == "Stop Agent main first")
+        #expect(library.archiveBlocker(agent("helper", .done)) == "Sub-agents can't be archived")
+        #expect(library.archiveBlocker(agent("main", .done, conversation: "missing")) != nil)
+        // Restored from a previous run (nothing in flight): finished work still goes in the trash.
+        library.execution.tasks["c"] = ExecutedTask(id: "c", title: "T", folder: "/tmp", parentID: nil, phase: .disconnected, error: "Previous run")
+        #expect(library.archiveBlocker(agent("main", .done)) == nil)
+        // Cut off mid-turn, or running: not until it stops.
+        library.execution.tasks["c"]?.requiresReconciliation = true
+        #expect(library.archiveBlocker(agent("main", .done)) == "Stop Agent main first")
+        library.execution.tasks["c"]?.requiresReconciliation = false; library.execution.tasks["c"]?.phase = .working
+        #expect(library.archiveBlocker(agent("main", .done)) == "Stop Agent main first")
+    }
+}
+
+extension ChefKitchenTests {
+    @Test func aClaudeArchiveFromAnyWindowSurvivesTheOwnersRescans() {
+        let owner = LibraryModel(), window = LibraryModel(sharedOwner: owner)
+        let wren = Session(id: "Claude Code:wren-test", provider: .claude, url: nil, sessionID: "wren-test", title: "Wren", project: "/tmp", modified: Date(), bytes: 0, archived: false, parentID: nil)
+        owner.sessions = [wren]
+        window.archivedHere.insert(wren.id)
+        #expect(owner.archivedHere.contains(wren.id) && owner.sessions.first?.archived == true)
+        // The owner's next rescan reads the transcript as not archived; it stays archived.
+        owner.sessions = [wren]
+        #expect(window.sessions.first?.archived == true)
+        window.archivedHere.remove(wren.id)
+        owner.sessions = [wren]
+        #expect(window.sessions.first?.archived == false)
+        // Codex too: a stale thread list (state database, or the previous scan reused) can't bring it back.
+        let remy = Session(id: "Codex:remy-test", provider: .codex, url: nil, sessionID: "remy-test", title: "Remy", project: "/tmp", modified: Date(), bytes: 0, archived: false, parentID: nil)
+        window.archivedHere.insert(remy.id)
+        owner.sessions = [remy]
+        #expect(window.sessions.first?.archived == true)
+        window.archivedHere.remove(remy.id)
+    }
+}
+
+extension ChefKitchenTests {
+    @Test func aHeldChefFollowsThePointerPastTheWallsToTheTrash() throws {
+        let view = KitchenSceneView(frame: CGRect(x: 0, y: 0, width: 1000, height: 700))
+        view.layoutSubtreeIfNeeded(); view.fitFloor()
+        // Up in the top-right corner, where the trash sits, outside the kitchen's walls.
+        let corner = CGPoint(x: 960, y: 660)
+        let held = try #require(view.grabPoint(corner))
+        let half = SIMD2(Float(KitchenLayout.floor.width / 2), Float(KitchenLayout.floor.height / 2))
+        #expect(abs(held.x) > half.x || abs(held.y) > half.y)
+        // Its head is right under the pointer.
+        let head = SIMD3(held.x, (ChefAvatar.liftHeight + 1.7) * KitchenLayout.chefScale, held.y)
+        let shown = try #require(view.projectWithoutLock(head))
+        #expect(abs(shown.x - corner.x) < 2 && abs(shown.y - corner.y) < 2)
+        // Put down out there, it lands on free floor inside the walls.
+        let landed = view.freeFloor(near: view.insideWalls(held))
+        #expect(abs(landed.x) < half.x && abs(landed.y) < half.y && KitchenLayout.chefNavigation.isFree(landed))
+    }
+}
+
+extension ChefKitchenTests {
+    @Test func theRestaurantSurroundsTheKitchen() throws {
+        let restaurant = try #require(KitchenRestaurant.shared)
+        // Twelve diner seats, nearest the serving pass first, each facing its table.
+        #expect(restaurant.seats.count == 12)
+        let pass = SIMD2<Float>(6.9, 7.0)
+        let distances = restaurant.seats.map { simd_distance($0.stand, pass) }
+        #expect(distances == distances.sorted())
+        for seat in restaurant.seats {
+            // Beside the kitchen, where the home camera sees them, not out front.
+            #expect(abs(seat.stand.x) > Float(KitchenLayout.floor.maxX) && abs(seat.stand.y) < Float(KitchenLayout.floor.maxY), "\(seat.id) sits beside the kitchen")
+            #expect(simd_distance(SIMD2(seat.dish.x, seat.dish.z), seat.stand) < 0.6 && seat.dish.y > 0.9)
+        }
+        // The right-hand side, next to the serving pass, fills first.
+        #expect(restaurant.seats.prefix(6).allSatisfy { $0.stand.x > 0 })
+        let view = KitchenSceneView(frame: CGRect(x: 0, y: 0, width: 1600, height: 900))
+        view.layoutSubtreeIfNeeded(); view.fitFloor()
+        #expect(view.scene?.rootNode.childNode(withName: "restaurant", recursively: false) != nil)
+        // In a wide window every diner's table is in the home view.
+        for seat in restaurant.seats {
+            let point = try #require(view.projectWithoutLock(seat.dish))
+            #expect(view.bounds.insetBy(dx: 4, dy: 4).contains(point), "\(seat.id) at \(point)")
+        }
+        guard let path = ProcessInfo.processInfo.environment["DIORAMA_RESTAURANT_CAPTURE"] else { return }
+        let device = try #require(MTLCreateSystemDefaultDevice())
+        let renderer = SCNRenderer(device: device, options: nil)
+        renderer.scene = view.scene; renderer.pointOfView = view.pointOfView
+        func save(_ name: String) throws {
+            let image = renderer.snapshot(atTime: 2, with: CGSize(width: 1600, height: 900), antialiasingMode: .multisampling4X)
+            try image.tiffRepresentation.flatMap { NSBitmapImageRep(data: $0)?.representation(using: .png, properties: [:]) }?
+                .write(to: URL(fileURLWithPath: path + name + ".png"))
+        }
+        try save("home")
+        eye0: do {
+            let eye = SCNNode(); eye.camera = view.pointOfView?.camera?.copy() as? SCNCamera
+            view.scene?.rootNode.addChildNode(eye); renderer.pointOfView = eye
+            eye.position = SCNVector3(9, 5, 17); eye.look(at: SCNVector3(8, 0.8, 11.5)); try save("diners")
+            renderer.pointOfView = view.pointOfView
+        }
+        // Looking back from the terrace, and from the canal side.
+        let eye = SCNNode(); eye.camera = view.pointOfView?.camera?.copy() as? SCNCamera
+        view.scene?.rootNode.addChildNode(eye); renderer.pointOfView = eye
+        eye.position = SCNVector3(8, 16, 30); eye.look(at: SCNVector3(4, 0, 6)); try save("terrace")
+        eye.position = SCNVector3(30, 18, 4); eye.look(at: SCNVector3(10, 0, 2)); try save("side")
+    }
+}
+
+extension ChefKitchenTests {
+    @Test func glbNodePositionsSurviveNumbersThatArentExactFloats() throws {
+        // JSONSerialization hands back doubles; `as? [Float]` used to drop the whole position.
+        let node = try #require(JSONSerialization.jsonObject(with: Data(#"{"translation":[-15.5,0.027108989655971527,15.5],"scale":[1,1.0000000001,1]}"#.utf8)) as? [String: Any])
+        let pose = GLBDocument.restPose(node)
+        #expect(simd_distance(pose.position, SIMD3(-15.5, 0.0271, 15.5)) < 0.001)
+        #expect(simd_distance(pose.scale, SIMD3(1, 1, 1)) < 0.001)
+    }
+}
+
+extension ChefKitchenTests {
+    @Test func aServedDishGoesToADinerUntilTheWorkIsAccepted() throws {
+        let view = KitchenSceneView(frame: CGRect(x: 0, y: 0, width: 1000, height: 700))
+        let restaurant = try #require(KitchenRestaurant.shared)
+        // Diners sit at the tables nearest the pass, hatless, facing their tables.
+        let diners = try #require(view.scene?.rootNode.childNodes.filter { $0.name?.hasPrefix("diner:") == true })
+        #expect(diners.count == KitchenSceneView.dinerCount)
+        let first = try #require(diners.first { $0.name == "diner:" + restaurant.seats[0].id })
+        #expect(simd_distance(SIMD2(first.simdPosition.x, first.simdPosition.z), restaurant.seats[0].stand) < 0.05)
+        // A finished task: its chef carries the dish to the pass and sets it down.
+        let done = agent("main", .done, conversation: "served")
+        view.reviews = ["served": .awaiting]
+        view.apply(agents: [done], active: false, reducedMotion: false, now: 0)
+        let chef = try #require(view.chefs[done.id])
+        for _ in 0..<(30 * 30) where chef.director.placedPlate == nil { chef.update(1 / 30) }
+        #expect(chef.director.placedPlate != nil)
+        view.serveDiners(now: 1)
+        #expect(view.servedSeats["served"] == 0)
+        // Accepted: the chef leaves the pass; the diner finishes eating, then the table clears.
+        view.reviews = ["served": .approved]
+        view.apply(agents: [done], active: false, reducedMotion: false, now: 2)
+        for _ in 0..<30 { chef.update(1 / 30) }
+        view.serveDiners(now: 3)
+        #expect(view.servedSeats["served"] == 0)
+        view.serveDiners(now: 3 + KitchenSceneView.dinerLinger + 1)
+        #expect(view.servedSeats["served"] == nil)
     }
 }

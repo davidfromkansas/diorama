@@ -96,6 +96,37 @@ public enum ProjectCommand {
     public static func run(_ executable: String, _ arguments: [String], folder: String? = nil) async throws -> String {
         String(decoding: try await data(executable, arguments, folder: folder), as: UTF8.self).trimmingCharacters(in: .whitespacesAndNewlines)
     }
+    /// Runs a long command, passing stdout and stderr to `output` as they arrive; returns the exit status.
+    /// No timeout: cancelling the task terminates the process.
+    public static func stream(_ executable: String, _ arguments: [String], folder: String? = nil, environmentOverrides: [String: String] = [:], output: @escaping @Sendable (String) -> Void) async throws -> Int32 {
+        let process = Process()
+        process.executableURL = URL(fileURLWithPath: executable); process.arguments = arguments
+        if let folder { process.currentDirectoryURL = URL(fileURLWithPath: folder) }
+        var environment = ProcessInfo.processInfo.environment
+        environment["GIT_OPTIONAL_LOCKS"] = "0"; environment["GIT_TERMINAL_PROMPT"] = "0"; environment["GH_PROMPT_DISABLED"] = "1"
+        environment["PATH"] = "/usr/bin:/bin:/usr/sbin:/sbin:/opt/homebrew/bin:/usr/local/bin:" + FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent(".local/bin").path
+        for (key, value) in environmentOverrides { environment[key] = value }
+        process.environment = environment
+        let pipe = Pipe()
+        process.standardOutput = pipe; process.standardError = pipe; process.standardInput = FileHandle.nullDevice
+        pipe.fileHandleForReading.readabilityHandler = { handle in
+            let data = handle.availableData
+            if !data.isEmpty { output(String(decoding: data, as: UTF8.self)) }
+        }
+        defer { pipe.fileHandleForReading.readabilityHandler = nil }
+        try Task.checkCancellation()
+        return try await withTaskCancellationHandler {
+            try await withCheckedThrowingContinuation { (continuation: CheckedContinuation<Int32, Error>) in
+                process.terminationHandler = { finished in
+                    if let rest = try? pipe.fileHandleForReading.readToEnd(), !rest.isEmpty { output(String(decoding: rest, as: UTF8.self)) }
+                    if finished.terminationReason == .uncaughtSignal && finished.terminationStatus == SIGTERM {
+                        continuation.resume(throwing: CancellationError())
+                    } else { continuation.resume(returning: finished.terminationStatus) }
+                }
+                do { try process.run() } catch { process.terminationHandler = nil; continuation.resume(throwing: error) }
+            }
+        } onCancel: { if process.isRunning { process.terminate() } }
+    }
     public static func data(_ executable: String, _ arguments: [String], folder: String? = nil, environmentOverrides: [String: String] = [:], timeout: TimeInterval = 60) async throws -> Data {
         let temporary = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
         FileManager.default.createFile(atPath: temporary.path, contents: nil)

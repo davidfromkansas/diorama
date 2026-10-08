@@ -31,6 +31,8 @@ extension KitchenLayout {
         /// Moves immediately, without waiting out the minimum dwell.
         var urgent = false
         var deliversPlate = false
+        /// A gesture where the chef stands before it sets off (celebrating work you accepted).
+        var prelude: String? = nil
     }
     /// The lifecycle: prep before the first edit, then the island (editing) and stove (commands);
     /// tests at tasting; anything needing you at the bell; finished work at the serving window;
@@ -40,10 +42,19 @@ extension KitchenLayout {
         // Finished work waits at the serving window until you decide, even after a restart.
         if let review, agent.isMain, ![.working, .waiting, .failed].contains(agent.status) {
             switch review {
-            case .approved: return breakRoom(agent, urgent: true)
+            // Committed, merged, or marked done: the dish is accepted, so the chef celebrates and
+            // heads to the break room.
+            case .approved, .committed, .merged:
+                var rest = breakRoom(agent, urgent: true); rest.prelude = "celebrate_done"; return rest
+            // CI tastes the pull request; a conflict or failed check rings the bell; a green PR
+            // waits at the pass for you to merge.
+            case .checking: return .init(area: "tasting", loop: "testing_dish", hand: .spoon, urgent: true)
+            // A facepalm, then scratching its head at the bell until you send it back to fix.
+            case .needsFix: return .init(area: "bell", loop: "fix_wait", oneShot: "fix_react", urgent: true)
+            // A fist pump, then hands on hips at the pass, waiting for you to merge.
+            case .shipped: return .init(area: "serving", loop: "merge_ready_wait", oneShot: "merge_ready", urgent: true)
             case .reworking: return .init(area: "prep", loop: "planning_recipe", hand: .card, urgent: true)
-            case .committed: return .init(area: "serving", loop: "wait_review", oneShot: "cover_dish", urgent: true)
-            case .awaiting, .shipped: return .init(area: "serving", loop: "wait_review", oneShot: "present_review", urgent: true, deliversPlate: true)
+            case .awaiting: return .init(area: "serving", loop: "wait_review", oneShot: "present_review", urgent: true, deliversPlate: true)
             }
         }
         switch agent.status {
@@ -87,7 +98,7 @@ extension KitchenLayout {
         let shot = work.oneShot.map { ChefIntent.OneShot(id: "\($0):\(agent.status.rawValue):\(cause)", clip: $0, restored: restored) }
         let key = [work.area ?? "here", slot?.id ?? "", work.loop, work.hand?.rawValue ?? "", shot?.id ?? ""].joined(separator: "|")
         return ChefIntent(key: key, station: work.area == nil ? nil : slot, loop: work.loop, oneShot: shot, hand: work.hand,
-                          pickup: work.deliversPlate && !restored ? pickup : nil, urgent: work.urgent)
+                          pickup: work.deliversPlate && !restored ? pickup : nil, urgent: work.urgent, prelude: restored ? nil : work.prelude)
     }
     /// A new agent reads its order at the rail before starting work.
     static func arrivalIntent(at slot: ChefStation) -> ChefIntent {

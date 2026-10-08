@@ -16,12 +16,20 @@ struct AgentCommandBar: View {
     private var value: WorkspaceAgent { agent.value }
     private var session: Session? { library.sessions.first { $0.id == agent.conversationID } }
     private var task: ExecutedTask? { session.flatMap { library.execution.tasks[$0.sessionID] } }
+    private var project: DioramaProject? { library.projects.projects.first { $0.id == agent.projectID } }
+    private var workspace: ProjectWorkspace? { session.flatMap { session in project?.workspaces.first { $0.threadID == session.sessionID } } }
+    /// The worktree's files changed since the task began.
+    @State private var changes: ChangesSnapshot?
 
     var body: some View {
-        HStack(alignment: .top, spacing: 8) {
-            card.frame(minWidth: 250, maxWidth: .infinity).layoutPriority(1)
-            // Skills live in the pantry now (armed from there for the selected chef).
-            activity.frame(minWidth: 180, maxWidth: .infinity)
+        // The chef card takes three fifths or more: it carries the facts and the changed files, while the
+        // activity feed reads fine narrower. Skills live in the pantry now (armed from there).
+        GeometryReader { geometry in
+            HStack(alignment: .top, spacing: 8) {
+                // At least 560 wide when the bar allows it, always leaving Activity 200.
+                card.frame(width: max(250, min(max(560, (geometry.size.width - 8) * 0.6), geometry.size.width - 208)))
+                activity.frame(maxWidth: .infinity)
+            }
         }
         .padding(10)
         .frame(height: Self.height)
@@ -31,45 +39,38 @@ struct AgentCommandBar: View {
         .environment(\.colorScheme, .light)
         .accessibilityElement(children: .contain)
         .accessibilityLabel("Command bar for " + value.name)
+        // Reloaded as the agent reports more work, so the file list follows its edits.
+        .task(id: "\(agent.conversationID)|\(value.feed.count)|\(value.status.rawValue)") { await loadChanges() }
     }
 
     // MARK: Agent and order
 
-    /// Who the chef is and the order it's cooking, in one card: a header row, one line of facts,
-    /// then the task and its progress.
+    /// Who the chef is and the order it's cooking, in one card: the title with its status and
+    /// actions, then its facts beside the files it changed.
     private var card: some View {
-        Panel {
-            VStack(alignment: .leading, spacing: 8) {
-                HStack(spacing: 8) {
-                    AgentSidebarIcon(group: group).frame(width: 24, height: 24)
-                    // The conversation's title, as the agent panel shows it; the chef's name is in the facts line.
-                    Text(title).font(.system(size: 14, weight: .semibold)).foregroundStyle(Palette.paper).lineLimit(1).truncationMode(.tail)
-                        .help(title)
-                    StatusPill(text: statusText, tint: SidebarStyle.tint(group))
-                    Spacer(minLength: 4)
-                    if let requestReview, agent.needsAttention {
-                        Button("Review request", action: requestReview).buttonStyle(ModalPrimaryButtonStyle(height: 26)).pointingHand()
-                            .help("Answer what it's waiting on")
-                    }
-                    if let review, KitchenReviews.shared.state(agent.conversationID) != nil || value.status == .done {
-                        Button("Review", action: review).buttonStyle(ModalPrimaryButtonStyle(height: 26)).pointingHand()
-                            .help("Open the serving-window review")
-                    }
-                    Button(action: close) { Image(systemName: "xmark").font(.system(size: 10, weight: .bold)).frame(width: 22, height: 22).contentShape(Rectangle()) }
-                        .buttonStyle(.plain).foregroundStyle(Palette.paper.opacity(0.6)).pointingHand()
-                        .help("Deselect (Esc)").accessibilityLabel("Deselect " + value.name)
-                }
-                Text(facts).font(.caption2).foregroundStyle(Palette.paper.opacity(0.6)).lineLimit(1).truncationMode(.middle)
-                Rectangle().fill(SidebarStyle.divider).frame(height: 1)
-                ScrollView {
-                    VStack(alignment: .leading, spacing: 8) {
-                        if TaskTitle.full(value.task) != title {
-                            Text(TaskTitle.full(value.task)).font(.callout.weight(.medium)).foregroundStyle(Palette.paper)
-                                .lineLimit(4).fixedSize(horizontal: false, vertical: true).textSelection(.enabled)
+        Panel(inset: 16) {
+            VStack(alignment: .leading, spacing: 14) {
+                HStack(alignment: .top, spacing: 12) {
+                    ScrollingTitle(text: title).help(title)
+                    HStack(spacing: 8) {
+                        StatusPill(text: statusText, tint: SidebarStyle.tint(group))
+                        if let requestReview, agent.needsAttention {
+                            Button("Review request", action: requestReview).buttonStyle(ModalPrimaryButtonStyle(height: 28)).pointingHand()
+                                .help("Answer what it's waiting on")
                         }
-                        PlanProgressRow(progress: value.planProgress, running: value.isWorking)
-                        AgentProgressSections(agent: value, fileLimit: 4, compact: true)
+                        if let review, KitchenReviews.shared.state(agent.conversationID) != nil || value.status == .done {
+                            Button("Review", action: review).buttonStyle(ModalPrimaryButtonStyle(height: 28)).pointingHand()
+                                .help("Open the serving-window review")
+                        }
+                        Button(action: close) { Image(systemName: "xmark").font(.system(size: 10, weight: .bold)).frame(width: 24, height: 28).contentShape(Rectangle()) }
+                            .buttonStyle(.plain).foregroundStyle(Palette.paper.opacity(0.6)).pointingHand()
+                            .help("Deselect (Esc)").accessibilityLabel("Deselect " + value.name)
                     }
+                    .fixedSize()
+                }
+                HStack(alignment: .top, spacing: 20) {
+                    facts
+                    changeList.frame(maxWidth: .infinity, alignment: .topLeading)
                 }
             }
         }
@@ -79,12 +80,58 @@ struct AgentCommandBar: View {
         let conversation = session.map { TaskTitle.full($0.displayTitle) } ?? ""
         return conversation.isEmpty ? TaskTitle.full(value.task) : conversation
     }
-    /// The chef, provider and model, branch and usage on one line.
-    private var facts: String {
-        var parts = [[value.name, value.provider, model].compactMap { $0 }.filter { !$0.isEmpty }.joined(separator: " · ")]
-        if let branch = value.branch, !branch.isEmpty { parts.append("⎇ " + branch) }
-        if let tokens { parts.append(tokens) }
-        return parts.filter { !$0.isEmpty }.joined(separator: "   ")
+    /// Assignee and cost, then the branch beneath them, each a small label over its value.
+    private var facts: some View {
+        Grid(alignment: .topLeading, horizontalSpacing: 16, verticalSpacing: 12) {
+            GridRow {
+                Fact(label: "Assignee", width: 150) {
+                    Text(value.name) + Text(model.map { " · " + $0 } ?? "").foregroundStyle(SidebarStyle.secondary)
+                }
+                Fact(label: "Cost", width: 90) { Text(tokens ?? "—").monospacedDigit() }
+            }
+            GridRow {
+                Fact(label: "Branch", width: 256) {
+                    Text(workspace?.branch ?? value.branch ?? "No branch").font(.system(size: 12, design: .monospaced)).lineLimit(2)
+                }
+                .gridCellColumns(2)
+            }
+        }
+    }
+    /// Every file the task changed since it began, committed or not, with its line counts.
+    private var changeList: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            let files = changes?.files ?? []
+            HStack(alignment: .firstTextBaseline) {
+                Text(files.isEmpty ? "Changes" : "Changes · \(files.count) file\(files.count == 1 ? "" : "s")").font(.system(size: 13, weight: .semibold))
+                    .lineLimit(1).layoutPriority(1)
+                Spacer(minLength: 8)
+                if let changes, !files.isEmpty { DiffCount(added: changes.added, removed: changes.removed, size: 12) }
+            }
+            .foregroundStyle(Palette.paper)
+            if files.isEmpty {
+                Text(workspace == nil ? "Not working in a project worktree." : value.isWorking ? "No file changes yet." : "No file changes.")
+                    .font(.system(size: 12)).foregroundStyle(SidebarStyle.secondary)
+            } else {
+                // Three rows show; more scroll inside the box.
+                let shown = CGFloat(min(files.count, 3))
+                ScrollView {
+                    VStack(spacing: 0) {
+                        ForEach(Array(files.enumerated()), id: \.element.id) { index, file in
+                            if index > 0 { Rectangle().fill(SidebarStyle.divider).frame(height: 1) }
+                            ChangedFileRow(file: file)
+                        }
+                    }
+                }
+                .frame(height: shown * ChangedFileRow.height + shown - 1)
+                .background(Color.white)
+                .clipShape(RoundedRectangle(cornerRadius: 9, style: .continuous))
+                .overlay(RoundedRectangle(cornerRadius: 9, style: .continuous).strokeBorder(Color.black.opacity(0.08), lineWidth: 1))
+            }
+        }
+    }
+    private func loadChanges() async {
+        guard let workspace else { changes = nil; return }
+        changes = try? await SessionChanges.snapshot(workspace, scope: .session)
     }
     private var model: String? {
         let running = task?.model ?? ""
@@ -184,6 +231,7 @@ private struct FeedRow: View {
 /// A framed section of the command bar; `paper` sections look like an order ticket.
 struct CommandBarPanel<Content: View>: View {
     var title: String? = nil
+    var inset: CGFloat = 12
     @ViewBuilder let content: Content
     var body: some View {
         VStack(alignment: .leading, spacing: 6) {
@@ -192,7 +240,7 @@ struct CommandBarPanel<Content: View>: View {
             }
             content.frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
         }
-        .padding(12)
+        .padding(inset)
         .frame(maxHeight: .infinity, alignment: .top)
         .background(RoundedRectangle(cornerRadius: 12, style: .continuous).fill(Palette.panel))
         .overlay(RoundedRectangle(cornerRadius: 12, style: .continuous).strokeBorder(Color.black.opacity(0.08), lineWidth: 1))
@@ -267,6 +315,108 @@ private struct SweepBar: View {
     }
 }
 private typealias Panel = CommandBarPanel
+
+/// A small grey label over its value.
+private struct Fact<Value: View>: View {
+    let label: String
+    var width: CGFloat = 124
+    @ViewBuilder let value: Value
+    var body: some View {
+        VStack(alignment: .leading, spacing: 4) {
+            Text(label).font(.system(size: 12)).foregroundStyle(SidebarStyle.secondary)
+            value.font(.system(size: 13)).foregroundStyle(Palette.paper).fixedSize(horizontal: false, vertical: true)
+        }
+        .frame(width: width, alignment: .topLeading)
+    }
+}
+
+/// Lines added and removed, in green and red.
+private struct DiffCount: View {
+    let added: Int
+    let removed: Int
+    var size: CGFloat = 11
+    var body: some View {
+        (Text("+\(added)").foregroundStyle(ChangedFileRow.green) + Text(" −\(removed)").foregroundStyle(ChangedFileRow.red))
+            .font(.system(size: size, design: .monospaced)).monospacedDigit().lineLimit(1).fixedSize()
+            .accessibilityLabel("\(added) lines added, \(removed) removed")
+    }
+}
+
+/// One changed file: its kind, name and folder, and its line counts.
+private struct ChangedFileRow: View {
+    let file: ChangedFile
+    static let height: CGFloat = 30
+    static let green = Color(red: 0.12, green: 0.48, blue: 0.23)
+    static let red = Color(red: 0.71, green: 0.14, blue: 0.09)
+    var body: some View {
+        let url = URL(fileURLWithPath: file.path)
+        let folder = url.deletingLastPathComponent().relativePath
+        HStack(spacing: 8) {
+            Text(kind.letter).font(.system(size: 11, weight: .semibold, design: .monospaced)).foregroundStyle(kind.color).frame(width: 12)
+            let name = Text(url.lastPathComponent).font(.system(size: 12, design: .monospaced)).foregroundStyle(Palette.paper).lineLimit(1)
+            // The folder shows when it fits; a narrow bar keeps just the name.
+            ViewThatFits(in: .horizontal) {
+                if folder != ".", !folder.isEmpty {
+                    HStack(spacing: 8) { name; Text("/" + folder).font(.system(size: 12)).foregroundStyle(SidebarStyle.secondary).lineLimit(1) }
+                }
+                name.truncationMode(.middle)
+            }
+            .frame(maxWidth: .infinity, alignment: .leading)
+            DiffCount(added: file.added, removed: file.removed).padding(.leading, 8)
+        }
+        .padding(.horizontal, 12)
+        .frame(height: Self.height)
+        .help(file.path)
+        .accessibilityElement(children: .combine)
+        .accessibilityLabel("\(file.status) \(file.path), \(file.added) added, \(file.removed) removed")
+    }
+    private var kind: (letter: String, color: Color) {
+        switch file.status {
+        case "Added", "Copied": ("A", Self.green)
+        case "Deleted": ("D", Self.red)
+        case "Renamed": ("R", Color(red: 0.16, green: 0.36, blue: 0.75))
+        case "Conflicted": ("U", .orange)
+        default: ("M", Color(red: 0.54, green: 0.35, blue: 0.0))
+        }
+    }
+}
+
+/// The task title in two lines; a longer one scrolls slowly through the rest and back, waiting
+/// while the pointer is over it, and stays put with Reduce Motion (the full text is its tooltip).
+private struct ScrollingTitle: View {
+    let text: String
+    @State private var overflow: CGFloat = 0
+    @State private var offset: CGFloat = 0
+    @State private var hovering = false
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    private static let font = NSFont.systemFont(ofSize: 15, weight: .semibold)
+    private static let spacing: CGFloat = 2
+    private static let window = ceil(NSLayoutManager().defaultLineHeight(for: font)) * 2 + spacing
+    var body: some View {
+        Text(text).font(Font(Self.font)).lineSpacing(Self.spacing).foregroundStyle(Palette.paper)
+            .fixedSize(horizontal: false, vertical: true)
+            .onGeometryChange(for: CGFloat.self) { $0.size.height } action: { overflow = max(0, $0 - Self.window) }
+            .offset(y: offset)
+            .frame(maxWidth: .infinity, alignment: .topLeading)
+            .frame(height: Self.window, alignment: .top)
+            .clipped()
+            .onHover { hovering = $0 }
+            .task(id: overflow) { await scroll() }
+    }
+    private func scroll() async {
+        offset = 0
+        guard overflow > 1, !reduceMotion else { return }
+        let duration = max(1.5, Double(overflow) / 14)
+        while !Task.isCancelled {
+            try? await Task.sleep(for: .seconds(2.5))
+            if hovering || Task.isCancelled { continue }
+            withAnimation(.easeInOut(duration: duration)) { offset = -overflow }
+            try? await Task.sleep(for: .seconds(duration + 2.5))
+            withAnimation(.easeInOut(duration: duration)) { offset = 0 }
+            try? await Task.sleep(for: .seconds(duration))
+        }
+    }
+}
 
 private struct StatusPill: View {
     let text: String

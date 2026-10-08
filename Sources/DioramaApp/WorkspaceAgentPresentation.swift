@@ -292,8 +292,11 @@ enum WorkspaceAgentPresentation {
     static func awaitsAnswer(_ agent: WorkspaceAgent, entries: [Entry]) -> Bool {
         guard [.working, .done, .ready].contains(agent.status) else { return false }
         let start = entries.lastIndex { $0.kind == "You" }.map { $0 + 1 } ?? 0
-        guard let asked = entries[start...].last(where: { $0.kind == "Assistant" }),
-              asked.text.trimmingCharacters(in: .whitespacesAndNewlines).hasSuffix("?") else { return false }
+        // Asked with Codex's question tool (whatever the turn's last words), or the turn's last
+        // message is a question.
+        let explicit = entries[start...].contains { $0.asksYou == true }
+        guard explicit || entries[start...].last(where: { $0.kind == "Assistant" })?
+            .text.trimmingCharacters(in: .whitespacesAndNewlines).hasSuffix("?") == true else { return false }
         if agent.status == .working {
             // Still in the turn: only while it waits on the question (Codex sleeps until you answer).
             return ["sleep", "wait", "request_user_input_async", "request_user_input"].contains(agent.latestTool.lowercased())

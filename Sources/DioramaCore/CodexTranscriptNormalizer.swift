@@ -24,6 +24,9 @@ public enum CodexTranscriptNormalizer {
             else if let id = item["id"] as? String { structuredTools.insert(scanTurn + ":" + id) }
         }
         var turn = "", cwd: String?, offset = start
+        // Codex's asynchronous question shares its call id with the question message it posts;
+        // the message stands for the question, so its call and `{"accepted":true}` result are skipped.
+        var asyncQuestions = Set<String>()
         var indexes: [String: Int] = [:]
         func put(_ entry: Entry) {
             if let i = indexes[entry.id] {
@@ -80,7 +83,10 @@ public enum CodexTranscriptNormalizer {
                         }
                         let media = item["content"].array.filter { !["text", "input_text"].contains(($0["type"].string ?? "").lowercased()) }
                         if !media.isEmpty { tools(.object(["id": .string(key + ":attachments"), "type": .string("functionCallOutput"), "name": .string("User attachments"), "output": .array(media)]), id: key + ":attachments") }
-                    case "agentMessage": put(entry(key, kind: "Assistant", text: item["text"].string ?? "", native: native))
+                    case "agentMessage":
+                        var message = entry(key, kind: "Assistant", text: item["text"].string ?? "", native: native)
+                        if CodexOutputEvidence.isAsyncQuestion(item) { message.asksYou = true; asyncQuestions.insert(key) }
+                        put(message)
                     case "plan": put(entry(key, kind: "Proposed plan", text: item["text"].string ?? "", native: native))
                     case "contextCompaction": put(entry(key, kind: "Event", text: "Conversation compacted", native: native))
                     case "enteredReviewMode", "exitedReviewMode":
@@ -114,11 +120,12 @@ public enum CodexTranscriptNormalizer {
                     let media = p["content"].array.filter { !["input_text", "output_text", "text"].contains($0["type"].string ?? "") }
                     if !media.isEmpty { tools(.object(["type": .string("functionCallOutput"), "id": .string(key + ":attachments"), "name": .string(role == "user" ? "User attachments" : "Message outputs"), "output": .array(media)]), id: key + ":attachments") }
                 case "function_call", "custom_tool_call":
+                    if p["name"].string == "request_user_input_async" { asyncQuestions.insert(key); continue }
                     if structuredTools.contains(turn + ":" + key) { continue }
                     let arguments = p["arguments"] == .null ? p["input"] : p["arguments"]
                     tools(.object(["type": .string("functionCall"), "id": .string(key), "name": p["name"], "arguments": arguments, "status": .string("Called")]), id: key)
                 case "function_call_output", "custom_tool_call_output":
-                    if structuredTools.contains(turn + ":" + key) { continue }
+                    if asyncQuestions.contains(key) || structuredTools.contains(turn + ":" + key) { continue }
                     let rowID = scope + ":" + turn + ":" + key
                     var item = indexes[rowID].flatMap { entries[$0].tool?.item.object } ?? ["type": .string("functionCallOutput"), "id": .string(key), "name": .string("Tool result · call outside loaded history")]
                     item["output"] = p["output"]; item["status"] = .string("Returned")

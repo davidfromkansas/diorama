@@ -181,6 +181,7 @@ struct DesktopHome<AddActions: View>: View {
     @ViewBuilder var addActions: () -> AddActions
     @State private var projects: [SpatialProject] = []
     @State private var refreshTask: Task<Void, Never>?
+    @State private var showsUsage = true
     @Environment(\.openSettings) private var openSettings
     private var store: ProjectTabStore { library.navigation.projectTabs }
     var body: some View {
@@ -239,7 +240,12 @@ struct DesktopHome<AddActions: View>: View {
                     projectLibrary
                 }
             }.frame(maxWidth: .infinity, maxHeight: .infinity)
+            if visible && state.home.section != .imported && showsUsage {
+                Divider()
+                HomeUsagePanel(home: library.portfolio.home, status: agentStatus)
+            }
         }.background(DioramaStyle.canvas)
+            .onGeometryChange(for: Bool.self) { $0.size.width >= 1000 } action: { showsUsage = $0 }
             .onChange(of: library.sessionsRevision, initial: true) { refresh() }
             .onChange(of: library.projects.projects.map { $0.id + $0.name }) { refresh() }
             .onChange(of: library.scannedAt) { refresh() }
@@ -249,6 +255,10 @@ struct DesktopHome<AddActions: View>: View {
                 if visible { refresh() } else { refreshTask?.cancel() }
             }
             .onDisappear { refreshTask?.cancel() }
+    }
+    private var agentStatus: AgentStatusCounts {
+        _ = AgentCompletionViews.shared.revision // Recount when an agent's final output is read.
+        return AgentStatusCounts.make(projects, viewed: AgentCompletionViews.shared.isViewed)
     }
     private var displayed: [SpatialProject] {
         var values = library.portfolio.ordered(projects)

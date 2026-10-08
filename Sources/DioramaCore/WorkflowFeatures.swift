@@ -110,7 +110,7 @@ extension ExecutionController {
     }
     public func setArchived(session: Session, archived: Bool) async throws {
         guard session.provider == .codex, !workflowBusy.contains(session.sessionID) else { throw AppServerFailure("Conversation unavailable") }
-        if let task = tasks[session.sessionID], task.phase.active || task.workflow.goal["status"].string == "active" { throw AppServerFailure("Stop work and pause the goal before archiving") }
+        if let task = tasks[session.sessionID], task.busy || task.workflow.goal["status"].string == "active" { throw AppServerFailure("Stop work and pause the goal before archiving") }
         try await ensureConnection()
         workflowBusy.insert(session.sessionID); defer { workflowBusy.remove(session.sessionID) }
         _ = try await transport.request(archived ? "thread/archive" : "thread/unarchive", .object(["threadId": .string(session.sessionID)]))

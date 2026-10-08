@@ -255,7 +255,7 @@ struct LiveAgentRosterTable: NSViewRepresentable {
         func menu(at index: Int) -> NSMenu? {
             guard ids.indices.contains(index), let row = rows[ids[index]] else { return nil }
             let menu = NSMenu(); menu.autoenablesItems = false
-            let supported = row.agent.value.isMain && row.agent.value.provider == Provider.codex.rawValue && parent.archive != nil
+            let supported = row.agent.value.isMain && Provider(rawValue: row.agent.value.provider) != nil && parent.archive != nil
             let item = NSMenuItem(title: supported ? "Archive agent…" : (row.agent.value.isMain ? "Archiving is unavailable for this provider" : "Subagents cannot be archived independently"), action: #selector(archiveClicked(_:)), keyEquivalent: "")
             item.target = self; item.representedObject = row.id; item.isEnabled = supported; menu.addItem(item); return menu
         }

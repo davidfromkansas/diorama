@@ -14,8 +14,32 @@ struct ChefTagContent: Equatable {
     var stale: Bool
     /// Resting in the break room: shown only on hover.
     var resting: Bool
+    /// Where its pull request stands, as a coloured badge after the name.
+    var badge: Badge? = nil
+    enum Badge: Equatable {
+        case readyToMerge, needsFix, testing, other(String)
+        var text: String {
+            switch self { case .readyToMerge: "Ready to merge"; case .needsFix: "Needs a fix"; case .testing: "Testing…"; case .other(let text): text }
+        }
+        var colors: (fill: NSColor, text: NSColor) {
+            switch self {
+            case .readyToMerge: (NSColor(red: 0.85, green: 0.95, blue: 0.87, alpha: 1), NSColor(red: 0.08, green: 0.45, blue: 0.21, alpha: 1))
+            case .needsFix: (NSColor(red: 0.99, green: 0.88, blue: 0.86, alpha: 1), NSColor(red: 0.70, green: 0.15, blue: 0.12, alpha: 1))
+            case .testing: (NSColor(red: 0.88, green: 0.92, blue: 1.0, alpha: 1), NSColor(red: 0.11, green: 0.36, blue: 0.82, alpha: 1))
+            case .other: (NSColor(white: 0.92, alpha: 1), NSColor(white: 0.3, alpha: 1))
+            }
+        }
+        static func make(_ review: KitchenReviews.State?, note: String?) -> Badge? {
+            switch review {
+            case .needsFix: return .needsFix
+            case .checking: return .testing
+            case .shipped: return note == nil || note == "Ready to merge" ? .readyToMerge : .other(note!)
+            default: return nil
+            }
+        }
+    }
 
-    static func make(_ agent: SpatialAgent, review: KitchenReviews.State?, now: Date = Date(), labels: TaskLabels = .shared) -> ChefTagContent {
+    static func make(_ agent: SpatialAgent, review: KitchenReviews.State?, note: String? = nil, now: Date = Date(), labels: TaskLabels = .shared) -> ChefTagContent {
         let value = agent.value
         let work = KitchenLayout.work(for: value, review: review)
         // Only a list kept this turn fills the line; the tag stays quiet otherwise.
@@ -25,7 +49,8 @@ struct ChefTagContent: Equatable {
         let task = TaskTitle.full(value.task)
         let short = labels.label(agent: agent.id, for: task, latest: value.latestRequest, provider: value.provider.lowercased().contains("claude") ? .claude : .codex)
         return ChefTagContent(text: short.isEmpty ? value.name : short, fullText: task.isEmpty ? value.name : task,
-                              progress: progress, stale: !agent.fresh, resting: work.area == "break")
+                              progress: progress, stale: !agent.fresh, resting: work.area == "break",
+                              badge: value.status == .working ? nil : Badge.make(review, note: note))
     }
 }
 
@@ -36,6 +61,7 @@ final class ChefTagView: NSView {
     static let edgePause: CFTimeInterval = 1.5
     private let clip = NSView()
     private let label = NSTextField(labelWithString: "")
+    private let badge = NSTextField(labelWithString: "")
     private(set) var content: ChefTagContent?
     private var reducedMotion = false
     var text: String { label.stringValue }
@@ -51,6 +77,9 @@ final class ChefTagView: NSView {
         label.font = .systemFont(ofSize: 10, weight: .semibold); label.textColor = NSColor(white: 0.18, alpha: 1)
         label.wantsLayer = true; label.lineBreakMode = .byClipping
         clip.addSubview(label)
+        badge.font = .systemFont(ofSize: 9, weight: .bold); badge.wantsLayer = true
+        badge.alignment = .center; badge.isHidden = true
+        addSubview(badge)
         needsDisplay = true
     }
     // The backing layer can be replaced when the tag joins the kitchen's view, so its look is
@@ -68,15 +97,23 @@ final class ChefTagView: NSView {
 
     private var textWidth: CGFloat { ceil(label.attributedStringValue.size().width) }
     /// The tag's size for its current content.
-    var tagSize: NSSize { NSSize(width: 8 + min(Self.maxTextWidth, textWidth) + 8, height: 17) }
+    var tagSize: NSSize { NSSize(width: 8 + min(Self.maxTextWidth, textWidth) + 8 + badgeRoom, height: 17) }
+    private var badgeWidth: CGFloat { badge.isHidden ? 0 : ceil(badge.attributedStringValue.size().width) + 10 }
+    private var badgeRoom: CGFloat { badge.isHidden ? 0 : badgeWidth + 2 }
 
     func update(_ content: ChefTagContent, reducedMotion: Bool) {
         guard content != self.content || reducedMotion != self.reducedMotion else { return }
         let textChanged = content.text != self.content?.text || reducedMotion != self.reducedMotion
         self.content = content; self.reducedMotion = reducedMotion
         label.stringValue = content.text
+        if let value = content.badge {
+            badge.stringValue = value.text; badge.textColor = value.colors.text
+            badge.layer?.backgroundColor = value.colors.fill.cgColor; badge.layer?.cornerRadius = 4
+            badge.isHidden = false
+        } else { badge.isHidden = true }
         alphaValue = content.stale ? 0.6 : 1
-        setAccessibilityLabel(content.fullText); toolTip = content.fullText
+        let described = content.fullText + (content.badge.map { ". " + $0.text } ?? "")
+        setAccessibilityLabel(described); toolTip = described
         layoutTag()
         if textChanged { restartMarquee() }
     }
@@ -88,6 +125,7 @@ final class ChefTagView: NSView {
         let visible = min(Self.maxTextWidth, textWidth)
         clip.frame = NSRect(x: 7, y: 2, width: visible + 2, height: height - 3)
         label.frame = NSRect(x: 0, y: -1, width: textWidth + 4, height: height - 2)
+        badge.frame = NSRect(x: 8 + visible + 6, y: 2.5, width: badgeWidth, height: height - 5)
     }
 
     /// Long tasks scroll to the end and back, pausing at each end (still under Reduce Motion).

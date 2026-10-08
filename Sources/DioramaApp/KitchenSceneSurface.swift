@@ -82,6 +82,13 @@ struct KitchenSceneSurface: NSViewRepresentable {
     var cameraMoved: ((Bool) -> Void)? = nil
     /// Incremented to send the camera home.
     var resetCamera = 0
+    /// A chef picked up by the pointer (nil when put down), for hiding the UI and showing the trash.
+    var holding: ((KitchenHold?) -> Void)? = nil
+    /// Why a chef can't go in the trash (nil when it can), and archiving one dropped there.
+    var archiveBlocker: ((SpatialAgent) -> String?)? = nil
+    var archive: ((SpatialAgent) -> Void)? = nil
+    /// The trash can's frame in window coordinates (top-left origin, SwiftUI's global space).
+    var trashFrame: CGRect = .zero
     func makeNSView(context: Context) -> KitchenStage { KitchenStage() }
     func updateNSView(_ stage: KitchenStage, context: Context) {
         let view = stage.show(scope ?? "")
@@ -93,6 +100,10 @@ struct KitchenSceneSurface: NSViewRepresentable {
         view.deselect = deselect
         view.openPantry = openPantry
         view.cameraMoved = cameraMoved
+        view.holding = holding
+        view.archiveBlocker = archiveBlocker
+        view.archive = archive
+        view.trashFrame = trashFrame
         if stage.cameraResets != resetCamera { stage.cameraResets = resetCamera; view.resetCamera() }
         view.apply(agents: agents, scope: scope, active: active, reducedMotion: reducedMotion)
         view.setSelection(selectedAgentID)
@@ -148,9 +159,12 @@ private final class KitchenLabel: NSTextField {
 /// Kitchen workspace: the focused project's agents appear as chefs working at the station that
 /// matches their state. It only observes agent state; it never controls provider execution.
 final class KitchenSceneView: SCNView {
-    static let maxChefs = 12
-    /// Extra chefs allowed past `maxChefs` so every dish waiting for review stays reachable.
-    static let maxWaiting = 12
+    /// The scene's backdrop (a summer sky beyond the canal), also behind panels that fade away while a chef is held.
+    static let backdrop = NSColor(srgbRed: 0.55, green: 0.78, blue: 0.86, alpha: 1)
+    /// Only the break room is limited: one chef per seat, the most recently active idle
+    /// conversations. Everyone working, needing you or serving is always in the kitchen (extra
+    /// chefs queue behind a busy station).
+    var maxResting: Int { slotTable["break"]?.count ?? 8 }
     let floorSize = SIMD3<Float>(Float(KitchenLayout.floor.width), 0.2, Float(KitchenLayout.floor.height))
     var select: ((SpatialFocus) -> Void)?
     var review: ((SpatialAgent) -> Void)?
@@ -158,6 +172,18 @@ final class KitchenSceneView: SCNView {
     var progress: ((SpatialAgent) -> Void)?
     var deselect: (() -> Void)?
     var openPantry: (() -> Void)?
+    var holding: ((KitchenHold?) -> Void)?
+    var archiveBlocker: ((SpatialAgent) -> String?)?
+    var archive: ((SpatialAgent) -> Void)?
+    var trashFrame: CGRect = .zero
+    /// A press on a chef that becomes a pick-up after `holdDelay` or a small drag.
+    private var press: (id: String, at: CGPoint, timer: Timer)?
+    /// The chef in the pointer's grip, and what the trash makes of it.
+    private(set) var heldID: String?
+    private var hold: KitchenHold?
+    /// Chefs dropped in the trash: kept out of the kitchen while their thread archives.
+    private var trashed: [String: Double] = [:]
+    static let holdDelay = 0.25, trashedFor = 8.0
     var reviews: [String: KitchenReviews.State] = [:]
     private(set) var chefs: [String: ChefAvatar] = [:]
     private var chefAgents: [String: SpatialAgent] = [:]
@@ -193,7 +219,7 @@ final class KitchenSceneView: SCNView {
     override init(frame: NSRect = .zero, options: [String: Any]? = nil) {
         super.init(frame: frame, options: options)
         let world = SCNScene()
-        world.background.contents = NSColor(calibratedRed: 0.91, green: 0.93, blue: 0.92, alpha: 1)
+        world.background.contents = Self.backdrop
         func material(_ color: NSColor) -> SCNMaterial {
             let value = SCNMaterial(); value.diffuse.contents = color; value.roughness.contents = 0.9; return value
         }
@@ -205,6 +231,10 @@ final class KitchenSceneView: SCNView {
         }
         _ = box("Kitchen floor", width: KitchenLayout.floor.width, height: 0.2, depth: KitchenLayout.floor.height, at: SCNVector3Zero, material: material(.init(white: 0.71, alpha: 1)))
         world.rootNode.addChildNode(KitchenRoomGeometry.make())
+        if let restaurant = KitchenRestaurant.shared {
+            world.rootNode.addChildNode(restaurant.make())
+            seatDiners(restaurant, in: world)
+        }
         for slot in KitchenLayout.chefSlots["stove"] ?? [] {
             let burner = SCNVector3(slot.stand.x, KitchenLayout.worktopHeight + 0.04, Float(KitchenLayout.areas.first { $0.id == "stove" }?.footprint.midY ?? 0))
             let flame = Self.flame(); flame.node.position = burner
@@ -239,7 +269,7 @@ final class KitchenSceneView: SCNView {
         daylight.light?.type = .directional; daylight.light?.intensity = 1100
         daylight.light?.castsShadow = true; daylight.light?.shadowRadius = 4
         daylight.light?.shadowMapSize = CGSize(width: 2048, height: 2048)
-        daylight.light?.orthographicScale = 22
+        daylight.light?.orthographicScale = 34
         daylight.light?.shadowColor = NSColor(white: 0.08, alpha: 0.48)
         daylight.position = SCNVector3(-8, 12, -5); daylight.look(at: SCNVector3Zero)
         world.rootNode.addChildNode(daylight)
@@ -252,6 +282,7 @@ final class KitchenSceneView: SCNView {
         camera.camera?.screenSpaceAmbientOcclusionRadius = 0.4
         scene = world; pointOfView = camera; autoenablesDefaultLighting = false
         delegate = self
+        KitchenAudio.shared.prepare()
         allowsCameraControl = false; isPlaying = false; rendersContinuously = false
         wantsLayer = true; leaders.strokeColor = NSColor.darkGray.withAlphaComponent(0.25).cgColor
         leaders.fillColor = nil; leaders.lineWidth = 1; layer?.addSublayer(leaders)
@@ -259,7 +290,7 @@ final class KitchenSceneView: SCNView {
         setAccessibilityHelp(Self.controlsHint)
     }
     required init?(coder: NSCoder) { fatalError("init(coder:) has not been implemented") }
-    override func layout() { super.layout(); fitFloor() }
+    override func layout() { super.layout(); fitFloor(); chefLock.lock(); soundWidth = bounds.width; chefLock.unlock() }
 
     // MARK: Chefs
 
@@ -293,6 +324,10 @@ final class KitchenSceneView: SCNView {
     /// already asked for another step (both under `chefLock`).
     nonisolated(unsafe) private var lastMainStep: TimeInterval = 0
     nonisolated(unsafe) private var mainStepQueued = false
+    /// From when chef sounds may play (under `chefLock`): nil out of view, and only once the
+    /// kitchen has caught up so the jump to where chefs already are stays silent.
+    nonisolated(unsafe) private var soundsFrom: Double?
+    nonisolated(unsafe) private var soundWidth: CGFloat = 0
     /// Keeps macOS from throttling Diorama while chefs move in a visible kitchen.
     private var motionActivity: NSObjectProtocol?
 
@@ -364,6 +399,7 @@ final class KitchenSceneView: SCNView {
     }
     /// Arrow keys, Q/W and R while the kitchen is on screen and nothing that types has focus.
     private func handleKey(_ event: NSEvent) -> Bool {
+        if heldID != nil, event.keyCode == 53 { if event.type == .keyDown { drop(cancelled: true) }; return true }
         guard let window, window.isKeyWindow, observed, window.attachedSheet == nil,
               event.modifierFlags.intersection([.command, .control, .option]).isEmpty else { return false }
         // Typing, or arrowing through a list, keeps the keys.
@@ -421,10 +457,24 @@ final class KitchenSceneView: SCNView {
     }
     /// Seconds for the camera to cover most of the way to its target.
     nonisolated static let cameraEase: Float = 0.35
-    private func publishChefs() { chefLock.lock(); renderChefs = Array(chefs.values); chefLock.unlock() }
+    private func publishChefs() { chefLock.lock(); renderChefs = Array(chefs.values) + diners; chefLock.unlock() }
     /// Projects (or standalone conversations) already shown here: only agents that start while
     /// their project is on screen ride the elevator in; everything else appears in place.
     private var seenScopes: Set<String> = []
+    /// Every chef this kitchen has shown, and where each removed one last stood: a chef that
+    /// comes back (its agent got feedback, or the cap had pushed it out) returns to work from
+    /// there instead of arriving by elevator.
+    private var shownChefs: Set<String> = []
+    private var departed: [String: (position: SIMD2<Float>, heading: Float)] = [:]
+    /// When each shown chef started resting: it keeps its place past the cap long enough to walk
+    /// to the break room and sit down, rather than vanishing from the serving window.
+    private var restingSince: [String: Double] = [:]
+    static let walkOff: Double = 25
+    /// Diners at the restaurant's tables beside the kitchen, and which finished task each one was
+    /// served (by conversation): its dish on their table until the work is accepted.
+    private var diners: [ChefAvatar] = []
+    private var served: [String: (seat: Int, dish: SCNNode?, leftAt: Double?)] = [:]
+    static let dinerCount = 12, dinerLinger = 8.0
 
     /// Spots are owned: a chef keeps its spot until it actually sets off, and claims a free spot
     /// (the station's first unused one, else a queue place behind it) only when it leaves.
@@ -473,7 +523,7 @@ final class KitchenSceneView: SCNView {
         return (slotTable[slot.area] ?? []).contains { !taken.contains($0.id) }
     }
 
-    /// Reconcile chefs with agents: attention first, then working, capped at `maxChefs`.
+    /// Reconcile chefs with agents: everyone with work in hand, plus the most recent resters.
     func apply(agents: [SpatialAgent], scope: String? = nil, active: Bool, reducedMotion: Bool, now: Double = CACurrentMediaTime()) {
         // The render thread only sees published chefs, so new chefs are built outside the lock;
         // the lock covers just the short steering steps below (a long hold froze every chef).
@@ -483,22 +533,43 @@ final class KitchenSceneView: SCNView {
         if active != self.active { Self.trace("active -> \(active)") }
         self.active = active; reduced = reducedMotion
         defer { if let scope { seenScopes.insert(scope) } }
-        // Attention first, then working, then dishes waiting for review; resting chefs fill what
-        // is left. Dishes waiting for review are never dropped: past the cap they queue at the pass.
+        // Attention first, then working, then dishes waiting for review, then anything else
+        // that isn't resting; all of them are shown. Resting chefs (rank 3) take the break room's
+        // seats, most recently active first.
         func rank(_ agent: SpatialAgent) -> Int {
             if agent.needsAttention { return 0 }
-            if agent.value.status == .working { return 1 }
-            return KitchenLayout.work(for: agent.value, review: reviews[agent.conversationID]).area == "serving" ? 2 : 3
+            if agent.value.status == .working || reviews[agent.conversationID] == .reworking { return 1 }
+            switch KitchenLayout.work(for: agent.value, review: reviews[agent.conversationID]).area {
+            case "serving": return 2
+            case "break": return 3
+            default: return 4
+            }
         }
+        func recency(_ agent: SpatialAgent) -> Date { agent.value.meaningfulUpdatedAt ?? agent.value.observedAt ?? .distantPast }
+        // Once its thread is archived the agent leaves the list; an undo brings it straight back.
+        let incoming = Set(agents.map(\.id))
+        trashed = trashed.filter { now - $0.value < Self.trashedFor && incoming.contains($0.key) }
+        let agents = agents.filter { trashed[$0.id] == nil }
         let sorted = agents.enumerated().map { (rank: rank($0.element), offset: $0.offset, agent: $0.element) }
             .sorted { $0.rank != $1.rank ? $0.rank < $1.rank : $0.offset < $1.offset }
-        let working = sorted.filter { $0.rank <= 1 }.prefix(Self.maxChefs)
-        let waiting = sorted.filter { $0.rank == 2 }.prefix(Self.maxChefs + Self.maxWaiting - working.count)
-        let resting = sorted.filter { $0.rank == 3 }.prefix(max(0, Self.maxChefs - working.count - waiting.count))
-        let ranked = (working + waiting + resting).map(\.agent)
+        let busy = sorted.filter { $0.rank != 3 }
+        for entry in sorted {
+            if entry.rank != 3 { restingSince[entry.agent.id] = nil }
+            else if restingSince[entry.agent.id] == nil, chefs[entry.agent.id] != nil { restingSince[entry.agent.id] = now }
+        }
+        let listed = Set(agents.map(\.id))
+        restingSince = restingSince.filter { listed.contains($0.key) }
+        let walking = sorted.filter { $0.rank == 3 && chefs[$0.agent.id] != nil && now - (restingSince[$0.agent.id] ?? -.infinity) < Self.walkOff }
+        let walkingIDs = Set(walking.map(\.agent.id))
+        let idle = sorted.filter { $0.rank == 3 && !walkingIDs.contains($0.agent.id) }
+            .sorted { recency($0.agent) != recency($1.agent) ? recency($0.agent) > recency($1.agent) : $0.offset < $1.offset }
+        let resting = walking + idle.prefix(max(0, maxResting - walking.count))
+        let ranked = (busy + resting).map(\.agent)
         let ids = Set(ranked.map(\.id))
         for id in chefs.keys where !ids.contains(id) {
             chefLock.lock(); renderChefs.removeAll { $0.id == id }; chefLock.unlock()
+            if let director = chefs[id]?.director { departed[id] = (director.position, director.heading) }
+            if heldID == id { heldID = nil; hold = nil; holding?(nil) }
             chefs.removeValue(forKey: id)?.root.removeFromParentNode()
             chefLabels.removeValue(forKey: id)?.removeFromSuperview()
             chefEmotes.removeValue(forKey: id)?.removeFromSuperview(); lastThinking[id] = nil
@@ -514,14 +585,25 @@ final class KitchenSceneView: SCNView {
                 chef.director.reducedMotion = reduced
                 chef.dish = KitchenFood.dish(for: agent.value.completionKey ?? agent.conversationID)
                 chefs[agent.id] = chef
-                // Only agents that start while someone watches ride the elevator in.
-                let arriving = !catchingUp && seenScopes.contains(agent.projectID ?? agent.conversationID) && [.live, .recentlyObserved].contains(agent.value.freshness)
+                // Only new agents that start while someone watches ride the elevator in: never one
+                // this kitchen showed before, nor a conversation you already followed up on.
+                let returning = shownChefs.contains(agent.id) || agent.value.latestRequest != nil
+                shownChefs.insert(agent.id)
+                let arriving = !returning && !catchingUp && seenScopes.contains(agent.projectID ?? agent.conversationID) && [.live, .recentlyObserved].contains(agent.value.freshness)
                 if arriving, let door = slotTable["elevator"]?.first, let order = claimSlot(agent.id, area: "order") {
                     // A new agent joins: it rides the elevator in and reads its order first.
                     chef.director.place(door.stand, heading: door.facing)
                     chef.director.setIntent(KitchenLayout.arrivalIntent(at: order))
                     pacing[agent.id] = Pacing(agent: agent.value, review: review, arriving: true, testsSeen: agent.value.turnWork.tests.count, resourcesSeen: agent.value.turnWork.resources.count, filesSeen: agent.value.turnWork.files.count)
                     openElevator()
+                } else if !catchingUp, let spot = departed[agent.id] {
+                    // Back in view while you watch: it walks from where it last stood to its work.
+                    let area = KitchenLayout.work(for: agent.value, review: review).area
+                    let slot = area.flatMap { claimSlot(agent.id, area: $0) }
+                    chef.director.place(spot.position, heading: spot.heading)
+                    chef.director.setIntent(KitchenLayout.intent(for: agent.value, at: slot, pickup: nil, restored: false, review: review))
+                    pacing[agent.id] = Pacing(agent: agent.value, review: review, testsSeen: agent.value.turnWork.tests.count, resourcesSeen: agent.value.turnWork.resources.count, filesSeen: agent.value.turnWork.files.count)
+                    pacing[agent.id]?.want = chef.director.intent
                 } else {
                     // Chefs shown from history start in place: no walk-in, no replayed gesture.
                     let area = KitchenLayout.work(for: agent.value, review: review).area
@@ -586,7 +668,7 @@ final class KitchenSceneView: SCNView {
                 chefLock.unlock()
             }
             // The tag shows a short task name; the emote above it what needs noticing.
-            let content = ChefTagContent.make(agent, review: review)
+            let content = ChefTagContent.make(agent, review: review, note: KitchenReviews.shared.note(agent.conversationID))
             chefLabels[agent.id]?.update(content, reducedMotion: reduced)
             chefBars[agent.id]?.update(content.progress)
             if let emote = chefEmotes[agent.id] {
@@ -609,7 +691,7 @@ final class KitchenSceneView: SCNView {
     /// at its station for `minimumDwell` (or read its order for `orderReading` after arriving).
     func pace(now: Double) {
         for id in chefs.keys.sorted() {
-            guard let chef = chefs[id], var state = pacing[id] else { continue }
+            guard let chef = chefs[id], chef.held == nil, var state = pacing[id] else { continue }
             let director = chef.director
             if director.station != nil, state.arrivedAt == nil { state.arrivedAt = now }
             let settledFor = state.arrivedAt.map { now - $0 } ?? 0
@@ -775,6 +857,7 @@ final class KitchenSceneView: SCNView {
             applyFreeCamera()
         }
         chefLock.lock(); pace(now: CACurrentMediaTime()); chefLock.unlock()
+        serveDiners(now: CACurrentMediaTime())
         logStations()
         updateFlames()
         updateBoards()
@@ -788,7 +871,7 @@ final class KitchenSceneView: SCNView {
         guard TaskLabels.shared.revision != labelRevision else { return }
         labelRevision = TaskLabels.shared.revision
         for (id, agent) in chefAgents {
-            let content = ChefTagContent.make(agent, review: pacing[id]?.review)
+            let content = ChefTagContent.make(agent, review: pacing[id]?.review, note: KitchenReviews.shared.note(agent.conversationID))
             chefLabels[id]?.update(content, reducedMotion: reduced); chefBars[id]?.update(content.progress)
         }
     }
@@ -824,7 +907,7 @@ final class KitchenSceneView: SCNView {
         chefLock.lock(); defer { chefLock.unlock() }
         let now = CACurrentMediaTime()
         for id in chefs.keys.sorted() {
-            guard let chef = chefs[id], var state = pacing[id] else { continue }
+            guard let chef = chefs[id], chef.held == nil, var state = pacing[id] else { continue }
             let director = chef.director
             state.arriving = false; state.owed = []; pacing[id] = state
             let walking = director.intent?.station != nil && director.station == nil
@@ -846,13 +929,15 @@ final class KitchenSceneView: SCNView {
         let animating = chefs.values.contains(where: \.animating) || pacingPending || cameraMoving || !freeCamera.held.isEmpty
         chefLock.unlock()
         let moving = effectiveActive && animating
+        let audibleFrom = window != nil && effectiveActive ? observedSince.map { $0 + Self.catchUpWindow } : nil
+        chefLock.lock(); soundsFrom = audibleFrom; chefLock.unlock()
         if isPlaying != moving { isPlaying = moving }
+        if rendersContinuously != moving { rendersContinuously = moving }
         if moving, motionActivity == nil {
             motionActivity = ProcessInfo.processInfo.beginActivity(options: [.userInitiatedAllowingIdleSystemSleep, .latencyCritical], reason: "Animating the kitchen")
         } else if !moving, let activity = motionActivity {
             ProcessInfo.processInfo.endActivity(activity); motionActivity = nil
         }
-        if rendersContinuously != moving { rendersContinuously = moving }
         if !moving { chefLock.lock(); lastRenderTime = nil; chefLock.unlock() } // a pause is not a stall
         if frameLink?.isPaused != !moving {
             Self.trace("playback \(moving ? "running" : "paused") active=\(active) window=\(window?.occlusionState.contains(.visible) ?? false)")
@@ -873,7 +958,7 @@ final class KitchenSceneView: SCNView {
         })
         // Keys held when the window loses focus would otherwise keep the camera moving.
         windowObservers.append(NotificationCenter.default.addObserver(forName: NSWindow.didResignKeyNotification, object: window, queue: .main) { [weak self] _ in
-            MainActor.assumeIsolated { self?.freeCamera.releaseAll() }
+            MainActor.assumeIsolated { self?.freeCamera.releaseAll(); if self?.heldID != nil { self?.drop(cancelled: true) } }
         })
         if keyMonitor == nil {
             keyMonitor = NSEvent.addLocalMonitorForEvents(matching: [.keyDown, .keyUp]) { [weak self] event in
@@ -1035,6 +1120,7 @@ final class KitchenSceneView: SCNView {
             // A selected chef has the stage to itself; resting chefs show their tag on hover.
             let emote = chefEmotes[id], bar = chefBars[id]
             emote?.isHidden = true; bar?.isHidden = true
+            if heldID == id { label.isHidden = true; continue }
             if let selectedID, selectedID != id { label.isHidden = true; continue }
             if selectedID == nil, label.content?.resting == true, hoveredID != id { label.isHidden = true; continue }
             let head = position + SIMD3(0, 2.05 * KitchenLayout.chefScale, 0)
@@ -1085,6 +1171,8 @@ final class KitchenSceneView: SCNView {
     }
     override func mouseExited(with event: NSEvent) { if hoveredID != nil { hoveredID = nil; placeChefLabels() } }
     override func mouseUp(with event: NSEvent) {
+        press?.timer.invalidate(); press = nil
+        if heldID != nil { drop(); return }
         let point = convert(event.locationInWindow, from: nil)
         // Name tags sit above the 3D scene; a click on one opens that chef's progress.
         if let progress, let id = chefLabels.first(where: { !$0.value.isHidden && $0.value.frame.contains(point) })?.key, let agent = chefAgents[id] {
@@ -1205,6 +1293,20 @@ final class KitchenSceneView: SCNView {
 }
 
 extension KitchenSceneView: SCNSceneRendererDelegate {
+    /// Plays the sounds chefs cued this frame, panned to where each stands on screen and quieter
+    /// for chefs out of frame. Render thread, under `chefLock`.
+    nonisolated private func playSounds(_ renderer: any SCNSceneRenderer, at now: Double) {
+        let audible = soundsFrom.map { now >= $0 } ?? false
+        for chef in renderChefs where !chef.heard.isEmpty {
+            let sounds = chef.heard; chef.heard = []
+            guard audible, soundWidth > 0 else { continue }
+            let point = renderer.projectPoint(SCNVector3(chef.root.simdWorldPosition))
+            let x = Float(CGFloat(point.x) / soundWidth)
+            let inFrame = x >= 0 && x <= 1 && point.z < 1
+            for sound in sounds { KitchenAudio.shared.play(sound, pan: x * 2 - 1, level: inFrame ? 1 : 0.35) }
+        }
+    }
+
     /// Runs on SceneKit's render thread every rendered frame, independent of main-thread work.
     nonisolated func renderer(_ renderer: any SCNSceneRenderer, updateAtTime time: TimeInterval) {
         chefLock.lock(); defer { chefLock.unlock() }
@@ -1212,6 +1314,7 @@ extension KitchenSceneView: SCNSceneRendererDelegate {
         let delta = lastRenderTime.map { Float(min(0.1, max(0, time - $0))) } ?? 0
         lastRenderTime = time
         for chef in renderChefs { chef.update(delta) }
+        playSounds(renderer, at: CACurrentMediaTime())
         stepCamera(delta)
         // macOS slows the main thread's frame link while another app is in front; the render
         // thread keeps full rate, so it asks for the tag/pacing step whenever that link falls behind.
@@ -1224,6 +1327,224 @@ extension KitchenSceneView: SCNSceneRendererDelegate {
                     if late, self.frameLink?.isPaused == false { self.frameStep(at: CACurrentMediaTime(), lagging: true) }
                 }
             }
+        }
+    }
+}
+
+/// A chef in the pointer's grip, as the kitchen's overlays need it.
+struct KitchenHold: Equatable {
+    var name: String
+    /// Why the trash won't take it, or nil.
+    var blocker: String?
+    var overTrash = false
+}
+
+// MARK: Picking chefs up
+
+extension KitchenSceneView {
+    /// The chef under a view point, if any.
+    private func chefID(at point: CGPoint) -> String? {
+        for hit in hitTest(point, options: [.searchMode: SCNHitTestSearchMode.closest.rawValue]) {
+            if let node = sequence(first: hit.node, next: \.parent).first(where: { $0.name?.hasPrefix("agent:") == true }) { return String(node.name!.dropFirst(6)) }
+        }
+        return nil
+    }
+    override func mouseDown(with event: NSEvent) {
+        press?.timer.invalidate(); press = nil
+        let point = convert(event.locationInWindow, from: nil)
+        guard holding != nil, heldID == nil, window?.attachedSheet == nil,
+              !chefLabels.values.contains(where: { !$0.isHidden && $0.frame.contains(point) }),
+              let id = chefID(at: point), chefs[id] != nil else { super.mouseDown(with: event); return }
+        let timer = Timer.scheduledTimer(withTimeInterval: Self.holdDelay, repeats: false) { [weak self] _ in
+            MainActor.assumeIsolated { self?.pickUp() }
+        }
+        press = (id, point, timer)
+    }
+    override func mouseDragged(with event: NSEvent) {
+        let point = convert(event.locationInWindow, from: nil)
+        if heldID == nil, let press, hypot(point.x - press.at.x, point.y - press.at.y) > 4 { pickUp() }
+        if heldID != nil { carry(to: event.locationInWindow) }
+        else { super.mouseDragged(with: event) }
+    }
+
+    /// Lifts the pressed chef: it squirms in the grip, its tags hide, and the overlays give way to the trash.
+    private func pickUp() {
+        guard let press, let chef = chefs[press.id], let agent = chefAgents[press.id] else { self.press = nil; return }
+        press.timer.invalidate(); self.press = nil
+        heldID = press.id
+        let window = self.window?.mouseLocationOutsideOfEventStream ?? convert(press.at, to: nil)
+        chefLock.lock()
+        let start = chef.director.position
+        chef.held = ChefAvatar.Hold(target: grabPoint(window) ?? start, point: start)
+        chefLock.unlock()
+        hoveredID = nil
+        hold = KitchenHold(name: agent.value.name, blocker: archiveBlocker?(agent))
+        holding?(hold)
+        placeChefLabels()
+        KitchenAudio.shared.play(.grab, pan: Float(press.at.x / max(1, bounds.width)) * 2 - 1)
+        updatePlayback()
+        carry(to: window)
+    }
+    private func carry(to windowPoint: CGPoint) {
+        guard let id = heldID, let chef = chefs[id] else { return }
+        if let target = grabPoint(windowPoint) { chefLock.lock(); chef.held?.target = target; chefLock.unlock() }
+        let over = overTrash(windowPoint)
+        if hold?.overTrash != over { hold?.overTrash = over; holding?(hold) }
+    }
+    /// Over the trash can: SwiftUI reports its frame in window coordinates with a top-left origin.
+    private func overTrash(_ windowPoint: CGPoint) -> Bool {
+        guard trashFrame.width > 0, let height = window?.contentView?.bounds.height else { return false }
+        return trashFrame.insetBy(dx: -16, dy: -16).contains(CGPoint(x: windowPoint.x, y: height - windowPoint.y))
+    }
+
+    /// Puts the held chef down: into the trash (archiving its thread) when it may go there,
+    /// otherwise on the nearest free floor, from where it walks back to its work.
+    func drop(cancelled: Bool = false) {
+        guard let id = heldID, let chef = chefs[id] else { heldID = nil; hold = nil; holding?(nil); return }
+        let agent = chefAgents[id]
+        let binned = !cancelled && hold?.overTrash == true && hold?.blocker == nil && agent != nil && archive != nil
+        heldID = nil; hold = nil
+        holding?(nil)
+        chefLock.lock(); let spot = chef.held?.point ?? chef.director.position; chefLock.unlock()
+        let pan = projectWithoutLock(SIMD3(spot.x, 0, spot.y)).map { Float($0.x / max(1, bounds.width)) * 2 - 1 } ?? 0
+        if binned, let agent {
+            chefLock.lock(); chef.held?.trashing = 0; chefLock.unlock()
+            KitchenAudio.shared.play(.clatter, pan: 1)
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.36) { [weak self] in
+                guard let self else { return }
+                self.trashed[id] = CACurrentMediaTime()
+                self.archive?(agent)
+                self.apply(agents: Array(self.chefAgents.values), active: self.active, reducedMotion: self.reduced)
+            }
+        } else {
+            let floor = freeFloor(near: insideWalls(spot))
+            chefLock.lock(); chef.release(at: floor); chefLock.unlock()
+            KitchenAudio.shared.play(.plate, pan: pan, level: 0.7)
+            pacing[id]?.arrivedAt = nil
+        }
+        placeChefLabels()
+        updatePlayback()
+    }
+
+    /// Where the held chef's root goes for a pointer position: the chef hangs from the pointer,
+    /// so the ray meets the plane at its lifted head height. Held in the air it isn't kept inside
+    /// the walls, so it reaches the trash in the corner; it lands back inside when put down.
+    /// Lock-free, like `projectWithoutLock`.
+    func grabPoint(_ windowPoint: CGPoint) -> SIMD2<Float>? {
+        let point = convert(windowPoint, from: nil)
+        let height = (ChefAvatar.liftHeight + 1.7) * KitchenLayout.chefScale
+        guard let hit = floorRay(point, planeY: height) else { return nil }
+        let reach = SIMD2(Float(KitchenLayout.floor.width), Float(KitchenLayout.floor.height)) * 2
+        return simd_clamp(hit, -reach, reach)
+    }
+    /// The floor inside the walls nearest a point.
+    func insideWalls(_ point: SIMD2<Float>) -> SIMD2<Float> {
+        let half = SIMD2(Float(KitchenLayout.floor.width / 2), Float(KitchenLayout.floor.height / 2)) - 0.3
+        return simd_clamp(point, -half, half)
+    }
+    /// Where a view point's ray crosses the horizontal plane at `planeY` (world x, z).
+    func floorRay(_ point: CGPoint, planeY: Float) -> SIMD2<Float>? {
+        guard let eye = pointOfView, let camera = eye.camera, bounds.width > 0, bounds.height > 0 else { return nil }
+        let projection = simd_float4x4(camera.projectionTransform(withViewportSize: bounds.size))
+        let inverse = (projection * eye.simdWorldTransform.inverse).inverse
+        let ndc = SIMD2(Float(point.x / bounds.width) * 2 - 1, Float(point.y / bounds.height) * 2 - 1)
+        func world(_ z: Float) -> SIMD3<Float>? {
+            let value = inverse * SIMD4(ndc.x, ndc.y, z, 1)
+            guard abs(value.w) > 0.000001 else { return nil }
+            return SIMD3(value.x, value.y, value.z) / value.w
+        }
+        guard let near = world(0), let far = world(0.5) else { return nil }
+        let direction = far - near
+        guard abs(direction.y) > 0.00001 else { return nil }
+        let t = (planeY - near.y) / direction.y
+        guard t > 0 else { return nil }
+        let hit = near + direction * t
+        return SIMD2(hit.x, hit.z)
+    }
+    /// The free floor point nearest `point` (counters and walls are not floor).
+    func freeFloor(near point: SIMD2<Float>) -> SIMD2<Float> {
+        if navigation.isFree(point) { return point }
+        for ring in 1...24 {
+            let r = Float(ring) * 0.25
+            for step in 0..<(ring * 8) {
+                let angle = Float(step) / Float(ring * 8) * 2 * .pi
+                let candidate = point + SIMD2(cos(angle), sin(angle)) * r
+                if navigation.isFree(candidate) { return candidate }
+            }
+        }
+        return point
+    }
+}
+
+// MARK: Diners
+
+extension KitchenSceneView {
+    /// The diners' outfits, painted in Blender (`assets/chef/blender/diner_outfits.py`).
+    static let dinerOutfits: [NSImage] = (1...6).compactMap { index in
+        WorkspaceCapybaraAsset.resourceBundle.url(forResource: String(format: "diner_%02d", index), withExtension: "jpg", subdirectory: "Restaurant")
+            .flatMap(NSImage.init(contentsOf:))
+    }
+    private static let dinerLoops = ["sit_idle", "sit_chat", "sit_idle", "sit_idle", "sit_chat", "sit_idle"]
+
+    /// Seats the regulars at the tables along both sides of the kitchen.
+    private func seatDiners(_ restaurant: KitchenRestaurant, in world: SCNScene) {
+        guard case let .success(assets) = ChefAssets.shared else { return }
+        for (index, seat) in restaurant.seats.prefix(Self.dinerCount).enumerated() {
+            let diner = ChefAvatar(id: "diner-" + seat.id, assets: assets, scale: KitchenLayout.chefScale, navigation: KitchenLayout.chefNavigation)
+            diner.root.name = "diner:" + seat.id
+            let outfits = Self.dinerOutfits
+            diner.dressAsDiner(outfits.isEmpty ? nil : outfits[index % outfits.count])
+            diner.director.place(seat.stand, heading: seat.facing)
+            diner.director.setIntent(dinerIntent(index, seat: seat, loop: Self.dinerLoops[index % Self.dinerLoops.count]))
+            diner.update(0)
+            world.rootNode.addChildNode(diner.root)
+            diners.append(diner)
+        }
+    }
+    private func dinerIntent(_ index: Int, seat: KitchenRestaurant.Seat, loop: String) -> ChefIntent {
+        let station = ChefStation(id: "dining-" + seat.id, area: "dining", stand: seat.stand, facing: seat.facing)
+        return ChefIntent(key: ["dining", seat.id, loop].joined(separator: "|"), station: station, loop: loop)
+    }
+    /// Seated diners currently being served, by conversation (for tests).
+    var servedSeats: [String: Int] { served.mapValues(\.seat) }
+
+    /// A chef who sets a finished task's dish on the pass serves it to the nearest free diner:
+    /// the same dish lands on their table and they light up. Once the work is accepted (or the
+    /// task leaves the kitchen) they finish eating and the table clears.
+    func serveDiners(now: Double) {
+        guard let restaurant = KitchenRestaurant.shared, !diners.isEmpty else { return }
+        chefLock.lock()
+        var plated: [String: String] = [:] // conversation -> dish id
+        for (id, chef) in chefs where chef.director.placedPlate != nil {
+            if let agent = chefAgents[id], agent.value.isMain { plated[agent.conversationID] = chef.dish ?? "" }
+        }
+        chefLock.unlock()
+        for (conversation, dishID) in plated.sorted(by: { $0.key < $1.key }) where served[conversation] == nil || served[conversation]?.leftAt != nil {
+            if let back = served[conversation], back.leftAt != nil { served[conversation]?.leftAt = nil; continue }
+            let taken = Set(served.values.map(\.seat))
+            guard let seat = diners.indices.first(where: { !taken.contains($0) }), seat < restaurant.seats.count else { break }
+            let spot = restaurant.seats[seat]
+            var plate: SCNNode?
+            if let template = KitchenFood.templates[dishID] {
+                let node = template.clone(); node.simdScale = SIMD3(repeating: ChefAvatar.dishSize * KitchenLayout.chefScale * 0.62)
+                node.simdPosition = spot.dish + SIMD3(0, 0.005, 0)
+                scene?.rootNode.addChildNode(node); plate = node
+            }
+            served[conversation] = (seat, plate, nil)
+            chefLock.lock(); diners[seat].director.setIntent(dinerIntent(seat, seat: spot, loop: "sit_chat")); chefLock.unlock()
+            if let point = projectWithoutLock(spot.dish) {
+                KitchenAudio.shared.play(.clink, pan: Float(point.x / max(1, bounds.width)) * 2 - 1, level: 0.8)
+            }
+        }
+        for (conversation, entry) in served where plated[conversation] == nil {
+            guard let left = entry.leftAt else { served[conversation]?.leftAt = now; continue }
+            guard now - left > Self.dinerLinger else { continue }
+            entry.dish?.removeFromParentNode()
+            served[conversation] = nil
+            let spot = restaurant.seats[entry.seat]
+            chefLock.lock()
+            diners[entry.seat].director.setIntent(dinerIntent(entry.seat, seat: spot, loop: Self.dinerLoops[entry.seat % Self.dinerLoops.count]))
+            chefLock.unlock()
         }
     }
 }

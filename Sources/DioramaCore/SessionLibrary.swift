@@ -55,6 +55,9 @@ public struct Entry: Identifiable, Equatable, Sendable, Codable {
     public var claude: ClaudePresentation? = nil
     public var codex: CodexPresentation? = nil
     public var sourceRecords: [TranscriptSource]? = nil
+    /// A question the agent asked you without pausing for it (Codex's `request_user_input_async`):
+    /// the turn may end while it still waits for your answer.
+    public var asksYou: Bool? = nil
 }
 
 public struct WorkingFolder: Identifiable, Sendable {

@@ -44,6 +44,11 @@ public enum GitHubCredentials {
         return (try? JSONDecoder().decode(GitHubToken.self, from: data)) ?? String(data: data, encoding: .utf8).map { GitHubToken(accessToken: $0) }
     }
     public static func load() throws -> String? { try loadRecord()?.accessToken }
+    /// Ad-hoc signed development builds tie Keychain items to the exact binary that wrote them, so the
+    /// bundled Git credential helper cannot read the app's login. Only there does the app hand the
+    /// token to the helper for a single Git command. Release builds share a team ID and never do this.
+    public static var isDevelopmentBuild: Bool { Bundle.main.url(forResource: "DevelopmentRoot", withExtension: "txt") != nil }
+    public static let developmentTokenVariable = "DIORAMA_DEVELOPMENT_GITHUB_TOKEN"
     public static func save(_ token: GitHubToken) throws {
         let query = [kSecClass: kSecClassGenericPassword, kSecAttrService: service, kSecAttrAccount: "github.com"] as CFDictionary
         let data = try JSONEncoder().encode(token)
@@ -87,6 +92,8 @@ public struct GitHubRepo: Codable, Sendable, Identifiable {
     public let html_url: String
     public let default_branch: String
     public let `private`: Bool
+    public let description: String?
+    public let updated_at: String?
 }
 
 /// Only Diorama-owned credentials are used. No gh login or ambient environment tokens.
@@ -101,6 +108,8 @@ public actor GitHubAccount {
     private let saveToken: @Sendable (GitHubToken) throws -> Void
     private let removeToken: @Sendable () throws -> Void
     private let transport: (@Sendable (URLRequest) async throws -> (Data, HTTPURLResponse))?
+    /// The login this process last saved or read, so a fresh sign-in works without reading Keychain back.
+    private var cached: GitHubToken?
     public init(clientID: String? = nil,
                 loadToken: @escaping @Sendable () throws -> GitHubToken? = { try GitHubCredentials.loadRecord() },
                 saveToken: @escaping @Sendable (GitHubToken) throws -> Void = { try GitHubCredentials.save($0) },
@@ -122,7 +131,7 @@ public actor GitHubAccount {
     }
     public func disconnect() throws {
         generation += 1
-        refreshTask?.cancel(); refreshTask = nil
+        refreshTask?.cancel(); refreshTask = nil; cached = nil
         for task in gitOperations.values { task.cancel() }
         try removeToken()
     }
@@ -157,7 +166,8 @@ public actor GitHubAccount {
             let value = try JSONDecoder().decode(WireValue.self, from: data)
             guard expected == generation else { throw CancellationError() }
             if let token = value["access_token"].string {
-                try saveToken(Self.token(value, accessToken: token))
+                let record = Self.token(value, accessToken: token)
+                try saveToken(record); cached = record
                 return try await identity()
             }
             switch value["error"].string {
@@ -192,7 +202,8 @@ public actor GitHubAccount {
         return try await task.value
     }
     private func loadOrRefreshToken() async throws -> String? {
-        guard let stored = try loadToken() else { return nil }
+        guard let stored = try cached ?? loadToken() else { return nil }
+        cached = stored
         if let expiry = stored.expiresAt, expiry < Date().addingTimeInterval(60) {
             guard let refresh = stored.refreshToken, let client = configuredClientID ?? Self.clientID else { throw AppServerFailure("Reconnect GitHub in Settings.") }
             let expected = generation
@@ -200,7 +211,8 @@ public actor GitHubAccount {
             let value = try JSONDecoder().decode(WireValue.self, from: data)
             guard expected == generation else { throw CancellationError() }
             guard let token = value["access_token"].string else { throw AppServerFailure("Your GitHub login expired. Reconnect in Settings.") }
-            try saveToken(Self.token(value, accessToken: token))
+            let record = Self.token(value, accessToken: token)
+            try saveToken(record); cached = record
             return token
         }
         return stored.accessToken

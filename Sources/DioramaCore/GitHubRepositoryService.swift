@@ -9,6 +9,20 @@ public actor GitHubRepositoryService {
         let repo = try await GitHubAccount.shared.repository(name)
         _ = try await GitHubGit.run(folder: nil, repository: repo.full_name, arguments: ["clone", "--", "https://github.com/" + repo.full_name + ".git", folder])
     }
+    /// Clones one of the account's repositories, reporting Git's progress output as it arrives.
+    /// A failed or cancelled clone removes the folder it created.
+    public func clone(_ repository: String, to folder: String, output: @escaping @Sendable (String) -> Void) async throws {
+        let name = try GitHubAccount.validRepository(repository)
+        guard !FileManager.default.fileExists(atPath: folder) else { throw AppServerFailure("That folder already exists. Choose another location.") }
+        try FileManager.default.createDirectory(at: URL(fileURLWithPath: folder).deletingLastPathComponent(), withIntermediateDirectories: true)
+        let repo = try await GitHubAccount.shared.repository(name)
+        do {
+            try await GitHubGit.stream(folder: nil, repository: repo.full_name, arguments: ["clone", "--progress", "--", "https://github.com/" + repo.full_name + ".git", folder], output: output)
+        } catch {
+            try? FileManager.default.removeItem(atPath: folder)
+            throw error
+        }
+    }
     private struct Publication: Codable {
         var account: Int
         var name: String

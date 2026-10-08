@@ -519,6 +519,77 @@ def clip_cover_dish():
     ])
 
 
+# ----------------------------------------------------------------- pull requests
+def clip_merge_ready():
+    """Checks passed: a fist pump with a little hop before waiting at the pass."""
+    pump = P(hand_R=(-0.46, -0.10, 1.16), rot__hand_R=(-30, 0, 0), rot__clavicle_R=(0, 12, 0),
+             pole_R=(-0.70, 0.30, 0.6), rot__chest=(-6, 0, -4), rot__head=(-10, 0, -6),
+             hand_L=(0.42, -0.06, 0.62))
+    return dict(duration=1.2, loop=False, keys=[
+        (0.0, P()),
+        (0.16, P(loc__hips=(0, 0, -0.04), rot__spine=(5, 0, 0), hand_R=(-0.40, -0.10, 0.60))),
+        (0.36, merge(pump, loc__hips=(0, 0, 0.045), foot_L=(0, 0, 0.035), foot_R=(0, 0, 0.035), rot__hat=(-3, 0, 0))),
+        (0.52, merge(pump, loc__hips=(0, 0, -0.02), hand_R=(-0.46, -0.10, 1.04), rot__hat=(2, 0, 0))),
+        (0.68, merge(pump, hand_R=(-0.46, -0.10, 1.18))),
+        (0.86, merge(pump, hand_R=(-0.46, -0.10, 1.02))),
+        (1.2, P(rot__chest=(-4, 0, 0), rot__head=(-3, 0, 0), hand_L=(0.34, 0.02, 0.62), hand_R=(-0.34, 0.02, 0.62),
+                rot__hand_L=(0, 40, 0), rot__hand_R=(0, -40, 0))),
+    ])
+
+
+def clip_merge_ready_wait():
+    """Ready to merge: hands on hips, rocking on its toes, nodding at you now and then."""
+    hips = P(rot__chest=(-5, 0, 0), rot__head=(-4, 0, 0), hand_L=(0.34, 0.02, 0.62), hand_R=(-0.34, 0.02, 0.62),
+             rot__hand_L=(0, 40, 0), rot__hand_R=(0, -40, 0), rot__clavicle_L=(0, 4, 0), rot__clavicle_R=(0, -4, 0))
+    return dict(duration=2.4, loop=True, keys=[
+        (0.0, hips),
+        (0.4, merge(hips, loc__hips=(0, 0, 0.018), foot_L=(0, 0, 0.012), foot_R=(0, 0, 0.012))),
+        (0.8, merge(hips, loc__hips=(0, 0, 0))),
+        (1.2, merge(hips, rot__head=(8, 0, 6))),
+        (1.45, merge(hips, rot__head=(-6, 0, 6))),
+        (1.7, merge(hips, rot__head=(6, 0, 4))),
+        (2.0, merge(hips, rot__head=(-4, 0, 0), loc__hips=(0, 0, 0.012))),
+    ])
+
+
+def clip_fix_react():
+    """Needs a fix: a facepalm, then a sigh."""
+    palm = P(hand_R=(-0.10, -0.27, 1.06), rot__hand_R=(-85, 0, 20), rot__clavicle_R=(0, 10, 14),
+             pole_R=DOWN_POLE["R"], rot__head=(16, 0, -4), rot__neck=(6, 0, 0), rot__chest=(6, 0, 0),
+             hand_L=(0.45, -0.02, 0.56))
+    return dict(duration=1.3, loop=False, keys=[
+        (0.0, P()),
+        (0.2, P(rot__head=(-6, 0, 0), rot__chest=(-3, 0, 0))),
+        (0.45, palm),
+        (0.75, merge(palm, rot__head=(20, 0, 4), loc__hips=(0, 0, -0.01))),
+        (0.95, merge(palm, rot__head=(18, 0, -6))),
+        (1.3, merge(SUBDUED, rot__head=(8, 0, 10))),
+    ])
+
+
+def clip_fix_wait():
+    """Needs a fix: scratches its head under the hat, then taps its chin, thinking it over."""
+    scratch = P(hand_R=(-0.34, -0.06, 1.06), rot__hand_R=(-40, 0, 30), rot__clavicle_R=(0, 12, 0),
+                pole_R=(-0.70, 0.30, 0.6), rot__head=(6, 0, 14), rot__chest=(3, 0, 4),
+                hand_L=(0.45, -0.02, 0.56))
+    chin = P(hand_R=(-0.10, -0.32, 0.88), rot__hand_R=(-60, 0, 10), rot__clavicle_R=(0, 6, 12),
+             pole_R=DOWN_POLE["R"], rot__head=(-4, 0, -8), rot__chest=(2, 0, 0),
+             hand_L=(0.20, -0.30, 0.74), rot__clavicle_L=(0, 0, -14), pole_L=DOWN_POLE["L"])
+    return dict(duration=4.0, loop=True, keys=[
+        (0.0, merge(SUBDUED, rot__head=(8, 0, 10))),
+        (0.5, scratch),
+        (0.7, merge(scratch, hand_R=(-0.31, -0.08, 1.09))),
+        (0.9, scratch),
+        (1.1, merge(scratch, hand_R=(-0.31, -0.08, 1.09))),
+        (1.3, scratch),
+        (1.9, chin),
+        (2.3, merge(chin, hand_R=(-0.10, -0.33, 0.86), rot__head=(-6, 0, -12))),
+        (2.7, merge(chin, rot__head=(-2, 0, -4))),
+        (3.1, merge(chin, hand_R=(-0.10, -0.33, 0.86))),
+        (3.6, merge(SUBDUED, rot__head=(6, 0, 8))),
+    ])
+
+
 CLIPS = {
     "idle_available": clip_idle,
     "planning_recipe": clip_planning,
@@ -550,4 +621,8 @@ CLIPS = {
     "sit_sip": clip_sit_sip,
     "sit_chat": clip_sit_chat,
     "cover_dish": clip_cover_dish,
+    "merge_ready": clip_merge_ready,
+    "merge_ready_wait": clip_merge_ready_wait,
+    "fix_react": clip_fix_react,
+    "fix_wait": clip_fix_wait,
 }

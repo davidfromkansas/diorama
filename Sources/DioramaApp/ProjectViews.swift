@@ -212,6 +212,12 @@ struct ProjectsRootView: View {
                     Divider()
                     addActions
                 }.padding(24).frame(width: 440)
+            } else if addMode == "Open GitHub project" {
+                GitHubProjectSheet { project in
+                    library.captureProjectPresentation(); projects.add(project)
+                    if let id = projects.selectedID { library.selectProjectTab(id) }
+                    addMode = nil
+                }
             } else { AddProjectView(mode: addMode ?? "New Project", projects: projects) }
         }
         .alert("Projects", isPresented: Binding(get: { projects.error != nil }, set: { if !$0 { projects.error = nil } })) {

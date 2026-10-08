@@ -4,6 +4,11 @@ import CoreFoundation
 /// Adapts saved rollout items to the public App Server presentation vocabulary.
 /// No execution or capability lookup is performed while normalizing evidence.
 public enum CodexOutputEvidence {
+    /// The message Codex posts for `request_user_input_async`: delivered asynchronously, with
+    /// the questions attached.
+    public static func isAsyncQuestion(_ item: WireValue) -> Bool {
+        item["delivery"].string == "async" || !item["questions"].array.isEmpty
+    }
     public static func wire(_ value: Any) -> WireValue {
         switch value {
         case let object as [String: Any]: return .object(object.mapValues(wire))

@@ -29,15 +29,16 @@ struct AgentSettingsView: View {
     private var anyConnected: Bool { info["codex"].bool || info["claude"].bool }
     var body: some View {
         VStack(alignment: .leading, spacing: 20) {
-            Text(onboarding ? (githubStep ? "Bring your projects to GitHub." : "Connect an account to get started.") : "Models & accounts")
-                .font(.title2.bold()).fixedSize(horizontal: false, vertical: true)
-            Text(githubStep ? "Import repositories, publish projects, and create pull requests. GitHub is optional." : "Connect OpenAI or Claude. You can add the other later.")
-                .foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
-            ScrollView {
-                VStack(alignment: .leading, spacing: 16) {
-                    if githubStep {
-                        GitHubSettingsView(onboarding: true, connectionChanged: { githubConnected = $0 })
-                    } else {
+            if githubStep {
+                // The GitHub step draws its own branded header and sizes to its content.
+                GitHubSettingsView(onboarding: true, connectionChanged: { githubConnected = $0 })
+            } else {
+                Text(onboarding ? "Connect an account to get started." : "Models & accounts")
+                    .font(.title2.bold()).fixedSize(horizontal: false, vertical: true)
+                Text("Connect OpenAI or Claude. You can add the other later.")
+                    .foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
+                ScrollView {
+                    VStack(alignment: .leading, spacing: 16) {
                         account("OpenAI", key: "codex")
                         account("Claude", key: "claude")
                         if anyConnected {
@@ -55,9 +56,9 @@ struct AgentSettingsView: View {
                             GitHubSettingsView()
                             Button("Review setup…") { reviewSetup = true }.pointingHand()
                         }
-                    }
-                }.frame(maxWidth: .infinity, alignment: .leading)
-            }.frame(height: onboarding ? 340 : 420)
+                    }.frame(maxWidth: .infinity, alignment: .leading)
+                }.frame(height: onboarding ? 340 : 420)
+            }
             Divider()
             HStack {
                 if githubStep {

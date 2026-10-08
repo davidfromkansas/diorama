@@ -40,6 +40,13 @@ struct SpatialWorkspaceView: View {
     /// The kitchen camera left its home view (zoomed or turned), and a request to send it back.
     @State private var kitchenCameraAway = false
     @State private var kitchenCameraResets = 0
+    /// A chef held by the pointer: the kitchen's overlays give way to the trash can.
+    @State private var kitchenHold: KitchenHold?
+    @State private var trashFrame: CGRect = .zero
+    /// "Archived Lena · Undo" after a chef went in the trash (or why it couldn't be archived).
+    @State private var kitchenBanner: (id: UUID, text: String, undo: (() -> Void)?)?
+    /// Chef foley in the kitchen (`KitchenAudio`).
+    @AppStorage(KitchenAudio.enabledKey) private var kitchenSounds = true
     @State private var explore = false
     @State private var attention = false
     @State private var allConversations = false
@@ -97,6 +104,9 @@ struct SpatialWorkspaceView: View {
                     // floating in the kitchen's top left (kitchenHUD).
                     if visible, focus != .portfolio, !roster.collapsed, !roster.board {
                         dockedAgents(snapshot, focus: focus, model: roster)
+                            .holdHidden(kitchenHold != nil, reduced: reduced)
+                            // Faded out, its space shows the kitchen's backdrop rather than the window behind.
+                            .background(Color(nsColor: KitchenSceneView.backdrop))
                             .transition(reduced ? .opacity : .move(edge: .leading).combined(with: .opacity))
                             .zIndex(1)
                     }
@@ -105,18 +115,34 @@ struct SpatialWorkspaceView: View {
                                             reviews: KitchenReviews.shared.states, active: visible,
                                             reducedMotion: reduced, select: go, review: { reviewing = $0 }, requestReview: { openRequest($0) }, progress: { progressAgent = $0.id },
                                             selectedAgentID: focus.agentID, deselect: { deselectAgent(focus) }, openPantry: { pantryOpen = true },
-                                            cameraMoved: { away in DispatchQueue.main.async { kitchenCameraAway = away } }, resetCamera: kitchenCameraResets)
+                                            cameraMoved: { away in DispatchQueue.main.async { kitchenCameraAway = away } }, resetCamera: kitchenCameraResets,
+                                            holding: { hold in DispatchQueue.main.async { kitchenHold = hold } },
+                                            archiveBlocker: { library.archiveBlocker($0) }, archive: { archiveFromKitchen($0) }, trashFrame: trashFrame)
                             .overlay(alignment: .bottomLeading) {
                                 // Only once the camera has moved; the controls stay in the kitchen's accessibility help.
                                 if visible, focus.agentID == nil, kitchenCameraAway {
                                     Button("Reset View") { kitchenCameraResets += 1 }.controlSize(.small).pointingHand().help("Back to the whole kitchen (R)")
                                     .padding(.horizontal, 10).padding(.vertical, 6)
                                     .background(Capsule().fill(.regularMaterial)).padding(12)
+                                    .holdHidden(kitchenHold != nil, reduced: reduced)
+                                }
+                            }
+                            .overlay(alignment: .bottomTrailing) {
+                                if visible {
+                                    Button { kitchenSounds.toggle() } label: {
+                                        Image(systemName: kitchenSounds ? "speaker.wave.2.fill" : "speaker.slash.fill")
+                                            .font(.system(size: 12, weight: .semibold)).frame(width: 28, height: 28).contentShape(Circle())
+                                    }
+                                    .buttonStyle(.plain).foregroundStyle(.secondary).background(Circle().fill(.regularMaterial)).padding(12)
+                                    .pointingHand().help(kitchenSounds ? "Mute kitchen sounds" : "Play kitchen sounds")
+                                    .accessibilityLabel(kitchenSounds ? "Mute kitchen sounds" : "Play kitchen sounds")
+                                    .holdHidden(kitchenHold != nil, reduced: reduced)
                                 }
                             }
                             .overlay(alignment: .topLeading) {
                                 if visible, focus != .portfolio {
                                     GeometryReader { scene in kitchenHUD(snapshot, focus: focus, model: roster, height: scene.size.height - 24) }
+                                        .holdHidden(kitchenHold != nil, reduced: reduced)
                                 }
                             }
                             .overlay(alignment: .top) {
@@ -143,11 +169,39 @@ struct SpatialWorkspaceView: View {
                                                 .frame(width: max(100, min(400, scene.size.width - library.navigation.layout.sidebarWidth - 48)))
                                         }.padding(12)
                                     }
+                                    .holdHidden(kitchenHold != nil, reduced: reduced)
                                 }
                             }
+                            .overlay(alignment: .topTrailing) {
+                                // Held chefs can be thrown away here.
+                                if visible, let hold = kitchenHold {
+                                    KitchenTrashCan(hold: hold)
+                                        .background(GeometryReader { can in
+                                            Color.clear
+                                                .onAppear { trashFrame = can.frame(in: .global) }
+                                                .onChange(of: can.frame(in: .global)) { _, frame in trashFrame = frame }
+                                        })
+                                        .padding(24)
+                                        .transition(reduced ? .opacity : .scale(scale: 0.6, anchor: .topTrailing).combined(with: .opacity))
+                                }
+                            }
+                            .overlay(alignment: .bottom) {
+                                if visible, let banner = kitchenBanner {
+                                    KitchenUndoBanner(text: banner.text, undo: banner.undo.map { undo in { undo(); kitchenBanner = nil } }) { kitchenBanner = nil }
+                                        .padding(.bottom, 18)
+                                        .transition(.move(edge: .bottom).combined(with: .opacity))
+                                        .task(id: banner.id) {
+                                            do { try await Task.sleep(for: .seconds(6)) } catch { return }
+                                            if kitchenBanner?.id == banner.id { kitchenBanner = nil }
+                                        }
+                                }
+                            }
+                            .animation(reduced ? nil : .spring(duration: 0.25), value: kitchenHold == nil)
+                            .animation(reduced ? nil : .easeOut(duration: 0.2), value: kitchenBanner?.id)
                         // The selected chef's command bar sits under the kitchen, down to the window's edge.
                         if let selected = cooks.first(where: { $0.id == (focus.agentID ?? commandBarAgent) }) {
                             AgentCommandBar(agent: selected, library: library, review: { reviewing = selected }, requestReview: { openRequest(selected) }) { deselectAgent(focus) }
+                                .holdHidden(kitchenHold != nil, reduced: reduced)
                                 .transition(.move(edge: .bottom).combined(with: .opacity))
                         }
                     }
@@ -454,12 +508,16 @@ struct SpatialWorkspaceView: View {
     /// the same state the kitchen uses (status, pending requests, serving-window reviews).
     private func sidebarItems(_ teams: [SpatialTeam]) -> [AgentSidebarItem] {
         let execution = library.execution
+        let workspaces = Dictionary(library.projects.projects.flatMap(\.workspaces).compactMap { w in w.threadID.map { ($0, w) } }) { first, _ in first }
         let inputs = teams.map { team in
             AgentSidebar.Input(session: team.session, agents: team.agents,
                                review: team.agents.first { $0.value.isMain }.flatMap { KitchenReviews.shared.state($0.conversationID) },
+                               reviewNote: team.agents.first { $0.value.isMain }.flatMap { KitchenReviews.shared.note($0.conversationID) },
                                model: execution.tasks[team.session.sessionID].flatMap { $0.model.isEmpty ? nil : $0.model },
                                requests: execution.requests.values.filter { $0.threadID == team.session.sessionID }.count,
-                               question: pendingQuestion(team))
+                               question: pendingQuestion(team),
+                               workspaceBranch: workspaces[team.session.sessionID]?.branch,
+                               pullRequest: workspaces[team.session.sessionID]?.pullRequest)
         }
         return AgentSidebar.items(inputs, catalog: execution.models, order: AgentSidebarOrder.shared.order)
     }
@@ -495,6 +553,8 @@ struct SpatialWorkspaceView: View {
     /// Review request: the modal when a request is waiting; otherwise (a question asked in chat)
     /// the conversation, where the agent asked it.
     private func openRequest(_ agent: SpatialAgent) {
+        // A pull request that needs a fix is handled at the serving window.
+        if KitchenReviews.shared.state(agent.conversationID) == .needsFix { reviewing = agent; return }
         let thread = world.team(.team(project: agent.projectID, conversation: agent.conversationID))?.session.sessionID
         // A pending request, or a question asked in the chat, opens the modal to answer it.
         if let thread, !RequestReviewModal.pending(library.execution, thread: thread).isEmpty || RequestReviewModal.chatQuestion(library.execution, thread: thread) != nil { requestReview = agent } else { go(conversationFocus(agent)) }
@@ -757,6 +817,24 @@ struct SpatialWorkspaceView: View {
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.15) { ComposerNSTextView.focusVisible() }
     }
     /// The focused project's agents (or the focused standalone conversation's); none at portfolio.
+    /// A chef dropped in the trash: archive its conversation, with a few seconds to undo.
+    private func archiveFromKitchen(_ agent: SpatialAgent) {
+        guard let session = library.sessions.first(where: { $0.id == agent.conversationID }) else { return }
+        let name = agent.value.name
+        Task {
+            do {
+                try await library.setArchived(session, archived: true)
+                kitchenBanner = (UUID(), "Archived \(name)", {
+                    Task {
+                        do { try await library.setArchived(session.updated(archived: true), archived: false) }
+                        catch { kitchenBanner = (UUID(), "Couldn't restore \(name): \(error.localizedDescription)", nil) }
+                    }
+                })
+            } catch {
+                kitchenBanner = (UUID(), "Couldn't archive \(name): \(error.localizedDescription)", nil)
+            }
+        }
+    }
     private func kitchenAgents(_ world: SpatialWorld, focus: SpatialFocus) -> [SpatialAgent] {
         guard focus != .portfolio else { return [] }
         if let project = focus.projectID { return world.projects.first { $0.id == project }?.teams.flatMap(\.agents) ?? [] }
@@ -774,6 +852,7 @@ struct SpatialWorkspaceView: View {
             reviewRequest: { item in if let agent = mains[item.id] { openRequest(agent) } },
             reviewChanges: { item in if let agent = mains[item.id] { reviewing = agent } },
             create: { creationProject = AgentCreationDestination(id: focus.projectID ?? "") },
+            mergeAllGreen: { items in await PRWatcher.shared.mergeAllGreen(items, library: library) },
             dock: { setBoard(false, model) })
     }
     private func setBoard(_ open: Bool, _ model: LiveAgentRosterModel) {
@@ -864,3 +943,11 @@ private struct SpatialChildWorkScreen: View {
 }
 
 private struct AgentCreationDestination: Identifiable { let id: String }
+
+private extension View {
+    /// Overlays fade away while a chef is held, without leaving the layout (the kitchen keeps its size).
+    func holdHidden(_ hidden: Bool, reduced: Bool) -> some View {
+        opacity(hidden ? 0 : 1).allowsHitTesting(!hidden).accessibilityHidden(hidden)
+            .animation(reduced ? nil : .easeOut(duration: 0.2), value: hidden)
+    }
+}

@@ -10,6 +10,9 @@ struct GitHubSettingsView: View {
     @State private var loginTask: Task<Void, Never>?
     @State private var checking = false
     var body: some View {
+        if onboarding { onboardingBody } else { settingsBody }
+    }
+    private var settingsBody: some View {
         VStack(alignment: .leading, spacing: 12) {
             HStack {
                 VStack(alignment: .leading) {
@@ -44,14 +47,35 @@ struct GitHubSettingsView: View {
         }.task { await check() }
         .onChange(of: identity?.login) { _, value in connectionChanged?(value != nil) }.onDisappear { loginTask?.cancel() }
     }
+    /// Setup step: a branded header and the shared connect panel, after the agentsim GitHub dialog.
+    private var onboardingBody: some View {
+        VStack(alignment: .leading, spacing: 0) {
+            HStack(spacing: 12) {
+                GitHubMarkTile(size: 36, mark: 19)
+                VStack(alignment: .leading, spacing: 3) {
+                    Text("GITHUB · OPTIONAL").font(.system(size: 9, weight: .semibold, design: .monospaced)).tracking(1).foregroundStyle(.secondary)
+                    Text("Bring your projects to GitHub").font(.system(size: 20, weight: .semibold)).tracking(-0.4)
+                }
+            }
+            Text("Import repositories, publish projects, and open pull requests.")
+                .font(.system(size: 12)).foregroundStyle(.secondary).lineSpacing(3).fixedSize(horizontal: false, vertical: true)
+                .padding(.top, 12)
+            GitHubConnectPanel { connectionChanged?($0 != nil) }.padding(.top, 16)
+            HStack(spacing: 6) {
+                Text("Connecting does not publish local projects.")
+                Link("Manage authorization on GitHub", destination: URL(string: "https://github.com/settings/applications")!).pointingHand()
+            }.font(.system(size: 11)).foregroundStyle(.tertiary).padding(.top, 14)
+        }.frame(maxWidth: .infinity, alignment: .leading)
+    }
     private func check() async {
         checking = true; defer { checking = false }
         do { identity = try await GitHubAccount.shared.identity(); status = "Connected" }
         catch { identity = nil; status = error.localizedDescription }
     }
     private func connect() {
+        GitHubSignIn.pending += 1
         loginTask = Task {
-            defer { loginTask = nil; code = nil }
+            defer { loginTask = nil; code = nil; GitHubSignIn.pending -= 1 }
             do {
                 let device = try await GitHubAccount.shared.startLogin(); code = device
                 NSWorkspace.shared.open(URL(string: "https://github.com/login/device")!)

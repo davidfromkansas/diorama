@@ -382,7 +382,7 @@ Show conversation ancestry as a small graph, with a selected branch’s review s
 
 **Tradeoff:** Graph complexity grows quickly and can suggest Git isolation.
 
-**Behavior:** Use “Conversation branches” as the label. Never draw a merge action unless a separate implementation exists. Review results refer to the filesystem/commit target, not a frozen chat snapshot.
+**Behavior:** Use “Conversation branches” as the label. Merge actions live at the serving window and the task board’s Branches view, gated on PR health. Review results refer to the filesystem/commit target, not a frozen chat snapshot.
 
 ### C. A review workbench
 

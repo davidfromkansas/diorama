@@ -56,8 +56,13 @@ struct AgentSidebarItem: Identifiable, Equatable {
     var files = 0
     /// What the agent is asking, while it waits on you.
     var question: String? = nil
+    /// Needs you because its pull request conflicts or failed a check.
+    var fixesPullRequest = false
+    /// The task's pull request, for the service board.
+    var pullRequest: LinkedPullRequest? = nil
     var hasAction: Bool { group == .needsYou || group == .done }
     var actionTitle: String {
+        if fixesPullRequest { return "Fix pull request" }
         if group == .done { return "Review changes" }
         return requests > 1 ? "Review \(requests) requests" : "Review request"
     }
@@ -73,11 +78,16 @@ enum AgentSidebar {
         let session: Session
         let agents: [SpatialAgent]
         var review: KitchenReviews.State?
+        /// Why a pull request needs a fix ("Conflicts with main"), for `.needsFix`.
+        var reviewNote: String? = nil
         /// The model the conversation runs on, when the execution layer knows it.
         var model: String?
         var requests = 0
         /// The pending question or request, in a line (from the protocol request or the chat).
         var question: String? = nil
+        /// The task's worktree branch and pull request, when Diorama created it.
+        var workspaceBranch: String? = nil
+        var pullRequest: LinkedPullRequest? = nil
     }
 
     /// One row per conversation, grouped from its lifecycle: pending input first, then a running
@@ -91,7 +101,10 @@ enum AgentSidebar {
             let group: AgentSidebarGroup
             let status: String
             var activity = ""
-            if value.status == .waiting || value.status == .failed || helperWaiting || input.requests > 0 {
+            if input.review == .needsFix, value.status != .working, value.status != .waiting {
+                group = .needsYou
+                status = input.reviewNote ?? "PR needs a fix"
+            } else if value.status == .waiting || value.status == .failed || helperWaiting || input.requests > 0 {
                 group = .needsYou
                 if value.status == .failed { status = "Failed" }
                 else {
@@ -105,9 +118,13 @@ enum AgentSidebar {
                 group = .inProgress
                 status = workStatus(value)
                 activity = main.fresh || input.review == .reworking ? phrase(value) : "No recent updates"
+            } else if input.review == .checking {
+                group = .inProgress
+                status = "CI checks running"
+                activity = input.reviewNote ?? "Waiting for GitHub"
             } else if let review = input.review, [.awaiting, .committed, .shipped].contains(review) {
                 group = .done
-                status = (review == .committed ? "Committed" : review == .shipped ? "PR open" : "Done") + finishedText(value.meaningfulUpdatedAt ?? input.session.modified, now: now)
+                status = (review == .committed ? "Committed" : review == .shipped ? (input.reviewNote ?? "PR open") : "Done") + finishedText(value.meaningfulUpdatedAt ?? input.session.modified, now: now)
             } else {
                 group = .idle
                 switch value.status {
@@ -119,6 +136,7 @@ enum AgentSidebar {
             var progress: AgentSidebarProgress?
             let plan = value.plan.flatMap { $0.hasTasks && !$0.tasksPreviousTurn && $0.checklist.count > 1 ? $0 : nil }
             switch group {
+            case .inProgress where input.review == .checking: progress = .working
             case .inProgress: progress = plan.map { .steps(done: $0.completedTaskCount, total: $0.checklist.count) } ?? .working
             case .needsYou: progress = plan.map { .steps(done: $0.completedTaskCount, total: $0.checklist.count) }
             case .done, .idle: progress = nil
@@ -129,8 +147,10 @@ enum AgentSidebar {
                                     activity: activity, requests: input.requests,
                                     order: order(main.conversationID, value.meaningfulUpdatedAt ?? input.session.modified), progress: progress,
                                     finishedAt: group == .done ? value.meaningfulUpdatedAt ?? input.session.modified : nil,
-                                    provider: value.provider, branch: value.branch.flatMap { $0.isEmpty ? nil : $0 },
-                                    files: value.turnWork.files.count, question: group == .needsYou ? input.question : nil)
+                                    provider: value.provider, branch: value.branch.flatMap { $0.isEmpty ? nil : $0 } ?? input.workspaceBranch,
+                                    files: value.turnWork.files.count, question: group == .needsYou ? input.question : nil,
+                                    fixesPullRequest: group == .needsYou && input.review == .needsFix && input.requests == 0,
+                                    pullRequest: input.pullRequest)
         }
         // Newest conversation first within each group; a row's place is fixed by its first sighting.
         // Done is ranked by when the work finished, latest first.

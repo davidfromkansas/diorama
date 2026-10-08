@@ -28,8 +28,9 @@ struct KitchenCameraController: Equatable {
     var homeDistance: Float = 30
     var elevation: Float = 62 * .pi / 180
     var lookHeight: Float = 0.65
-    /// The floor's edges; the center never leaves them.
-    var floor = (minX: Float(-12), maxX: Float(12), minZ: Float(-8), maxZ: Float(8))
+    /// Where the zoomed-in center may go: the kitchen floor and the restaurant's terrace and
+    /// walkways around it (`KitchenRestaurant`). There's no zooming out past home.
+    var floor = (minX: Float(-20), maxX: Float(20), minZ: Float(-9), maxZ: Float(15.5))
     private(set) var pose = Pose(center: .zero, zoom: 1, yaw: 0)
     private(set) var held: Set<Key> = []
 

@@ -114,6 +114,14 @@ nonisolated final class ChefDirector: @unchecked Sendable {
         position = point; self.heading = heading; speed = 0; path = []; pathGoal = nil
     }
 
+    /// Set down somewhere by hand: no longer at any station, and it walks back to its work.
+    func putDown(at point: SIMD2<Float>) {
+        place(point, heading: heading)
+        station = nil; placedPlate = nil
+        // Its gesture before setting off (a wave, a celebration) already happened.
+        if var again = intent { again.prelude = nil; setIntent(again, force: true) }
+    }
+
     /// `force` re-plans even an unchanged intent (catching up skips a trip already under way).
     func setIntent(_ requested: ChefIntent, force: Bool = false) {
         guard force || intent?.key != requested.key else { return }

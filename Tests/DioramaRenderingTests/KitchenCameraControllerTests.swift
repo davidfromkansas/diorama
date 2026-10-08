@@ -84,4 +84,12 @@ import simd
         broken.force(.init(center: SIMD2(0, 0), zoom: .infinity, yaw: 0))
         #expect(broken.isHome)
     }
+
+    @Test func zoomedInYouCanLookAroundTheRestaurantButNeverZoomOut() {
+        var c = camera()
+        for _ in 0..<40 { c.scroll(-100) }
+        #expect(c.pose.zoom == 1)
+        // The terrace in front of the serving window and the walkways are in reach.
+        #expect(c.floor.maxZ >= 14 && c.floor.minX <= -19 && c.floor.maxX >= 19)
+    }
 }

@@ -275,7 +275,13 @@ nonisolated struct GLBDocument {
         views = json["bufferViews"] as? [[String: Any]] ?? []
     }
     static func restPose(_ n: [String: Any]) -> WorkspaceCapybaraAsset.Pose {
-        let p = n["translation"] as? [Float] ?? [0,0,0], q = n["rotation"] as? [Float] ?? [0,0,0,1], s = n["scale"] as? [Float] ?? [1,1,1]
+        // Read through NSNumber: `as? [Float]` fails (and fell back to the default) for any JSON
+        // number that isn't exactly a 32-bit float.
+        func floats(_ key: String, _ fallback: [Float]) -> [Float] {
+            guard let values = n[key] as? [NSNumber], values.count == fallback.count else { return fallback }
+            return values.map(\.floatValue)
+        }
+        let p = floats("translation", [0,0,0]), q = floats("rotation", [0,0,0,1]), s = floats("scale", [1,1,1])
         return .init(position: SIMD3(p[0],p[1],p[2]), rotation: simd_quatf(ix:q[0],iy:q[1],iz:q[2],r:q[3]), scale: SIMD3(s[0],s[1],s[2]))
     }
     func accessor(_ index: Int) throws -> Accessor {
