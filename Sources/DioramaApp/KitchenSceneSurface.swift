@@ -553,6 +553,7 @@ final class KitchenSceneView: SCNView {
                 chefs[agent.id]?.director.reducedMotion = reduced
                 // One dish per task: a new turn (new completion key) rolls a new one.
                 chefs[agent.id]?.dish = KitchenFood.dish(for: agent.value.completionKey ?? agent.conversationID)
+                chefs[agent.id]?.pantryItem = PantryCarry.item(for: agent.value)
                 pacing[agent.id]?.agent = agent.value
                 pacing[agent.id]?.review = review
                 // Every new test run sends the chef to taste, however quickly the agent moves on.
@@ -1023,6 +1024,7 @@ final class KitchenSceneView: SCNView {
         return CGPoint(x: CGFloat(ndc.x + 1) / 2 * bounds.width, y: CGFloat(ndc.y + 1) / 2 * bounds.height)
     }
     private func placeChefLabels() {
+        defer { placePantryCarryTags() }
         var placed: [CGRect] = []
         chefLock.lock()
         let positions = chefs.mapValues(\.root.simdPosition)

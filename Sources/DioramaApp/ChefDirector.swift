@@ -70,6 +70,8 @@ nonisolated final class ChefDirector: @unchecked Sendable {
     /// Where the chef stands after arriving; nil while travelling or after leaving.
     private(set) var station: ChefStation?
     private(set) var held: Set<ChefProp> = []
+    /// Carrying what it fetched from the pantry (see `PantryCarrier`): walks with the carry gait.
+    var carriesJar = false
     /// The plate left on the pass after presenting; cleared when the chef moves on.
     private(set) var placedPlate: ChefStation?
 
@@ -132,7 +134,7 @@ nonisolated final class ChefDirector: @unchecked Sendable {
             if let prelude = next.prelude { plan.append(.once(prelude, markers: [:], interrupted: nil)) }
         }
         if let target = next.station {
-            let carry = next.pickup != nil || (held.contains(.plate) && next.oneShot?.clip == "present_review")
+            let carry = next.pickup != nil || (held.contains(.plate) && next.oneShot?.clip == "present_review") || carriesJar
             if let pickup = next.pickup, !held.contains(.plate) {
                 plan += [.goto(pickup, carry: false), .face(pickup.facing, carry: false),
                          .once("pickup", markers: ["attach": { [weak self] in self?.held.insert(.plate) }], interrupted: nil)]
