@@ -497,8 +497,14 @@ struct AllResourcesPalette: View {
     private func tile<Icon: View>(_ name: String, sub: String, subColor: Color, help: String, @ViewBuilder icon: () -> Icon) -> some View {
         VStack(spacing: 5) {
             icon()
-            Text(name).font(.system(size: 11, weight: .medium)).foregroundStyle(SidebarStyle.title).lineLimit(1).truncationMode(.middle)
-            Text(sub).font(.system(size: 10)).foregroundStyle(subColor).lineLimit(1).frame(height: 12)
+            // The name on up to two lines with its status word right under it; the block keeps one
+            // height so rows line up.
+            VStack(spacing: 2) {
+                Text(name).font(.system(size: 11, weight: .medium)).foregroundStyle(SidebarStyle.title)
+                    .lineLimit(2).truncationMode(.middle).multilineTextAlignment(.center)
+                if !sub.isEmpty { Text(sub).font(.system(size: 10)).foregroundStyle(subColor).lineLimit(1) }
+            }
+            .frame(height: 42, alignment: .top)
         }
         .padding(.horizontal, 3).padding(.top, 8).padding(.bottom, 6)
         .frame(maxWidth: .infinity)
@@ -708,7 +714,7 @@ private struct PaletteColumn<Header: View, Content: View>: View {
     @ViewBuilder let header: Header
     @ViewBuilder let content: Content
     @State private var below: CGFloat = 0
-    @State private var rowHeight: CGFloat = 72
+    @State private var rowHeight: CGFloat = 88
     private let space = UUID().uuidString
     var body: some View {
         VStack(spacing: 6) {
