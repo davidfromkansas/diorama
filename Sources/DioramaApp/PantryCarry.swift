@@ -1,6 +1,6 @@
 import AppKit
 import DioramaCore
-import SceneKit
+@preconcurrency import SceneKit
 
 /// What a chef fetched from the pantry, carried out in both hands: a salsa jar for a skill, a
 /// crate for a plugin, a connector object for an MCP server or app. It sits on the pantry counter

@@ -8,6 +8,8 @@ struct AgentCommandBar: View {
     @Bindable var library: LibraryModel
     /// Opens the serving-window review when this chef's dish waits for one.
     var review: (() -> Void)? = nil
+    /// Opens what it's waiting on you for: its pending request, or the question it asked.
+    var requestReview: (() -> Void)? = nil
     let close: () -> Void
     static let height: CGFloat = 248
 
@@ -45,6 +47,10 @@ struct AgentCommandBar: View {
                         .help(title)
                     StatusPill(text: statusText, tint: SidebarStyle.tint(group))
                     Spacer(minLength: 4)
+                    if let requestReview, agent.needsAttention {
+                        Button("Review request", action: requestReview).buttonStyle(ModalPrimaryButtonStyle(height: 26)).pointingHand()
+                            .help("Answer what it's waiting on")
+                    }
                     if let review, KitchenReviews.shared.state(agent.conversationID) != nil || value.status == .done {
                         Button("Review", action: review).buttonStyle(ModalPrimaryButtonStyle(height: 26)).pointingHand()
                             .help("Open the serving-window review")

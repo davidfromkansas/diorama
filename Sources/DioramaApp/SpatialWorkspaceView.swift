@@ -147,7 +147,7 @@ struct SpatialWorkspaceView: View {
                             }
                         // The selected chef's command bar sits under the kitchen, down to the window's edge.
                         if let selected = cooks.first(where: { $0.id == (focus.agentID ?? commandBarAgent) }) {
-                            AgentCommandBar(agent: selected, library: library, review: { reviewing = selected }) { deselectAgent(focus) }
+                            AgentCommandBar(agent: selected, library: library, review: { reviewing = selected }, requestReview: { openRequest(selected) }) { deselectAgent(focus) }
                                 .transition(.move(edge: .bottom).combined(with: .opacity))
                         }
                     }
@@ -496,7 +496,8 @@ struct SpatialWorkspaceView: View {
     /// the conversation, where the agent asked it.
     private func openRequest(_ agent: SpatialAgent) {
         let thread = world.team(.team(project: agent.projectID, conversation: agent.conversationID))?.session.sessionID
-        if let thread, !RequestReviewModal.pending(library.execution, thread: thread).isEmpty { requestReview = agent } else { go(conversationFocus(agent)) }
+        // A pending request, or a question asked in the chat, opens the modal to answer it.
+        if let thread, !RequestReviewModal.pending(library.execution, thread: thread).isEmpty || RequestReviewModal.chatQuestion(library.execution, thread: thread) != nil { requestReview = agent } else { go(conversationFocus(agent)) }
     }
     /// Camera/monitor updates may arrive every frame. Project the library once per observation
     /// tick instead of repeating provider and membership lookups during those view updates.
