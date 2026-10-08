@@ -40,6 +40,8 @@ struct WorkspaceAgent: Identifiable, Equatable {
     var name: String
     var provider: String
     var task: String
+    /// The person's newest message (what this turn is about), when it differs from the task.
+    var latestRequest: String? = nil
     var action: String
     var status: WorkspaceAgentStatus
     var reportedStatus: String
@@ -56,12 +58,29 @@ struct WorkspaceAgent: Identifiable, Equatable {
     var reportedModel: String?
     var completionKey: String?
     var latestActivity = ""
+    /// Raw tool name and detail of the latest reported tool call, for kitchen station mapping.
+    var latestTool = ""
+    var latestToolDetail = ""
+    /// Whether the current turn has edited files: before that, work is preparation.
+    var turnHasEdits = false
+    /// Files edited, commands run and tests in the current turn, for the progress panel.
+    var turnWork = TurnWork()
+    /// The distilled activity feed for the command bar (oldest first).
+    var feed: [FeedEntry] = []
+    /// When the agent last wrote a progress note, and last called a tool, in this turn (for the
+    /// icon on its kitchen name tag).
+    var lastCommentaryAt: Date?
+    var lastToolAt: Date?
     var meaningfulUpdatedAt: Date?
     var meaningfulEventID = ""
     var meaningfulUpdateID: String { [meaningfulEventID, reportedStatus, latestActivity].joined(separator: "\u{1E}") }
     mutating func retainMeaningfulState(from previous: WorkspaceAgent) {
         status = previous.status; reportedStatus = previous.reportedStatus
         action = previous.action; latestActivity = previous.latestActivity
+        latestTool = previous.latestTool; latestToolDetail = previous.latestToolDetail; turnHasEdits = previous.turnHasEdits
+        turnWork = previous.turnWork
+        feed = previous.feed
+        lastCommentaryAt = previous.lastCommentaryAt; lastToolAt = previous.lastToolAt
         meaningfulUpdatedAt = previous.meaningfulUpdatedAt; meaningfulEventID = previous.meaningfulEventID
         attentionReason = previous.attentionReason
         completionKey = previous.completionKey
@@ -83,6 +102,13 @@ struct WorkspaceAgent: Identifiable, Equatable {
     }
     var isMain: Bool { id == "main" }
     var isWorking: Bool { status == .working && (freshness == .live || freshness == .recentlyObserved) }
+    /// What progress can honestly be shown: the agent's own list when it keeps one this turn,
+    /// otherwise activity. Shared by the name tag, the command bar and the roster.
+    var planProgress: AgentPlan.Progress {
+        let acted = !latestTool.isEmpty && KitchenActivity.classify(tool: latestTool, detail: latestToolDetail) != .planning
+        guard let plan else { return isWorking ? .working : .none }
+        return plan.progress(working: isWorking, actedThisTurn: acted)
+    }
     var statusLabel: String {
         if freshness == .unverified || freshness == .unavailable { return freshness.rawValue }
         if freshness == .recentlyObserved { return "Recently observed · " + status.rawValue }
@@ -153,6 +179,7 @@ enum WorkspaceAgentPresentation {
             status: mainStatus, reportedStatus: phase,
             freshness: uncertain ? .unverified : current.hasLiveExecution ? .live : current.externalFreshness,
             observedAt: task?.activity.last(where: { $0.state != nil })?.time ?? current.observation?.activity.latestState?.time, attentionReason: WorkspaceAttentionReason(reported: phase))]
+        result[0].latestRequest = ((task?.transcript ?? current.observation?.transcript)?.entries.last { $0.kind == "You" }?.text).map(TaskTitle.full)
         var seen: Set<String> = []
         for source in sources {
             let records = source.snapshot.records.filter { $0.kind == "agent" }
@@ -207,6 +234,39 @@ enum WorkspaceAgentPresentation {
             let useActivity = activity != nil && (latest == nil || (activity?.recordedAt ?? .distantPast) >= (latest?.recordedAt ?? .distantPast))
             result[index].latestActivity = useActivity ? [activity?.label, activity?.detail].compactMap { $0 }.filter { !$0.isEmpty }.joined(separator: " · ") : latest.map { [$0.title, $0.detail].filter { !$0.isEmpty }.joined(separator: " · ") } ?? agent.action
             result[index].latestActivity = String(result[index].latestActivity.prefix(500))
+            // The kitchen shows the current turn's latest tool, also between calls (results,
+            // plan steps and checklists name no tool).
+            if useActivity {
+                let stream = (source.task?.attached == true ? source.task?.activity : source.observation?.activity.events) ?? []
+                var tool: ActivityEvent?, edits = false
+                for event in stream.reversed() {
+                    if event.kind == "started" || event.kind == "turnStarted" { break }
+                    guard let name = event.tool, !name.isEmpty else { continue }
+                    // Plan and checklist updates don't change what the chef is doing.
+                    let planning = KitchenActivity.classify(tool: name, detail: event.detail ?? "") == .planning
+                    if tool == nil || (tool?.tool).map({ KitchenActivity.classify(tool: $0) == .planning }) == true, !planning || tool == nil { tool = event }
+                    if KitchenActivity.isEditing(tool: name, detail: event.detail ?? "") { edits = true; break }
+                }
+                result[index].latestTool = tool?.tool ?? ""
+                result[index].latestToolDetail = String(KitchenActivity.withoutHeredocs(tool?.detail ?? "").prefix(500))
+                result[index].turnHasEdits = edits
+                result[index].turnWork = TurnWork.from(stream)
+                result[index].feed = AgentActivityFeed.entries(from: stream)
+                let turn = stream.lastIndex { $0.kind == "started" || $0.kind == "turnStarted" }.map { stream[($0 + 1)...] } ?? stream[...]
+                result[index].lastCommentaryAt = turn.last { $0.kind == "commentary" }?.time
+                result[index].lastToolAt = turn.last { $0.kind == "toolStarted" }?.time
+                if agent.status != .working { result[index].turnWork.settle() }
+            } else {
+                let tools = relevant.filter { $0.kind == "tool" && (latest?.turnID == nil || $0.turnID == latest?.turnID) }
+                // Plan and checklist updates don't change what the chef is doing.
+                let working = tools.last { KitchenActivity.classify(tool: $0.title, detail: $0.data["command"].string ?? $0.detail) != .planning } ?? tools.last
+                result[index].latestTool = working?.title ?? ""
+                result[index].latestToolDetail = String(KitchenActivity.withoutHeredocs(working?.data["command"].string ?? working?.detail ?? "").prefix(500))
+                result[index].turnHasEdits = tools.contains { KitchenActivity.isEditing(tool: $0.title, detail: $0.data["command"].string ?? $0.detail) }
+                result[index].turnWork = TurnWork.from(tools)
+                result[index].feed = AgentActivityFeed.entries(from: relevant)
+                if agent.status != .working { result[index].turnWork.settle() }
+            }
             result[index].meaningfulUpdatedAt = useActivity ? activity?.recordedAt : latest?.recordedAt
             result[index].meaningfulEventID = useActivity ? (activity.map(activityIdentity) ?? "") : latest.map { [$0.nativeID, $0.turnID ?? "", $0.kind, $0.status].joined(separator: ":") } ?? (source.task?.turnID ?? "")
             let record = source.snapshot.records.first { $0.id == agent.activityRecordID }
@@ -219,7 +279,31 @@ enum WorkspaceAgentPresentation {
                 ?? (agent.isMain ? source.snapshot.records.reversed().compactMap { $0.data["model"].string }.first : nil)
 
         }
+        // An agent that asked you something and is waiting for the answer (Codex's asynchronous
+        // question, or a turn that ends on a question without changing anything) needs you.
+        if let main = result.indices.first(where: { result[$0].isMain }), let current = sources.last,
+           let transcript = current.task?.transcript ?? current.observation?.transcript,
+           awaitsAnswer(result[main], entries: transcript.entries) || endsAsking(result[main], entries: transcript.entries) {
+            result[main].status = .waiting
+            result[main].attentionReason = .input
+        }
         return result
+    }
+    static func awaitsAnswer(_ agent: WorkspaceAgent, entries: [Entry]) -> Bool {
+        guard [.working, .done, .ready].contains(agent.status) else { return false }
+        let start = entries.lastIndex { $0.kind == "You" }.map { $0 + 1 } ?? 0
+        // Asked with Codex's question tool (whatever the turn's last words), or the turn's last
+        // message is a question.
+        let explicit = entries[start...].contains { $0.asksYou == true }
+        guard explicit || entries[start...].last(where: { $0.kind == "Assistant" })?
+            .text.trimmingCharacters(in: .whitespacesAndNewlines).hasSuffix("?") == true else { return false }
+        if agent.status == .working {
+            // Still in the turn: only while it waits on the question (Codex sleeps until you answer).
+            return ["sleep", "wait", "request_user_input_async", "request_user_input"].contains(agent.latestTool.lowercased())
+        }
+        // The turn ended on a question: a question, unless it also delivered work (then the
+        // closing "want me to…?" is an offer and the dish is ready).
+        return agent.turnWork.files.isEmpty
     }
 
     static func activityIdentity(_ event: ActivityEvent) -> String {

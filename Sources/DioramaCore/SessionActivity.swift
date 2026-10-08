@@ -105,7 +105,7 @@ public enum SessionActivityReducer {
                     if name == "ExitPlanMode", let plan = args["plan"].string {
                         out.append(record("proposal", id + ":plan", "Proposed plan", status: "proposed", detail: plan, parent: parent, time: time))
                     }
-                    out.append(record("tool", id, name, status: "running", detail: args["description"].string ?? args["command"].string ?? args["file_path"].string ?? "", parent: parent, data: ["TaskCreate", "TaskUpdate", "TodoWrite", "ExitPlanMode"].contains(name) ? .object(["input": args]) : .null, time: time))
+                    out.append(record("tool", id, name, status: "running", detail: args["description"].string ?? args["command"].string ?? args["file_path"].string ?? args["skill"].string ?? "", parent: parent, data: ["TaskCreate", "TaskUpdate", "TodoWrite", "ExitPlanMode"].contains(name) ? .object(["input": args]) : name == "Bash" ? .object(["command": args["command"]]) : .null, time: time))
                 }
                 return out
             }
@@ -167,7 +167,9 @@ public enum SessionActivityReducer {
             }
             if type == "contextCompaction" { return [record("state", id, "Context compaction", status: method == "item/completed" ? "completed" : "running")] }
             if ["commandExecution", "mcpToolCall", "fileChange", "webSearch", "dynamicToolCall"].contains(type) {
-                return [record("tool", id, i["tool"].string ?? type, status: method == "item/started" ? "running" : ToolResult(item: i)?.status ?? "Reported", detail: i["command"].string ?? "", data: .object(["nativeItem": .bool(true), "durationMs": i["durationMs"], "exitCode": i["exitCode"], "files": .array(i["changes"].array.map { .object(["path": $0["path"], "kind": $0["kind"]]) })]))]
+                // An MCP call is named like Claude's (`mcp__server__tool`), so its server is known downstream.
+                let tool = type == "mcpToolCall" ? i["server"].string.map { "mcp__" + $0 + "__" + (i["tool"].string ?? "tool") } ?? i["tool"].string : i["tool"].string
+                return [record("tool", id, tool ?? type, status: method == "item/started" ? "running" : ToolResult(item: i)?.status ?? "Reported", detail: i["command"].string ?? "", data: .object(["nativeItem": .bool(true), "durationMs": i["durationMs"], "exitCode": i["exitCode"], "files": .array(i["changes"].array.map { .object(["path": $0["path"], "kind": $0["kind"]]) })]))]
             }
         }
         if method == "thread/tokenUsage/updated" { return [record("usage", turn ?? "thread", "Reported token usage", status: "reported", data: p["tokenUsage"])] }
@@ -182,6 +184,12 @@ public enum SessionActivityReducer {
     public static func ingest(_ event: WireValue, provider: Provider, sessionID: String, into snapshot: inout SessionActivitySnapshot) {
         var event = event
         let method = event["method"].string
+        // Newer Claude Code writes tool results as `toolUseResult`; older versions `tool_use_result`.
+        if method == "diorama/claudeActivity", event["params"]["event"]["tool_use_result"] == .null, event["params"]["event"]["toolUseResult"] != .null {
+            var claude = event["params"]["event"].object; claude["tool_use_result"] = claude["toolUseResult"]
+            var params = event["params"].object; params["event"] = .object(claude)
+            var object = event.object; object["params"] = .object(params); event = .object(object)
+        }
         if let uuid = event["params"]["event"]["uuid"].string {
             let identity = provider.rawValue + ":" + sessionID + ":" + uuid
             if snapshot.seenEventIDs.contains(identity) { return }
@@ -206,6 +214,11 @@ public enum SessionActivityReducer {
             if let prior, prior.turnID == event["params"]["turnId"].string, prior.data == bounded(event["params"]["plan"]) { return }
             snapshot.records.removeAll { $0.kind == "step" && $0.provider == provider.rawValue && $0.sessionID == sessionID && $0.parentID == owner }
         }
+        // Codex keeps a requested to-do list as a Markdown checklist in its messages.
+        if provider == .codex, method == "item/completed", event["params"]["item"]["type"].string == "agentMessage",
+           let plan = MessageChecklist.plan(event["params"]["item"]["text"].string ?? "") {
+            ingest(.object(["method": .string("turn/plan/updated"), "params": .object(["plan": plan, "turnId": event["params"]["turnId"], "timestamp": event["params"]["timestamp"]])]), provider: provider, sessionID: sessionID, into: &snapshot)
+        }
         if method == "diorama/claudeActivity", event["params"]["event"]["type"].string == "user" {
             let e = event["params"]["event"]
             for block in e["message"]["content"].array where block["type"].string == "tool_result" && !block["is_error"].bool {
@@ -216,6 +229,9 @@ public enum SessionActivityReducer {
                     if let title = args["subject"].string { step.title = title }
                     if let status = args["status"].string { step.status = status }
                     if let description = args["description"].string { step.detail = String(description.prefix(4000)) }
+                    // An update belongs to the turn that made it: a list ticked off after a
+                    // follow-up message is this turn's plan, not the previous one's.
+                    if let turn = event["params"]["turnId"].string { step.turnID = turn }
                     step.recordedAt = ActivityParser.date(e["timestamp"].string); step.observedAt = Date(); snapshot.apply(step)
                 }
                 if tool.title == "TodoWrite" {

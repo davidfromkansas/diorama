@@ -149,7 +149,7 @@ import DioramaCore
     static func canReload(_ execution: ExecutionController) -> Bool {
         !execution.creating && !execution.connecting && !execution.stopping && execution.resuming.isEmpty
             && execution.workflowBusy.isEmpty && !execution.hasActiveWork && !execution.hasUncertainWork
-            && execution.requests.isEmpty
+            && execution.requests.isEmpty && GitHubSignIn.pending == 0
             && !execution.tasks.values.contains {
                 $0.attached && ($0.steering || $0.workflow.goal["status"].string == "active" || !$0.workflow.queue.isEmpty)
             }

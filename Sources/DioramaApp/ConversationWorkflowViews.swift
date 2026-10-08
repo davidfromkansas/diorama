@@ -6,6 +6,9 @@ struct ConversationActions: View {
     let model: LibraryModel
     let session: Session
     var body: some View {
+        if session.provider == .claude && session.classification != .internalReview {
+            Button(session.archived ? "Restore conversation" : "Archive conversation…") { model.archiveSession = session }.pointingHand()
+        }
         if session.provider == .codex && session.classification != .internalReview {
             Button("Rename…") { model.renameSession = session; model.renameText = session.title }.pointingHand()
             Button(model.pinned.contains(session.id) ? "Unpin in Diorama" : "Pin in Diorama") { model.togglePin(session) }.pointingHand()
@@ -180,12 +183,29 @@ extension LibraryModel {
     func archiveConversation(_ session: Session) {
         archiveSession = nil
         Task {
-            do {
-                try await execution.setArchived(session: session, archived: !session.archived)
-                if let index = sessions.firstIndex(where: { $0.id == session.id }) { sessions[index] = session.updated(archived: !session.archived) }
-                await refresh()
-            } catch { workflowError = error.localizedDescription }
+            do { try await setArchived(session, archived: !session.archived) } catch { workflowError = error.localizedDescription }
         }
+    }
+    /// Archives (or restores) a Codex thread through its app-server, or a Claude conversation
+    /// through Claude Desktop's session file and Diorama's own record (`ClaudeArchive`).
+    func setArchived(_ session: Session, archived: Bool) async throws {
+        switch session.provider {
+        case .codex: try await execution.setArchived(session: session, archived: archived)
+        case .claude:
+            if archived, execution.tasks[session.sessionID]?.busy == true { throw AppServerFailure("Stop work before archiving") }
+            try ClaudeArchive().setArchived(session, archived: archived)
+        }
+        if archived { archivedHere.insert(session.id) } else { archivedHere.remove(session.id) }
+        if let index = sessions.firstIndex(where: { $0.id == session.id }) { sessions[index] = session.updated(archived: archived) }
+        await refresh()
+    }
+    /// Why an agent can't be archived from the kitchen right now, or nil.
+    func archiveBlocker(_ agent: SpatialAgent) -> String? {
+        guard agent.value.isMain else { return "Sub-agents can't be archived" }
+        guard let session = sessions.first(where: { $0.id == agent.conversationID }) else { return "This conversation can't be archived" }
+        if session.classification == .internalReview { return "Reviews can't be archived" }
+        if agent.value.status == .working || execution.tasks[session.sessionID]?.busy == true { return "Stop \(agent.value.name) first" }
+        return nil
     }
     func forkConversation(_ session: Session, through turn: String? = nil) {
         Task {

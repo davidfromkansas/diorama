@@ -16,6 +16,8 @@ public enum GitHubPullRequests {
         result.mergedAt = value["merged_at"].string
         result.mergeCommit = value["merge_commit_sha"].string
         result.body = value["body"].string
+        result.mergeable = value["mergeable"] == .null ? nil : value["mergeable"].bool
+        result.mergeableState = value["mergeable_state"].string
         return result
     }
     public static func identity(_ url: String) throws -> (repository: String, number: Int) {
@@ -37,6 +39,19 @@ public enum GitHubPullRequests {
                 + contexts.map { PRCheck(context: $0["context"].string, state: $0["state"].string?.uppercased(), targetUrl: $0["target_url"].string) }
         }
         pr.updatedAt = Date()
+        return pr
+    }
+    /// Re-reads a pull request just merged until GitHub reports it merged: its API can briefly
+    /// return the old open state after a successful merge.
+    /// `merged` says GitHub already accepted the merge (its merge reply), so a read that still
+    /// lags after the retries is reported as merged.
+    public static func confirmMerged(_ url: String, attempts: Int = 20, merged: Bool = false) async throws -> LinkedPullRequest {
+        var pr = try await get(url)
+        for _ in 1..<max(1, attempts) where pr.state != "MERGED" {
+            try await Task.sleep(for: .milliseconds(750))
+            pr = try await get(url)
+        }
+        if merged, pr.state != "MERGED" { pr.state = "MERGED" }
         return pr
     }
     public static func list(repository: String, branch: String, state: String = "all", headOwner: String? = nil) async throws -> [LinkedPullRequest] {

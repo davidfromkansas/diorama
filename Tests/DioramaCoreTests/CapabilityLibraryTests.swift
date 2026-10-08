@@ -107,4 +107,16 @@ private actor LibraryTransport: ExecutionTransport {
         snapshot.loadedAt = Date(); snapshot.errors["Skills"] = "Failed"; #expect(!snapshot.isFresh)
         #expect((0..<5).contains(item.coverIndex))
     }
+
+    @Test func codexSkillsOnDiskFillInWhenTheRuntimeCannotListThem() throws {
+        let home = FileManager.default.temporaryDirectory.appendingPathComponent("codex-home-" + UUID().uuidString)
+        let skill = home.appendingPathComponent("skills/release")
+        try FileManager.default.createDirectory(at: skill, withIntermediateDirectories: true)
+        try FileManager.default.createDirectory(at: home.appendingPathComponent("skills/.system/hidden"), withIntermediateDirectories: true)
+        try "---\nname: release\ndescription: Ship a release.\n---\nBody".write(to: skill.appendingPathComponent("SKILL.md"), atomically: true, encoding: .utf8)
+        defer { try? FileManager.default.removeItem(at: home) }
+        let snapshot = CapabilityLibraryFiles.codexSkills(context: .init(provider: .codex, folder: "/nonexistent"), home: home)
+        #expect(snapshot.items.map(\.name) == ["release"])
+        #expect(snapshot.items.first?.provider == .codex && snapshot.items.first?.kind == .skill && snapshot.items.first?.description == "Ship a release.")
+    }
 }

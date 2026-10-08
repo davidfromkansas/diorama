@@ -195,18 +195,28 @@ public enum CapabilityLibraryFiles {
         }
         result.normalize(); return result
     }
-    private static func scanSkills(_ root: URL, plugin: CapabilityLibraryItem?, enabled: Bool?, into snapshot: inout CapabilityLibrarySnapshot) {
+    /// Codex skills on disk (`~/.codex/skills`, the project's `.codex/skills`), for when the
+    /// runtime cannot list them (for example before signing in). Availability stays unverified.
+    public static func codexSkills(context: CapabilityLibraryContext, home: URL? = nil) -> CapabilityLibrarySnapshot {
+        let root = home ?? URL(fileURLWithPath: ProcessInfo.processInfo.environment["CODEX_HOME"] ?? FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent(".codex").path)
+        var snapshot = CapabilityLibrarySnapshot(context: context)
+        for folder in [root.appendingPathComponent("skills"), URL(fileURLWithPath: context.folder).appendingPathComponent(".codex/skills")] {
+            scanSkills(folder, plugin: nil, enabled: nil, provider: .codex, into: &snapshot)
+        }
+        return snapshot
+    }
+    private static func scanSkills(_ root: URL, plugin: CapabilityLibraryItem?, enabled: Bool?, provider: Provider = .claude, into snapshot: inout CapabilityLibrarySnapshot) {
         guard FileManager.default.fileExists(atPath: root.path) else { return }
         do {
             let dirs = try FileManager.default.contentsOfDirectory(at: root, includingPropertiesForKeys: nil).sorted { $0.path < $1.path }
-            for dir in dirs {
+            for dir in dirs where !dir.lastPathComponent.hasPrefix(".") {
                 let file = dir.appendingPathComponent("SKILL.md")
                 guard FileManager.default.fileExists(atPath: file.path) else { continue }
                 do {
                     let metadata = frontmatter(try String(contentsOf: file, encoding: .utf8))
                     let localName = metadata["name"] ?? dir.lastPathComponent
                     let name = plugin.map { $0.name + ":" + localName } ?? localName
-                    snapshot.items.append(.init(id: "Claude Code:skill:" + file.path, name: name, description: metadata["description"] ?? "", kind: .skill, provider: .claude, source: file.path, pluginID: plugin?.id, availability: enabled == false ? .disabled : .unverified))
+                    snapshot.items.append(.init(id: (provider == .claude ? "Claude Code" : "Codex") + ":skill:" + file.path, name: name, description: metadata["description"] ?? "", kind: .skill, provider: provider, source: file.path, pluginID: plugin?.id, availability: enabled == false ? .disabled : .unverified))
                 } catch { snapshot.errors[file.path] = error.localizedDescription }
             }
         } catch { snapshot.errors[root.path] = error.localizedDescription }
@@ -254,7 +264,11 @@ extension ExecutionController {
                 }
                 for (index, error) in group["errors"].array.enumerated() { snapshot.errors["Skill \(index)"] = error["message"].string ?? error.pretty }
             }
-        } catch { snapshot.errors["Skills"] = error.localizedDescription }
+        } catch {
+            snapshot.errors["Skills"] = error.localizedDescription
+            // The runtime could not list skills; the ones on disk are still worth showing.
+            snapshot.items += CapabilityLibraryFiles.codexSkills(context: context).items
+        }
         do {
             let reply = try await transport.request("app/installed", .object(params))
             for row in reply["apps"].array {

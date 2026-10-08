@@ -4,6 +4,11 @@ import CoreFoundation
 /// Adapts saved rollout items to the public App Server presentation vocabulary.
 /// No execution or capability lookup is performed while normalizing evidence.
 public enum CodexOutputEvidence {
+    /// The message Codex posts for `request_user_input_async`: delivered asynchronously, with
+    /// the questions attached.
+    public static func isAsyncQuestion(_ item: WireValue) -> Bool {
+        item["delivery"].string == "async" || !item["questions"].array.isEmpty
+    }
     public static func wire(_ value: Any) -> WireValue {
         switch value {
         case let object as [String: Any]: return .object(object.mapValues(wire))
@@ -29,6 +34,8 @@ public enum CodexOutputEvidence {
             fields[new] = fields[old]
         }
         if fields["cwd"] == nil, let cwd { fields["cwd"] = .string(cwd) }
+        // Saved transcripts store argv arrays; App Server reports one shell string.
+        if case .array(let argv) = value["command"] { fields["command"] = .string(argv.compactMap(\.string).joined(separator: " ")) }
         if let args = fields["arguments"]?.string, args.utf8.count <= 128 * 1024,
            let parsed = try? JSONSerialization.jsonObject(with: Data(args.utf8)) { fields["arguments"] = wire(parsed) }
         if fields["text"] == nil, type == "agentMessage" { fields["text"] = .string(text(value["content"])) }

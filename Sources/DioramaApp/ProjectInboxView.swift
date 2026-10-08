@@ -11,6 +11,9 @@ struct ProjectInboxView: View {
     var canReply: (InboxThread) -> Bool
     var leadingControl: AnyView? = nil
     var presentation: ProjectTabStore? = nil
+    /// In the kitchen the pill docks at the top with the card below it; in the office the card
+    /// opens above the pill at the bottom.
+    var dockedTop = false
     @State private var rows: [InboxThread] = []
     @State private var next: String?
     @State private var unread = 0
@@ -25,32 +28,9 @@ struct ProjectInboxView: View {
 
     var body: some View {
         VStack(alignment: .trailing, spacing: 8) {
-            VStack(spacing: 0) {
-                header
-                Divider()
-                if let selected {
-                    InboxThreadDetail(model: model, thread: selected, reply: { reply(selected) }, canReply: canReply(selected), presentation: presentation)
-                        .id(selected.id)
-                } else {
-                    if newUpdates { Button("New updates · Show newest") { Task { await load(reset: true, force: true) } }.pointingHand().padding(8) }
-                    list
-                }
-                if let error { Text(error).font(.caption).foregroundStyle(.red).padding(8); Button("Retry") { Task { await load(reset: true) } }.pointingHand() }
-                if let notice = model.notice ?? model.historyNotices[project] { Text(notice).font(.caption2).foregroundStyle(.secondary).lineLimit(2).padding(8) }
-            }
-            .frame(height: expanded ? height : 0).clipped().opacity(expanded ? 1 : 0)
-            .background(.white, in: RoundedRectangle(cornerRadius: 14))
-            .overlay(RoundedRectangle(cornerRadius: 14).stroke(.black.opacity(expanded ? 0.12 : 0)))
-            .shadow(color: .black.opacity(expanded ? 0.12 : 0), radius: 12, y: 4)
-            .allowsHitTesting(expanded).accessibilityElement(children: expanded ? .contain : .ignore).accessibilityHidden(!expanded)
-            HStack(spacing: 8) {
-            Spacer(minLength: 0)
-            if let leadingControl { leadingControl }
-            Button { if expanded { viewport.capture() }; expanded.toggle() } label: {
-                Label("Inbox · \(unread) unread", systemImage: "tray").font(.callout.weight(.medium)).lineLimit(1).minimumScaleFactor(0.65).padding(.horizontal, 14).padding(.vertical, 10)
-            }.pointingHand().buttonStyle(.plain).background(.white, in: Capsule()).overlay(Capsule().stroke(.black.opacity(0.12)))
-                .accessibilityLabel("Inbox, \(unread) unread threads, \(expanded ? "expanded" : "collapsed")")
-        }
+            if dockedTop { pill }
+            card
+            if !dockedTop { pill }
         }
         .environment(\.colorScheme, .light).environment(\.avatarMessages, true).tint(.blue)
          .task(id: project) {
@@ -63,6 +43,53 @@ struct ProjectInboxView: View {
         .onChange(of: model.revision) { Task { await load(reset: true) } }
         .onChange(of: filter) { Task { await load(reset: true, force: true) } }
     }
+    private var card: some View {
+        VStack(spacing: 0) {
+            header
+            Rectangle().fill(SidebarStyle.divider).frame(height: 1)
+            if let selected {
+                InboxThreadDetail(model: model, thread: selected, reply: { reply(selected) }, canReply: canReply(selected), presentation: presentation)
+                    .id(selected.id)
+            } else {
+                if newUpdates {
+                    Button("New updates · Show newest") { Task { await load(reset: true, force: true) } }
+                        .buttonStyle(ModalSecondaryButtonStyle(height: 24)).padding(8)
+                }
+                list
+            }
+            if let error {
+                HStack(spacing: 8) {
+                    Text(error).font(.system(size: 11.5)).foregroundStyle(.red).lineLimit(2)
+                    Spacer(minLength: 0)
+                    Button("Retry") { Task { await load(reset: true) } }.buttonStyle(ModalSecondaryButtonStyle(height: 24))
+                }.padding(.horizontal, SidebarStyle.horizontal).padding(.vertical, 8)
+            }
+            if let notice = model.notice ?? model.historyNotices[project] {
+                Text(notice).font(.system(size: 11)).foregroundStyle(SidebarStyle.secondary).lineLimit(2)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .padding(.horizontal, SidebarStyle.horizontal).padding(.vertical, 9)
+                    .background(Color(red: 0.969, green: 0.957, blue: 0.937))
+                    .overlay(alignment: .top) { Rectangle().fill(SidebarStyle.divider).frame(height: 1) }
+            }
+        }
+        .frame(height: expanded ? height : 0).clipped().opacity(expanded ? 1 : 0)
+        .utilityCard(open: expanded)
+        // Half off the card's top-left corner, like the agent card's (which sits top right).
+        .overlay(alignment: .topLeading) {
+            if expanded { SidebarCornerButton(grow: false) { viewport.capture(); expanded = false }.offset(x: -14, y: -14) }
+        }
+        .allowsHitTesting(expanded).accessibilityElement(children: expanded ? .contain : .ignore).accessibilityHidden(!expanded)
+    }
+    private var pill: some View {
+        UtilityPill {
+            if let leadingControl { leadingControl; UtilityPillDivider() }
+            UtilitySegment(symbol: "tray", label: "Inbox", selected: expanded, action: { if expanded { viewport.capture() }; expanded.toggle() }) {
+                if unread > 0 { UtilityBadge(count: unread) }
+            }
+            .help(expanded ? "Close inbox" : "Agent updates in this project")
+            .accessibilityLabel("Inbox, \(unread) unread threads, \(expanded ? "expanded" : "collapsed")")
+        }
+    }
     private func saveBookmark() {
         viewport.capture()
         var value = presentation?.inboxBookmarks[project] ?? InboxViewBookmark()
@@ -70,16 +97,20 @@ struct ProjectInboxView: View {
         presentation?.inboxBookmarks[project] = value
     }
     private var header: some View {
-        HStack {
-            if selected != nil { Button { selected = nil } label: { Image(systemName: "chevron.left") }.pointingHand().help("Back to inbox") }
-            Text("Inbox").font(.headline)
-            Spacer()
-            if selected == nil {
-                Menu { Picker("Show", selection: $filter) { ForEach(InboxFilter.allCases, id: \.self) { Text($0.rawValue).tag($0) } }.pointingHand() } label: { Image(systemName: "line.3.horizontal.decrease.circle") }.pointingHand()
-                    .menuStyle(.borderlessButton).frame(width: 24).help("Filter inbox")
+        HStack(spacing: 6) {
+            if selected != nil {
+                UtilityIconButton(symbol: "chevron.left", help: "Back to inbox") { selected = nil }
+            } else {
+                Image(systemName: "tray").font(.system(size: 13, weight: .medium)).foregroundStyle(SidebarStyle.title)
             }
-            Button { viewport.capture(); expanded = false } label: { Image(systemName: "chevron.down") }.pointingHand().help("Collapse inbox")
-        }.buttonStyle(.plain).padding(12)
+            Text("Inbox").font(.system(size: 13, weight: .semibold)).foregroundStyle(SidebarStyle.title)
+            Spacer(minLength: 6)
+            if selected == nil {
+                UtilitySegmentedPicker(options: InboxFilter.allCases, selection: $filter) { $0.rawValue }
+                    .help("Filter inbox").accessibilityLabel("Show")
+            }
+        }
+        .padding(.leading, selected == nil ? SidebarStyle.horizontal : 6).padding(.trailing, 8).padding(.vertical, 8).frame(minHeight: 44)
     }
     private var list: some View {
         ScrollViewReader { proxy in
@@ -88,26 +119,19 @@ struct ProjectInboxView: View {
                     Color.clear.frame(height: 1).id("inbox-top")
                     if rows.isEmpty && !loading {
                         if model.indexing { ProgressView("Loading agent updates…").controlSize(.small).padding(24) }
-                        else { Text("No agent updates yet").foregroundStyle(.secondary).padding(24) }
+                        else { Text("No agent updates yet").font(.system(size: 12)).foregroundStyle(SidebarStyle.secondary).padding(24) }
                     }
-                    ForEach(rows) { row in
-                        Button {
-                            viewport.capture()
-                            selected = row
-                            Task { await model.act(row.id, .read, through: row.updates.last?.id) }
-                        } label: { InboxThreadRow(thread: row) }.pointingHand()
-                        .buttonStyle(.plain)
-                        .background(ConversationHistoryRowAnchor(id: row.id, viewport: viewport))
-                        .contextMenu {
-                            Button("Mark unread") { act(row, .unread) }.pointingHand()
-                            Button("Archive") { act(row, .archive) }.pointingHand()
-                            Button("Not a delivery") { act(row, .reject) }.pointingHand()
-                            if filter != .inbox { Button("Restore") { act(row, .restore) }.pointingHand() }
-                        }
-                        Divider().padding(.leading, 28)
+                    // The inbox leads with what's unread, like the agent card's groups.
+                    let unreadRows = filter == .inbox ? rows.filter(\.unread) : []
+                    let otherRows = filter == .inbox ? rows.filter { !$0.unread } : rows
+                    if !unreadRows.isEmpty {
+                        UtilityCardBand(title: "Unread", count: unread, tint: SidebarStyle.tint(.inProgress))
+                        ForEach(unreadRows) { row in rowView(row) }
+                        if !otherRows.isEmpty { UtilityCardBand(title: "Earlier", tint: SidebarStyle.tint(.idle)) }
                     }
+                    ForEach(otherRows) { row in rowView(row) }
                     if loading { ProgressView().controlSize(.small).padding(12) }
-                    if next != nil { Button("Load older updates") { Task { await load(reset: false) } }.pointingHand().padding(10) }
+                    if next != nil { Button("Load older updates") { Task { await load(reset: false) } }.buttonStyle(ModalSecondaryButtonStyle(height: 24)).padding(10) }
                 }.background(InboxScrollProbe { top, bottom in
                     atTop = top
                     if bottom && next != nil { Task { await load(reset: false) } }
@@ -119,6 +143,21 @@ struct ProjectInboxView: View {
             .onChange(of: expanded) { _, value in
                 if value, let id = viewport.anchorID { proxy.scrollTo(id, anchor: .top); viewport.restore() }
             }
+        }
+    }
+    private func rowView(_ row: InboxThread) -> some View {
+        Button {
+            viewport.capture()
+            selected = row
+            Task { await model.act(row.id, .read, through: row.updates.last?.id) }
+        } label: { InboxThreadRow(thread: row) }.pointingHand()
+        .buttonStyle(.plain)
+        .background(ConversationHistoryRowAnchor(id: row.id, viewport: viewport))
+        .contextMenu {
+            Button("Mark unread") { act(row, .unread) }.pointingHand()
+            Button("Archive") { act(row, .archive) }.pointingHand()
+            Button("Not a delivery") { act(row, .reject) }.pointingHand()
+            if filter != .inbox { Button("Restore") { act(row, .restore) }.pointingHand() }
         }
     }
     private func act(_ row: InboxThread, _ action: InboxAction) { Task { await model.act(row.id, action); await load(reset: true, force: true) } }
@@ -168,25 +207,35 @@ struct InboxThreadRow: View {
         return received ? "Received " + value : value
     }
     var body: some View {
-        HStack(alignment: .top, spacing: 8) {
-            Circle().fill(thread.unread ? Color.blue : .clear).frame(width: 6, height: 6).padding(.top, 5)
-            VStack(alignment: .leading, spacing: 4) {
-                HStack(alignment: .firstTextBaseline) {
-                    Text(thread.agent).font(.callout.weight(thread.unread ? .semibold : .regular))
+        HStack(alignment: .top, spacing: 10) {
+            Text(String(thread.agent.prefix(1)).uppercased()).font(.system(size: 11, weight: .bold)).foregroundStyle(.white)
+                .frame(width: 24, height: 24)
+                .background(Circle().fill(thread.unread ? SidebarStyle.accent : Color(red: 0.56, green: 0.56, blue: 0.58)))
+                .padding(.top, 1)
+            VStack(alignment: .leading, spacing: 2) {
+                HStack(alignment: .firstTextBaseline, spacing: 6) {
+                    Text(thread.agent).font(.system(size: 12, weight: thread.unread ? .semibold : .medium)).foregroundStyle(Color(red: 0.33, green: 0.33, blue: 0.35))
                     Spacer(minLength: 4)
-                    Text(Self.timestamp(thread.date, received: thread.received)).font(.caption2).foregroundStyle(.secondary)
+                    Text(Self.timestamp(thread.date, received: thread.received)).font(.system(size: 11)).foregroundStyle(Color(red: 0.56, green: 0.56, blue: 0.58))
                         .help(thread.date.formatted(date: .complete, time: .complete))
                 }
-                Text(TaskTitle.compact(thread.title)).help(TaskTitle.full(thread.title)).accessibilityLabel(TaskTitle.full(thread.title)).font(.callout.weight(thread.unread ? .semibold : .regular)).lineLimit(1)
-                Text(thread.excerpt).font(.caption).foregroundStyle(.secondary).lineLimit(1)
+                Text(TaskTitle.compact(thread.title)).help(TaskTitle.full(thread.title)).accessibilityLabel(TaskTitle.full(thread.title))
+                    .font(.system(size: 13, weight: thread.unread ? .semibold : .regular)).foregroundStyle(SidebarStyle.title).lineLimit(1)
+                Text(thread.excerpt).font(.system(size: 11.5)).foregroundStyle(SidebarStyle.secondary).lineLimit(1)
                 if thread.attachments > 0 || thread.outcome != "completed" {
-                    HStack {
-                        if thread.attachments > 0 { Label("\(thread.attachments)", systemImage: "paperclip") }
-                        if thread.outcome != "completed" { Text(thread.outcome.capitalized).foregroundStyle(.orange) }
-                    }.font(.caption2)
+                    HStack(spacing: 8) {
+                        if thread.attachments > 0 { Label("\(thread.attachments)", systemImage: "paperclip").foregroundStyle(SidebarStyle.secondary) }
+                        if thread.outcome != "completed" { Text(thread.outcome.capitalized).foregroundStyle(SidebarStyle.tint(.needsYou).text) }
+                    }.font(.system(size: 11)).padding(.top, 1)
                 }
             }
-        }.padding(12).contentShape(Rectangle()).accessibilityElement(children: .combine)
+        }
+        .padding(.horizontal, SidebarStyle.horizontal).padding(.vertical, 10)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(thread.unread ? Color(red: 0.953, green: 0.969, blue: 1.0) : .clear)
+        .overlay(alignment: .leading) { if thread.unread { Rectangle().fill(SidebarStyle.accent).frame(width: 3) } }
+        .overlay(alignment: .bottom) { Rectangle().fill(SidebarStyle.divider).frame(height: 1) }
+        .contentShape(Rectangle()).accessibilityElement(children: .combine)
             .accessibilityLabel("\(thread.unread ? "Unread, " : "")\(thread.agent), \(thread.title), \(thread.excerpt), \(thread.received ? "Received " : "")\(thread.date.formatted(date: .complete, time: .complete))")
     }
 }
@@ -210,7 +259,7 @@ private struct InboxThreadDetail: View {
     var body: some View {
         VStack(spacing: 0) {
             HStack {
-                Text(TaskTitle.compact(thread.title)).help(TaskTitle.full(thread.title)).accessibilityLabel(TaskTitle.full(thread.title)).font(.headline).lineLimit(2)
+                Text(TaskTitle.compact(thread.title)).help(TaskTitle.full(thread.title)).accessibilityLabel(TaskTitle.full(thread.title)).font(.system(size: 15, weight: .semibold)).foregroundStyle(SidebarStyle.title).lineLimit(2)
                 Spacer()
                 Menu {
                     Button("Mark unread") { suppressRead = true; Task { await model.act(thread.id, .unread) } }.pointingHand()
@@ -253,8 +302,13 @@ private struct InboxThreadDetail: View {
                 }
             }
             if let error { HStack { Text(error).font(.caption).foregroundStyle(.red); Button("Retry") { retry += 1 }.pointingHand() }.padding(8) }
-            Divider()
-            Button(canReply ? "Reply" : "Open conversation", action: reply).pointingHand().buttonStyle(.borderedProminent).padding(10)
+            HStack {
+                Spacer()
+                Button(canReply ? "Reply" : "Open conversation", action: reply).buttonStyle(ModalPrimaryButtonStyle())
+            }
+            .padding(.horizontal, SidebarStyle.horizontal).padding(.vertical, 10)
+            .background(Color(red: 0.969, green: 0.957, blue: 0.937))
+            .overlay(alignment: .top) { Rectangle().fill(SidebarStyle.divider).frame(height: 1) }
         }.onDisappear {
             viewport.capture()
             var saved = presentation?.inboxBookmarks[thread.id] ?? InboxViewBookmark()

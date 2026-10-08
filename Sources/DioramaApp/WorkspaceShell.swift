@@ -14,27 +14,8 @@ struct WorkspaceShell<AddActions: View>: View {
             DesktopProjectTabs(library: library)
             GeometryReader { geometry in
                 VStack(spacing: 0) {
-                    if tabs.selected != .home && !tabs.pickerPresented {
-                        HStack(spacing: 14) {
-                            Button { if let roster = library.spatial.focus.projectID { library.spatial.roster(for: roster).collapsed.toggle() } } label: { Image(systemName: "sidebar.left") }.pointingHand().help("Toggle agents")
-                            Button { if let route = navigation.back() { library.navigate(route, record: false) } } label: { Image(systemName: "chevron.left") }.pointingHand().disabled(navigation.backStack.isEmpty)
-                            Button { if let route = navigation.forward() { library.navigate(route, record: false) } } label: { Image(systemName: "chevron.right") }.pointingHand().disabled(navigation.forwardStack.isEmpty)
-                            Menu {
-                                ForEach(WorkspaceSceneKind.allCases, id: \.self) { kind in
-                                    Button { library.spatial.sceneKind = kind } label: {
-                                        if library.spatial.sceneKind == kind { Label(kind.rawValue, systemImage: "checkmark") }
-                                        else { Text(kind.rawValue) }
-                                    }
-                                }
-                            } label: {
-                                HStack(spacing: 5) { Text(library.spatial.sceneKind.rawValue); Image(systemName: "chevron.down").font(.caption2) }
-                            }.menuStyle(.borderlessButton).fixedSize().pointingHand()
-                                .accessibilityLabel("Scene: " + library.spatial.sceneKind.rawValue)
-                            Spacer()
-                            Button { library.showNewTask = true } label: { Label("New agent", systemImage: "plus") }.pointingHand()
-                            Button { library.toggleWorkspaceInspector() } label: { Image(systemName: "sidebar.right") }.pointingHand().help("Toggle conversation panel")
-                        }.buttonStyle(.plain).foregroundStyle(.secondary).padding(.horizontal, 16).frame(height: 32).background(DioramaStyle.sidebar)
-                    }
+                    // No toolbar row: the kitchen's floating agents card has Create, ⌘B toggles it,
+                    // and selecting a chef opens its conversation.
                     WorkspacePaneStack {
                         // One native renderer per window; tabs store no scene graphs.
                         SpatialWorkspaceView(library: library, visible: spatialVisible)

@@ -71,6 +71,8 @@ struct ProjectOfficeInbox: View {
     @Binding var selected: InboxThread?
     var reply: (InboxThread) -> Void
     var canReply: (InboxThread) -> Bool
+    /// The kitchen docks the pill top right with the cards below; the office keeps them above.
+    var dockedTop = false
     @State private var servers = ProjectServersModel()
     @State private var links: [LocalServerLink] = []
     @State private var roots: [LocalServerRoot] = []
@@ -79,18 +81,9 @@ struct ProjectOfficeInbox: View {
     var body: some View {
         ProjectInboxView(model: library.projectInbox, project: project, height: height,
             expanded: $inboxExpanded, selected: $selected, reply: reply, canReply: canReply,
-            leadingControl: AnyView(Button {
-                serversExpanded.toggle()
-                if serversExpanded { inboxExpanded = false; trigger += 1 }
-            } label: {
-                Label("Servers · \(servers.rows.filter(\.confirmed).count) \(active && servers.error == nil ? "listening" : "last seen")", systemImage: "network")
-                    .font(.callout.weight(.medium)).lineLimit(1).minimumScaleFactor(0.65).padding(.horizontal, 12).padding(.vertical, 10)
-            }.pointingHand().buttonStyle(.plain).background(.white, in: Capsule())
-                .overlay(Capsule().stroke(.black.opacity(0.12)))
-                .help("Project TCP listeners; availability is not application health")
-                .accessibilityLabel("Servers, \(servers.rows.filter(\.confirmed).count) listening, \(active ? "" : "paused, ")\(serversExpanded ? "expanded" : "collapsed")")), presentation: library.navigation.projectTabs)
-        .overlay(alignment: .bottom) {
-            if serversExpanded { panel.frame(height: height).padding(.bottom, 50) }
+            leadingControl: AnyView(serversSegment), presentation: library.navigation.projectTabs, dockedTop: dockedTop)
+        .overlay(alignment: dockedTop ? .top : .bottom) {
+            if serversExpanded { panel.frame(height: height).padding(dockedTop ? .top : .bottom, 50) }
         }
         .environment(\.colorScheme, .light).tint(.blue)
         .onChange(of: inboxExpanded) { _, value in if value { serversExpanded = false } }
@@ -117,53 +110,101 @@ struct ProjectOfficeInbox: View {
             return text.contains("localhost") || text.contains("127.0.0.1") || text.contains("[::1]") ? task.session.id + String(text.suffix(2048)) : ""
         }.filter { !$0.isEmpty }.sorted()
     }
+    private var listening: Bool { active && servers.error == nil }
+    private var serversSegment: some View {
+        let count = servers.rows.filter(\.confirmed).count
+        return UtilitySegment(symbol: "server.rack", count: count, label: count == 1 ? "server" : "servers", selected: serversExpanded, action: {
+            serversExpanded.toggle()
+            if serversExpanded { inboxExpanded = false; trigger += 1 }
+        }) {
+            UtilityStatusDot(live: listening && count > 0)
+        }
+        .help(listening ? "Project TCP listeners; availability is not application health" : "Last seen listeners (paused or the scan failed)")
+        .accessibilityLabel("Servers, \(count) \(listening ? "listening" : "last seen"), \(active ? "" : "paused, ")\(serversExpanded ? "expanded" : "collapsed")")
+    }
     private var panel: some View {
-        VStack(spacing: 0) {
-            HStack {
-                Text("Local servers").font(.headline)
-                Spacer()
+        let confirmed = servers.rows.filter(\.confirmed), possible = servers.rows.filter { !$0.confirmed }
+        return VStack(spacing: 0) {
+            HStack(spacing: 6) {
+                Image(systemName: "server.rack").font(.system(size: 13, weight: .medium)).foregroundStyle(SidebarStyle.title)
+                Text("Local servers").font(.system(size: 13, weight: .semibold)).foregroundStyle(SidebarStyle.title)
+                Spacer(minLength: 6)
                 if servers.scanning { ProgressView().controlSize(.small) }
-                Button { trigger += 1 } label: { Image(systemName: "arrow.clockwise") }.pointingHand().help("Refresh servers").disabled(!active)
-                Button { serversExpanded = false } label: { Image(systemName: "xmark") }.pointingHand().help("Close servers")
-            }.buttonStyle(.plain).padding(12)
-            Divider()
-            ScrollView {
-                LazyVStack(alignment: .leading, spacing: 12) {
-                    if servers.rows.isEmpty { Text(servers.checked == nil ? "Discovering local listeners…" : "No project servers detected").foregroundStyle(.secondary) }
-                    ForEach(servers.rows) { row in
-                        VStack(alignment: .leading, spacing: 6) {
-                            if !row.confirmed { Text("Possible match · ownership uncertain").font(.caption).foregroundStyle(.orange) }
-                            Text(row.process.name).font(.headline)
-                            if !row.process.folder.isEmpty { Text(row.process.folder).font(.caption).foregroundStyle(.secondary).lineLimit(2) }
-                            ForEach(row.process.endpoints, id: \.self) { endpoint in
-                                HStack {
-                                    Text(endpoint).font(.system(.caption, design: .monospaced)).textSelection(.enabled)
-                                    Spacer()
-                                    Button { NSPasteboard.general.clearContents(); NSPasteboard.general.setString(endpoint, forType: .string) } label: { Image(systemName: "doc.on.doc") }.pointingHand().help("Copy address")
-                                }
-                            }
-                            ForEach(Array(row.links.enumerated()), id: \.offset) { _, link in
-                                VStack(alignment: .leading) {
-                                    Text(link.title).font(.caption).lineLimit(1)
-                                    Button("Open in browser ↗") { NSWorkspace.shared.open(link.url) }.pointingHand().help(link.label)
-                                }
-                            }
-                        }
-                        Divider()
-                    }
-                }.padding(12)
+                UtilityIconButton(symbol: "arrow.clockwise", help: "Refresh servers") { trigger += 1 }.disabled(!active)
             }
-            Divider()
+            .padding(.leading, SidebarStyle.horizontal).padding(.trailing, 8).frame(height: 44)
+            ScrollView {
+                LazyVStack(spacing: 0) {
+                    if servers.rows.isEmpty {
+                        Text(servers.checked == nil ? "Discovering local listeners…" : "No project servers detected")
+                            .font(.system(size: 12)).foregroundStyle(SidebarStyle.secondary)
+                            .frame(maxWidth: .infinity).padding(.top, 28)
+                            .overlay(alignment: .top) { Rectangle().fill(SidebarStyle.divider).frame(height: 1) }
+                    }
+                    if !confirmed.isEmpty {
+                        UtilityCardBand(title: listening ? "Listening" : "Last seen", count: confirmed.count, tint: SidebarStyle.tint(listening ? .done : .idle))
+                        ForEach(confirmed) { row in serverRow(row) }
+                    }
+                    if !possible.isEmpty {
+                        UtilityCardBand(title: "Possible matches", count: possible.count, tint: SidebarStyle.tint(.needsYou))
+                        ForEach(possible) { row in serverRow(row) }
+                    }
+                }
+            }
             VStack(alignment: .leading, spacing: 3) {
                 if !active { Text("Paused · retained results may be stale") }
-                if let error = servers.error { Text(error).foregroundStyle(.orange) }
-                Text("Partial detection · accessible local processes only").help(servers.detectionDetail)
-                Text("Listening confirms an open socket, not application health.")
+                if let error = servers.error { Text(error).foregroundStyle(SidebarStyle.tint(.needsYou).text) }
+                Text("Partial detection · local processes this app can see. A listening port doesn’t mean the app is healthy.").help(servers.detectionDetail)
                 if let checked = servers.checked { Text("Checked \(checked.formatted(date: .omitted, time: .standard))") }
-            }.font(.caption2).foregroundStyle(.secondary).frame(maxWidth: .infinity, alignment: .leading).padding(10)
-        }.background(.white, in: RoundedRectangle(cornerRadius: 14))
-            .overlay(RoundedRectangle(cornerRadius: 14).stroke(.black.opacity(0.12)))
-            .shadow(color: .black.opacity(0.12), radius: 12, y: 4)
+            }
+            .font(.system(size: 11)).foregroundStyle(SidebarStyle.secondary).fixedSize(horizontal: false, vertical: true)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .padding(.horizontal, SidebarStyle.horizontal).padding(.vertical, 9)
+            .background(Color(red: 0.969, green: 0.957, blue: 0.937))
+            .overlay(alignment: .top) { Rectangle().fill(SidebarStyle.divider).frame(height: 1) }
+        }
+        .utilityCard(open: true)
+        .overlay(alignment: .topLeading) { SidebarCornerButton(grow: false) { serversExpanded = false }.offset(x: -14, y: -14) }
+        .environment(\.colorScheme, .light)
+    }
+    private func serverRow(_ row: ProjectLocalServer) -> some View {
+        HStack(alignment: .top, spacing: 10) {
+            Group {
+                if row.confirmed {
+                    Image(systemName: "waveform.path").font(.system(size: 11, weight: .bold)).foregroundStyle(.white)
+                        .frame(width: 24, height: 24).background(Circle().fill(listening ? SidebarStyle.tint(.done).dot : SidebarStyle.tint(.idle).dot))
+                } else {
+                    Image(systemName: "questionmark").font(.system(size: 11, weight: .bold)).foregroundStyle(SidebarStyle.tint(.needsYou).dot)
+                        .frame(width: 24, height: 24).overlay(Circle().strokeBorder(SidebarStyle.tint(.needsYou).dot, lineWidth: 1.8))
+                }
+            }.padding(.top, 1)
+            VStack(alignment: .leading, spacing: 2) {
+                Text(row.process.name).font(.system(size: 13, weight: .semibold)).foregroundStyle(SidebarStyle.title).lineLimit(1)
+                if !row.process.folder.isEmpty {
+                    Text(row.process.folder).font(.system(size: 11.5)).foregroundStyle(SidebarStyle.secondary).lineLimit(1).truncationMode(.middle)
+                }
+                VStack(alignment: .leading, spacing: 0) {
+                    ForEach(row.process.endpoints, id: \.self) { endpoint in
+                        HStack(spacing: 6) {
+                            Text(endpoint).font(.system(size: 11.5, design: .monospaced)).foregroundStyle(SidebarStyle.title).textSelection(.enabled).lineLimit(1)
+                            Spacer(minLength: 4)
+                            UtilityIconButton(symbol: "doc.on.doc", help: "Copy address") {
+                                NSPasteboard.general.clearContents(); NSPasteboard.general.setString(endpoint, forType: .string)
+                            }.frame(width: 24, height: 24)
+                        }.frame(height: 24)
+                    }
+                }.padding(.top, 2)
+                ForEach(Array(row.links.enumerated()), id: \.offset) { _, link in
+                    VStack(alignment: .leading, spacing: 3) {
+                        if !link.title.isEmpty { Text(link.title).font(.system(size: 11.5)).foregroundStyle(SidebarStyle.secondary).lineLimit(1) }
+                        ReviewActionButton(title: "Open in browser", symbol: "arrow.up.right") { NSWorkspace.shared.open(link.url) }.help(link.label)
+                    }.padding(.top, 3)
+                }
+            }
+            .frame(maxWidth: .infinity, alignment: .leading)
+        }
+        .padding(.horizontal, SidebarStyle.horizontal).padding(.top, 11).padding(.bottom, 10)
+        .overlay(alignment: .bottom) { Rectangle().fill(SidebarStyle.divider).frame(height: 1) }
     }
     private func collectEvidence() async {
         let projects = library.projects.projects

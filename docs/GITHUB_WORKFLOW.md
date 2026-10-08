@@ -26,3 +26,15 @@ This Mac currently has no valid code-signing certificate. Development bundles ar
 - Automatic approval review rejected a disposable agent command that also proposed an unrelated HTML file. That turn was cancelled; only README.md was written and included in the live PR test.
 
 References: [GitHub device flow](https://docs.github.com/en/apps/oauth-apps/building-oauth-apps/authorizing-oauth-apps#device-flow), [GitHub pull requests API](https://docs.github.com/en/rest/pulls/pulls), [Apple Keychain queries](https://developer.apple.com/documentation/security/secitemcopymatching(_:_:)).
+
+## Pull request health and the fix loop
+
+Every open pull request Diorama created is re-read while the app runs (`PRWatcher`: every 20 s while checks run, otherwise every 60 s; every 10 s while its serving window is open). `LinkedPullRequest.health` combines check runs, commit statuses and GitHub's `mergeable` / `mergeable_state` into one of: checking, ready, checks failed, conflicted, behind, blocked, merged, closed.
+
+- Checking: the chef waits at the tasting station; the task shows In progress, "CI checks running".
+- Ready / behind / blocked: the dish waits at the pass (Done). Merge PR (squash, merge commit or rebase) is enabled only when ready. It re-reads the PR first, and passes the checked head SHA, so GitHub refuses if the branch moved. Behind offers Update branch, which merges `origin/<base>` locally and pushes, without the agent.
+- Conflicted / checks failed: the chef rings the bell; the task shows Needs you with "Fix pull request". The serving window lists the failing checks with their logs and, for conflicts, the conflicting files and the base commits that touched them (computed locally with `git merge-tree`, which changes nothing).
+- Send to agent to fix: on a conflict Diorama fetches the base and starts `git merge origin/<base>` itself (agents may lack network access and write access to the shared Git directory), then sends the editable instructions. When that turn finishes, Diorama refuses leftover conflict markers, commits, and pushes to the same PR (never forced). CI then starts over.
+- Merged, here or on GitHub: the chef celebrates and rests; the local base fast-forwards when it safely can, and a failure to do so is reported rather than ignored.
+
+The task board's Branches view (⇧⌘B, then Branches) lists every task's branch, PR and health, and Merge all green squash-merges each ready PR in turn, re-checking each before merging since every merge moves the base for the rest.

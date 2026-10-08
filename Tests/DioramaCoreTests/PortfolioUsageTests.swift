@@ -97,4 +97,19 @@ struct PortfolioUsageTests {
         child.classification = .subagent
         #expect(PortfolioUsageIndex.identity(child) != key)
     }
+    @Test func recentDaysSplitInputAndOutputWithoutDoubleCounting() throws {
+        let now = Date(), old = now.addingTimeInterval(-10 * 86_400), yesterday = now.addingTimeInterval(-86_400)
+        var codex = PortfolioUsageLedger()
+        codex.ingestCumulative(try wire(#"{"input_tokens":100,"cached_input_tokens":90,"output_tokens":10}"#), provider: .codex, at: old)
+        codex.ingestCumulative(try wire(#"{"input_tokens":300,"cached_input_tokens":250,"output_tokens":40}"#), provider: .codex, at: yesterday)
+        codex.ingestCumulative(try wire(#"{"input_tokens":300,"cached_input_tokens":250,"output_tokens":40}"#), provider: .codex, at: now)
+        #expect(codex.recent(days: 7, now: now) == TokenSplit(input: 200, output: 30))
+        #expect(codex.total == 340)
+        var claude = PortfolioUsageLedger()
+        let row = try wire("{\"timestamp\":\"\(ISO8601DateFormatter().string(from: now))\",\"type\":\"assistant\",\"message\":{\"id\":\"m\",\"usage\":{\"input_tokens\":10,\"output_tokens\":20,\"cache_read_input_tokens\":30,\"cache_creation_input_tokens\":40}}}")
+        claude.ingest(row, provider: .claude); claude.ingest(row, provider: .claude)
+        #expect(claude.recent(days: 7, now: now) == TokenSplit(input: 80, output: 20))
+        #expect(claude.recent(days: 1, now: now.addingTimeInterval(3 * 86_400)) == TokenSplit())
+        #expect(claude.total == 100)
+    }
 }

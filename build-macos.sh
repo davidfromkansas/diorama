@@ -30,6 +30,7 @@ fi
 printf '%s\n' "$helper_stamp" > "$app_path/Contents/Resources/ClaudeHelper/source.sha1"
 mkdir -p "$app_path/Contents/Resources/Licenses"
 cp -f licenses/GenerativeLoaders.txt "$app_path/Contents/Resources/Licenses/GenerativeLoaders.txt"
+cp -f licenses/Kenney-Audio.txt "$app_path/Contents/Resources/Licenses/Kenney-Audio.txt"
 cp -f "$build_path/checkouts/swift-markdown-ui/LICENSE" "$app_path/Contents/Resources/Licenses/MarkdownUI.txt"
 cp -f "$build_path/artifacts/sparkle/Sparkle/LICENSE" "$app_path/Contents/Resources/Licenses/Sparkle.txt"
 cp -f "$build_path/checkouts/NetworkImage/LICENSE" "$app_path/Contents/Resources/Licenses/NetworkImage.txt"
@@ -44,8 +45,8 @@ cat > "$app_path/Contents/Info.plist" <<'PLIST'
 <key>CFBundleDisplayName</key><string>Diorama</string>
 <key>CFBundlePackageType</key><string>APPL</string>
 <key>CFBundleIconFile</key><string>AppIcon.icns</string>
-<key>CFBundleShortVersionString</key><string>0.8.3</string>
-<key>CFBundleVersion</key><string>54</string>
+<key>CFBundleShortVersionString</key><string>0.8.4</string>
+<key>CFBundleVersion</key><string>55</string>
 <key>DioramaGitHubClientID</key><string>Ov23liN3O8j2ksYfPj0j</string>
 <key>LSMinimumSystemVersion</key><string>14.0</string>
 <key>NSHighResolutionCapable</key><true/>
@@ -69,6 +70,7 @@ else
 fi
 # Generated bundles inside synced folders can acquire Finder/file-provider metadata.
 # Strip extended attributes from this build output before signing (never source files).
+chmod -R u+w "$app_path"
 xattr -cr "$app_path"
 codesign --force --sign - "$app_path"
 codesign --verify --deep --strict "$app_path"

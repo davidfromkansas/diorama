@@ -35,8 +35,21 @@ nonisolated struct PortfolioSurface: Equatable, Sendable {
     func contains(u: Double, v: Double) -> Bool { (0...1).contains(u) && (0...1).contains(v) }
 }
 
+/// What Home's usage column shows: weekly allowances and the last seven days of tokens.
+struct HomeUsage: Equatable {
+    struct Node: Equatable, Identifiable { var id: String; var name: String; var tokens: TokenSplit }
+    var weekly: [Provider: LimitWindow] = [:]
+    var plans: [Provider: String] = [:]
+    var tokens = TokenSplit()
+    var byProject: [Node] = []
+    var byPlan: [Node] = []
+    var loading = false
+    func planName(_ provider: Provider) -> String { ProviderLimits.planName(provider, plans[provider]) }
+}
+
 @Observable final class PortfolioStore {
     var usages: [String: PortfolioUsageSummary] = [:]
+    var home = HomeUsage()
     var observations: [String: ExternalObservationSnapshot] = [:]
     var projectOrder: [String] = []
     var scrollID: String?
@@ -51,10 +64,22 @@ nonisolated struct PortfolioSurface: Equatable, Sendable {
     private let index: PortfolioUsageIndex
     private let activity = ActivityLibrary()
     private var refreshing = false
+    private let limitsURL: URL?
+    private var limits: ProviderLimitsCache
+    private var codexLimitsSource: (path: String, modified: Date)?
+    private var appServerLimits: WireValue = .null
+    private var checkingClaudePlan = false
+    private var checkingClaudeUsage = false
+    private var checkingCodexUsage = false
+    private var codexUsageCheckedAt: Date?
 
     init(cache: URL? = FileManager.default.urls(for: .cachesDirectory, in: .userDomainMask).first?
-        .appendingPathComponent("Diorama/portfolio-usage-v1.json")) {
+        .appendingPathComponent("Diorama/portfolio-usage-v2.json")) {
         index = PortfolioUsageIndex(cache: cache)
+        // Without a cache (tests) nothing is persisted and no provider command runs.
+        limitsURL = cache?.deletingLastPathComponent().appendingPathComponent("provider-limits-v1.json")
+        limits = ProviderLimitsCache.load(limitsURL)
+        if let old = cache?.deletingLastPathComponent().appendingPathComponent("portfolio-usage-v1.json") { try? FileManager.default.removeItem(at: old) }
     }
     func register(_ sessions: [Session]) {
         for session in sessions {
@@ -122,7 +147,10 @@ nonisolated struct PortfolioSurface: Equatable, Sendable {
             all.merge(sources) { _, latest in latest }
         }
         let sources = Array(all.values)
-        async let read = index.read(sources)
+        // Home's token flow covers the whole account: recent sessions outside any project count too.
+        let horizon = Date().addingTimeInterval(-8 * 86_400)
+        let unassigned = discovered.filter { all[$0.key] == nil && $0.value.url != nil && $0.value.modified >= horizon }
+        async let read = index.read(sources + Array(unassigned.values))
         async let summaries = activity.scan(sources.filter { $0.url != nil }, hookDirectory: library.observationHookDirectory)
         let (saved, states) = await (read, summaries)
         guard !Task.isCancelled, !library.paused else { return }
@@ -180,6 +208,134 @@ nonisolated struct PortfolioSurface: Equatable, Sendable {
             let summary = PortfolioUsageSummary(tokens: found ? total : nil,
                 coverage: loading ? .loading : !found ? .unavailable : partial ? .partial : .reported, observedAt: last, sources: contributing)
             if usages[project.id] != summary { usages[project.id] = summary }
+        }
+        refreshLimits(library)
+        let next = homeUsage(library, saved: saved, unassigned: unassigned)
+        if home != next { home = next }
+    }
+
+    /// Seven-day tokens come from the saved transcripts only: providers write them as they work, and a
+    /// live counter's first snapshot would otherwise land a whole session's history on today.
+    private func homeUsage(_ library: LibraryModel, saved: [String: PortfolioUsageSource], unassigned: [String: Session]) -> HomeUsage {
+        var next = HomeUsage(weekly: limits.weekly.reduce(into: [:]) { result, item in
+            if let provider = Provider(rawValue: item.key) { result[provider] = item.value }
+        }, plans: limits.plans.reduce(into: [:]) { result, item in
+            if let provider = Provider(rawValue: item.key) { result[provider] = item.value }
+        })
+        var counted = Set<String>(), projects: [HomeUsage.Node] = [], plans: [Provider: TokenSplit] = [:]
+        for project in library.projects.projects {
+            var tokens = TokenSplit()
+            // Subagent transcripts are separate model calls, so unlike the all-time lower bound they are included.
+            for (key, source) in knownSources[project.id] ?? [:] where counted.insert(key).inserted {
+                guard let file = saved[key] else { continue }
+                next.loading = next.loading || file.loading
+                let recent = file.ledger.recent(days: 7)
+                tokens = tokens + recent
+                plans[source.provider, default: TokenSplit()] = plans[source.provider, default: TokenSplit()] + recent
+            }
+            if tokens.total > 0 { projects.append(.init(id: project.id, name: project.name, tokens: tokens)) }
+        }
+        // Sessions outside Diorama projects are grouped by the folder they ran in.
+        var folders: [String: TokenSplit] = [:]
+        for (key, source) in unassigned where counted.insert(key).inserted {
+            guard let file = saved[key] else { continue }
+            let recent = file.ledger.recent(days: 7)
+            guard recent.total > 0 else { continue }
+            folders[sourceFolders[key] ?? source.project, default: TokenSplit()] = folders[sourceFolders[key] ?? source.project, default: TokenSplit()] + recent
+            plans[source.provider, default: TokenSplit()] = plans[source.provider, default: TokenSplit()] + recent
+        }
+        for (folder, tokens) in folders {
+            let name = URL(fileURLWithPath: folder).lastPathComponent
+            projects.append(.init(id: "folder:" + folder, name: name.isEmpty ? folder : name, tokens: tokens))
+        }
+        projects.sort { $0.tokens.total == $1.tokens.total ? $0.name < $1.name : $0.tokens.total > $1.tokens.total }
+        if projects.count > 6 {
+            let rest = projects[5...]
+            projects = Array(projects.prefix(5)) + [.init(id: "others", name: "+\(rest.count) others", tokens: rest.reduce(TokenSplit()) { $0 + $1.tokens })]
+        }
+        next.byProject = projects
+        next.byPlan = [Provider.claude, .codex].compactMap { provider in
+            guard let tokens = plans[provider], tokens.total > 0 else { return nil }
+            return .init(id: provider.rawValue, name: next.planName(provider), tokens: tokens)
+        }.sorted { $0.tokens.total > $1.tokens.total }
+        next.tokens = projects.reduce(TokenSplit()) { $0 + $1.tokens }
+        return next
+    }
+
+    /// Weekly limits from what the providers already report: Codex writes them into every transcript
+    /// turn and the app server, Claude Code sends them as rate-limit events during a turn.
+    private func refreshLimits(_ library: LibraryModel) {
+        var next = limits
+        func merge(_ window: LimitWindow?) {
+            guard let window else { return }
+            next.weekly[window.provider.rawValue] = ProviderLimits.merge(next.weekly[window.provider.rawValue], window)
+        }
+        let newestCodex = discovered.values.filter { $0.provider == .codex && $0.url != nil }.max { $0.modified < $1.modified }
+        if let url = newestCodex?.url {
+            let modified = (try? url.resourceValues(forKeys: [.contentModificationDateKey]).contentModificationDate) ?? .distantPast
+            if codexLimitsSource?.path != url.path || codexLimitsSource?.modified != modified {
+                codexLimitsSource = (url.path, modified)
+                if let latest = ProviderLimits.latestCodexRateLimits(url) {
+                    merge(ProviderLimits.codexWeekly(latest.value, at: latest.at))
+                    if let plan = ProviderLimits.codexPlan(latest.value) { next.plans[Provider.codex.rawValue] = plan }
+                }
+            }
+        }
+        if library.execution.rateLimits != .null, library.execution.rateLimits != appServerLimits {
+            appServerLimits = library.execution.rateLimits
+            merge(ProviderLimits.codexWeekly(appServerLimits, at: Date()))
+            if let plan = ProviderLimits.codexPlan(appServerLimits) { next.plans[Provider.codex.rawValue] = plan }
+        }
+        for task in library.execution.tasks.values where task.provider == .claude {
+            for record in task.structuredActivity.records where record.kind == "limits" {
+                merge(ProviderLimits.claudeWeekly(record.data, at: record.recordedAt ?? record.observedAt))
+            }
+        }
+        if next != limits { limits = next; next.save(limitsURL) }
+        checkClaudePlan()
+        checkClaudeUsage()
+        checkCodexUsage(library)
+    }
+
+    /// Codex's app server reports the account's limits even before any Codex session exists.
+    private func checkCodexUsage(_ library: LibraryModel) {
+        guard limitsURL != nil, library.execution.connected, !checkingCodexUsage,
+              (codexUsageCheckedAt.map { Date().timeIntervalSince($0) > 300 } ?? true) else { return }
+        checkingCodexUsage = true; codexUsageCheckedAt = Date()
+        Task { @MainActor in
+            defer { checkingCodexUsage = false }
+            await library.execution.loadUsage()
+        }
+    }
+
+    /// Claude Code's `/usage` report covers the whole account, including use outside Diorama.
+    /// It makes no model call; checked at most every 10 minutes while the app is in use.
+    private func checkClaudeUsage() {
+        guard limitsURL != nil, !checkingClaudeUsage, (limits.claudeUsageCheckedAt.map { Date().timeIntervalSince($0) > 600 } ?? true),
+              let claude = AgentExecutable.resolve("claude") else { return }
+        checkingClaudeUsage = true
+        Task { @MainActor in
+            defer { checkingClaudeUsage = false }
+            let report = try? await ProjectCommand.data(claude.path, ProviderLimits.claudeUsageArguments, folder: FileManager.default.temporaryDirectory.path, timeout: 30)
+            limits.claudeUsageCheckedAt = Date()
+            if let window = report.flatMap({ ProviderLimits.claudeWeekly(usageReport: $0) }) {
+                limits.weekly[Provider.claude.rawValue] = ProviderLimits.merge(limits.weekly[Provider.claude.rawValue], window)
+            }
+            limits.save(limitsURL)
+        }
+    }
+
+    /// `claude auth status` is the CLI's own account summary; checked at most every 30 minutes.
+    private func checkClaudePlan() {
+        guard limitsURL != nil, !checkingClaudePlan, (limits.claudePlanCheckedAt.map { Date().timeIntervalSince($0) > 1800 } ?? true),
+              let claude = AgentExecutable.resolve("claude") else { return }
+        checkingClaudePlan = true
+        Task { @MainActor in
+            defer { checkingClaudePlan = false }
+            let plan = (try? await ProjectCommand.data(claude.path, ["auth", "status"], timeout: 10)).flatMap(ProviderLimits.claudePlan(authStatus:))
+            limits.claudePlanCheckedAt = Date()
+            if let plan { limits.plans[Provider.claude.rawValue] = plan }
+            limits.save(limitsURL)
         }
     }
 

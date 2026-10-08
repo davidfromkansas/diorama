@@ -13,7 +13,8 @@ if CommandLine.arguments.contains("--github-credential") {
         if fields["protocol"] == "https", fields["host"] == "github.com",
            let expected = ProcessInfo.processInfo.environment["DIORAMA_GITHUB_REPOSITORY"],
            fields["path"] == expected || fields["path"] == expected + ".git",
-           let token = try? GitHubCredentials.load() {
+           let token = (try? GitHubCredentials.load()) ?? (GitHubCredentials.isDevelopmentBuild
+               ? ProcessInfo.processInfo.environment[GitHubCredentials.developmentTokenVariable] : nil) {
             FileHandle.standardOutput.write(Data("username=x-access-token\npassword=\(token)\n\n".utf8))
         }
     }

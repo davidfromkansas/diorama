@@ -14,6 +14,7 @@ dist/
 
 # Claude SDK helper dependencies
 helpers/claude/node_modules/
+assets/chef/verify/node_modules/
 
 # Reproducible delivery archive and local probe synchronization markers
 assets/capybara-delivery.zip

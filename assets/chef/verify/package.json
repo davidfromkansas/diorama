@@ -1,0 +1,11 @@
+{
+  "name": "diorama-chef-verify",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "verify:glb": "node verify-glb.mjs ../../../Sources/DioramaApp/Resources/Chef/chef-animated.glb ../../../Sources/DioramaApp/Resources/Chef/chef-manifest.json"
+  },
+  "devDependencies": {
+    "@gltf-transform/core": "^4.5.1"
+  }
+}

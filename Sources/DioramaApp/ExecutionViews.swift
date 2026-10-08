@@ -112,74 +112,17 @@ struct NewExecutionTaskView: View {
     }
 }
 
+/// A pending request in the conversation panel: the same body and actions as the Review
+/// request modal (`RequestReviewContent`), in a light card.
 struct ExecutionRequestView: View {
     let request: ExecutionRequest
     let controller: ExecutionController
-    @State private var answers: [String: String] = [:]
-    @State private var error: String?
     var body: some View {
-        if !request.isInput && !request.isElicitation {
-            VStack(alignment: .leading, spacing: 8) {
-                PermissionReviewCard(request: request, relatedItem: controller.tasks[request.threadID]?.transcript.entries.last(where: {
-                    $0.tool?.item["id"] == request.params["itemId"] && $0.turnID == request.params["turnId"].string
-                })?.tool?.item ?? .null, connected: controller.connected, respond: respond)
-                if let error { Text(error).foregroundStyle(.red).textSelection(.enabled) }
-            }
-        } else { legacyRequest }
-    }
-    private var legacyRequest: some View {
-        VStack(alignment: .leading, spacing: 10) {
-            Text(request.isInput ? (request.isBlocking ? "Input required · work paused" : "Question · work continues") : request.isElicitation ? "Connector request" : "Approval requested").font(.headline)
-            if let reason = request.params["reason"].string { Text(reason) }
-            if let command = request.params["command"].string { Text(command).font(.body.monospaced()).textSelection(.enabled) }
-            if request.isElicitation {
-                ElicitationFormView(request: request, respond: respond)
-            } else if request.isInput {
-                ForEach(request.params["questions"].array, id: \.pretty) { question in
-                    let id = question["id"].string ?? ""
-                    Text(question["question"].string ?? "Question")
-                    ForEach(question["options"].array, id: \.pretty) { option in
-                        Button { answers[id] = option["label"].string ?? "" } label: {
-                            VStack(alignment: .leading) {
-                                Text(option["label"].string ?? "Option")
-                                Text(option["description"].string ?? "").font(.caption).foregroundStyle(.secondary)
-                            }
-                        }.pointingHand()
-                    }
-                    if question["isSecret"].bool {
-                        SecureField("Answer", text: Binding(get: { answers[id, default: ""] }, set: { answers[id] = $0 }))
-                    } else {
-                        TextField("Answer", text: Binding(get: { answers[id, default: ""] }, set: { answers[id] = $0 }))
-                    }
-                }
-                Button("Submit answers") {
-                    let values = answers.mapValues { WireValue.object(["answers": .array([.string($0)])]) }
-                    respond(.object(["answers": .object(values)]))
-                }.pointingHand().disabled(request.params["questions"].array.contains { answers[$0["id"].string ?? "", default: ""].trimmingCharacters(in: .whitespacesAndNewlines).isEmpty })
-            } else if request.method == "item/permissions/requestApproval" {
-                Text(request.params["permissions"].pretty).font(.caption.monospaced()).textSelection(.enabled)
-                HStack {
-                    Button("Allow for this turn") { respond(.object(["permissions": request.params["permissions"], "scope": .string("turn")])) }.pointingHand()
-                    Button("Deny") { respond(.object(["permissions": .object([:]), "scope": .string("turn")])) }.pointingHand()
-                }
-            } else {
-                VStack(alignment: .leading, spacing: 10) {
-                    ForEach(request.approvalDecisions) { decision in
-                        VStack(alignment: .leading, spacing: 4) {
-                            if let scope = decision.scope { Text(scope).font(.caption.monospaced()).textSelection(.enabled) }
-                            Button(decision.title) { respond(.object(["decision": decision.value])) }.pointingHand()
-                        }
-                    }
-                }
-                if request.approvalDecisions.isEmpty { Text("This approval requires an unsupported decision type. Use the square Stop button in the composer to cancel.").foregroundStyle(.orange) }
-            }
-            DisclosureGroup { Text(request.params.pretty).font(.caption.monospaced()).textSelection(.enabled) } label: { Text("Request details").disclosurePointingHand() }
-            if request.responding { Text("Response sent · awaiting provider resolution").font(.caption) }
-            if let error { Text(error).foregroundStyle(.red) }
-        }.padding(12).background(Color.orange.opacity(0.08), in: RoundedRectangle(cornerRadius: 10)).disabled(request.responding || !controller.connected)
-    }
-    private func respond(_ result: WireValue) {
-        Task { do { try await controller.answer(id: request.id, result: result, expectedInstance: request.instanceID) } catch { self.error = error.localizedDescription } }
+        RequestReviewContent(request: request, controller: controller, compact: true) { EmptyView() }
+            .background(SidebarStyle.background)
+            .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
+            .overlay(RoundedRectangle(cornerRadius: 12, style: .continuous).strokeBorder(Color.black.opacity(0.1)))
+            .environment(\.colorScheme, .light)
     }
 }
 
@@ -201,6 +144,13 @@ struct ExecutionControls: View {
     @State private var retryingWriter = false
     @State private var sending = false
     @State private var recoveredGoal: WireValue = .null
+    /// Skills armed from the pantry (or dropped here), sent with the next message. They live in
+    /// the library so the pantry can show what is armed.
+    private var armed: [CapabilityInput] {
+        get { library.armedCapabilities[session.id] ?? [] }
+        nonmutating set { library.armedCapabilities[session.id] = newValue.isEmpty ? nil : newValue }
+    }
+    private var armedBinding: Binding<[CapabilityInput]> { Binding(get: { armed }, set: { armed = $0 }) }
     var body: some View {
         Group {
         if session.observationOnly {
@@ -242,6 +192,7 @@ struct ExecutionControls: View {
                 }
                 if task.parentID == nil {
                     WorkflowControls(controller: library.execution, task: task, mode: $mode, capabilities: $capabilities, queueNext: $queueNext)
+                        ArmedSkillsRow(skills: armedBinding, provider: session.provider)
                         ConversationComposer(controller: library.execution, model: $model, effort: $effort, prompt: $prompt, attachments: $attachments, approvalReview: $approvalReview,
                                              effectiveModel: task.model, effectiveEffort: task.effort, reviewer: task.approvalReviewer, policy: task.approvalPolicy, sandbox: task.sandbox, sending: sending, active: task.phase.active, canSteer: library.execution.canSteer(id: task.id) || (queueNext && !library.execution.workflowBusy.contains(task.id) && !task.workflow.queueUncertain), queued: queueNext, capabilities: $capabilities, folder: task.folder, threadID: task.id, mode: $mode, goalMode: $goalMode, queueMode: $queueNext) {
                             submit()
@@ -299,6 +250,7 @@ struct ExecutionControls: View {
                         }
                     }.pointingHand().disabled(library.execution.resuming.contains(session.sessionID))
                 } else {
+                    ArmedSkillsRow(skills: armedBinding, provider: session.provider)
                     ConversationComposer(controller: library.execution, model: $model, effort: $effort, prompt: $prompt, attachments: $attachments, approvalReview: $approvalReview,
                                          effectiveModel: session.provider == .claude ? "claude/default" : "", sending: sending, active: false, queued: queueNext, capabilities: $capabilities, folder: session.project, threadID: session.sessionID, mode: $mode, goalMode: $goalMode, queueMode: $queueNext) { submit() }
                 }
@@ -313,6 +265,10 @@ struct ExecutionControls: View {
         }
         .task(id: session.id) {
             recoveredGoal = session.provider == .claude ? ClaudeExecutionTransport.savedGoal(sessionID: session.sessionID) : .null
+        }
+        .dropDestination(for: ArmedSkill.self) { items, _ in
+            for skill in items.map(\.input) { library.arm(skill, for: session.id) }
+            return !items.isEmpty
         }
         .onAppear {
             mode = library.drafts[session.id]?.mode ?? library.execution.tasks[session.sessionID]?.workflow.mode ?? "default"
@@ -343,9 +299,11 @@ struct ExecutionControls: View {
         }
         let submittedMode = mode.isEmpty ? "default" : mode
         let submittedGoal = goalMode
-        let submittedCapabilities = capabilities
+        let skills = ArmedSkillsRow.split(armed, provider: session.provider, known: library.execution.skills)
+        let submittedCapabilities = capabilities + skills.structured
         let submittedQueue = queueNext
-        let submittedPrompt = prompt
+        let submittedPrompt = skills.text.isEmpty ? prompt : skills.text + " " + prompt
+        armed = []
         let submittedAttachments = attachments
         let submittedModel = model
         let submittedEffort = effort
@@ -838,5 +796,46 @@ struct ComposerToolbarLayout: Layout {
         let fits = leading.width + spacing + trailing.width <= bounds.width
         subviews[0].place(at: CGPoint(x: bounds.minX, y: fits ? bounds.midY - leading.height / 2 : bounds.minY), proposal: ProposedViewSize(leading))
         subviews[1].place(at: CGPoint(x: max(bounds.minX, bounds.maxX - trailing.width), y: fits ? bounds.midY - trailing.height / 2 : bounds.maxY - trailing.height), proposal: ProposedViewSize(trailing))
+    }
+}
+
+
+/// Skills armed for the next message, as removable chips.
+struct ArmedSkillsRow: View {
+    @Binding var skills: [CapabilityInput]
+    let provider: Provider
+    var body: some View {
+        if !skills.isEmpty {
+            HStack(spacing: 6) {
+                Image(systemName: "sparkles").foregroundStyle(.secondary)
+                ForEach(skills) { skill in
+                    HStack(spacing: 4) {
+                        Text(Self.token(skill, provider: provider)).font(.caption.weight(.semibold))
+                        Button { skills.removeAll { $0.id == skill.id } } label: { Image(systemName: "xmark").font(.system(size: 8, weight: .bold)) }
+                            .buttonStyle(.plain).pointingHand().accessibilityLabel("Remove skill " + skill.name)
+                    }
+                    .padding(.horizontal, 8).padding(.vertical, 3)
+                    .background(Capsule().fill(Color.green.opacity(0.15))).overlay(Capsule().stroke(Color.green.opacity(0.6)))
+                    .help("Armed for your next message")
+                }
+                Spacer(minLength: 0)
+            }
+        }
+    }
+    /// How a skill is named in a message: Claude runs `/skill`, Codex mentions `$skill`.
+    static func token(_ skill: CapabilityInput, provider: Provider) -> String {
+        provider == .claude ? "/" + skill.name : "$" + (skill.name.split(separator: ":").last.map(String.init) ?? skill.name)
+    }
+    /// Codex skills it lists go as structured input; everything else is named in the text.
+    static func split(_ skills: [CapabilityInput], provider: Provider, known: [WireValue]) -> (text: String, structured: [CapabilityInput]) {
+        var text: [String] = [], structured: [CapabilityInput] = []
+        for skill in skills {
+            if provider == .codex, known.contains(where: { $0["path"].string == skill.path && $0["name"].string == skill.name && $0["enabled"].bool }) {
+                structured.append(skill)
+            } else {
+                text.append(token(skill, provider: provider))
+            }
+        }
+        return (text.joined(separator: " "), structured)
     }
 }

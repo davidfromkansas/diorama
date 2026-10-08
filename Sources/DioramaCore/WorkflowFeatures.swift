@@ -110,7 +110,7 @@ extension ExecutionController {
     }
     public func setArchived(session: Session, archived: Bool) async throws {
         guard session.provider == .codex, !workflowBusy.contains(session.sessionID) else { throw AppServerFailure("Conversation unavailable") }
-        if let task = tasks[session.sessionID], task.phase.active || task.workflow.goal["status"].string == "active" { throw AppServerFailure("Stop work and pause the goal before archiving") }
+        if let task = tasks[session.sessionID], task.busy || task.workflow.goal["status"].string == "active" { throw AppServerFailure("Stop work and pause the goal before archiving") }
         try await ensureConnection()
         workflowBusy.insert(session.sessionID); defer { workflowBusy.remove(session.sessionID) }
         _ = try await transport.request(archived ? "thread/archive" : "thread/unarchive", .object(["threadId": .string(session.sessionID)]))
@@ -123,12 +123,13 @@ extension ExecutionController {
         workflowBusy.insert(session.sessionID); defer { workflowBusy.remove(session.sessionID) }
         var p: [String: WireValue] = ["threadId": .string(session.sessionID), "deferGoalContinuation": .bool(true), "excludeTurns": .bool(true)]
         if let folder { p["cwd"] = .string(folder) }
-        if let projectContext { p["developerInstructions"] = .string(projectContext) }
+        if let instructions = AgentInstructions.compose(projectContext) { p["developerInstructions"] = .string(instructions) }
         if let turnID { p["lastTurnId"] = .string(turnID) }
         let reply = try await transport.request("thread/fork", .object(p))
         guard let id = reply["thread"]["id"].string, id != session.sessionID else { throw AppServerFailure("Fork outcome unknown. Check history before retrying") }
         var task = ExecutedTask(id: id, title: "Fork · " + session.title, folder: folder ?? session.project, attached: true)
         applySettings(reply, to: &task)
+        task.projectContext = projectContext ?? tasks[session.sessionID]?.projectContext
         tasks[id] = task; persist()
         if let folder, URL(fileURLWithPath: task.folder).resolvingSymlinksInPath() != URL(fileURLWithPath: folder).resolvingSymlinksInPath() {
             throw AppServerFailure("Fork \(id) did not use the requested worktree. No message was sent; inspect it in Imported activity.")

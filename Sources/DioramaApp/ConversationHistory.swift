@@ -52,8 +52,17 @@ enum ConversationHistory {
     }
     static func rows(_ entries: [Entry], mode: HistoryDisplayMode) -> [HistoryRow] {
         var rows: [HistoryRow] = []
+        var lastAsked: (text: String, turn: String?)?
         for entry in entries {
             if mode == .conversation && (isUsage(entry) || entry.category == .context) { continue }
+            // A question the agent repeats in the same turn (Codex asks, waits for an answer, then
+            // ends the turn asking again) shows once.
+            if entry.kind == "You" { lastAsked = nil }
+            if entry.kind == "Assistant" {
+                let said = entry.text.trimmingCharacters(in: .whitespacesAndNewlines)
+                if mode == .conversation, said.hasSuffix("?"), let lastAsked, lastAsked.text == said, lastAsked.turn == entry.turnID { continue }
+                lastAsked = said.hasSuffix("?") ? (said, entry.turnID) : nil
+            }
             let grouped = mode == .conversation && canGroup(entry)
             if grouped, rows.last?.grouped == true,
                rows.last?.entries.last?.turnID == entry.turnID,

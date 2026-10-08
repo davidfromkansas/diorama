@@ -157,3 +157,48 @@ struct ConversationActivityBudgetTests {
         #expect(restored.contains { $0.truncated })
     }
 }
+
+extension ActivityInspectionTests {
+    actor SlowListTransport: ExecutionTransport {
+        nonisolated let events: AsyncStream<WireValue> = AsyncStream { $0.finish() }
+        func connect() {}
+        func shutdown() {}
+        func request(_ method: String, _ params: WireValue) async throws -> WireValue {
+            if method == "thread/list" { try await Task.sleep(for: .milliseconds(150)); return .object(["data": .array([])]) }
+            if method == "thread/read" { return .object(["thread": .object(["id": params["threadId"], "turns": .array([])])]) }
+            throw AppServerFailure("Unavailable")
+        }
+        func respond(id: WireValue, result: WireValue) {}
+        func reject(id: WireValue, message: String) {}
+    }
+    @Test func aPlanRevisedDuringAnAgentRefreshKeepsOnlyItsNewSteps() async throws {
+        let c = ExecutionController(transport: SlowListTransport())
+        await c.connect()
+        var task = ExecutedTask(id: "root", title: "Root", folder: "/tmp"); task.turnID = "t"; task.attached = true
+        c.tasks["root"] = task
+        func plan(_ statuses: [String]) throws -> WireValue {
+            let steps = zip(["Inspect", "Build", "Check"], statuses).map { #"{"step":""# + $0 + #"","status":""# + $1 + #""}"# }.joined(separator: ",")
+            return try JSONDecoder().decode(WireValue.self, from: Data((#"{"method":"turn/plan/updated","params":{"threadId":"root","turnId":"t","plan":["# + steps + "]}}").utf8))
+        }
+        await c.receive(try plan(["completed", "inProgress", "pending"]))
+        let session = Session(id: "root", provider: .codex, url: nil, sessionID: "root", title: "Root", project: "/tmp", modified: Date(), bytes: 0, archived: false, parentID: nil)
+        let refresh = Task { await c.refreshAgents(session) }
+        try await Task.sleep(for: .milliseconds(40))
+        await c.receive(try plan(["completed", "completed", "completed"]))
+        await refresh.value
+        #expect(c.tasks["root"]?.structuredActivity.steps.map(\.status) == ["completed", "completed", "completed"])
+    }
+}
+
+extension ActivityInspectionTests {
+    @Test func liveComputerUseChecksAreLookingAtTheWork() async throws {
+        let c = ExecutionController(transport: SlowListTransport())
+        var task = ExecutedTask(id: "root", title: "Root", folder: "/tmp"); task.turnID = "t"; task.attached = true
+        c.tasks["root"] = task
+        let json = #"{"method":"item/started","params":{"threadId":"root","turnId":"t","item":{"type":"dynamicToolCall","id":"js1","tool":"js","arguments":{"code":"await preview.getScreenshot(); await cua.listBrowsers();","title":"Check the layout"}}}}"#
+        await c.receive(try JSONDecoder().decode(WireValue.self, from: Data(json.utf8)))
+        let started = c.tasks["root"]?.activity.last { $0.kind == "toolStarted" }
+        #expect(started?.tool == "computer_use" && started?.detail == "Check the layout")
+        #expect(KitchenActivity.classify(tool: started?.tool ?? "", detail: started?.detail ?? "") == .checking)
+    }
+}

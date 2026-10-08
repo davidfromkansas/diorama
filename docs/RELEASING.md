@@ -1,6 +1,6 @@
 # Signed GitHub releases
 
-`.github/workflows/release-macos.yml` builds Apple Silicon releases on GitHub's macOS 15 runner using Xcode 26.2 and Node 22.19.0. It runs on new `v*` tags; ordinary branch pushes and pull requests do not publish releases or receive signing credentials.
+`.github/workflows/release-macos.yml` builds Apple Silicon releases on GitHub's macOS 26 runner using Xcode 26.4.1 and Node 22.19.0. Keep this Xcode the same as the one used for local development: an older CI compiler rejects expressions a newer one accepts, and that mismatch is only found after a paid macOS run. It runs on new `v*` tags; ordinary branch pushes and pull requests do not publish releases or receive signing credentials.
 
 ## Public downloads
 

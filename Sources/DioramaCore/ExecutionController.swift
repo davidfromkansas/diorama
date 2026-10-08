@@ -42,6 +42,13 @@ public enum ExecutionPhase: String, Sendable {
     case finished = "Last turn finished", interrupted = "Interrupted", failed = "Last turn failed", disconnected = "Outcome unverified"
     public var active: Bool { [.submitting, .working, .approval, .input, .disconnected].contains(self) }
 }
+public extension ExecutedTask {
+    /// Doing work right now, or cut off mid-turn and not yet reconciled. Unlike `phase.active`,
+    /// a task merely restored from a previous run (`disconnected`, nothing in flight) is not busy.
+    var busy: Bool {
+        [.submitting, .working, .approval, .input].contains(phase) || (phase == .disconnected && requiresReconciliation)
+    }
+}
 public struct ExecutedTask: Identifiable, Sendable {
     public let id: String
     public var provider: Provider = .codex
@@ -55,6 +62,9 @@ public struct ExecutedTask: Identifiable, Sendable {
     public var settings = ""
     public var permissionFolder: String?
     public var permissionPreference: ApprovalReviewChoice?
+    /// The project context this conversation was started with, re-sent (with Diorama's standing
+    /// instructions) whenever it is resumed.
+    public var projectContext: String?
     public var permissionsUnconfirmed = false
     public var permissionNotice: String?
     public var activePermissionProfile: WireValue = .null
@@ -98,6 +108,7 @@ private struct TaskBookmark: Codable {
     var model: String? = nil
     var permissionPreference: ApprovalReviewChoice? = nil
     var permissionFolder: String? = nil
+    var projectContext: String? = nil
 }
 
 @Observable @MainActor
@@ -140,9 +151,13 @@ public final class ExecutionController {
     public internal(set) var permissionRequirements: WireValue = .null
     var changingPermissions: Set<String> = []
     public private(set) var connected = false
+    /// Short one-shot threads (task labels) and what they've said so far, by thread.
+    @ObservationIgnored var labelRuns: [String: LabelRun] = [:]
     public private(set) var connecting = false
     public var error: String?
-    public private(set) var creating = false
+    /// Conversations being created right now. Several can start at once (each agent in its own worktree).
+    public private(set) var creatingCount = 0
+    public var creating: Bool { creatingCount > 0 }
     public private(set) var stopping = false
     public private(set) var resuming: Set<String> = []
     public private(set) var resumeErrors: [String: String] = [:]
@@ -169,6 +184,7 @@ public final class ExecutionController {
                 tasks[item.id]?.model = item.model ?? ""
                 tasks[item.id]?.permissionPreference = item.permissionPreference
                 tasks[item.id]?.permissionFolder = item.permissionFolder ?? item.folder
+                tasks[item.id]?.projectContext = item.projectContext
                 tasks[item.id]?.provider = Provider(rawValue: item.provider ?? "") ?? .codex
                 if let activityDirectory {
                     let provider = tasks[item.id]!.provider
@@ -230,7 +246,8 @@ public final class ExecutionController {
         (try? await transport.request("diorama/connections", .object([:]))) ?? .null
     }
     public func prepare(folder: String, title: String, model: String, projectContext: String? = nil, permission: ApprovalReviewChoice = .autoReview) async throws -> String {
-        guard connected, !creating, !stopping else { throw AppServerFailure("Connect an account before creating a task") }
+        guard !stopping else { throw AppServerFailure("Diorama is shutting down agents. Try again in a moment.") }
+        guard connected else { throw AppServerFailure("Connect an account before creating a task") }
         var isDirectory: ObjCBool = false
         guard folder.hasPrefix("/"), FileManager.default.fileExists(atPath: folder, isDirectory: &isDirectory), isDirectory.boolValue else { throw AppServerFailure("Choose an existing working folder") }
         if !model.isEmpty, !models.contains(where: { $0.id == model }) { throw AppServerFailure("Choose a model from the provider catalog") }
@@ -239,13 +256,13 @@ public final class ExecutionController {
             throw ExecutionRPCRejection("Automatic review is unavailable for this model. Choose Accept edits or Ask for approval.")
         }
         if !model.hasPrefix("claude/"), let reason = permissionUnavailable(initialPermission, model: model) { throw ExecutionRPCRejection(reason) }
-        creating = true; defer { creating = false }
+        creatingCount += 1; defer { creatingCount -= 1 }
         var params: [String: WireValue] = ["cwd": .string(folder), "threadSource": .string("user")]
         if !model.hasPrefix("claude/") { params["sandbox"] = .string(initialPermission == .fullAccess ? "danger-full-access" : "workspace-write"); params["approvalPolicy"] = .string(initialPermission == .fullAccess ? "never" : "on-request"); params["approvalsReviewer"] = .string(initialPermission == .autoReview ? "auto_review" : "user") }
         if !model.hasPrefix("claude/"), initialPermission != .fullAccess { params["config"] = .object(["sandbox_workspace_write.network_access": .bool(false)]) }
         if model.hasPrefix("claude/") { params["permissionMode"] = .string(initialPermission.claudeMode ?? "auto") }
         if !model.isEmpty { params["model"] = .string(model) }
-        if let projectContext { params["developerInstructions"] = .string(projectContext) }
+        if let instructions = AgentInstructions.compose(projectContext) { params["developerInstructions"] = .string(instructions) }
         let reply = try await transport.request("thread/start", .object(params))
         guard let id = reply["thread"]["id"].string else { throw AppServerFailure("Task creation outcome unknown; inspect imported history before trying again") }
         var task = ExecutedTask(id: id, title: String(title.prefix(100)), folder: folder, attached: true)
@@ -253,6 +270,7 @@ public final class ExecutionController {
         applySettings(reply, to: &task)
         task.permissionPreference = initialPermission
         task.permissionFolder = folder
+        task.projectContext = projectContext
         tasks[id] = task; persist()
         if projectContext != nil, URL(fileURLWithPath: task.folder).resolvingSymlinksInPath() != URL(fileURLWithPath: folder).resolvingSymlinksInPath() {
             throw AppServerFailure("Codex created task \(id) in a different working folder. No message was sent; inspect the prepared conversation.")
@@ -423,12 +441,16 @@ public final class ExecutionController {
             if goal["goal"]["status"].string == "active" { throw AppServerFailure("This conversation has an active goal. Finish or pause it in the original client before continuing here.") }
             var resumeIdentity = identity
             resumeIdentity["excludeTurns"] = .bool(true)
+            // Continued conversations keep Diorama's standing instructions (and the project
+            // context they started with), also after a relaunch or when started elsewhere.
+            if let instructions = AgentInstructions.compose(tasks[id]?.projectContext) { resumeIdentity["developerInstructions"] = .string(instructions) }
             let reply = try await transport.request("thread/resume", .object(resumeIdentity))
             guard reply["thread"]["id"].string == id else { throw AppServerFailure("Resume returned an unexpected conversation identity; no prompt was sent") }
             var task = ExecutedTask(id: id, provider: session.provider, title: session.title, folder: folder, attached: true)
             applySettings(reply, to: &task)
             task.permissionPreference = tasks[id]?.permissionPreference
             task.permissionFolder = tasks[id]?.permissionFolder
+            task.projectContext = tasks[id]?.projectContext
             if session.provider == .claude, let previous = tasks[id]?.model, !previous.isEmpty { task.model = previous }
             if reply["thread"]["status"]["type"].string == "active" {
                 task.phase = .working; task.requiresReconciliation = true
@@ -528,7 +550,7 @@ public final class ExecutionController {
         guard let journal else { return }
         do {
             try FileManager.default.createDirectory(at: journal.deletingLastPathComponent(), withIntermediateDirectories: true, attributes: [.posixPermissions: 0o700])
-            let records = tasks.values.map { TaskBookmark(id: $0.id, folder: $0.folder, title: $0.title, parentID: $0.parentID, pendingQueueSteers: $0.workflow.steeredQueueIDs, provider: $0.provider.rawValue, model: $0.model, permissionPreference: $0.permissionPreference, permissionFolder: $0.permissionFolder) }
+            let records = tasks.values.map { TaskBookmark(id: $0.id, folder: $0.folder, title: $0.title, parentID: $0.parentID, pendingQueueSteers: $0.workflow.steeredQueueIDs, provider: $0.provider.rawValue, model: $0.model, permissionPreference: $0.permissionPreference, permissionFolder: $0.permissionFolder, projectContext: $0.projectContext) }
             try JSONEncoder().encode(records).write(to: journal, options: .atomic)
             try FileManager.default.setAttributes([.posixPermissions: 0o600], ofItemAtPath: journal.path)
         } catch {
@@ -554,6 +576,8 @@ public final class ExecutionController {
             }
         }
         let method = event["method"].string ?? "", p = event["params"]
+        // A label run's thread is Diorama's own scratch work, never a task in the library.
+        if let thread = p["threadId"].string, let run = labelRuns[thread] { run.receive(method, p); return }
         if method == "thread/name/updated", let id = p["threadId"].string, let name = p["threadName"].string, !name.isEmpty {
             titleEvent?(id, .codex, name)
         }
@@ -683,6 +707,8 @@ public final class ExecutionController {
             tasks[id]?.work.turnID = turn
             tasks[id]?.work.explanation = p["explanation"].string
             tasks[id]?.work.plan = p["plan"].array.enumerated().map { ExecutionPlanStep(id: $0.offset, text: $0.element["step"].string ?? "", status: $0.element["status"].string ?? "unknown") }
+            // Plan revisions are planning work; Codex reports them only through this notification.
+            activity(id, kind: "planUpdated", state: .working, tool: "update_plan", detail: p["explanation"].string)
         case "turn/diff/updated":
             guard let turn = p["turnId"].string, tasks[id]?.turnID == turn, let diff = p["diff"].string else { return }
             tasks[id]?.work.turnID = turn
@@ -699,7 +725,15 @@ public final class ExecutionController {
             if done { tasks[id]?.toolProgress.removeValue(forKey: itemID) }
             if type == "reasoning" { return }
             let kind: String; let text: String
-            if type == "agentMessage" || type == "plan" { kind = type == "plan" ? "Proposed plan" : "Assistant"; text = item["text"].string ?? "" }
+            // Codex's asynchronous question posts a message under its tool call's id: the message
+            // is the question, and the call's own updates must not replace it.
+            let asks = type == "agentMessage" && CodexOutputEvidence.isAsyncQuestion(item)
+            if type != "agentMessage", type != "userMessage",
+               tasks[id]?.transcript.entries.contains(where: { $0.id == (tasks[id]?.turnID ?? "turn") + ":" + itemID && $0.asksYou == true }) == true { return }
+            if type == "agentMessage" || type == "plan" {
+                kind = type == "plan" ? "Proposed plan" : "Assistant"; text = item["text"].string ?? ""
+                if type == "agentMessage", done, !text.isEmpty { activity(id, kind: "commentary", detail: String(text.prefix(1000))) }
+            }
             else if type == "userMessage" {
                 let content = item["content"].array.compactMap { $0["text"].string ?? ($0["type"].string == "localImage" ? "Image: \($0["path"].string ?? "attachment")" : "[Image attachment]") }.joined(separator: "\n")
                 for (index, part) in MessageContent.split(content, provider: .codex).enumerated() {
@@ -710,10 +744,18 @@ public final class ExecutionController {
             else if type == "hookPrompt" { kind = "System context"; text = item.pretty }
             else {
                 kind = "Tool activity"; text = (item["command"].string ?? type) + "\n\n```json\n" + item.pretty + "\n```"
-                activity(id, kind: done ? (item["status"].string == "failed" ? "toolFailed" : "toolFinished") : "toolStarted", state: .working, call: itemID, tool: item["tool"].string ?? type, detail: item["command"].string)
+                let failed = item["status"].string == "failed" || { if case .number(let code) = item["exitCode"] { return code != 0 }; return false }()
+                // File changes name their files; commands and tools their command or path.
+                let files = item["changes"].array.compactMap { $0["path"].string }
+                // Codex's JavaScript runner driving Computer Use (a browser preview, an app) is
+                // looking at the work, as in saved transcripts (`ActivityParser`).
+                let computerUse = item["tool"].string == "js" && item["arguments"]["code"].string?.contains("cua.") == true
+                activity(id, kind: done ? (failed ? "toolFailed" : "toolFinished") : "toolStarted", state: .working, call: itemID, tool: computerUse ? "computer_use" : item["tool"].string ?? type,
+                         detail: computerUse ? item["arguments"]["title"].string ?? "Computer Use"
+                            : files.isEmpty ? item["command"].string ?? item["arguments"]["command"].string ?? item["arguments"]["file_path"].string : files.joined(separator: "\n"))
             }
             setEntry(id, itemID: itemID, kind: kind, text: text, append: false,
-                     image: TranscriptImage(itemType: type, path: item["path"].string), tool: ToolResult(item: item))
+                     image: TranscriptImage(itemType: type, path: item["path"].string), tool: asks ? nil : ToolResult(item: item), asksYou: asks ? true : nil)
         case "item/agentMessage/delta", "item/plan/delta", "item/commandExecution/outputDelta":
             if let itemID = p["itemId"].string, let delta = p["delta"].string { setEntry(id, itemID: itemID, kind: method.contains("commandExecution") ? "Tool activity" : method == "item/plan/delta" ? "Proposed plan" : "Assistant", text: delta, append: true) }
         case "item/mcpToolCall/progress":
@@ -778,7 +820,15 @@ public final class ExecutionController {
         }
         // Merge against live updates that arrived while awaiting reads; never replace newer streamed records.
         var latest = activitySnapshot(provider: session.provider, id: session.sessionID)
-        for record in snapshot.records where !latest.records.contains(where: { $0.id == record.id && $0.observedAt > record.observedAt }) { latest.apply(record) }
+        // A checklist revised meanwhile replaced its steps; the read's older steps must not return.
+        func owner(_ record: SessionActivityRecord) -> String { [record.provider, record.sessionID, record.parentID ?? ""].joined(separator: "\u{1F}") }
+        let revised = Set(latest.records.filter { checklist in
+            checklist.kind == "checklist" && snapshot.records.first(where: { $0.id == checklist.id })?.observedAt != checklist.observedAt
+        }.map(owner))
+        for record in snapshot.records where !latest.records.contains(where: { $0.id == record.id && $0.observedAt > record.observedAt }) {
+            if record.kind == "step", revised.contains(owner(record)) { continue }
+            latest.apply(record)
+        }
         if tasks[session.sessionID] != nil { tasks[session.sessionID]?.structuredActivity = latest; saveActivity(session.sessionID) }
         else { recordedActivity[session.provider.rawValue + ":" + session.sessionID] = latest }
     }
@@ -834,18 +884,18 @@ public final class ExecutionController {
         let pending = requests.values.filter { $0.threadID == id && $0.isBlocking }
         tasks[id]?.phase = pending.contains { !$0.isInput } ? .approval : pending.isEmpty ? .working : .input
     }
-    private func setEntry(_ id: String, itemID: String, kind: String, text: String, append: Bool, image: TranscriptImage? = nil, tool: ToolResult? = nil, providerItemID: String? = nil) {
+    private func setEntry(_ id: String, itemID: String, kind: String, text: String, append: Bool, image: TranscriptImage? = nil, tool: ToolResult? = nil, providerItemID: String? = nil, asksYou: Bool? = nil) {
         guard var task = tasks[id] else { return }
         let key = (task.turnID ?? "turn") + ":" + itemID
         if let index = task.transcript.entries.firstIndex(where: { $0.id == key }) {
             let old = task.transcript.entries[index]
-            var result = tool ?? old.tool
+            var result = asksYou == true ? nil : tool ?? old.tool
             if append, result?.type == "commandExecution", var payload = result?.item.object {
                 payload["aggregatedOutput"] = .string(String(((result?.output ?? "") + text).prefix(256 * 1024)))
                 result = ToolResult(item: .object(payload))
             }
-            task.transcript.entries[index] = Entry(id: key, kind: kind, text: String((append ? old.text + text : text).prefix(256 * 1024)), timestamp: nil, image: append ? old.image : image, tool: result, turnID: task.turnID, providerItemID: providerItemID ?? itemID)
-        } else { task.transcript.entries.append(Entry(id: key, kind: kind, text: String(text.prefix(256 * 1024)), timestamp: nil, image: image, tool: tool, turnID: task.turnID, providerItemID: providerItemID ?? itemID)) }
+            task.transcript.entries[index] = Entry(id: key, kind: kind, text: String((append ? old.text + text : text).prefix(256 * 1024)), timestamp: nil, image: append ? old.image : image, tool: result, turnID: task.turnID, providerItemID: providerItemID ?? itemID, asksYou: asksYou ?? old.asksYou)
+        } else { task.transcript.entries.append(Entry(id: key, kind: kind, text: String(text.prefix(256 * 1024)), timestamp: nil, image: image, tool: tool, turnID: task.turnID, providerItemID: providerItemID ?? itemID, asksYou: asksYou)) }
         if task.transcript.entries.count > 500 { task.transcript.entries.removeFirst(task.transcript.entries.count - 500); task.transcript.earlierContentOmitted = true }
         task.transcript.source = "Live agent · current turn (bounded preview)"
         tasks[id] = task

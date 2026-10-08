@@ -4,7 +4,9 @@ import DioramaCore
 
 /// Persistent project and execution membership, shared by every window.
 @Observable final class ProjectRepository {
-    var records: [DioramaProject] = []
+    var records: [DioramaProject] = [] { didSet { recordsRevision &+= 1 } }
+    /// Bumped on any project change, so cached per-project lookups can be trusted cheaply.
+    @ObservationIgnored var recordsRevision: UInt64 = 0
     var error: String?
     var busy = Set<String>()
     var associations: [String: String] = [:] { didSet { associationsRevision &+= 1 } }
@@ -72,6 +74,8 @@ struct ProjectViewSelection: Codable, Equatable {
         let libraryID: ObjectIdentifier
         let sessionsRevision: UInt64
         let associationsRevision: UInt64
+        let recordsRevision: UInt64
+        let project: DioramaProject
         let commonDirectory: String
         let paths: Set<String>
         let threadIDs: Set<String>
@@ -108,6 +112,13 @@ struct ProjectViewSelection: Codable, Equatable {
         projects.append(project); selectedID = project.id; save()
     }
     func sessions(_ project: DioramaProject, library: LibraryModel) -> [Session] {
+        // Fast path: nothing about projects, sessions or associations changed since the last
+        // lookup (tab badges ask on every view update; comparing path sets there was slow).
+        if let cached = sessionCache[project.id], cached.libraryID == ObjectIdentifier(library),
+           cached.sessionsRevision == library.sessionsRevision, cached.associationsRevision == associationsRevision,
+           cached.recordsRevision == repository.recordsRevision, cached.project == project {
+            return cached.sessions
+        }
         // Check raw membership inputs before doing any filesystem work. Scroll-driven
         // view updates usually need exactly the same rows as the previous frame.
         let paths = Set([project.folder] + project.workspaces.map(\.folder))
@@ -140,7 +151,7 @@ struct ProjectViewSelection: Codable, Equatable {
         for id in ids { matches.formUnion(sessionIndex!.threads[id] ?? []) }
         let rows = matches.sorted().map { sessionIndex!.rows[$0] }
         sessionCache[project.id] = ProjectSessionCache(libraryID: ObjectIdentifier(library), sessionsRevision: revision,
-            associationsRevision: associationsRevision, commonDirectory: project.commonDirectory, paths: paths, threadIDs: ids, sessions: rows)
+            associationsRevision: associationsRevision, recordsRevision: repository.recordsRevision, project: project, commonDirectory: project.commonDirectory, paths: paths, threadIDs: ids, sessions: rows)
         return rows
     }
 
@@ -201,6 +212,12 @@ struct ProjectsRootView: View {
                     Divider()
                     addActions
                 }.padding(24).frame(width: 440)
+            } else if addMode == "Open GitHub project" {
+                GitHubProjectSheet { project in
+                    library.captureProjectPresentation(); projects.add(project)
+                    if let id = projects.selectedID { library.selectProjectTab(id) }
+                    addMode = nil
+                }
             } else { AddProjectView(mode: addMode ?? "New Project", projects: projects) }
         }
         .alert("Projects", isPresented: Binding(get: { projects.error != nil }, set: { if !$0 { projects.error = nil } })) {

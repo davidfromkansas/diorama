@@ -38,7 +38,8 @@ public struct ActivityEvent: Codable, Equatable, Identifiable, Sendable {
                 "approval": "Approval requested", "input": "Input requested", "idle": "Idle reported",
                 "interrupted": "Interrupted", "compact": "Compacting conversation", "compacted": "Compaction finished",
                 "sessionStarted": "Session started or resumed", "sessionEnded": "Session ended",
-                "agentStarted": "Subagent started", "agentStopped": "Subagent stopped", "blocked": "Blocking condition reported"][kind] ?? kind
+                "agentStarted": "Subagent started", "agentStopped": "Subagent stopped", "blocked": "Blocking condition reported",
+                "commentary": "Says"][kind] ?? kind
     }
     public init(id: String, provider: String, sessionID: String, kind: String, source: String,
                 recordedAt: Date? = nil, observedAt: Date = Date(), turnID: String? = nil, callID: String? = nil,
@@ -117,12 +118,99 @@ public struct ActivitySummary: Sendable {
 }
 
 public enum ActivityParser {
+    /// The first `tools.<name>(` call in a Codex code-mode script, and its `cmd:` string literals:
+    /// a script may run several commands (for example a listing, then reading a skill), joined
+    /// with `&&` so all of them are seen.
+    public static func codeModeCall(_ script: String) -> (tool: String, detail: String?)? {
+        let range = NSRange(script.startIndex..., in: script)
+        guard let match = codeModeTool.firstMatch(in: script, range: range), let name = Range(match.range(at: 1), in: script) else { return nil }
+        let after = NSRange(match.range.upperBound..<range.upperBound)
+        let commands = codeModeCommand.matches(in: script, range: after).compactMap { cmd -> String? in
+            guard let literal = Range(cmd.range(at: 1), in: script) else { return nil }
+            let quoted = String(script[literal])
+            if quoted.hasPrefix("\""), let decoded = try? JSONDecoder().decode(String.self, from: Data(quoted.utf8)) { return decoded }
+            return String(quoted.dropFirst().dropLast())
+        }
+        return (String(script[name]), commands.isEmpty ? nil : commands.joined(separator: " && "))
+    }
+    /// Every `tools.<name>(` call in a code-mode script with its own detail: a command, the files a
+    /// patch touches, or the session a poll reads.
+    public static func codeModeCalls(_ script: String) -> [(tool: String, detail: String?)] {
+        let range = NSRange(script.startIndex..., in: script)
+        let matches = codeModeTool.matches(in: script, range: range)
+        return matches.enumerated().compactMap { index, match in
+            guard let name = Range(match.range(at: 1), in: script) else { return nil }
+            let end = index + 1 < matches.count ? matches[index + 1].range.location : range.upperBound
+            guard let segment = Range(NSRange(location: match.range.upperBound, length: end - match.range.upperBound), in: script) else { return nil }
+            let body = String(script[segment]), tool = String(script[name])
+            switch tool {
+            case "apply_patch":
+                // A wrapped patch keeps its newlines escaped inside the script's string literal.
+                return (tool, patchFiles(body.replacingOccurrences(of: "\\n", with: "\n")).joined(separator: "\n"))
+            case "write_stdin": return (tool, polledSession(body).map { "session=" + $0 })
+            default:
+                let range = NSRange(body.startIndex..., in: body)
+                let command = codeModeCommand.firstMatch(in: body, range: range).flatMap { Range($0.range(at: 1), in: body) }.map { literal -> String in
+                    let quoted = String(body[literal])
+                    if quoted.hasPrefix("\""), let decoded = try? JSONDecoder().decode(String.self, from: Data(quoted.utf8)) { return decoded }
+                    return String(quoted.dropFirst().dropLast())
+                }
+                if let command { return (tool, KitchenActivity.withoutHeredocs(command)) }
+                // An MCP resource read names what it fetched by URI (`skill://…` for a skill).
+                let uri = codeModeURI.firstMatch(in: body, range: range).flatMap { Range($0.range(at: 1), in: body) }.map { String(body[$0]) }
+                return (tool, uri)
+            }
+        }
+    }
+    /// The checklist from a code-mode `tools.update_plan({plan:[{step:"…",status:"…"}]})` call.
+    public static func codeModePlan(_ script: String) -> WireValue? {
+        guard let start = script.range(of: "tools.update_plan(") else { return nil }
+        let body = String(script[start.upperBound...])
+        let range = NSRange(body.startIndex..., in: body)
+        let steps = codeModePlanStep.matches(in: body, range: range).compactMap { match -> WireValue? in
+            guard let step = Range(match.range(at: 1), in: body), let status = Range(match.range(at: 2), in: body) else { return nil }
+            let title = (try? JSONDecoder().decode(String.self, from: Data(("\"" + body[step] + "\"").utf8))) ?? String(body[step])
+            return .object(["step": .string(title), "status": .string(String(body[status]))])
+        }
+        return steps.isEmpty ? nil : .array(steps)
+    }
+    private static let codeModePlanStep = try! NSRegularExpression(pattern: #"step\s*:\s*"((?:[^"\\]|\\.)*)"\s*,\s*status\s*:\s*"(\w+)""#)
+    private static let codeModeTool = try! NSRegularExpression(pattern: #"\btools\.([A-Za-z_][A-Za-z0-9_]*)\s*\("#)
+    private static let codeModeURI = try! NSRegularExpression(pattern: #"\buri\s*:\s*["'`]([^"'`]+)["'`]"#)
+    private static let codeModeCommand = try! NSRegularExpression(pattern: #"\bcmd\s*:\s*("(?:[^"\\]|\\.)*"|'(?:[^'\\]|\\.)*'|`[^`]*`)"#)
+
     public static func date(_ value: Any?) -> Date? {
         guard let value = value as? String else { return nil }
         let formatter = ISO8601DateFormatter()
         formatter.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
         return formatter.date(from: value) ?? ISO8601DateFormatter().date(from: value)
     }
+    /// Files named by an `apply_patch` patch (`*** Add File: path`, `*** Update File:`, `*** Delete File:`).
+    public static func patchFiles(_ patch: String) -> [String] {
+        var files: [String] = []
+        for line in patch.split(separator: "\n") {
+            for prefix in ["*** Add File: ", "*** Update File: ", "*** Delete File: "] where line.hasPrefix(prefix) {
+                let path = line.dropFirst(prefix.count).trimmingCharacters(in: .whitespaces)
+                if !path.isEmpty && !files.contains(path) { files.append(path) }
+            }
+        }
+        return files
+    }
+    /// The exit status in Codex shell output: `Process exited with code N` or `"exit_code":N`.
+    public static func exitCode(_ output: String) -> Int? {
+        first(exitPattern, in: output).flatMap { Int($0) }
+    }
+    /// The session a code-mode `write_stdin` call polls (`session_id: 17775`).
+    public static func polledSession(_ script: String) -> String? { first(polledPattern, in: script) }
+    private static let polledPattern = try! NSRegularExpression(pattern: #"session_id\s*:\s*(\d+)"#)
+    /// The session a still-running Codex command continues in.
+    public static func sessionID(_ output: String) -> String? { first(sessionPattern, in: output) }
+    private static func first(_ pattern: NSRegularExpression, in text: String) -> String? {
+        guard let match = pattern.firstMatch(in: text, range: NSRange(text.startIndex..., in: text)) else { return nil }
+        return (1..<match.numberOfRanges).lazy.compactMap { Range(match.range(at: $0), in: text).map { String(text[$0]) } }.first
+    }
+    private static let exitPattern = try! NSRegularExpression(pattern: #"Process exited with code (-?\d+)|"exit_code"\s*:\s*(-?\d+)"#)
+    private static let sessionPattern = try! NSRegularExpression(pattern: #"Process running with session ID (\d+)|"session_id"\s*:\s*(\d+)"#)
     private static func clipped(_ value: Any?) -> String? { (value as? String).map { String($0.prefix(1000)) } }
     public static func transcript(_ r: [String: Any], session: Session, id: String, now: Date) -> [ActivityEvent] {
         let time = date(r["timestamp"])
@@ -143,12 +231,62 @@ public enum ActivityParser {
                 }
             }
             guard r["type"] as? String == "response_item" else { return [] }
+            // The agent's progress notes to you ("I'll check the setup first…").
+            if type == "message", p["role"] as? String == "assistant" {
+                let text = (p["content"] as? [[String: Any]] ?? []).compactMap { $0["text"] as? String }.joined(separator: " ")
+                return text.isEmpty ? [] : [event("commentary", detail: clipped(text), turn: turn)]
+            }
             let call = p["call_id"] as? String
             if ["function_call", "custom_tool_call"].contains(type) {
+                // A patch names its files in its headers; the patch text itself is not a detail.
+                if p["name"] as? String == "apply_patch", let input = p["input"] as? String {
+                    return [event("toolStarted", .working, call: call, tool: "apply_patch", detail: clipped(patchFiles(input).joined(separator: "\n")), turn: turn)]
+                }
+                // Code-mode calls wrap real tools in JavaScript, often several per script
+                // (`tools.update_plan(…); tools.apply_patch(…); tools.exec_command({cmd:"…"})`):
+                // each becomes its own event. The script's output has one result per call, in
+                // order; shell calls wait for theirs (exit codes, sessions), others return at once.
+                if let input = p["input"] as? String {
+                    let inner = codeModeCalls(input)
+                    if !inner.isEmpty {
+                        var events: [ActivityEvent] = []
+                        for (index, item) in inner.enumerated() {
+                            let last = index == inner.count - 1
+                            let id = last ? call : call.map { $0 + "#\(index)" }
+                            events.append(event("toolStarted", .working, call: id, tool: item.tool, detail: item.detail.map { String($0.prefix(1000)) }, turn: turn))
+                            if !last, !KitchenActivity.commandTools.contains(item.tool.lowercased()) { events.append(event("toolFinished", call: id, turn: turn)) }
+                        }
+                        return events
+                    }
+                }
                 let args = (p["arguments"] as? String).flatMap { try? JSONSerialization.jsonObject(with: Data($0.utf8)) } as? [String: Any]
-                return [event("toolStarted", .working, call: call, tool: p["name"] as? String, detail: clipped(args?["command"] ?? args?["cmd"] ?? args?["file_path"]), turn: turn)]
+                // Codex's JavaScript runner driving the Computer Use plugin (a browser preview, an app).
+                if p["name"] as? String == "js", let code = args?["code"] as? String, code.contains("cua.") {
+                    return [event("toolStarted", .working, call: call, tool: "computer_use", detail: clipped(args?["title"] ?? "Computer Use"), turn: turn)]
+                }
+                // A poll names the session it reads, so its exit settles the command running there.
+                let polled = p["name"] as? String == "write_stdin" ? (args?["session_id"]).map { "session=\($0)" } : nil
+                let command = polled ?? (args?["command"] as? [String])?.joined(separator: " ") ?? args?["command"] ?? args?["cmd"] ?? args?["file_path"]
+                // Heredoc bodies (whole files written inline) would crowd out what the command runs.
+                return [event("toolStarted", .working, call: call, tool: p["name"] as? String, detail: clipped((command as? String).map(KitchenActivity.withoutHeredocs) ?? command), turn: turn)]
             }
-            if ["function_call_output", "custom_tool_call_output"].contains(type) { return [event("toolFinished", call: call, turn: turn)] }
+            if ["function_call_output", "custom_tool_call_output"].contains(type) {
+                // Shell output reports its exit status, or the session a still-running command
+                // continues in (a later `write_stdin` poll reports its exit); the detail carries both.
+                func finish(_ output: String, call: String?) -> ActivityEvent {
+                    let code = exitCode(output), session = sessionID(output)
+                    let detail = [code.map { "exit=\($0)" }, session.map { "session=\($0)" }].compactMap { $0 }.joined(separator: " ")
+                    return event(code.map { $0 != 0 } == true ? "toolFailed" : "toolFinished", call: call, detail: detail.isEmpty ? nil : detail, turn: turn)
+                }
+                let parts = (p["output"] as? [[String: Any]])?.compactMap { $0["text"] as? String }
+                // A code-mode script's output: a "Script completed" header, then one result per
+                // inner call. Each finishes its own call (`call#i`, the last one `call`).
+                if let parts, parts.count > 2, parts[0].hasPrefix("Script ") {
+                    let results = parts.dropFirst()
+                    return results.enumerated().map { index, text in finish(text, call: index == results.count - 1 ? call : call.map { $0 + "#\(index)" }) }
+                }
+                return [finish((p["output"] as? String) ?? (parts?.joined(separator: "\n") ?? ""), call: call)]
+            }
         } else if let message = r["message"] as? [String: Any] {
             let blocks = message["content"] as? [[String: Any]] ?? []
             var events: [ActivityEvent] = []
@@ -169,9 +307,12 @@ public enum ActivityParser {
                 switch block["type"] as? String {
                 case "tool_use":
                     let args = block["input"] as? [String: Any]
-                    result = event("toolStarted", block["name"] as? String == "AskUserQuestion" ? .input : .working, call: block["id"] as? String, tool: block["name"] as? String, detail: clipped(args?["command"] ?? args?["file_path"]))
+                    result = event("toolStarted", block["name"] as? String == "AskUserQuestion" ? .input : .working, call: block["id"] as? String, tool: block["name"] as? String, detail: clipped(args?["command"] ?? args?["file_path"] ?? args?["skill"] ?? args?["pattern"]))
                 case "tool_result":
                     result = event(block["is_error"] as? Bool == true ? "toolFailed" : "toolFinished", call: block["tool_use_id"] as? String)
+                case "text" where r["type"] as? String == "assistant":
+                    guard let text = block["text"] as? String, !text.isEmpty else { return nil }
+                    result = event("commentary", detail: clipped(text))
                 default: return nil
                 }
                 result.id = id + ":\(index)"; return result

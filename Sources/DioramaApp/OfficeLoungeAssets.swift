@@ -35,6 +35,11 @@ enum OfficeLoungeAssets {
     }()
 
     nonisolated static func preloadMeshes() { _ = models }
+    /// The shared template for a bundled lounge model (callers clone it).
+    static func template(_ name: String) -> SCNNode? {
+        OfficeAssetResources.prepare()
+        return models[name]
+    }
 
     static func make() -> SCNNode {
         OfficeAssetResources.prepare()

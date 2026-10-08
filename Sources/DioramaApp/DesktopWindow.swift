@@ -3,13 +3,23 @@ import SwiftUI
 struct DesktopWindow: View {
     let services: LibraryModel
     let updates: AppUpdateCoordinator
+    /// False until Play is pressed on this launch's start screen; nil skips the start screen.
+    var started: Binding<Bool>? = nil
     @State private var library: LibraryModel?
     var body: some View {
         Group {
             if let library { ProjectsRootView(library: library).focusedSceneValue(\.desktopLibrary, library) }
             else { Color.clear }
-        }.overlayPreferenceValue(UpdateComposerAnchor.self) { anchor in
+        }.accessibilityHidden(started?.wrappedValue == false)
+        .overlayPreferenceValue(UpdateComposerAnchor.self) { anchor in
             AppUpdateOverlay(updates: updates, composer: anchor)
+        }.overlay {
+            if let started, !started.wrappedValue {
+                StartScreen(controller: services.execution) {
+                    library?.selectDesktopTab(.home)
+                    withAnimation(.easeOut(duration: 0.25)) { started.wrappedValue = true }
+                }.transition(.opacity)
+            }
         }.onAppear { if library == nil { library = services.makeWindowModel() } }
     }
 }

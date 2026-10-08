@@ -27,9 +27,15 @@ struct ExecutionPipeTests {
             let children = try await transport.request("thread/list", .object(["ancestorThreadId": .string("root")]))
             #expect(children["data"].array.first?["parentThreadId"].string == "root")
             let reply = try await transport.request("model/list", .object([:]))
-            #expect(reply["payload"].string?.count == 4 * 1024 * 1024)
+            let payloadSize: Int? = reply["payload"].string?.count
+            let fourMegabytes: Int = 4 * 1024 * 1024
+            #expect(payloadSize == fourMegabytes)
             do { _ = try await transport.request("thread/read", .object([:])); Issue.record("Expected read timeout") }
-            catch { #expect(error.localizedDescription.contains("did not send a message")); #expect(!error.localizedDescription.contains("outcome may be unknown")) }
+            catch {
+                let message: String = error.localizedDescription
+                #expect(message.contains("did not send a message"))
+                #expect(!message.contains("outcome may be unknown"))
+            }
         } catch { await transport.shutdown(); throw error }
         await transport.shutdown()
     }

@@ -36,7 +36,12 @@ import Testing
             #expect(abs(Double(node.eulerAngles.y)-baked.rotationRadians)<0.0001)
         }
         let anchors=OfficeLeisureAnchors.targets(furniture:nodes,overflow:8)
-        #expect(anchors.prefix(18).map(\.kind) == [.arcade,.pinball]+Array(repeating:.foosball,count:4)+Array(repeating:.sofa,count:8)+Array(repeating:.chair,count:4))
+        var expectedKinds: [OfficeLeisureKind] = [.arcade, .pinball]
+        expectedKinds += Array(repeating: OfficeLeisureKind.foosball, count: 4)
+        expectedKinds += Array(repeating: OfficeLeisureKind.sofa, count: 8)
+        expectedKinds += Array(repeating: OfficeLeisureKind.chair, count: 4)
+        let kinds: [OfficeLeisureKind] = anchors.prefix(18).map(\.kind)
+        #expect(kinds == expectedKinds)
         let arcade=try #require(nodes.first { $0.name == "officeArcade" });arcade.position.x-=1
         let moved=OfficeLeisureAnchors.targets(furniture:nodes,overflow:8)
         #expect(abs(moved[0].point.x-anchors[0].point.x+1)<0.0001)

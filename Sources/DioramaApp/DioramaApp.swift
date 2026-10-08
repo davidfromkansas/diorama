@@ -59,6 +59,14 @@ final class LibraryModel {
     var portfolio: PortfolioStore
     var activityPanels: [String: ActivityPanelState] = [:]
     let conversations: DioramaConversationModel
+    /// Skills armed from the kitchen's command bar, by conversation, until its composer picks
+    /// them up for the next message.
+    var armedCapabilities: [String: [CapabilityInput]] = [:]
+    func arm(_ capability: CapabilityInput, for conversation: String) {
+        var list = armedCapabilities[conversation] ?? []
+        guard !list.contains(where: { $0.id == capability.id }) else { return }
+        list.append(capability); armedCapabilities[conversation] = list
+    }
     var drafts: [String: ConversationDraft] {
         get { sharedOwner?.drafts ?? ownedDrafts }
         set { if let sharedOwner { sharedOwner.drafts = newValue } else { ownedDrafts = newValue } }
@@ -73,7 +81,26 @@ final class LibraryModel {
     }
     var sessions: [Session] {
         get { sharedOwner?.sessions ?? ownedSessions }
-        set { if let sharedOwner { sharedOwner.sessions = newValue } else { ownedSessions = newValue } }
+        set { if let sharedOwner { sharedOwner.sessions = newValue } else { ownedSessions = locallyArchived(newValue) } }
+    }
+    /// Conversations archived from Diorama stay archived whatever a rescan reads: Claude CLI
+    /// sessions have nowhere else to record it, and Codex's thread list can lag behind an archive
+    /// (its state database, or the previous scan reused when the App Server can't be reached).
+    /// Kept until restored in Diorama; shared with the owner that rescans, so it sticks from any window.
+    var archivedHere: Set<String> {
+        get { sharedOwner?.archivedHere ?? ownedArchivedHere }
+        set {
+            if let sharedOwner { sharedOwner.archivedHere = newValue; return }
+            ownedArchivedHere = newValue
+            UserDefaults.standard.set(newValue.sorted(), forKey: Self.archivedHereKey)
+            ownedSessions = locallyArchived(ownedSessions)
+        }
+    }
+    static let archivedHereKey = "archivedSessions"
+    private var ownedArchivedHere = Set(UserDefaults.standard.stringArray(forKey: LibraryModel.archivedHereKey) ?? []).union(ClaudeArchive().archivedIDs)
+    private func locallyArchived(_ sessions: [Session]) -> [Session] {
+        guard !archivedHere.isEmpty else { return sessions }
+        return sessions.map { archivedHere.contains($0.id) && !$0.archived ? $0.updated(archived: true) : $0 }
     }
     var notices: [String] {
         get { sharedOwner?.notices ?? ownedNotices }
@@ -166,6 +193,8 @@ final class LibraryModel {
         self.conversations = sharedOwner?.conversations ?? conversations ?? DioramaConversationModel()
         guard sharedOwner == nil else { return }
         restoreConversationMembership()
+        // Chef name tags get four-word task labels from the agent's own provider.
+        TaskLabels.shared.generator = { [weak execution = self.execution] task, latest, provider in await execution?.taskLabel(task, latest: latest, provider: provider) }
         self.execution.titleEvent = { [weak self] id, provider, name in
             guard let self else { return }
             for index in self.sessions.indices where self.sessions[index].sessionID == id && self.sessions[index].provider == provider {
@@ -532,6 +561,8 @@ struct DioramaApp: App {
     @State private var model = LibraryModel()
     @State private var updates = AppUpdateCoordinator()
     @AppStorage("agentOnboardingComplete") private var onboarded = false
+    /// Per process, so every cold launch opens on the start screen.
+    @State private var started = false
     @NSApplicationDelegateAdaptor(DioramaApplicationDelegate.self) private var delegate
     var body: some Scene {
         WindowGroup("Diorama") {
@@ -543,7 +574,7 @@ struct DioramaApp: App {
                 WorkspaceSceneView(startInMovementLab: true)
                     .frame(minWidth: 760, minHeight: 600).preferredColorScheme(.dark)
             } else {
-            DesktopWindow(services: model, updates: updates)
+            DesktopWindow(services: model, updates: updates, started: $started)
                 .onAppear {
                     delegate.execution = model.execution
                     delegate.updates = updates
@@ -552,7 +583,9 @@ struct DioramaApp: App {
                     delegate.developmentReload = model.developmentReload
                     model.syncOwnedSessions()
                 }
-                .sheet(isPresented: Binding(get: { !onboarded }, set: { if !$0 { onboarded = true } })) {
+                // Pull requests: CI, conflicts and merges move the chefs; finished fixes get pushed.
+                .task { await PRWatcher.shared.run(library: model) }
+                .sheet(isPresented: Binding(get: { started && !onboarded }, set: { if !$0 { onboarded = true } })) {
                     AgentSettingsView(controller: model.execution, onboarding: true, finish: { onboarded = true })
                 }
                 .frame(minWidth: 760, minHeight: 600)
@@ -1088,7 +1121,7 @@ struct SessionView: View {
                         .listStyle(.plain)
                         .scrollContentBackground(.hidden)
                         .environment(\.defaultMinListRowHeight, 1)
-                        .background(ConversationScrollTracking(followsLatest: followsLatest, revealRevision: bottomRevealRevision, onOlderHistory: { if !loadingOlder && olderError == nil { olderRequest += 1 } }, onScrollBegan: { historyViewport.cancel(); if oldestVisibleID == nil { oldestVisibleID = preparedRows.suffix(historyWindow).first?.id } }) { followsLatest = $0; saveHistoryBookmark() })
+                        .background(ConversationScrollTracking(followsLatest: followsLatest, revealRevision: bottomRevealRevision, animated: indicator != nil, onOlderHistory: { if !loadingOlder && olderError == nil { olderRequest += 1 } }, onScrollBegan: { historyViewport.cancel(); if oldestVisibleID == nil { oldestVisibleID = preparedRows.suffix(historyWindow).first?.id } }) { followsLatest = $0; saveHistoryBookmark() })
                         .frame(minHeight: 0, maxHeight: .infinity).layoutPriority(-1)
                         .task(id: olderRequest) { if olderRequest > 0 { await loadOlder(scroll: scroll) } }
                         .onChange(of: session.id) { historyWindow = ConversationHistoryPage.size; oldestVisibleID = nil; olderError = nil; historyViewport.cancel() }

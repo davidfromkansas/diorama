@@ -116,7 +116,7 @@ struct SpatialWorld: Equatable {
 }
 
 @Observable final class SpatialWorkspaceState {
-    var sceneKind: WorkspaceSceneKind = .office
+    var sceneKind: WorkspaceSceneKind = .kitchen
     var focus: SpatialFocus = .portfolio {
         didSet { if focus.expanded { conversationPanelVisible = true } }
     }

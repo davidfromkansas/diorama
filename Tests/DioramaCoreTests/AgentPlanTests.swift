@@ -136,3 +136,72 @@ extension AgentPlanTests {
         #expect(!projected().hasContent)
     }
 }
+
+extension AgentPlanTests {
+    private func claudeTask(_ id: String, _ subject: String, call: String, _ snapshot: inout SessionActivitySnapshot) throws {
+        try ingest(#"{"type":"assistant","message":{"content":[{"type":"tool_use","id":""# + call + #"","name":"TaskCreate","input":{"subject":""# + subject + #""}}]}}"#, &snapshot, provider: .claude)
+        try ingest(#"{"type":"user","tool_use_result":{"task":{"id":""# + id + #""}},"message":{"content":[{"type":"tool_result","tool_use_id":""# + call + #""}]}}"#, &snapshot, provider: .claude)
+    }
+    private func claudeUpdate(_ id: String, _ status: String, call: String, _ snapshot: inout SessionActivitySnapshot) throws {
+        try ingest(#"{"type":"assistant","message":{"content":[{"type":"tool_use","id":""# + call + #"","name":"TaskUpdate","input":{"taskId":""# + id + #"","status":""# + status + #""}}]}}"#, &snapshot, provider: .claude)
+        try ingest(#"{"type":"user","message":{"content":[{"type":"tool_result","tool_use_id":""# + call + #""}]}}"#, &snapshot, provider: .claude)
+    }
+    private func prompt(_ id: String, _ snapshot: inout SessionActivitySnapshot) throws {
+        try ingest(#"{"type":"user","uuid":""# + id + #"","message":{"content":[{"type":"text","text":"Next"}]}}"#, &snapshot, provider: .claude)
+    }
+
+    @Test func claudeListTickedOffAfterFeedbackIsThisTurnsPlan() throws {
+        var snapshot = SessionActivitySnapshot()
+        try prompt("one", &snapshot)
+        try claudeTask("1", "Add mean", call: "c1", &snapshot)
+        try claudeTask("2", "Add median", call: "c2", &snapshot)
+        try claudeTask("3", "Write tests", call: "c3", &snapshot)
+        try claudeUpdate("1", "completed", call: "u1", &snapshot)
+        // Feedback starts a new turn; until the agent touches its list it is the previous turn's.
+        try prompt("two", &snapshot)
+        var plan = AgentPlan.reported(in: snapshot, provider: "Claude Code", sessionID: "s")
+        #expect(plan.tasksPreviousTurn)
+        #expect(plan.progress(working: true, actedThisTurn: false) == .revising(done: 1, total: 3))
+        #expect(plan.progress(working: true, actedThisTurn: true) == .working)
+        // Ticking a step off now makes the list current: open steps carry over, the step finished
+        // in the earlier turn leaves this turn's count.
+        try claudeUpdate("2", "completed", call: "u2", &snapshot)
+        plan = AgentPlan.reported(in: snapshot, provider: "Claude Code", sessionID: "s")
+        #expect(!plan.tasksPreviousTurn)
+        #expect(plan.checklist.map(\.title) == ["Add median", "Write tests"])
+        #expect(plan.earlier.map(\.title) == ["Add mean"])
+        #expect(plan.progress(working: true, actedThisTurn: true) == .steps(done: 1, total: 2))
+        // A changed goal: the agent drops a step and adds one.
+        try claudeUpdate("3", "deleted", call: "u3", &snapshot)
+        try claudeTask("4", "Add mode", call: "c4", &snapshot)
+        plan = AgentPlan.reported(in: snapshot, provider: "Claude Code", sessionID: "s")
+        #expect(plan.checklist.map(\.title) == ["Add median", "Add mode"])
+        #expect(plan.progress(working: false, actedThisTurn: true) == .steps(done: 1, total: 2))
+    }
+
+    @Test func codexRevisionsReplaceTheListMidTurnAndInTheNextTurn() throws {
+        var snapshot = SessionActivitySnapshot()
+        try ingest(#"{"method":"turn/started","params":{"turn":{"id":"t1"}}}"#, &snapshot)
+        try ingest(#"{"method":"turn/plan/updated","params":{"turnId":"t1","plan":[{"step":"Split","status":"completed"},{"step":"Test","status":"inProgress"}]}}"#, &snapshot)
+        // Steered mid-turn: the agent adds a step.
+        try ingest(#"{"method":"turn/plan/updated","params":{"turnId":"t1","plan":[{"step":"Split","status":"completed"},{"step":"Test","status":"inProgress"},{"step":"Add mode","status":"pending"}]}}"#, &snapshot)
+        var plan = AgentPlan.reported(in: snapshot, provider: "Codex", sessionID: "s")
+        #expect(plan.progress(working: true, actedThisTurn: true) == .steps(done: 1, total: 3))
+        try ingest(#"{"method":"turn/started","params":{"turn":{"id":"t2"}}}"#, &snapshot)
+        plan = AgentPlan.reported(in: snapshot, provider: "Codex", sessionID: "s")
+        #expect(plan.progress(working: true, actedThisTurn: false) == .revising(done: 1, total: 3))
+        try ingest(#"{"method":"turn/plan/updated","params":{"turnId":"t2","plan":[{"step":"Rename stats.js","status":"inProgress"}]}}"#, &snapshot)
+        plan = AgentPlan.reported(in: snapshot, provider: "Codex", sessionID: "s")
+        #expect(plan.checklist.map(\.title) == ["Rename stats.js"] && plan.earlier.isEmpty)
+        // A single catch-all step is activity, not progress.
+        #expect(plan.progress(working: true, actedThisTurn: true) == .working)
+    }
+
+    @Test func standingInstructionsFollowTheProjectContextAndCanBeTurnedOff() {
+        #expect(AgentInstructions.compose(nil, liveTaskList: true) == AgentInstructions.liveTaskList)
+        #expect(AgentInstructions.compose("Project notes", liveTaskList: true) == "Project notes\n\n" + AgentInstructions.liveTaskList)
+        #expect(AgentInstructions.compose("Project notes", liveTaskList: false) == "Project notes")
+        #expect(AgentInstructions.compose(nil, liveTaskList: false) == nil)
+        #expect(AgentInstructions.liveTaskList.contains("update_plan") && AgentInstructions.liveTaskList.contains("TaskCreate"))
+    }
+}

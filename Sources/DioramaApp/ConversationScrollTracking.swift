@@ -5,6 +5,8 @@ import AppKit
 struct ConversationScrollTracking: NSViewRepresentable {
     var followsLatest: Bool
     var revealRevision = 0
+    /// Glide to new rows instead of jumping (while the agent is working and writing).
+    var animated = false
     var onOlderHistory: () -> Void = {}
     var onScrollBegan: () -> Void = {}
     var onUserScroll: (Bool) -> Void
@@ -13,6 +15,7 @@ struct ConversationScrollTracking: NSViewRepresentable {
         view.onOlderHistory = onOlderHistory
         view.onScrollBegan = onScrollBegan
         view.onUserScroll = onUserScroll
+        view.animatesPin = animated
         let resumed = (followsLatest && !view.followsLatest) || view.revealRevision != revealRevision
         view.revealRevision = revealRevision
         view.followsLatest = followsLatest && !view.userIsScrolling
@@ -26,6 +29,9 @@ struct ConversationScrollTracking: NSViewRepresentable {
         var onUserScroll: (Bool) -> Void
         var followsLatest = true
         var revealRevision = 0
+        var animatesPin = false
+        /// Where an animated pin is gliding to, so repeated pins don't restart it.
+        private var glideTarget: CGFloat?
         private(set) var userIsScrolling = false
         private weak var observedScroll: NSScrollView?
         private var conversationScrollView: NSScrollView? {
@@ -115,7 +121,27 @@ struct ConversationScrollTracking: NSViewRepresentable {
                 }
                 guard self.followsLatest, !self.userIsScrolling else { return }
                 let bottom = max(document.bounds.minY, document.bounds.maxY - scroll.contentView.bounds.height)
-                if abs(scroll.contentView.bounds.minY - bottom) > 0.5 {
+                let distance = abs(scroll.contentView.bounds.minY - bottom)
+                guard distance > 0.5 else { return }
+                // A short way (new rows while the agent works) glides; opening, sending or a long
+                // way back jumps.
+                if self.animatesPin, distance < scroll.contentView.bounds.height * 1.5, !NSWorkspace.shared.accessibilityDisplayShouldReduceMotion {
+                    if let target = self.glideTarget, abs(target - bottom) < 0.5 { return }
+                    self.glideTarget = bottom
+                    NSAnimationContext.runAnimationGroup({ context in
+                        context.duration = 0.3
+                        context.timingFunction = CAMediaTimingFunction(name: .easeOut)
+                        context.allowsImplicitAnimation = true
+                        scroll.contentView.animator().setBoundsOrigin(NSPoint(x: scroll.contentView.bounds.minX, y: bottom))
+                    }, completionHandler: { [weak self] in
+                        guard let self else { return }
+                        self.glideTarget = nil
+                        scroll.reflectScrolledClipView(scroll.contentView)
+                        // Rows that arrived during the glide.
+                        if self.followsLatest && !self.userIsScrolling { self.schedulePin() }
+                    })
+                } else {
+                    self.glideTarget = nil
                     scroll.contentView.scroll(to: NSPoint(x: scroll.contentView.bounds.minX, y: bottom))
                     scroll.reflectScrolledClipView(scroll.contentView)
                 }
@@ -133,6 +159,13 @@ struct ConversationScrollTracking: NSViewRepresentable {
             // an AppKit scroll/layout notification. A callback can itself lay out rows.
             userIsScrolling = true
             followsLatest = false
+            if glideTarget != nil, let clip = conversationScrollView?.contentView {
+                glideTarget = nil
+                NSAnimationContext.runAnimationGroup { context in
+                    context.duration = 0
+                    clip.animator().setBoundsOrigin(clip.bounds.origin)
+                }
+            }
             guard began || detached else { return }
             let token = lifecycle
             DispatchQueue.main.async { [weak self] in
