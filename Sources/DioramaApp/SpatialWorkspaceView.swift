@@ -74,11 +74,18 @@ struct SpatialWorkspaceView: View {
         let snapshot = world
         let focus = snapshot.resolved(state.focus)
         let roster = state.roster(for: focus.projectID ?? focus.conversationID ?? "portfolio")
-        GeometryReader { geometry in
-            let officeWidth = geometry.size.width - (state.conversationPanelVisible ? resolvedPanelWidth(available: geometry.size.width) : 0)
-            let narrow = officeWidth < 760
-            ZStack(alignment: .topLeading) {
-                HStack(spacing: 0) {
+        // Built in named pieces: as one expression it is too much for the release compiler.
+        let content = GeometryReader { geometry in workspace(snapshot, focus: focus, roster: roster, geometry: geometry) }
+        lifecycle(presentations(content, focus: focus, roster: roster), snapshot: snapshot, focus: focus, roster: roster)
+    }
+
+    /// The office or kitchen, with the agent panel beside it, the conversation panel at the right,
+    /// and the task board and plan modals over everything.
+    private func workspace(_ snapshot: SpatialWorld, focus: SpatialFocus, roster: LiveAgentRosterModel, geometry: GeometryProxy) -> some View {
+        let officeWidth = geometry.size.width - (state.conversationPanelVisible ? resolvedPanelWidth(available: geometry.size.width) : 0)
+        let narrow = officeWidth < 760
+        return ZStack(alignment: .topLeading) {
+            HStack(spacing: 0) {
                 if visible, focus != .portfolio, !roster.collapsed, !narrow, !kitchenSelected {
                     rosterPanel(snapshot, focus: focus, model: roster, narrow: false).frame(width: library.navigation.layout.sidebarWidth)
                         .disabled(inspection != nil).accessibilityHidden(inspection != nil)
@@ -89,59 +96,7 @@ struct SpatialWorkspaceView: View {
                         }.onEnded { _ in rosterDrag = nil })
                     }.accessibilityLabel("Resize agent panel")
                 }
-                ZStack(alignment: .topLeading) {
-                SpatialSceneSurface(world: snapshot, focus: focus, active: !kitchenSelected && visible && (scenePhase == .active && library.windowIsActive) && focus != .portfolio,
-                    reducedMotion: reduced, reset: state.resetGeneration, page: state.page, select: go,
-                    screenAnchor: { screenAnchor = $0 }, openInspection: { showPlan($0) },
-                    dismissPlan: inspection == nil ? nil : { closePlan() }, editStatus: { editStatus = $0 }, cameraStore: library.navigation.projectTabs, presented: !kitchenSelected)
-                    .opacity(focus == .portfolio || kitchenSelected ? 0 : 1)
-                    .allowsHitTesting(!kitchenSelected && focus != .portfolio && inspection == nil).accessibilityHidden(kitchenSelected || focus == .portfolio || inspection != nil)
-                if kitchenSelected {
-                    kitchenStage(snapshot, focus: focus, roster: roster)
-                }
-                if !kitchenSelected && focus != .portfolio && !ScenePerformance.disabled("OVERLAYS") {
-                    VStack(alignment: .leading, spacing: 12) {
-                        toolbar(snapshot, focus: focus)
-                        if let notice = state.notice {
-                            HStack { Text(notice); Button("Dismiss") { state.notice = nil }.pointingHand() }
-                                .font(.caption).padding(10).background(.regularMaterial, in: RoundedRectangle(cornerRadius: 10))
-                        }
-                        Spacer()
-                        if editStatus == nil && !focus.expanded && !inboxExpanded && !serversExpanded { scopeCard(snapshot, focus: focus).padding(.bottom, 46) }
-                        HStack {
-                            Text(editStatus ?? "Click to focus · Drag to orbit · Scroll to frame · E to edit furniture").font(.caption)
-                            Spacer()
-                            if editStatus == nil { Text(library.paused ? "Observation paused" : "Live connections · reported state").font(.caption) }
-                        }.foregroundStyle(.secondary)
-                    }.padding(16).environment(\.colorScheme, .light).tint(.blue)
-                        .disabled(inspection != nil).accessibilityHidden(inspection != nil)
-                }
-                if !kitchenSelected, visible, focus != .portfolio, let project = focus.projectID, inspection == nil {
-                    GeometryReader { office in
-                        VStack {
-                            Spacer()
-                            HStack {
-                                Spacer(minLength: 0)
-                                ProjectOfficeInbox(library: library, project: project, height: max(120, office.size.height * 0.6),
-                                    active: (scenePhase == .active && library.windowIsActive) && !library.paused,
-                                    inboxExpanded: Binding(get: { inboxExpanded }, set: { inboxExpanded = $0 }), serversExpanded: Binding(get: { serversExpanded }, set: { serversExpanded = $0 }), selected: Binding(get: { inboxSelection }, set: { inboxSelection = $0 }),
-                                    reply: { thread in openInboxConversation(thread, world: snapshot) },
-                                    canReply: { thread in snapshot.teams.first { $0.session.id == thread.conversation }?.session.observationOnly == false })
-                                    .id(project)
-                                    .frame(width: max(100, min(400, office.size.width - 32)))
-                            }
-                        }.padding(.horizontal, 16).padding(.bottom, 40)
-                    }
-                }
-                if visible, focus != .portfolio, !roster.collapsed, narrow, inspection == nil, !kitchenSelected {
-                    rosterPanel(snapshot, focus: focus, model: roster, narrow: true)
-                        .frame(width: max(180, min(300, officeWidth - 32)))
-                        .clipShape(RoundedRectangle(cornerRadius: 12))
-                        .overlay(RoundedRectangle(cornerRadius: 12).stroke(.black.opacity(0.1)))
-                        .shadow(color: .black.opacity(0.12), radius: 12, y: 4)
-                        .padding(.top, 76).padding(.bottom, 16).padding(.leading, 16)
-                }
-                }.frame(minWidth: 0, maxWidth: .infinity, maxHeight: .infinity).clipped()
+                officeStage(snapshot, focus: focus, roster: roster, narrow: narrow, officeWidth: officeWidth)
                 if visible && state.conversationPanelVisible {
                     Rectangle().fill(.black.opacity(0.12)).frame(width: 1).overlay {
                         Color.clear.frame(width: 7).contentShape(Rectangle()).gesture(DragGesture().onChanged { value in
@@ -156,135 +111,206 @@ struct SpatialWorkspaceView: View {
                         .environment(\.colorScheme, .light).environment(\.avatarMessages, true).tint(.blue)
                         .disabled(inspection != nil).accessibilityHidden(inspection != nil)
                 }
-                }
-                // The agents at their largest: the task board over the middle of the window.
-                if visible, kitchenSelected, focus != .portfolio, !roster.collapsed, roster.board, inspection == nil {
-                    ZStack {
-                        Color(red: 0.08, green: 0.05, blue: 0.04).opacity(0.42).contentShape(Rectangle())
-                            .onTapGesture { setBoard(false, roster) }
-                            .accessibilityHidden(true)
-                        agentBoard(snapshot, focus: focus, model: roster)
-                            .frame(width: min(1240, max(320, geometry.size.width - 64)), height: min(780, max(300, geometry.size.height - 64)))
+            }
+            modalLayers(snapshot, focus: focus, roster: roster, geometry: geometry)
+        }
+        .onChange(of: state.conversationPanelVisible) { _, shown in
+            if shown && narrow { roster.collapsed = true }
+        }
+    }
+
+    /// The office scene or the kitchen, with the office's toolbar, inbox and narrow agent panel.
+    private func officeStage(_ snapshot: SpatialWorld, focus: SpatialFocus, roster: LiveAgentRosterModel, narrow: Bool, officeWidth: CGFloat) -> some View {
+        ZStack(alignment: .topLeading) {
+            SpatialSceneSurface(world: snapshot, focus: focus, active: !kitchenSelected && visible && (scenePhase == .active && library.windowIsActive) && focus != .portfolio,
+                reducedMotion: reduced, reset: state.resetGeneration, page: state.page, select: go,
+                screenAnchor: { screenAnchor = $0 }, openInspection: { showPlan($0) },
+                dismissPlan: inspection == nil ? nil : { closePlan() }, editStatus: { editStatus = $0 }, cameraStore: library.navigation.projectTabs, presented: !kitchenSelected)
+                .opacity(focus == .portfolio || kitchenSelected ? 0 : 1)
+                .allowsHitTesting(!kitchenSelected && focus != .portfolio && inspection == nil).accessibilityHidden(kitchenSelected || focus == .portfolio || inspection != nil)
+            if kitchenSelected {
+                kitchenStage(snapshot, focus: focus, roster: roster)
+            }
+            if !kitchenSelected && focus != .portfolio && !ScenePerformance.disabled("OVERLAYS") {
+                VStack(alignment: .leading, spacing: 12) {
+                    toolbar(snapshot, focus: focus)
+                    if let notice = state.notice {
+                        HStack { Text(notice); Button("Dismiss") { state.notice = nil }.pointingHand() }
+                            .font(.caption).padding(10).background(.regularMaterial, in: RoundedRectangle(cornerRadius: 10))
                     }
-                    .frame(maxWidth: .infinity, maxHeight: .infinity)
-                    .transition(reduced ? .opacity : .opacity.combined(with: .scale(scale: 0.96)))
+                    Spacer()
+                    if editStatus == nil && !focus.expanded && !inboxExpanded && !serversExpanded { scopeCard(snapshot, focus: focus).padding(.bottom, 46) }
+                    HStack {
+                        Text(editStatus ?? "Click to focus · Drag to orbit · Scroll to frame · E to edit furniture").font(.caption)
+                        Spacer()
+                        if editStatus == nil { Text(library.paused ? "Observation paused" : "Live connections · reported state").font(.caption) }
+                    }.foregroundStyle(.secondary)
+                }.padding(16).environment(\.colorScheme, .light).tint(.blue)
+                    .disabled(inspection != nil).accessibilityHidden(inspection != nil)
+            }
+            if !kitchenSelected, visible, focus != .portfolio, let project = focus.projectID, inspection == nil {
+                GeometryReader { office in
+                    VStack {
+                        Spacer()
+                        HStack {
+                            Spacer(minLength: 0)
+                            ProjectOfficeInbox(library: library, project: project, height: max(120, office.size.height * 0.6),
+                                active: (scenePhase == .active && library.windowIsActive) && !library.paused,
+                                inboxExpanded: Binding(get: { inboxExpanded }, set: { inboxExpanded = $0 }), serversExpanded: Binding(get: { serversExpanded }, set: { serversExpanded = $0 }), selected: Binding(get: { inboxSelection }, set: { inboxSelection = $0 }),
+                                reply: { thread in openInboxConversation(thread, world: snapshot) },
+                                canReply: { thread in snapshot.teams.first { $0.session.id == thread.conversation }?.session.observationOnly == false })
+                                .id(project)
+                                .frame(width: max(100, min(400, office.size.width - 32)))
+                        }
+                    }.padding(.horizontal, 16).padding(.bottom, 40)
                 }
-                if visible, let id = progressAgent, let agent = snapshot.teams.flatMap(\.agents).first(where: { $0.id == id }) {
-                    ZStack {
-                        Color.black.opacity(0.12).contentShape(Rectangle()).onTapGesture { progressAgent = nil }
-                        AgentProgressModal(agent: agent.value) { progressAgent = nil }
-                            .frame(width: min(460, max(180, geometry.size.width - 32)), height: max(180, geometry.size.height * 0.7))
-                    }.frame(maxWidth: .infinity, maxHeight: .infinity)
+            }
+            if visible, focus != .portfolio, !roster.collapsed, narrow, inspection == nil, !kitchenSelected {
+                rosterPanel(snapshot, focus: focus, model: roster, narrow: true)
+                    .frame(width: max(180, min(300, officeWidth - 32)))
+                    .clipShape(RoundedRectangle(cornerRadius: 12))
+                    .overlay(RoundedRectangle(cornerRadius: 12).stroke(.black.opacity(0.1)))
+                    .shadow(color: .black.opacity(0.12), radius: 12, y: 4)
+                    .padding(.top, 76).padding(.bottom, 16).padding(.leading, 16)
+            }
+        }.frame(minWidth: 0, maxWidth: .infinity, maxHeight: .infinity).clipped()
+    }
+
+    /// The task board, progress and plan modals, over the whole workspace.
+    @ViewBuilder private func modalLayers(_ snapshot: SpatialWorld, focus: SpatialFocus, roster: LiveAgentRosterModel, geometry: GeometryProxy) -> some View {
+        // The agents at their largest: the task board over the middle of the window.
+        if visible, kitchenSelected, focus != .portfolio, !roster.collapsed, roster.board, inspection == nil {
+            ZStack {
+                Color(red: 0.08, green: 0.05, blue: 0.04).opacity(0.42).contentShape(Rectangle())
+                    .onTapGesture { setBoard(false, roster) }
+                    .accessibilityHidden(true)
+                agentBoard(snapshot, focus: focus, model: roster)
+                    .frame(width: min(1240, max(320, geometry.size.width - 64)), height: min(780, max(300, geometry.size.height - 64)))
+            }
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
+            .transition(reduced ? .opacity : .opacity.combined(with: .scale(scale: 0.96)))
+        }
+        if visible, let id = progressAgent, let agent = snapshot.teams.flatMap(\.agents).first(where: { $0.id == id }) {
+            ZStack {
+                Color.black.opacity(0.12).contentShape(Rectangle()).onTapGesture { progressAgent = nil }
+                AgentProgressModal(agent: agent.value) { progressAgent = nil }
+                    .frame(width: min(460, max(180, geometry.size.width - 32)), height: max(180, geometry.size.height * 0.7))
+            }.frame(maxWidth: .infinity, maxHeight: .infinity)
+        }
+        if visible, let selection = inspection, let agent = snapshot.teams.flatMap(\.agents).first(where: { $0.id == selection.agentID }) {
+            ZStack {
+                Color.black.opacity(0.12).contentShape(Rectangle()).onTapGesture { closePlan() }
+                AgentPlanModal(agent: agent.value, kind: selection.kind, paused: library.paused, close: closePlan).id(selection)
+                    .frame(width: min(440, max(180, geometry.size.width - 32)), height: max(160, geometry.size.height * 0.7))
+            }.frame(maxWidth: .infinity, maxHeight: .infinity)
+        }
+    }
+
+    /// Sheets, the popover environment and the hidden keyboard-shortcut buttons.
+    private func presentations<Content: View>(_ content: Content, focus: SpatialFocus, roster: LiveAgentRosterModel) -> some View {
+        content
+            .sheet(item: $creationProject) { destination in
+                NewAgentModal(library: library, projectID: destination.id)
+            }
+            .sheet(item: $reviewing) { agent in
+                if let session = world.team(.team(project: agent.projectID, conversation: agent.conversationID))?.session {
+                    ServingWindowView(agent: agent, session: session, library: library)
                 }
-                if visible, let selection = inspection, let agent = snapshot.teams.flatMap(\.agents).first(where: { $0.id == selection.agentID }) {
-                    ZStack {
-                        Color.black.opacity(0.12).contentShape(Rectangle()).onTapGesture { closePlan() }
-                        AgentPlanModal(agent: agent.value, kind: selection.kind, paused: library.paused, close: closePlan).id(selection)
-                            .frame(width: min(440, max(180, geometry.size.width - 32)), height: max(160, geometry.size.height * 0.7))
-                    }.frame(maxWidth: .infinity, maxHeight: .infinity)
+            }
+            .sheet(item: $requestReview) { agent in
+                if let session = world.team(.team(project: agent.projectID, conversation: agent.conversationID))?.session {
+                    RequestReviewModal(agent: agent, session: session, library: library) { go(conversationFocus(agent)) }
                 }
             }
-            .onChange(of: state.conversationPanelVisible) { _, shown in
-                if shown && narrow { roster.collapsed = true }
+            .environment(\.avatarPopoverDismissals, avatarPopovers)
+            // ⇧⌘K: every tool the agents can use.
+            .background {
+                Button("All tools") { if visible, kitchenSelected, state.focus != .portfolio { allToolsOpen.toggle() } }
+                    .keyboardShortcut("k", modifiers: [.command, .shift])
+                    .opacity(0).frame(width: 0, height: 0).accessibilityHidden(true)
             }
-        }
-        .sheet(item: $creationProject) { destination in
-            NewAgentModal(library: library, projectID: destination.id)
-        }
-        .sheet(item: $reviewing) { agent in
-            if let session = world.team(.team(project: agent.projectID, conversation: agent.conversationID))?.session {
-                ServingWindowView(agent: agent, session: session, library: library)
-            }
-        }
-        .sheet(item: $requestReview) { agent in
-            if let session = world.team(.team(project: agent.projectID, conversation: agent.conversationID))?.session {
-                RequestReviewModal(agent: agent, session: session, library: library) { go(conversationFocus(agent)) }
-            }
-        }
-        .environment(\.avatarPopoverDismissals, avatarPopovers)
-        // ⇧⌘K: every tool the agents can use.
-        .background {
-            Button("All tools") { if visible, kitchenSelected, state.focus != .portfolio { allToolsOpen.toggle() } }
-                .keyboardShortcut("k", modifiers: [.command, .shift])
+            // ⇧⌘B: the task board, from the panel or the pill, and back to the panel.
+            .background {
+                Button("Task board") {
+                    guard visible, kitchenSelected, state.focus != .portfolio else { return }
+                    let roster = state.roster(for: state.focus.projectID ?? state.focus.conversationID ?? "portfolio")
+                    if roster.collapsed { roster.collapsed = false; setBoard(true, roster) } else { setBoard(!roster.board, roster) }
+                }
+                .keyboardShortcut("b", modifiers: [.command, .shift])
                 .opacity(0).frame(width: 0, height: 0).accessibilityHidden(true)
-        }
-        // ⇧⌘B: the task board, from the panel or the pill, and back to the panel.
-        .background {
-            Button("Task board") {
-                guard visible, kitchenSelected, state.focus != .portfolio else { return }
-                let roster = state.roster(for: state.focus.projectID ?? state.focus.conversationID ?? "portfolio")
-                if roster.collapsed { roster.collapsed = false; setBoard(true, roster) } else { setBoard(!roster.board, roster) }
             }
-            .keyboardShortcut("b", modifiers: [.command, .shift])
-            .opacity(0).frame(width: 0, height: 0).accessibilityHidden(true)
-        }
-        // Let native menus and popovers consume Escape before spatial navigation.
-        .onExitCommand {
-            guard visible else { return }
-            if avatarPopovers.dismissTop() { return }
-            // The task board steps back down to the side panel first.
-            if kitchenSelected, !roster.collapsed, roster.board { setBoard(false, roster); return }
-            // A selected chef is let go first, closing its conversation and command bar.
-            if kitchenSelected, state.focus.agentID != nil, inspection == nil { deselectAgent(state.focus); return }
-            if inspection != nil { closePlan() }
-            else if serversExpanded { serversExpanded = false }
-            else if inboxExpanded && inboxSelection != nil { inboxSelection = nil }
-            else if inboxExpanded { inboxExpanded = false }
-            else if state.conversationPanelVisible { state.conversationPanelVisible = false }
-            else if !roster.collapsed && focus != .portfolio { roster.collapsed = true }
-            else if focus != .portfolio { go(focus.officeReturn) }
-        }
-        .onChange(of: state.focus) { _, new in
-            inspection = nil
-            if new.expanded { state.conversationPanelVisible = true }
-        }
-        .onChange(of: visible) { _, new in if !new { inspection = nil } }
-        .task(id: "projection-\(visible)-\(state.focus.projectID ?? "")") {
-            guard visible, state.focus != .portfolio else { return }
-            // Cached presentation paints before fresh observation data is reconciled.
-            do { try await Task.sleep(for: .milliseconds(16)) } catch { return }
-            refreshWorld()
-        }
-        .onChange(of: state.showArchived) { _, _ in refreshWorld() }
-        .onChange(of: snapshot) { _, new in
-            guard visible, cachedProject == state.focus.projectID, !library.isScanning, library.scannedAt != nil else { return }
-            if let selection = inspection, !new.teams.flatMap(\.agents).contains(where: { $0.id == selection.agentID }) { inspection = nil }
-            let resolved = new.resolved(state.focus)
-            if resolved != state.focus {
-                go(resolved)
-                state.notice = "The selected item is no longer available in this view. Showing its nearest available parent."
+    }
+
+    /// Escape handling, focus changes and the refresh loops.
+    private func lifecycle<Content: View>(_ content: Content, snapshot: SpatialWorld, focus: SpatialFocus, roster: LiveAgentRosterModel) -> some View {
+        content
+            // Let native menus and popovers consume Escape before spatial navigation.
+            .onExitCommand {
+                guard visible else { return }
+                if avatarPopovers.dismissTop() { return }
+                // The task board steps back down to the side panel first.
+                if kitchenSelected, !roster.collapsed, roster.board { setBoard(false, roster); return }
+                // A selected chef is let go first, closing its conversation and command bar.
+                if kitchenSelected, state.focus.agentID != nil, inspection == nil { deselectAgent(state.focus); return }
+                if inspection != nil { closePlan() }
+                else if serversExpanded { serversExpanded = false }
+                else if inboxExpanded && inboxSelection != nil { inboxSelection = nil }
+                else if inboxExpanded { inboxExpanded = false }
+                else if state.conversationPanelVisible { state.conversationPanelVisible = false }
+                else if !roster.collapsed && focus != .portfolio { roster.collapsed = true }
+                else if focus != .portfolio { go(focus.officeReturn) }
             }
-        }
-        .task(id: "plans-\(visible)-\(liveRefresh)-\(library.paused)-\(state.focus)-\(inspection?.nodeName ?? "")") {
-            guard visible, liveRefresh, !library.paused, state.focus != .portfolio else { return }
-            while !Task.isCancelled {
-                let current = world
-                var teams = current.teams.filter { state.focus.projectID != nil ? $0.projectID == state.focus.projectID : $0.session.id == state.focus.conversationID }
-                if state.focus.projectID != nil {
-                    let roster = OfficeRoster(teams: teams, now: library.observationClock, including: state.focus.agentID, conversation: state.focus.conversationID)
-                    let visibleConversations = Set(roster.occupants.map { $0.agent.conversationID })
-                    teams = teams.filter { visibleConversations.contains($0.session.id) }
+            .onChange(of: state.focus) { _, new in
+                inspection = nil
+                if new.expanded { state.conversationPanelVisible = true }
+            }
+            .onChange(of: visible) { _, new in if !new { inspection = nil } }
+            .task(id: "projection-\(visible)-\(state.focus.projectID ?? "")") {
+                guard visible, state.focus != .portfolio else { return }
+                // Cached presentation paints before fresh observation data is reconciled.
+                do { try await Task.sleep(for: .milliseconds(16)) } catch { return }
+                refreshWorld()
+            }
+            .onChange(of: state.showArchived) { _, _ in refreshWorld() }
+            .onChange(of: snapshot) { _, new in
+                guard visible, cachedProject == state.focus.projectID, !library.isScanning, library.scannedAt != nil else { return }
+                if let selection = inspection, !new.teams.flatMap(\.agents).contains(where: { $0.id == selection.agentID }) { inspection = nil }
+                let resolved = new.resolved(state.focus)
+                if resolved != state.focus {
+                    go(resolved)
+                    state.notice = "The selected item is no longer available in this view. Showing its nearest available parent."
                 }
-                let prioritized = teams.sorted { $0.agents.contains { $0.id == inspection?.agentID } && !$1.agents.contains { $0.id == inspection?.agentID } }
-                await library.planDiscovery.refresh(prioritized.flatMap { library.planSources($0.session) })
-                guard !Task.isCancelled else { return }
-                refreshWorld()
-                do { try await Task.sleep(for: .seconds(2)) } catch { return }
             }
-        }
-        .task(id: "\(visible)-\(liveRefresh)-\(state.focus.conversationID ?? "")") {
-            guard visible, liveRefresh else { return }
-            while !Task.isCancelled {
-                library.observationClock = Date()
-                refreshWorld()
-                if !library.paused, let id = state.focus.conversationID, library.selectedID == id {
-                    if let session = library.selected, library.execution.tasks[session.sessionID]?.attached == true {
-                        await library.execution.refreshAgents(session)
+            .task(id: "plans-\(visible)-\(liveRefresh)-\(library.paused)-\(state.focus)-\(inspection?.nodeName ?? "")") {
+                guard visible, liveRefresh, !library.paused, state.focus != .portfolio else { return }
+                while !Task.isCancelled {
+                    let current = world
+                    var teams = current.teams.filter { state.focus.projectID != nil ? $0.projectID == state.focus.projectID : $0.session.id == state.focus.conversationID }
+                    if state.focus.projectID != nil {
+                        let roster = OfficeRoster(teams: teams, now: library.observationClock, including: state.focus.agentID, conversation: state.focus.conversationID)
+                        let visibleConversations = Set(roster.occupants.map { $0.agent.conversationID })
+                        teams = teams.filter { visibleConversations.contains($0.session.id) }
                     }
+                    let prioritized = teams.sorted { $0.agents.contains { $0.id == inspection?.agentID } && !$1.agents.contains { $0.id == inspection?.agentID } }
+                    await library.planDiscovery.refresh(prioritized.flatMap { library.planSources($0.session) })
+                    guard !Task.isCancelled else { return }
+                    refreshWorld()
+                    do { try await Task.sleep(for: .seconds(2)) } catch { return }
                 }
-                do { try await Task.sleep(for: .seconds(2)) } catch { return }
             }
-        }
+            .task(id: "\(visible)-\(liveRefresh)-\(state.focus.conversationID ?? "")") {
+                guard visible, liveRefresh else { return }
+                while !Task.isCancelled {
+                    library.observationClock = Date()
+                    refreshWorld()
+                    if !library.paused, let id = state.focus.conversationID, library.selectedID == id {
+                        if let session = library.selected, library.execution.tasks[session.sessionID]?.attached == true {
+                            await library.execution.refreshAgents(session)
+                        }
+                    }
+                    do { try await Task.sleep(for: .seconds(2)) } catch { return }
+                }
+            }
     }
 
     private func rosterPanel(_ snapshot: SpatialWorld, focus: SpatialFocus, model: LiveAgentRosterModel, narrow: Bool, floating: Bool = false) -> some View {
