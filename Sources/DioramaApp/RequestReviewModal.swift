@@ -308,6 +308,8 @@ struct RequestReviewModal: View {
     @Bindable var library: LibraryModel
     let openConversation: () -> Void
     @Environment(\.dismiss) private var dismiss
+    /// The chat question shown, held so it stays while the reply is sent.
+    @State private var chat: (question: String, context: String)?
     /// One question with options and a plain answer: laid out side by side, 720 pt wide.
     static func sideBySide(_ request: ExecutionRequest) -> Bool {
         let list = request.params["questions"].array
@@ -315,6 +317,15 @@ struct RequestReviewModal: View {
     }
     static func pending(_ controller: ExecutionController, thread: String) -> [ExecutionRequest] {
         controller.requests.values.filter { $0.threadID == thread }.sorted { $0.receivedAt < $1.receivedAt }
+    }
+    /// A question the agent asked in its last message (not through a request), still unanswered.
+    static func chatQuestion(_ controller: ExecutionController, thread: String) -> (question: String, context: String)? {
+        guard let entries = controller.tasks[thread]?.transcript.entries else { return nil }
+        let start = entries.lastIndex { $0.kind == "You" }.map { $0 + 1 } ?? 0
+        guard let last = entries[start...].last(where: { $0.kind == "Assistant" }), case let .question(question)? = TurnQuestion.asking(last.text) else { return nil }
+        // What led up to it: the rest of the message, without the question itself.
+        let context = last.text.replacingOccurrences(of: question, with: "").trimmingCharacters(in: .whitespacesAndNewlines)
+        return (question, context)
     }
     var body: some View {
         let execution = library.execution
@@ -331,9 +342,80 @@ struct RequestReviewModal: View {
                         .buttonStyle(.plain).font(.system(size: 12)).foregroundStyle(SidebarStyle.accent).pointingHand()
                 } skip: { dismiss() }
                 .id(request.id)
+            } else if let asked = chat ?? Self.chatQuestion(execution, thread: session.sessionID) {
+                // Asked in the chat rather than through a request: answer it here as a reply.
+                ModalHeader(group: .needsYou, title: TaskTitle.full(session.displayTitle), status: "Needs an answer",
+                            model: AgentSidebar.modelName(execution.tasks[session.sessionID].flatMap { $0.model.isEmpty ? nil : $0.model } ?? agent.value.reportedModel,
+                                                          provider: agent.value.provider, catalog: execution.models),
+                            question: true) { dismiss() }
+                ChatQuestionContent(question: asked.question, context: asked.context, session: session, library: library) {
+                    Button("Open conversation") { openConversation(); dismiss() }
+                        .buttonStyle(.plain).font(.system(size: 12)).foregroundStyle(SidebarStyle.accent).pointingHand()
+                } done: { dismiss() }
+                .onAppear { if chat == nil { chat = asked } }
             }
         }
         .reviewModalSurface(width: pending.first.map(Self.sideBySide) == true ? 720 : ModalStyle.width)
-        .onChange(of: pending.isEmpty, initial: true) { _, empty in if empty { dismiss() } }
+        .onChange(of: pending.isEmpty, initial: true) { _, empty in
+            if empty, chat == nil, Self.chatQuestion(execution, thread: session.sessionID) == nil { dismiss() }
+        }
+    }
+}
+
+/// A question the agent asked in its message: what led to it, the question, and an answer that
+/// is sent to the conversation as your reply.
+struct ChatQuestionContent<Leading: View>: View {
+    let question: String
+    let context: String
+    let session: Session
+    @Bindable var library: LibraryModel
+    @ViewBuilder var leading: Leading
+    let done: () -> Void
+    @State private var answer = ""
+    @State private var sending = false
+    @State private var error: String?
+    @FocusState private var focused: Bool
+    var body: some View {
+        VStack(spacing: 0) {
+            ModalBand(group: .needsYou, title: "Question", detail: "work paused until you answer")
+            VStack(alignment: .leading, spacing: 12) {
+                if !context.isEmpty {
+                    Text(context).font(.system(size: 12.5)).foregroundStyle(SidebarStyle.secondary).lineLimit(5)
+                        .fixedSize(horizontal: false, vertical: true).textSelection(.enabled)
+                }
+                Text(question).font(.system(size: 14, weight: .semibold)).foregroundStyle(SidebarStyle.title)
+                    .fixedSize(horizontal: false, vertical: true).textSelection(.enabled)
+                VStack(alignment: .leading, spacing: 6) {
+                    Text("Your answer").font(.system(size: 12, weight: .semibold)).foregroundStyle(SidebarStyle.secondary)
+                    TextEditor(text: $answer).font(.system(size: 13)).scrollContentBackground(.hidden)
+                        .focused($focused)
+                        .padding(6).frame(minHeight: 70, maxHeight: 140)
+                        .background(RoundedRectangle(cornerRadius: 8, style: .continuous).fill(Color.white))
+                        .overlay(RoundedRectangle(cornerRadius: 8, style: .continuous).strokeBorder(focused ? SidebarStyle.accent.opacity(0.7) : Color.black.opacity(0.12), lineWidth: focused ? 2 : 1))
+                        .accessibilityLabel("Your answer")
+                }
+                if let error { Text(error).font(.system(size: 12)).foregroundStyle(.red).fixedSize(horizontal: false, vertical: true) }
+            }
+            .padding(16)
+            ModalFooter {
+                leading
+            } actions: {
+                Button("Skip", action: done).buttonStyle(ModalSecondaryButtonStyle())
+                Button(sending ? "Sending…" : "Send answer") { send() }
+                    .buttonStyle(ModalPrimaryButtonStyle())
+                    .disabled(sending || answer.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+                    .keyboardShortcut(.return, modifiers: .command)
+            }
+        }
+        .onAppear { focused = true }
+    }
+    private func send() {
+        let text = answer.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !text.isEmpty else { return }
+        sending = true; error = nil
+        Task {
+            do { try await library.execution.send(in: session, prompt: text); done() }
+            catch { self.error = error.localizedDescription; sending = false }
+        }
     }
 }
