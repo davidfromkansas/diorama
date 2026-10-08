@@ -475,6 +475,7 @@ struct SpatialWorkspaceView: View {
         guard team.agents.contains(where: { $0.value.isMain && $0.value.attentionReason == .input && $0.value.status == .waiting }),
               let asked = execution.tasks[team.session.sessionID]?.transcript.entries.last(where: { $0.kind == "Assistant" })?.text else { return nil }
         // The question itself: the message's last sentence that asks something.
+        if let question = TurnQuestion.asking(asked) { return question.text }
         let sentences = asked.split(whereSeparator: { ".!\n".contains($0) }).map { $0.trimmingCharacters(in: .whitespaces) }.filter { !$0.isEmpty }
         return sentences.last { $0.hasSuffix("?") } ?? sentences.last
     }
