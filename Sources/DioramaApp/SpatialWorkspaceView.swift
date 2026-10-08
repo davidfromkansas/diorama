@@ -35,6 +35,8 @@ struct SpatialWorkspaceView: View {
     @State private var kitchenAgentsDrag: Double?
     /// Every MCP server, app, plugin and skill, opened from the live tools bar.
     @State private var allToolsOpen = false
+    /// What the project's agents can use, for the bar's counts and the All palette.
+    @State private var toolInventory = ToolInventory()
     /// The kitchen camera left its home view (zoomed or turned), and a request to send it back.
     @State private var kitchenCameraAway = false
     @State private var kitchenCameraResets = 0
@@ -397,20 +399,25 @@ struct SpatialWorkspaceView: View {
         let project = focus.projectID.flatMap { id in library.projects.projects.first { $0.id == id } }
         VStack(spacing: 12) {
             if width >= 900 {
-                LiveToolsBar(agents: cooks, total: nil, openAll: { allToolsOpen.toggle() }, chefPoint: { ChefLocator.head($0) })
+                LiveToolsBar(agents: cooks, inventory: toolInventory, openAll: { allToolsOpen.toggle() }, chefPoint: { ChefLocator.head($0) })
                     .padding(.top, 12)
             }
             if allToolsOpen, let folder = project?.folder ?? teams.first?.session.project {
                 let sessions = Dictionary(teams.map { ($0.session.provider, $0.session.sessionID) }) { first, _ in first }
                 let selected = focus.agentID.flatMap { id in teams.flatMap(\.agents).first { $0.id == id } }
                 AllResourcesPalette(library: library, folder: folder, sessions: sessions,
-                                    armFor: selected.map { ($0.conversationID, $0.value.name) }) { allToolsOpen = false }
+                                    armFor: selected.map { ($0.conversationID, $0.value.name) }, inventory: toolInventory) { allToolsOpen = false }
                     .frame(width: min(1220, width - 32), height: min(620, max(320, height - 90)))
                     .padding(.top, width >= 900 ? 0 : 12)
                     .transition(.opacity.combined(with: .offset(y: -8)))
             }
         }
         .animation(reduced ? nil : .easeOut(duration: 0.18), value: allToolsOpen)
+        .task(id: (project?.folder ?? teams.first?.session.project ?? "") + teams.map(\.session.sessionID).sorted().joined()) {
+            guard let folder = project?.folder ?? teams.first?.session.project else { return }
+            let sessions = Dictionary(teams.map { ($0.session.provider, $0.session.sessionID) }) { first, _ in first }
+            await toolInventory.load(library, folder: folder, sessions: sessions)
+        }
         // The kitchen view's own space, so a chef's head and the bar's slots line up for sparks.
         .frame(width: width, height: height, alignment: .top)
         .coordinateSpace(name: "kitchenTools")

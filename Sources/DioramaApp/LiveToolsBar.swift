@@ -33,6 +33,35 @@ struct BrandIcon: View {
     }
 }
 
+/// What the agents in this project can use, read once for the bar's counts and shared with the
+/// All palette (so opening it is instant).
+@MainActor @Observable final class ToolInventory {
+    let claude: CapabilityLibraryModel
+    let codex: CapabilityLibraryModel
+    init(claude: CapabilityLibrarySnapshot? = nil, codex: CapabilityLibrarySnapshot? = nil) {
+        self.claude = CapabilityLibraryModel(snapshot: claude); self.codex = CapabilityLibraryModel(snapshot: codex)
+    }
+    func load(_ library: LibraryModel, folder: String, sessions: [Provider: String]) async {
+        async let first: Void = claude.load(CapabilityLibraryContext(provider: .claude, folder: folder, sessionID: sessions[.claude])) { await library.execution.capabilityLibrary($0) }
+        async let second: Void = codex.load(CapabilityLibraryContext(provider: .codex, folder: folder, sessionID: sessions[.codex])) { await library.execution.capabilityLibrary($0) }
+        _ = await (first, second)
+    }
+    var loaded: Bool { claude.snapshot != nil && codex.snapshot != nil }
+    private var items: [CapabilityLibraryItem] { (claude.snapshot?.items ?? []) + (codex.snapshot?.items ?? []) }
+    var servers: Int { AllResourcesPalette.merged(items.filter { AllResourcesPalette.isServer($0) || $0.kind == .app }).count }
+    var plugins: Int { AllResourcesPalette.merged(items.filter { $0.kind == .plugin }).count }
+    var skills: Int { AllResourcesPalette.merged(items.filter { $0.kind == .skill }).count }
+    /// A few servers to show as logos: known companies first, ready ones before the rest.
+    var featured: [String] {
+        let entries = AllResourcesPalette.merged(items.filter { AllResourcesPalette.isServer($0) || $0.kind == .app })
+        return entries.sorted { a, b in
+            let ka = (BrandMark.match(a.item.name) == nil ? 1 : 0, AllResourcesPalette.rank(a.item) == 1 ? 0 : 1)
+            let kb = (BrandMark.match(b.item.name) == nil ? 1 : 0, AllResourcesPalette.rank(b.item) == 1 ? 0 : 1)
+            return ka != kb ? ka < kb : a.item.name < b.item.name
+        }.map(\.item.name)
+    }
+}
+
 /// Renders each mark once per colour.
 @MainActor enum BrandMarkImage {
     private static var cache: [String: NSImage] = [:]
@@ -60,7 +89,8 @@ extension Color {
 struct LiveToolsBar: View {
     let agents: [SpatialAgent]
     /// How many resources All lists, when known.
-    let total: Int?
+    /// Everything on hand, for the counts shown while nothing is in use.
+    var inventory: ToolInventory? = nil
     let openAll: () -> Void
     /// Where a chef's head is, in the "kitchenTools" coordinate space, for the spark it sends.
     var chefPoint: ((String) -> CGPoint?)? = nil
@@ -73,13 +103,19 @@ struct LiveToolsBar: View {
 
     var body: some View {
         HStack(spacing: 10) {
+            // LIVE while a chef is using something, READY otherwise.
+            let live = model.slots.contains { !$0.users.isEmpty }
             HStack(spacing: 6) {
-                Circle().fill(SidebarStyle.tint(.done).dot).frame(width: 7, height: 7)
-                    .background(Circle().fill(SidebarStyle.tint(.done).dot.opacity(0.22)).frame(width: 13, height: 13))
-                Text("LIVE").font(.system(size: 11, weight: .semibold)).tracking(0.3).foregroundStyle(SidebarStyle.secondary)
+                Circle().fill(live ? SidebarStyle.tint(.done).dot : Color(red: 0.69, green: 0.69, blue: 0.71)).frame(width: 7, height: 7)
+                    .background(Circle().fill(live ? SidebarStyle.tint(.done).dot.opacity(0.22) : .clear).frame(width: 13, height: 13))
+                Text(live ? "LIVE" : "READY").font(.system(size: 11, weight: .semibold)).tracking(0.3)
+                    .foregroundStyle(live ? SidebarStyle.secondary : Color(red: 0.56, green: 0.56, blue: 0.58))
             }
+            .fixedSize()
+            .animation(.easeOut(duration: 0.2), value: live)
+            .accessibilityElement(children: .combine)
             if model.slots.isEmpty && model.skill == nil {
-                Text("Tools show up here as chefs use them").font(.system(size: 12)).foregroundStyle(SidebarStyle.secondary)
+                onHand
             } else {
                 HStack(spacing: 14) {
                     ForEach(model.slots) { slot in
@@ -96,7 +132,7 @@ struct LiveToolsBar: View {
             Rectangle().fill(Color.black.opacity(0.1)).frame(width: 1, height: 22)
             Button(action: openAll) {
                 HStack(spacing: 6) {
-                    Text(total.map { "All \($0)" } ?? "All").font(.system(size: 12.5, weight: .semibold))
+                    Text("All").font(.system(size: 12.5, weight: .semibold))
                     Text("⇧⌘K").font(.system(size: 10, weight: .medium))
                         .padding(.horizontal, 4).overlay(RoundedRectangle(cornerRadius: 4).strokeBorder(Color.black.opacity(0.15), lineWidth: 1))
                 }
@@ -155,6 +191,48 @@ struct LiveToolsBar: View {
             }
         }
         .accessibilityElement(children: .contain).accessibilityLabel("Live tools")
+    }
+
+    /// Before anything is used: what's on hand, as three counts that open All.
+    @ViewBuilder private var onHand: some View {
+        if let inventory, inventory.loaded {
+            HStack(spacing: 6) {
+                countChip(inventory.servers, inventory.servers == 1 ? "server or app" : "servers & apps", band: SidebarStyle.tint(.inProgress).band) {
+                    HStack(spacing: -6) {
+                        ForEach(Array(inventory.featured.prefix(3).enumerated()), id: \.offset) { _, name in
+                            BrandIcon(name: name, size: 20).overlay(RoundedRectangle(cornerRadius: 6, style: .continuous).strokeBorder(SidebarStyle.background, lineWidth: 2).padding(-1))
+                        }
+                    }
+                }
+                countChip(inventory.plugins, inventory.plugins == 1 ? "plugin" : "plugins", band: SidebarStyle.tint(.needsYou).band) {
+                    Image(systemName: "shippingbox.fill").font(.system(size: 10, weight: .semibold)).foregroundStyle(SidebarStyle.tint(.needsYou).dot)
+                        .frame(width: 20, height: 20).background(RoundedRectangle(cornerRadius: 6, style: .continuous).fill(Color.white.opacity(0.7)))
+                }
+                countChip(inventory.skills, inventory.skills == 1 ? "skill" : "skills", band: SidebarStyle.tint(.done).band) {
+                    Image(systemName: "sparkle").font(.system(size: 11, weight: .bold)).foregroundStyle(SidebarStyle.tint(.done).dot)
+                        .frame(width: 20, height: 20).background(RoundedRectangle(cornerRadius: 6, style: .continuous).fill(Color.white.opacity(0.7)))
+                }
+            }
+        } else {
+            HStack(spacing: 8) {
+                MatrixLoader(color: NSColor(SidebarStyle.tint(.inProgress).dot), animate: !reduceMotion).frame(width: 24, height: 24).scaleEffect(0.7).frame(width: 17, height: 17)
+                Text("Checking what's on hand…").font(.system(size: 12)).foregroundStyle(SidebarStyle.secondary)
+            }
+        }
+    }
+    private func countChip<Icon: View>(_ count: Int, _ label: String, band: Color, @ViewBuilder icon: () -> Icon) -> some View {
+        Button(action: openAll) {
+            HStack(spacing: 7) {
+                icon()
+                Text("\(count)").font(.system(size: 13, weight: .bold)).monospacedDigit().foregroundStyle(SidebarStyle.title)
+                Text(label).font(.system(size: 12)).foregroundStyle(Color(red: 0.33, green: 0.33, blue: 0.35))
+            }
+            .padding(.leading, 6).padding(.trailing, 10).frame(height: 30)
+            .background(RoundedRectangle(cornerRadius: 9, style: .continuous).fill(band))
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain).pointingHand()
+        .help("See all \(count) \(label) (⇧⌘K)").accessibilityLabel("\(count) \(label)")
     }
 
     /// What changes when a chef reaches for something new.
@@ -251,10 +329,11 @@ struct AllResourcesPalette: View {
     var armFor: (conversation: String, name: String)?
     let close: () -> Void
     init(library: LibraryModel, folder: String, sessions: [Provider: String], armFor: (conversation: String, name: String)? = nil,
-         claude: CapabilityLibrarySnapshot? = nil, codex: CapabilityLibrarySnapshot? = nil, close: @escaping () -> Void) {
+         inventory: ToolInventory? = nil, claude: CapabilityLibrarySnapshot? = nil, codex: CapabilityLibrarySnapshot? = nil, close: @escaping () -> Void) {
         self.library = library; self.folder = folder; self.sessions = sessions; self.armFor = armFor; self.close = close
-        _claude = State(initialValue: CapabilityLibraryModel(snapshot: claude))
-        _codex = State(initialValue: CapabilityLibraryModel(snapshot: codex))
+        // The bar's inventory when there is one, so what it already read shows at once.
+        _claude = State(initialValue: inventory?.claude ?? CapabilityLibraryModel(snapshot: claude))
+        _codex = State(initialValue: inventory?.codex ?? CapabilityLibraryModel(snapshot: codex))
     }
     enum Filter: String, CaseIterable { case all = "All", claude = "Claude", codex = "Codex" }
     @State private var filter = Filter.all
