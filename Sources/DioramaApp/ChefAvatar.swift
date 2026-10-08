@@ -38,6 +38,10 @@ nonisolated final class ChefAvatar: @unchecked Sendable {
     private let templates: [String: SCNNode]
     private let manifest: ChefManifest
     private let dishTemplates: [String: SCNNode]
+    /// What it fetched from the pantry, carried to the next station (see `PantryCarry`).
+    let pantryCarry: PantryCarrier
+    /// What its agent is fetching; set under the kitchen's chef lock.
+    var pantryItem: PantryCarry.Item?
     /// The dish this chef's task prepares (see `KitchenFood`); set under the kitchen's chef lock.
     var dish: String?
     private var dishNode: (id: String, node: SCNNode)?
@@ -61,6 +65,7 @@ nonisolated final class ChefAvatar: @unchecked Sendable {
     @MainActor init(id: String, assets: ChefAssets, scale: Float, navigation: WorkspaceCapybaraNavigation) {
         self.id = id; asset = assets.rig; templates = assets.props; manifest = assets.manifest
         dishTemplates = KitchenFood.templates
+        pantryCarry = PantryCarrier(models: PantryCarry.models)
         rig = assets.rig.makeInstance()
         director = ChefDirector(clips: assets.manifest.clips, unit: scale, navigation: navigation)
         root.name = "agent:" + id
@@ -97,6 +102,11 @@ nonisolated final class ChefAvatar: @unchecked Sendable {
         rig.apply(pose)
         last = (command.name, time, command.loop)
         syncProps()
+        let fit = manifest.attach[ChefProp.plate.node]?[ChefProp.plate.fitClip]
+        pantryCarry.sync(wanted: pantryItem, area: director.station?.area, reducedMotion: director.reducedMotion, delta: delta,
+                         carrySocket: rig.bone(ChefProp.plate.socket), fit: fit.map { ($0.simdPosition, $0.simdQuaternion) },
+                         floor: visual, counterTop: manifest.stations.counterTop)
+        director.carriesJar = pantryCarry.carrying
     }
 
     private func sampleTime(_ name: String, _ time: Float, loop: Bool) -> Float {
