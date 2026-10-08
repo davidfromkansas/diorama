@@ -16,23 +16,7 @@ struct LiveAgentRosterPanel: View {
     @Environment(\.accessibilityReduceMotion) private var reduced
     var body: some View {
         VStack(spacing: 0) {
-            HStack {
-                VStack(alignment: .leading, spacing: 4) {
-                    Text("Agents").font(.headline)
-                    Text("\(model.rows.filter { $0.sidebarStatus == .working }.count) working · \(model.rows.filter { $0.sidebarStatus == .blocked }.count) need attention")
-                        .font(.caption).foregroundStyle(.secondary)
-                }
-                Spacer()
-                if let create {
-                    Button(action: create) { HStack(spacing: 4) { Text("Create"); Image(systemName: "plus") } }.pointingHand()
-                        .buttonStyle(.plain).font(.caption.weight(.semibold)).foregroundStyle(floating ? Color.accentColor : .blue)
-                        .accessibilityLabel("Create agent")
-                }
-                if let collapse {
-                    Button(action: collapse) { Image(systemName: "minus").font(.system(size: 11, weight: .bold)).frame(width: 22, height: 22).contentShape(Rectangle()) }
-                        .buttonStyle(.plain).foregroundStyle(.secondary).pointingHand().help("Collapse (⌘B)").accessibilityLabel("Collapse agents")
-                }
-            }.padding(.horizontal, floating ? 12 : 6).padding(.vertical, floating ? 10 : 14)
+            header
             Divider()
             if model.newActivity {
                 Button("New activity ↑") { model.anchor = nil; model.newActivity = false; model.jumpRevision += 1 }.pointingHand()
@@ -57,6 +41,32 @@ struct LiveAgentRosterPanel: View {
         .onChange(of: AgentCompletionViews.shared.revision) { model.ingest(agents) }
         .onChange(of: active, initial: true) { _, value in model.setActive(value) }
         .onDisappear { model.setActive(false) }
+    }
+
+    /// The title, its working and attention counts, and the create and collapse controls.
+    private var header: some View {
+        HStack {
+            VStack(alignment: .leading, spacing: 4) {
+                Text("Agents").font(.headline)
+                Text(summary)
+                    .font(.caption).foregroundStyle(.secondary)
+            }
+            Spacer()
+            if let create {
+                Button(action: create) { HStack(spacing: 4) { Text("Create"); Image(systemName: "plus") } }.pointingHand()
+                    .buttonStyle(.plain).font(.caption.weight(.semibold)).foregroundStyle(floating ? Color.accentColor : .blue)
+                    .accessibilityLabel("Create agent")
+            }
+            if let collapse {
+                Button(action: collapse) { Image(systemName: "minus").font(.system(size: 11, weight: .bold)).frame(width: 22, height: 22).contentShape(Rectangle()) }
+                    .buttonStyle(.plain).foregroundStyle(.secondary).pointingHand().help("Collapse (⌘B)").accessibilityLabel("Collapse agents")
+            }
+        }.padding(.horizontal, floating ? 12 : 6).padding(.vertical, floating ? 10 : 14)
+    }
+    private var summary: String {
+        let working = model.rows.filter { $0.sidebarStatus == .working }.count
+        let blocked = model.rows.filter { $0.sidebarStatus == .blocked }.count
+        return "\(working) working · \(blocked) need attention"
     }
 }
 

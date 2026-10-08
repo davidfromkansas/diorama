@@ -550,8 +550,11 @@ final class KitchenSceneView: SCNView {
         let incoming = Set(agents.map(\.id))
         trashed = trashed.filter { now - $0.value < Self.trashedFor && incoming.contains($0.key) }
         let agents = agents.filter { trashed[$0.id] == nil }
-        let sorted = agents.enumerated().map { (rank: rank($0.element), offset: $0.offset, agent: $0.element) }
-            .sorted { $0.rank != $1.rank ? $0.rank < $1.rank : $0.offset < $1.offset }
+        // Typed out in steps: as one chained tuple expression it took seconds to type-check.
+        typealias Entry = (rank: Int, offset: Int, agent: SpatialAgent)
+        var sorted: [Entry] = []
+        for (offset, agent) in agents.enumerated() { sorted.append((rank: rank(agent), offset: offset, agent: agent)) }
+        sorted.sort { (a: Entry, b: Entry) -> Bool in a.rank != b.rank ? a.rank < b.rank : a.offset < b.offset }
         let busy = sorted.filter { $0.rank != 3 }
         for entry in sorted {
             if entry.rank != 3 { restingSince[entry.agent.id] = nil }
@@ -561,8 +564,11 @@ final class KitchenSceneView: SCNView {
         restingSince = restingSince.filter { listed.contains($0.key) }
         let walking = sorted.filter { $0.rank == 3 && chefs[$0.agent.id] != nil && now - (restingSince[$0.agent.id] ?? -.infinity) < Self.walkOff }
         let walkingIDs = Set(walking.map(\.agent.id))
-        let idle = sorted.filter { $0.rank == 3 && !walkingIDs.contains($0.agent.id) }
-            .sorted { recency($0.agent) != recency($1.agent) ? recency($0.agent) > recency($1.agent) : $0.offset < $1.offset }
+        var idle: [Entry] = sorted.filter { $0.rank == 3 && !walkingIDs.contains($0.agent.id) }
+        idle.sort { (a: Entry, b: Entry) -> Bool in
+            let first = recency(a.agent), second = recency(b.agent)
+            return first != second ? first > second : a.offset < b.offset
+        }
         let resting = walking + idle.prefix(max(0, maxResting - walking.count))
         let ranked = (busy + resting).map(\.agent)
         let ids = Set(ranked.map(\.id))
@@ -1104,7 +1110,10 @@ final class KitchenSceneView: SCNView {
     func projectWithoutLock(_ point: SIMD3<Float>) -> CGPoint? {
         guard let eye = pointOfView, let camera = eye.camera, bounds.width > 0, bounds.height > 0 else { return nil }
         let projection = simd_float4x4(camera.projectionTransform(withViewportSize: bounds.size))
-        let clip = projection * eye.simdWorldTransform.inverse * SIMD4(point, 1)
+        // Spelled out step by step: the release compiler can't infer the chained product.
+        let view: simd_float4x4 = eye.simdWorldTransform.inverse
+        let world = SIMD4<Float>(point.x, point.y, point.z, 1)
+        let clip: SIMD4<Float> = projection * (view * world)
         guard clip.w > 0.0001 else { return nil }
         let ndc = SIMD2(clip.x, clip.y) / clip.w
         return CGPoint(x: CGFloat(ndc.x + 1) / 2 * bounds.width, y: CGFloat(ndc.y + 1) / 2 * bounds.height)

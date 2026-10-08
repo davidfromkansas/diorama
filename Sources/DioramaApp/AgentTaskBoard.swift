@@ -258,9 +258,34 @@ struct AgentBoardCard: View {
     @State private var hovered = false
 
     var body: some View {
-        let tint = SidebarStyle.tint(item.group)
         let shape = RoundedRectangle(cornerRadius: 10, style: .continuous)
-        VStack(alignment: .leading, spacing: 8) {
+        content
+            .padding(.horizontal, 12).padding(.vertical, 11)
+            .background(selected ? SidebarStyle.selected.opacity(0.6) : hovered ? Color(white: 0.99) : Color.white)
+            .clipShape(shape)
+            .overlay(alignment: .leading) { if selected { Rectangle().fill(SidebarStyle.accent).frame(width: 3) } }
+            .clipShape(shape)
+            .overlay(shape.strokeBorder(focused ? SidebarStyle.accent.opacity(0.8) : Color.black.opacity(0.08), lineWidth: focused ? 2 : 1))
+            .shadow(color: .black.opacity(hovered ? 0.14 : 0.08), radius: hovered ? 4 : 1, y: 1)
+            .contentShape(shape)
+            .onTapGesture(perform: select)
+            .onHover { hovered = $0 }
+            .focusable().focused($focused)
+            .onKeyPress(.return) { select(); return .handled }
+            .onKeyPress(.space) { select(); return .handled }
+            .accessibilityElement(children: .contain)
+            .accessibilityLabel(accessibilityText)
+            .accessibilityAddTraits(selected ? [.isButton, .isSelected] : .isButton)
+            .accessibilityAction { select() }
+            .accessibilityAction(named: actionTitle) { if item.hasAction { action() } }
+    }
+    private var accessibilityText: String {
+        [item.title, item.status, item.question ?? "", metaText, item.model].filter { !$0.isEmpty }.joined(separator: ". ")
+    }
+    /// The title, any question, progress, meta line and status footer.
+    private var content: some View {
+        let tint = SidebarStyle.tint(item.group)
+        return VStack(alignment: .leading, spacing: 8) {
             BoardCardTitle(text: item.title, scrolls: !reduceMotion)
             if let question = item.question, !question.isEmpty {
                 Text(question).font(.system(size: 12)).foregroundStyle(tint.text).lineLimit(3)
@@ -284,24 +309,6 @@ struct AgentBoardCard: View {
             }
             .frame(minHeight: 24)
         }
-        .padding(.horizontal, 12).padding(.vertical, 11)
-        .background(selected ? SidebarStyle.selected.opacity(0.6) : hovered ? Color(white: 0.99) : Color.white)
-        .clipShape(shape)
-        .overlay(alignment: .leading) { if selected { Rectangle().fill(SidebarStyle.accent).frame(width: 3) } }
-        .clipShape(shape)
-        .overlay(shape.strokeBorder(focused ? SidebarStyle.accent.opacity(0.8) : Color.black.opacity(0.08), lineWidth: focused ? 2 : 1))
-        .shadow(color: .black.opacity(hovered ? 0.14 : 0.08), radius: hovered ? 4 : 1, y: 1)
-        .contentShape(shape)
-        .onTapGesture(perform: select)
-        .onHover { hovered = $0 }
-        .focusable().focused($focused)
-        .onKeyPress(.return) { select(); return .handled }
-        .onKeyPress(.space) { select(); return .handled }
-        .accessibilityElement(children: .contain)
-        .accessibilityLabel([item.title, item.status, item.question ?? "", metaText, item.model].filter { !$0.isEmpty }.joined(separator: ". "))
-        .accessibilityAddTraits(selected ? [.isButton, .isSelected] : .isButton)
-        .accessibilityAction { select() }
-        .accessibilityAction(named: actionTitle) { if item.hasAction { action() } }
     }
 
     private var meta: some View {

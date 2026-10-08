@@ -97,121 +97,7 @@ struct SpatialWorkspaceView: View {
                     .opacity(focus == .portfolio || kitchenSelected ? 0 : 1)
                     .allowsHitTesting(!kitchenSelected && focus != .portfolio && inspection == nil).accessibilityHidden(kitchenSelected || focus == .portfolio || inspection != nil)
                 if kitchenSelected {
-                    let cooks = kitchenAgents(snapshot, focus: focus)
-                    let _ = KitchenReviews.shared.observe(cooks)
-                    HStack(spacing: 0) {
-                    // The agents panel docks full height at the kitchen's left; collapsed, it's the pill
-                    // floating in the kitchen's top left (kitchenHUD).
-                    if visible, focus != .portfolio, !roster.collapsed, !roster.board {
-                        dockedAgents(snapshot, focus: focus, model: roster)
-                            .holdHidden(kitchenHold != nil, reduced: reduced)
-                            // Faded out, its space shows the kitchen's backdrop rather than the window behind.
-                            .background(Color(nsColor: KitchenSceneView.backdrop))
-                            .transition(reduced ? .opacity : .move(edge: .leading).combined(with: .opacity))
-                            .zIndex(1)
-                    }
-                    VStack(spacing: 0) {
-                        KitchenSceneSurface(agents: cooks, scope: focus == .portfolio ? nil : focus.projectID ?? focus.conversationID,
-                                            reviews: KitchenReviews.shared.states, active: visible,
-                                            reducedMotion: reduced, select: go, review: { reviewing = $0 }, requestReview: { openRequest($0) }, progress: { progressAgent = $0.id },
-                                            selectedAgentID: focus.agentID, deselect: { deselectAgent(focus) }, openPantry: { pantryOpen = true },
-                                            cameraMoved: { away in DispatchQueue.main.async { kitchenCameraAway = away } }, resetCamera: kitchenCameraResets,
-                                            holding: { hold in DispatchQueue.main.async { kitchenHold = hold } },
-                                            archiveBlocker: { library.archiveBlocker($0) }, archive: { archiveFromKitchen($0) }, trashFrame: trashFrame)
-                            .overlay(alignment: .bottomLeading) {
-                                // Only once the camera has moved; the controls stay in the kitchen's accessibility help.
-                                if visible, focus.agentID == nil, kitchenCameraAway {
-                                    Button("Reset View") { kitchenCameraResets += 1 }.controlSize(.small).pointingHand().help("Back to the whole kitchen (R)")
-                                    .padding(.horizontal, 10).padding(.vertical, 6)
-                                    .background(Capsule().fill(.regularMaterial)).padding(12)
-                                    .holdHidden(kitchenHold != nil, reduced: reduced)
-                                }
-                            }
-                            .overlay(alignment: .bottomTrailing) {
-                                if visible {
-                                    Button { kitchenSounds.toggle() } label: {
-                                        Image(systemName: kitchenSounds ? "speaker.wave.2.fill" : "speaker.slash.fill")
-                                            .font(.system(size: 12, weight: .semibold)).frame(width: 28, height: 28).contentShape(Circle())
-                                    }
-                                    .buttonStyle(.plain).foregroundStyle(.secondary).background(Circle().fill(.regularMaterial)).padding(12)
-                                    .pointingHand().help(kitchenSounds ? "Mute kitchen sounds" : "Play kitchen sounds")
-                                    .accessibilityLabel(kitchenSounds ? "Mute kitchen sounds" : "Play kitchen sounds")
-                                    .holdHidden(kitchenHold != nil, reduced: reduced)
-                                }
-                            }
-                            .overlay(alignment: .topLeading) {
-                                if visible, focus != .portfolio {
-                                    GeometryReader { scene in kitchenHUD(snapshot, focus: focus, model: roster, height: scene.size.height - 24) }
-                                        .holdHidden(kitchenHold != nil, reduced: reduced)
-                                }
-                            }
-                            .overlay(alignment: .top) {
-                                // What the chefs are reaching for, live, between the agents and the inbox.
-                                if visible, focus != .portfolio, inspection == nil {
-                                    GeometryReader { scene in
-                                        liveTools(snapshot, focus: focus, cooks: cooks, width: scene.size.width, height: scene.size.height)
-                                            .frame(maxWidth: .infinity, alignment: .top)
-                                    }
-                                }
-                            }
-                            .overlay(alignment: .topTrailing) {
-                                // Inbox and live servers, docked top right above the kitchen.
-                                if visible, let project = focus.projectID, inspection == nil {
-                                    GeometryReader { scene in
-                                        HStack {
-                                            Spacer(minLength: 0)
-                                            ProjectOfficeInbox(library: library, project: project, height: max(120, scene.size.height * 0.55),
-                                                active: liveRefresh && !library.paused,
-                                                inboxExpanded: Binding(get: { inboxExpanded }, set: { inboxExpanded = $0 }), serversExpanded: Binding(get: { serversExpanded }, set: { serversExpanded = $0 }), selected: Binding(get: { inboxSelection }, set: { inboxSelection = $0 }),
-                                                reply: { thread in openInboxConversation(thread, world: snapshot) },
-                                                canReply: { thread in snapshot.teams.first { $0.session.id == thread.conversation }?.session.observationOnly == false }, dockedTop: true)
-                                                .id(project)
-                                                .frame(width: max(100, min(400, scene.size.width - library.navigation.layout.sidebarWidth - 48)))
-                                        }.padding(12)
-                                    }
-                                    .holdHidden(kitchenHold != nil, reduced: reduced)
-                                }
-                            }
-                            .overlay(alignment: .topTrailing) {
-                                // Held chefs can be thrown away here.
-                                if visible, let hold = kitchenHold {
-                                    KitchenTrashCan(hold: hold)
-                                        .background(GeometryReader { can in
-                                            Color.clear
-                                                .onAppear { trashFrame = can.frame(in: .global) }
-                                                .onChange(of: can.frame(in: .global)) { _, frame in trashFrame = frame }
-                                        })
-                                        .padding(24)
-                                        .transition(reduced ? .opacity : .scale(scale: 0.6, anchor: .topTrailing).combined(with: .opacity))
-                                }
-                            }
-                            .overlay(alignment: .bottom) {
-                                if visible, let banner = kitchenBanner {
-                                    KitchenUndoBanner(text: banner.text, undo: banner.undo.map { undo in { undo(); kitchenBanner = nil } }) { kitchenBanner = nil }
-                                        .padding(.bottom, 18)
-                                        .transition(.move(edge: .bottom).combined(with: .opacity))
-                                        .task(id: banner.id) {
-                                            do { try await Task.sleep(for: .seconds(6)) } catch { return }
-                                            if kitchenBanner?.id == banner.id { kitchenBanner = nil }
-                                        }
-                                }
-                            }
-                            .animation(reduced ? nil : .spring(duration: 0.25), value: kitchenHold == nil)
-                            .animation(reduced ? nil : .easeOut(duration: 0.2), value: kitchenBanner?.id)
-                        // The selected chef's command bar sits under the kitchen, down to the window's edge.
-                        if let selected = cooks.first(where: { $0.id == (focus.agentID ?? commandBarAgent) }) {
-                            AgentCommandBar(agent: selected, library: library, review: { reviewing = selected }, requestReview: { openRequest(selected) }) { deselectAgent(focus) }
-                                .holdHidden(kitchenHold != nil, reduced: reduced)
-                                .transition(.move(edge: .bottom).combined(with: .opacity))
-                        }
-                    }
-                    .animation(reduced ? nil : .easeOut(duration: 0.22), value: commandBarAgent)
-                    .task(id: focus.agentID) {
-                        if let id = focus.agentID { commandBarAgent = id; return }
-                        do { try await Task.sleep(for: .seconds(KitchenSceneView.deselectGrace)) } catch { return }
-                        commandBarAgent = nil
-                    }
-                    }
+                    kitchenStage(snapshot, focus: focus, roster: roster)
                 }
                 if !kitchenSelected && focus != .portfolio && !ScenePerformance.disabled("OVERLAYS") {
                     VStack(alignment: .leading, spacing: 12) {
@@ -416,6 +302,130 @@ struct SpatialWorkspaceView: View {
             }, create: {
                 creationProject = AgentCreationDestination(id: focus.projectID ?? "")
             }, floating: floating, collapse: floating ? { model.collapsed = true } : nil)
+    }
+    /// The kitchen with its overlays, and the selected chef's command bar beneath it.
+    @ViewBuilder private func kitchenStage(_ snapshot: SpatialWorld, focus: SpatialFocus, roster: LiveAgentRosterModel) -> some View {
+        let cooks = kitchenAgents(snapshot, focus: focus)
+        let _ = KitchenReviews.shared.observe(cooks)
+        HStack(spacing: 0) {
+            // The agents panel docks full height at the kitchen's left; collapsed, it's the pill
+            // floating in the kitchen's top left (kitchenHUD).
+            if visible, focus != .portfolio, !roster.collapsed, !roster.board {
+                dockedAgents(snapshot, focus: focus, model: roster)
+                    .holdHidden(kitchenHold != nil, reduced: reduced)
+                    // Faded out, its space shows the kitchen's backdrop rather than the window behind.
+                    .background(Color(nsColor: KitchenSceneView.backdrop))
+                    .transition(reduced ? .opacity : .move(edge: .leading).combined(with: .opacity))
+                    .zIndex(1)
+            }
+            VStack(spacing: 0) {
+                kitchenScene(snapshot, focus: focus, roster: roster, cooks: cooks)
+                // The selected chef's command bar sits under the kitchen, down to the window's edge.
+                if let selected = cooks.first(where: { $0.id == (focus.agentID ?? commandBarAgent) }) {
+                    AgentCommandBar(agent: selected, library: library, review: { reviewing = selected }, requestReview: { openRequest(selected) }) { deselectAgent(focus) }
+                        .holdHidden(kitchenHold != nil, reduced: reduced)
+                        .transition(.move(edge: .bottom).combined(with: .opacity))
+                }
+            }
+            .animation(reduced ? nil : .easeOut(duration: 0.22), value: commandBarAgent)
+            .task(id: focus.agentID) {
+                if let id = focus.agentID { commandBarAgent = id; return }
+                do { try await Task.sleep(for: .seconds(KitchenSceneView.deselectGrace)) } catch { return }
+                commandBarAgent = nil
+            }
+        }
+    }
+
+    /// The kitchen scene and everything floating over it: camera reset, sound, agents, live
+    /// tools, inbox, trash can and the undo banner.
+    private func kitchenScene(_ snapshot: SpatialWorld, focus: SpatialFocus, roster: LiveAgentRosterModel, cooks: [SpatialAgent]) -> some View {
+        KitchenSceneSurface(agents: cooks, scope: focus == .portfolio ? nil : focus.projectID ?? focus.conversationID,
+                            reviews: KitchenReviews.shared.states, active: visible,
+                            reducedMotion: reduced, select: go, review: { reviewing = $0 }, requestReview: { openRequest($0) }, progress: { progressAgent = $0.id },
+                            selectedAgentID: focus.agentID, deselect: { deselectAgent(focus) }, openPantry: { pantryOpen = true },
+                            cameraMoved: { away in DispatchQueue.main.async { kitchenCameraAway = away } }, resetCamera: kitchenCameraResets,
+                            holding: { hold in DispatchQueue.main.async { kitchenHold = hold } },
+                            archiveBlocker: { library.archiveBlocker($0) }, archive: { archiveFromKitchen($0) }, trashFrame: trashFrame)
+            .overlay(alignment: .bottomLeading) {
+                // Only once the camera has moved; the controls stay in the kitchen's accessibility help.
+                if visible, focus.agentID == nil, kitchenCameraAway {
+                    Button("Reset View") { kitchenCameraResets += 1 }.controlSize(.small).pointingHand().help("Back to the whole kitchen (R)")
+                    .padding(.horizontal, 10).padding(.vertical, 6)
+                    .background(Capsule().fill(.regularMaterial)).padding(12)
+                    .holdHidden(kitchenHold != nil, reduced: reduced)
+                }
+            }
+            .overlay(alignment: .bottomTrailing) {
+                if visible {
+                    Button { kitchenSounds.toggle() } label: {
+                        Image(systemName: kitchenSounds ? "speaker.wave.2.fill" : "speaker.slash.fill")
+                            .font(.system(size: 12, weight: .semibold)).frame(width: 28, height: 28).contentShape(Circle())
+                    }
+                    .buttonStyle(.plain).foregroundStyle(.secondary).background(Circle().fill(.regularMaterial)).padding(12)
+                    .pointingHand().help(kitchenSounds ? "Mute kitchen sounds" : "Play kitchen sounds")
+                    .accessibilityLabel(kitchenSounds ? "Mute kitchen sounds" : "Play kitchen sounds")
+                    .holdHidden(kitchenHold != nil, reduced: reduced)
+                }
+            }
+            .overlay(alignment: .topLeading) {
+                if visible, focus != .portfolio {
+                    GeometryReader { scene in kitchenHUD(snapshot, focus: focus, model: roster, height: scene.size.height - 24) }
+                        .holdHidden(kitchenHold != nil, reduced: reduced)
+                }
+            }
+            .overlay(alignment: .top) {
+                // What the chefs are reaching for, live, between the agents and the inbox.
+                if visible, focus != .portfolio, inspection == nil {
+                    GeometryReader { scene in
+                        liveTools(snapshot, focus: focus, cooks: cooks, width: scene.size.width, height: scene.size.height)
+                            .frame(maxWidth: .infinity, alignment: .top)
+                    }
+                }
+            }
+            .overlay(alignment: .topTrailing) {
+                // Inbox and live servers, docked top right above the kitchen.
+                if visible, let project = focus.projectID, inspection == nil {
+                    GeometryReader { scene in
+                        HStack {
+                            Spacer(minLength: 0)
+                            ProjectOfficeInbox(library: library, project: project, height: max(120, scene.size.height * 0.55),
+                                active: liveRefresh && !library.paused,
+                                inboxExpanded: Binding(get: { inboxExpanded }, set: { inboxExpanded = $0 }), serversExpanded: Binding(get: { serversExpanded }, set: { serversExpanded = $0 }), selected: Binding(get: { inboxSelection }, set: { inboxSelection = $0 }),
+                                reply: { thread in openInboxConversation(thread, world: snapshot) },
+                                canReply: { thread in snapshot.teams.first { $0.session.id == thread.conversation }?.session.observationOnly == false }, dockedTop: true)
+                                .id(project)
+                                .frame(width: max(100, min(400, scene.size.width - library.navigation.layout.sidebarWidth - 48)))
+                        }.padding(12)
+                    }
+                    .holdHidden(kitchenHold != nil, reduced: reduced)
+                }
+            }
+            .overlay(alignment: .topTrailing) {
+                // Held chefs can be thrown away here.
+                if visible, let hold = kitchenHold {
+                    KitchenTrashCan(hold: hold)
+                        .background(GeometryReader { can in
+                            Color.clear
+                                .onAppear { trashFrame = can.frame(in: .global) }
+                                .onChange(of: can.frame(in: .global)) { _, frame in trashFrame = frame }
+                        })
+                        .padding(24)
+                        .transition(reduced ? .opacity : .scale(scale: 0.6, anchor: .topTrailing).combined(with: .opacity))
+                }
+            }
+            .overlay(alignment: .bottom) {
+                if visible, let banner = kitchenBanner {
+                    KitchenUndoBanner(text: banner.text, undo: banner.undo.map { undo in { undo(); kitchenBanner = nil } }) { kitchenBanner = nil }
+                        .padding(.bottom, 18)
+                        .transition(.move(edge: .bottom).combined(with: .opacity))
+                        .task(id: banner.id) {
+                            do { try await Task.sleep(for: .seconds(6)) } catch { return }
+                            if kitchenBanner?.id == banner.id { kitchenBanner = nil }
+                        }
+                }
+            }
+            .animation(reduced ? nil : .spring(duration: 0.25), value: kitchenHold == nil)
+            .animation(reduced ? nil : .easeOut(duration: 0.2), value: kitchenBanner?.id)
     }
     /// The kitchen's floating HUD, top left: the agents card (or its working/blocked summary when
     /// collapsed) and, below it, the pantry.
