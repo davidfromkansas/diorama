@@ -15,16 +15,41 @@ import Testing
         #expect(PantryCarry.item(for: agent(tool: "Skill", detail: "swift-testing")) == .init(kind: .skill, name: "swift-testing"))
         #expect(PantryCarry.item(for: agent(tool: "exec_command", detail: "cat ~/.codex/skills/pdf/SKILL.md")) == .init(kind: .skill, name: "pdf"))
         #expect(PantryCarry.item(for: agent(tool: "mcp__github__list_issues")) == .init(kind: .connector, name: "GitHub"))
-        #expect(PantryCarry.item(for: agent(tool: "mcp__plugin_vercel_vercel__deploy")) == .init(kind: .plugin, name: "vercel"))
-        #expect(PantryCarry.item(for: agent(tool: "Skill", detail: "vercel:deploy")) == .init(kind: .plugin, name: "vercel"))
-        #expect(PantryCarry.item(for: agent(tool: "exec_command", detail: "sed -n 1,80p ~/.codex/plugins/cache/openai-curated-remote/vercel/0.54.1/skills/domains/SKILL.md")) == .init(kind: .plugin, name: "vercel"))
-        #expect(PantryCarry.item(for: agent(tool: "Read", detail: "/Users/me/.claude/plugins/cache/claude-plugins-official/vercel/0.50.0/skills/vercel-agent/SKILL.md")) == .init(kind: .plugin, name: "vercel"))
+        #expect(PantryCarry.item(for: agent(tool: "mcp__plugin_vercel_vercel__deploy")) == .init(kind: .plugin, name: "Vercel"))
+        #expect(PantryCarry.item(for: agent(tool: "Skill", detail: "vercel:deploy")) == .init(kind: .plugin, name: "Vercel"))
+        #expect(PantryCarry.item(for: agent(tool: "exec_command", detail: "sed -n 1,80p ~/.codex/plugins/cache/openai-curated-remote/vercel/0.54.1/skills/domains/SKILL.md")) == .init(kind: .plugin, name: "Vercel"))
+        #expect(PantryCarry.item(for: agent(tool: "Read", detail: "/Users/me/.claude/plugins/cache/claude-plugins-official/vercel/0.50.0/skills/vercel-agent/SKILL.md")) == .init(kind: .plugin, name: "Vercel"))
         // Codex code mode fetches skills as MCP resources; a plugin's comes in its crate.
         #expect(PantryCarry.item(for: agent(tool: "read_mcp_resource", detail: "skill://plugin_connector_690a/domains")) == .init(kind: .plugin, name: "domains"))
         #expect(PantryCarry.item(for: agent(tool: "read_mcp_resource", detail: "skill://pdf")) == .init(kind: .skill, name: "pdf"))
         var owed = agent(tool: "web__run"); owed.turnWork.started(tool: "read_mcp_resource", detail: "skill://plugin_connector_690a/domains", call: "c")
         #expect(PantryCarry.item(for: owed) == .init(kind: .plugin, name: "domains"))
         #expect(PantryCarry.item(for: agent(tool: "Bash", detail: "npm test")) == nil)
+    }
+
+    /// From the real two-agent replay (Codex code mode and Claude Code on the same plugin task).
+    @Test func realSessionsCarryThePluginNotTheirPlumbing() {
+        // Listing resources is browsing: nothing to carry.
+        #expect(PantryCarry.item(for: agent(tool: "list_mcp_resources")) == nil)
+        #expect(PantryCarry.item(for: agent(tool: "mcp__codex__list_mcp_resource_templates")) == nil)
+        // After the read, a web search: the turn's skill URI wins over its plumbing entries.
+        var codex = agent(tool: "webSearch")
+        for (tool, detail) in [("list_mcp_resources", ""), ("mcp__codex_apps__read_mcp_resource", ""), ("read_mcp_resource", "skill://plugin_connector_690a/domains")] {
+            codex.turnWork.started(tool: tool, detail: detail, call: nil)
+        }
+        #expect(PantryCarry.item(for: codex)?.kind == .plugin)
+        // Codex app connectors are named by the app.
+        #expect(PantryCarry.item(for: agent(tool: "mcp__codex_apps__github_search_repositories")) == .init(kind: .connector, name: "GitHub"))
+        // Claude's Skill call is remembered by the skill it named, so the owed visit carries it too.
+        var claude = agent(tool: "Read", detail: "/Users/me/.claude/plugins/cache/claude-plugins-official/vercel/0.50.0/skills/vercel-cli/references/domains-and-dns.md")
+        claude.turnWork.started(tool: "Skill", detail: "vercel:vercel-cli", call: nil)
+        #expect(claude.turnWork.resources == ["vercel:vercel-cli"])
+        #expect(PantryCarry.item(for: claude) == .init(kind: .plugin, name: "Vercel"))
+        // Codex reading the plugin's SKILL.md with cat, then searching: still the plugin's crate.
+        var cat = agent(tool: "webSearch")
+        cat.turnWork.started(tool: "exec_command", detail: "cat /Users/me/.codex/plugins/cache/openai-curated-remote/vercel/0.54.1/skills/domains/SKILL.md", call: nil)
+        #expect(cat.turnWork.resources == ["vercel:domains"])
+        #expect(PantryCarry.item(for: cat) == .init(kind: .plugin, name: "Vercel"))
     }
 
     @Test func itWaitsOnTheCounterIsCarriedAwayThenSetDownAndFades() {

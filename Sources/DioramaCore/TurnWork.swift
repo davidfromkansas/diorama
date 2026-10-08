@@ -56,7 +56,9 @@ public struct TurnWork: Equatable, Sendable {
             if let call { calls[call] = .command }
         case .resources:
             // A skill fetched by MCP resource keeps its URI, which names the skill (and its plugin).
-            resources.append(KitchenActivity.skillName(detail) ?? (detail.hasPrefix("skill://") ? detail : tool))
+            // Claude's Skill tool names its skill in the detail ("vercel:vercel-cli").
+            let skill = tool.lowercased() == "skill" ? detail.trimmingCharacters(in: .whitespacesAndNewlines) : ""
+            resources.append(KitchenActivity.pluginSkillName(detail) ?? KitchenActivity.skillName(detail) ?? (detail.hasPrefix("skill://") ? detail : skill.isEmpty ? tool : skill))
         default: break
         }
     }
