@@ -159,7 +159,7 @@ public enum KitchenActivity: String, Sendable, CaseIterable {
         // the rest.
         let script = withoutHeredocs(shellScript(command))
         let range = NSRange(script.startIndex..., in: script)
-        if testCommand.firstMatch(in: script, range: range) != nil { return .testing }
+        if isTestCommand(script) { return .testing }
         // Writing files from the shell is editing, like an edit tool.
         if !writtenFiles(command: command).isEmpty { return .editing }
         let words = commandWords(script)
@@ -251,6 +251,16 @@ public enum KitchenActivity: String, Sendable, CaseIterable {
     static let readOnlyCommands: Set<String> = ["cat", "sed", "head", "tail", "grep", "egrep", "rg", "ag", "ls", "find", "fd", "tree", "wc", "nl",
                                                 "file", "stat", "du", "less", "more", "pwd", "jq", "echo", "printf", "which", "awk", "sort", "uniq", "cut", "diff", "realpath", "basename", "dirname"]
     static let readOnlyGit: Set<String> = ["log", "show", "diff", "status", "blame", "grep", "ls-files", "rev-parse", "branch", "remote", "describe"]
-    static let testCommand = try! NSRegularExpression(pattern:
-        #"\b(?:(?:npm|pnpm|yarn|bun)\s+(?:run\s+)?test|vitest|jest|pytest|go\s+test|cargo\s+test|swift\s+test|xcodebuild\s+(?:\S+\s+)*test|playwright\s+test|rspec|phpunit|ctest|mvn\s+test|gradle\w*\s+test|deno\s+test|node\s+--test|node\s+\S*test\S*\.[mc]?[jt]s)\b"#)
+    /// A step of the script that runs a test runner, as the command itself (`npm test`,
+    /// `python3 -m unittest`, `npx vitest`), never a mention of one in its arguments
+    /// (`rg --files -g 'pytest.ini'`).
+    static func isTestCommand(_ script: String) -> Bool {
+        commandWords(script).contains { words in
+            guard let first = words.first else { return false }
+            let head = ([(first as NSString).lastPathComponent] + words.dropFirst().prefix(7)).joined(separator: " ")
+            return testRunner.firstMatch(in: head, range: NSRange(head.startIndex..., in: head)) != nil
+        }
+    }
+    static let testRunner = try! NSRegularExpression(pattern:
+        #"^(?:(?:npx|bunx|pnpx|uv\s+run|poetry\s+run|pipenv\s+run|bundle\s+exec|time|nice)\s+)*(?:(?:npm|pnpm|yarn|bun)\s+(?:run\s+)?test|vitest|jest|pytest|py\.test|python\d*(?:\.\d+)?\s+-m\s+(?:pytest|unittest|tox|nox)|tox|nox|go\s+test|cargo\s+test|swift\s+test|xcodebuild\s+(?:\S+\s+)*test|playwright\s+test|rspec|phpunit|ctest|mvn\s+test|gradle\w*\s+test|deno\s+test|dotnet\s+test|mix\s+test|rake\s+test|make\s+(?:\S+\s+)*test\S*|node\s+--test|node\s+\S*test\S*\.[mc]?[jt]s)\b"#)
 }

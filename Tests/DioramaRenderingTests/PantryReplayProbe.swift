@@ -20,6 +20,16 @@ import Testing
             defer { try? FileManager.default.removeItem(at: directory) }
             let file = directory.appendingPathComponent((path as NSString).lastPathComponent)
             var seen = Set<String>(), pantry = false, carried: PantryCarry.Item?
+            // The stations in order, with what's carried away from prep and the pantry.
+            var sequence: [String] = [], leaving: String?
+            // Brief work still owes its station (KitchenSceneSurface's pacing): the pantry for each
+            // fetch, cooking for new edits (before tasting), tasting/stove for each test run.
+            var filesSeen = 0, testsSeen = 0, fetchedSeen = 0
+            func visit(_ area: String, carry: String?) {
+                guard sequence.last.map({ !$0.hasPrefix(area) }) ?? true else { return }
+                if let leaving { sequence[sequence.count - 1] += " (carries \(leaving))" }
+                sequence.append(area); leaving = carry
+            }
             for count in 1...lines.count {
                 // Only re-derive at lines that report a tool call.
                 let line = String(lines[count - 1])
@@ -35,14 +45,34 @@ import Testing
                 guard let agent = WorkspaceAgentPresentation.agents(title: "replay", sources: [source]).first(where: \.isMain) else { continue }
                 let work = KitchenLayout.work(for: agent)
                 let item = PantryCarry.item(for: agent)
+                if agent.status == .working {
+                    var owed: [String] = []
+                    if agent.turnWork.resources.count > fetchedSeen { owed.append("pantry") }
+                    if agent.turnWork.files.count > filesSeen { owed.append("cooking") }
+                    if agent.turnWork.tests.count > testsSeen {
+                        let steps = agent.turnWork.tests.last.map { KitchenActivity.stations(command: $0.command) } ?? []
+                        let areas = steps.compactMap { step -> String? in switch step { case .testing, .checking: "tasting"; case .commands: "stove"; default: nil } }
+                        owed += areas.isEmpty ? ["tasting"] : areas
+                    }
+                    for area in owed where area != work.area {
+                        visit(area + " (owed)", carry: area == "pantry" ? item.map { "\($0.kind.rawValue) “\($0.name)”" } : nil)
+                    }
+                    filesSeen = agent.turnWork.files.count; testsSeen = agent.turnWork.tests.count; fetchedSeen = agent.turnWork.resources.count
+                }
                 let key = "\(agent.latestTool)|\(work.area)|\(String(describing: item))|\(agent.turnWork.resources)"
                 guard seen.insert(key).inserted else { continue }
                 if work.area == "pantry" { pantry = true }
+                let area = work.area ?? "rest"
+                let carry = area == "prep" ? "plate “\(PantryCarry.planItem(for: agent).name)”"
+                    : area == "pantry" ? item.map { "\($0.kind.rawValue) “\($0.name)”" } : nil
+                visit(area, carry: carry)
+                if sequence.last?.hasPrefix(area) == true, carry != nil { leaving = carry }
                 if let item { carried = item }
                 report += "line \(count): tool=\(agent.latestTool) detail=\(agent.latestToolDetail.prefix(90)) → station=\(work.area)"
                     + " resources=\(agent.turnWork.resources) carry=\(item.map { "\($0.kind.rawValue):\($0.name)" } ?? "-")"
                     + (work.area == "prep" ? " plate=“\(PantryCarry.planItem(for: agent).name)”" : "") + "\n"
             }
+            report += "SEQUENCE: " + sequence.joined(separator: " → ") + "\n"
             report += "RESULT: visited pantry=\(pantry) · carries=\(carried.map { "\($0.kind.rawValue) “\($0.name)”" } ?? "nothing")\n"
         }
         print(report)

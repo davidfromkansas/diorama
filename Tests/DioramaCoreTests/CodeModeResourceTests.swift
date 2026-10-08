@@ -20,3 +20,14 @@ struct CodeModeResourceTests {
         #expect(work.resources == ["skill://plugin_connector_690a/domains"])
     }
 }
+
+struct TestCommandTests {
+    @Test func testRunnersCountOnlyAsTheCommandRun() {
+        #expect(KitchenActivity.classify(tool: "exec_command", detail: "python3 -m unittest discover -v") == .testing)
+        #expect(KitchenActivity.classify(tool: "exec_command", detail: "cd app && npx vitest run") == .testing)
+        #expect(KitchenActivity.classify(tool: "Bash", detail: "FOO=1 uv run pytest -q") == .testing)
+        // Naming a test file or config in arguments isn't running tests.
+        #expect(KitchenActivity.classify(tool: "commandExecution", detail: "/bin/zsh -lc pwd; rg --files -g '*test*' -g 'pytest.ini'") == .researching)
+        #expect(KitchenActivity.classify(tool: "exec_command", detail: "cat test_textutils.py") == .researching)
+    }
+}
