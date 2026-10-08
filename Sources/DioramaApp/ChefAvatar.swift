@@ -42,6 +42,8 @@ nonisolated final class ChefAvatar: @unchecked Sendable {
     let pantryCarry: PantryCarrier
     /// What its agent is fetching; set under the kitchen's chef lock.
     var pantryItem: PantryCarry.Item?
+    /// The plate it carries out of the prep area (its current step); set under the chef lock.
+    var prepItem: PantryCarry.Item?
     /// The dish this chef's task prepares (see `KitchenFood`); set under the kitchen's chef lock.
     var dish: String?
     private var dishNode: (id: String, node: SCNNode)?
@@ -103,7 +105,7 @@ nonisolated final class ChefAvatar: @unchecked Sendable {
         last = (command.name, time, command.loop)
         syncProps()
         let fit = manifest.attach[ChefProp.plate.node]?[ChefProp.plate.fitClip]
-        pantryCarry.sync(wanted: pantryItem, area: director.station?.area, reducedMotion: director.reducedMotion, delta: delta,
+        pantryCarry.sync(wanted: ["pantry": pantryItem, "prep": prepItem].compactMapValues { $0 }, area: director.station?.area, reducedMotion: director.reducedMotion, delta: delta,
                          carrySocket: rig.bone(ChefProp.plate.socket), fit: fit.map { ($0.simdPosition, $0.simdQuaternion) },
                          floor: visual, counterTop: manifest.stations.counterTop)
         director.carriesJar = pantryCarry.carrying

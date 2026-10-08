@@ -554,6 +554,7 @@ final class KitchenSceneView: SCNView {
                 // One dish per task: a new turn (new completion key) rolls a new one.
                 chefs[agent.id]?.dish = KitchenFood.dish(for: agent.value.completionKey ?? agent.conversationID)
                 chefs[agent.id]?.pantryItem = PantryCarry.item(for: agent.value)
+                chefs[agent.id]?.prepItem = PantryCarry.planItem(for: agent.value)
                 pacing[agent.id]?.agent = agent.value
                 pacing[agent.id]?.review = review
                 // Every new test run sends the chef to taste, however quickly the agent moves on.

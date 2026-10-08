@@ -6,7 +6,7 @@ import DioramaCore
 /// crate for a plugin, a connector object for an MCP server or app. It sits on the pantry counter
 /// while the chef is there, is carried (carry walk) to the next station, set down there and fades.
 enum PantryCarry {
-    nonisolated enum Kind: String, Sendable { case skill, plugin, connector }
+    nonisolated enum Kind: String, Sendable { case skill, plugin, connector, plan }
     nonisolated struct Item: Equatable, Sendable {
         let kind: Kind
         let name: String
@@ -45,6 +45,19 @@ enum PantryCarry {
             return Item(kind: .connector, name: resource.name)
         }
     }
+    /// What a chef leaving the prep area carries on its plate: the step it's starting (the plan's
+    /// step in progress, else the next one), else what it's doing, else just "Prep".
+    static func planItem(for agent: WorkspaceAgent) -> Item {
+        let steps = agent.plan?.checklist ?? []
+        let active = steps.first { ["in_progress", "inprogress", "in progress", "running"].contains($0.status.lowercased()) }
+            ?? steps.first { $0.status.lowercased() == "pending" }
+        if let step = active?.title.trimmingCharacters(in: .whitespacesAndNewlines), !step.isEmpty { return Item(kind: .plan, name: step) }
+        // What it's doing, unless that's only "Working…": then the task it's on.
+        let phrase = AgentSidebar.phrase(agent).trimmingCharacters(in: .whitespacesAndNewlines)
+        if !phrase.isEmpty, phrase != "Working…" { return Item(kind: .plan, name: phrase) }
+        let task = TaskTitle.compact(agent.task).trimmingCharacters(in: .whitespacesAndNewlines)
+        return Item(kind: .plan, name: task.isEmpty ? "Prep" : task)
+    }
     static func pluginFolder(_ text: String) -> String? {
         guard let range = text.range(of: "/plugins/cache/") else { return nil }
         let parts = text[range.upperBound...].split(separator: "/")
@@ -53,7 +66,7 @@ enum PantryCarry {
     /// The models, by kind (`assets/props`: salsa_jar, plugin_crate, connector_object).
     static var models: [Kind: SCNNode] {
         var result: [Kind: SCNNode] = [:]
-        for (kind, id) in [(Kind.skill, "salsa_jar"), (.plugin, "plugin_crate"), (.connector, "connector_object")] { result[kind] = KitchenProps.templates[id] }
+        for (kind, id) in [(Kind.skill, "salsa_jar"), (.plugin, "plugin_crate"), (.connector, "connector_object"), (.plan, "plan_plate")] { result[kind] = KitchenProps.templates[id] }
         return result
     }
 }
@@ -86,17 +99,25 @@ nonisolated final class PantryCarrier: @unchecked Sendable {
     private var reducedMotion = false
 
     /// - Parameters:
-    ///   - wanted: what the chef is fetching, from its latest activity.
+    ///   - wanted: what there is to pick up at each pickup station ("pantry": what it's fetching,
+    ///     "prep": the plate with its step).
     ///   - area: the station the chef stands at (nil while walking).
-    func sync(wanted: PantryCarry.Item?, area: String?, reducedMotion: Bool, delta: Float,
+    func sync(wanted: [String: PantryCarry.Item], area: String?, reducedMotion: Bool, delta: Float,
               carrySocket: SCNNode?, fit: (position: SIMD3<Float>, orientation: simd_quatf)?, floor: SCNNode, counterTop: Float) {
         self.reducedMotion = reducedMotion
         let step = max(0, min(delta, 0.1))
         phase += step; clock += step
-        if area == "pantry" {
-            // At the pantry with something to fetch: a fresh one pops onto the counter.
-            if let wanted, !(carrying && item == wanted) { spawn(wanted) }
-            if carrying { place(.counter, parent: floor, position: SIMD3(0, counterTop, 0.5), orientation: nil) }
+        fadeRetired(step)
+        if let area, let want = wanted[area] {
+            if carrying && origin == area && item?.kind == want.kind && (want.kind == .plan || item == want) {
+                // Still at the station it came from: the plate's step follows the plan.
+                item = want
+            } else {
+                // Whatever it was holding is set down here; the new thing pops onto the counter.
+                if carrying { retire(floor: floor, counterTop: counterTop) }
+                spawn(want); origin = area
+            }
+            place(.counter, parent: floor, position: SIMD3(0, counterTop, 0.5), orientation: nil)
             animate()
             return
         }
@@ -172,8 +193,35 @@ nonisolated final class PantryCarrier: @unchecked Sendable {
     }
 
     func clear() {
-        node?.removeFromParentNode(); node = nil; item = nil; placement = .none; opacity = 1; faded = 0; phase = 0; landed = false
+        node?.removeFromParentNode(); node = nil; item = nil; origin = nil; placement = .none; opacity = 1; faded = 0; phase = 0; landed = false
     }
+
+    /// The station the current item came from.
+    private(set) var origin: String?
+    /// Items put down when a new one was picked up at a pickup station, fading out beside the chef.
+    private var retired: [(node: SCNNode, time: Float)] = []
+    private func retire(floor: SCNNode, counterTop: Float) {
+        guard let node else { return }
+        if reducedMotion { node.removeFromParentNode() } else {
+            node.removeFromParentNode(); floor.addChildNode(node)
+            node.simdPosition = SIMD3(0.42, counterTop, 0.5); node.simdOrientation = simd_quatf(ix: 0, iy: 0, iz: 0, r: 1)
+            retired.append((node, 0))
+            puff(node)
+        }
+        self.node = nil; item = nil; origin = nil; placement = .none; opacity = 1; faded = 0
+    }
+    private func fadeRetired(_ step: Float) {
+        guard !retired.isEmpty else { return }
+        retired = retired.compactMap { entry in
+            let time = entry.time + step, gone = min(1, time / 1.2)
+            entry.node.opacity = CGFloat(1 - gone)
+            entry.node.simdScale = SIMD3(repeating: Self.size * (1 - 0.45 * gone))
+            if gone >= 1 { entry.node.removeFromParentNode(); return nil }
+            return (entry.node, time)
+        }
+    }
+    /// How many put-down items are still fading, for tests.
+    var fading: Int { retired.count }
 
     private func spawn(_ wanted: PantryCarry.Item) {
         clear()
@@ -226,7 +274,7 @@ nonisolated final class PantryCarrier: @unchecked Sendable {
         switch kind {
         case .skill: NSColor(red: 0.35, green: 0.85, blue: 0.45, alpha: 1)
         case .plugin: NSColor(red: 1.0, green: 0.7, blue: 0.25, alpha: 1)
-        case .connector: NSColor(red: 0.4, green: 0.6, blue: 1.0, alpha: 1)
+        case .connector, .plan: NSColor(red: 0.4, green: 0.6, blue: 1.0, alpha: 1)
         }
     }
     nonisolated(unsafe) private static let dot: NSImage = NSImage(size: NSSize(width: 32, height: 32), flipped: false) { rect in
@@ -271,7 +319,7 @@ final class PantryCarryTag: NSView {
         layer?.borderColor = NSColor(tint.dot).withAlphaComponent(0.45).cgColor
         label.textColor = NSColor(tint.text)
         mark.textColor = NSColor(tint.dot)
-        mark.stringValue = item.kind == .skill ? "✦" : item.kind == .plugin ? "▣" : "◉"
+        mark.stringValue = item.kind == .skill ? "✦" : item.kind == .plugin ? "▣" : item.kind == .plan ? "☰" : "◉"
     }
     /// Lays the pill out around its text and returns its size.
     func fit() -> CGSize {

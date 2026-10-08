@@ -40,7 +40,8 @@ import Testing
                 if work.area == "pantry" { pantry = true }
                 if let item { carried = item }
                 report += "line \(count): tool=\(agent.latestTool) detail=\(agent.latestToolDetail.prefix(90)) → station=\(work.area)"
-                    + " resources=\(agent.turnWork.resources) carry=\(item.map { "\($0.kind.rawValue):\($0.name)" } ?? "-")\n"
+                    + " resources=\(agent.turnWork.resources) carry=\(item.map { "\($0.kind.rawValue):\($0.name)" } ?? "-")"
+                    + (work.area == "prep" ? " plate=“\(PantryCarry.planItem(for: agent).name)”" : "") + "\n"
             }
             report += "RESULT: visited pantry=\(pantry) · carries=\(carried.map { "\($0.kind.rawValue) “\($0.name)”" } ?? "nothing")\n"
         }

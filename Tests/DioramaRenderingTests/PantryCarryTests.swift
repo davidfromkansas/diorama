@@ -57,7 +57,7 @@ import Testing
         let floor = SCNNode(), socket = SCNNode()
         let skill = PantryCarry.Item(kind: .skill, name: "pdf")
         func tick(_ wanted: PantryCarry.Item?, _ area: String?, _ delta: Float = 0.1) {
-            carrier.sync(wanted: wanted, area: area, reducedMotion: false, delta: delta, carrySocket: socket, fit: nil, floor: floor, counterTop: 0.9)
+            carrier.sync(wanted: wanted.map { ["pantry": $0] } ?? [:], area: area, reducedMotion: false, delta: delta, carrySocket: socket, fit: nil, floor: floor, counterTop: 0.9)
         }
         tick(skill, "pantry")
         #expect(carrier.placement == .counter && carrier.carrying && carrier.node?.parent === floor)
@@ -77,13 +77,58 @@ import Testing
     @Test func reducedMotionSetsItDownWithoutTheFade() {
         let carrier = PantryCarrier(models: [.skill: SCNNode()])
         let floor = SCNNode()
-        carrier.sync(wanted: .init(kind: .skill, name: "pdf"), area: "pantry", reducedMotion: true, delta: 0.1, carrySocket: nil, fit: nil, floor: floor, counterTop: 0.9)
-        carrier.sync(wanted: nil, area: nil, reducedMotion: true, delta: 0.1, carrySocket: nil, fit: nil, floor: floor, counterTop: 0.9)
-        carrier.sync(wanted: nil, area: "prep", reducedMotion: true, delta: 0.1, carrySocket: nil, fit: nil, floor: floor, counterTop: 0.9)
+        carrier.sync(wanted: ["pantry": .init(kind: .skill, name: "pdf")], area: "pantry", reducedMotion: true, delta: 0.1, carrySocket: nil, fit: nil, floor: floor, counterTop: 0.9)
+        carrier.sync(wanted: [:], area: nil, reducedMotion: true, delta: 0.1, carrySocket: nil, fit: nil, floor: floor, counterTop: 0.9)
+        carrier.sync(wanted: [:], area: "stove", reducedMotion: true, delta: 0.1, carrySocket: nil, fit: nil, floor: floor, counterTop: 0.9)
         #expect(carrier.placement == .none)
     }
 
     @Test func theModelsAreBundled() {
-        #expect(PantryCarry.models.count == 3)
+        #expect(PantryCarry.models.count == 4)
+    }
+
+    @Test func thePlateCarriesTheStepTheAgentIsStarting() {
+        func plan(_ statuses: [String]) -> AgentPlan {
+            var snapshot = SessionActivitySnapshot()
+            snapshot.records = statuses.enumerated().map { index, status in
+                SessionActivityRecord(id: "s\(index)", provider: "Codex", sessionID: "s", turnID: "t", nativeID: "s\(index)", kind: "step",
+                                      title: "Step \(index)", status: status, detail: "", source: "test", observedAt: Date(), data: .null)
+            }
+            return AgentPlan.reported(in: snapshot, provider: "Codex", sessionID: "s", currentTurn: "t")
+        }
+        var working = agent(tool: "update_plan"); working.plan = plan(["completed", "in_progress", "pending"])
+        #expect(PantryCarry.planItem(for: working) == .init(kind: .plan, name: "Step 1"))
+        var next = agent(tool: "update_plan"); next.plan = plan(["completed", "pending"])
+        #expect(PantryCarry.planItem(for: next).name == "Step 1")
+        // Nothing specific yet: the task's short title.
+        #expect(PantryCarry.planItem(for: agent(tool: "")).name == TaskTitle.compact("Task"))
+        #expect(AgentSidebar.phrase(agent(tool: "webSearch")) == "Researching online…")
+        // No list: what it's doing.
+        #expect(PantryCarry.planItem(for: agent(tool: "Read", detail: "SettingsView.swift")).name == AgentSidebar.phrase(agent(tool: "Read", detail: "SettingsView.swift")))
+    }
+
+    @Test func fromPrepThePlateIsCarriedAndSetDownWhereverTheChefGoesNext() {
+        let carrier = PantryCarrier(models: [.skill: SCNNode(), .plan: SCNNode()])
+        let floor = SCNNode(), socket = SCNNode()
+        let plate = PantryCarry.Item(kind: .plan, name: "Wire up the toggles")
+        func tick(_ wanted: [String: PantryCarry.Item], _ area: String?) {
+            carrier.sync(wanted: wanted, area: area, reducedMotion: false, delta: 0.1, carrySocket: socket, fit: nil, floor: floor, counterTop: 0.9)
+        }
+        tick(["prep": plate], "prep")
+        #expect(carrier.placement == .counter && carrier.item == plate && carrier.origin == "prep")
+        // The plan moves on while it's still at prep: same plate, new step.
+        tick(["prep": .init(kind: .plan, name: "Run the tests")], "prep")
+        #expect(carrier.item?.name == "Run the tests" && carrier.fading == 0)
+        tick(["prep": plate], nil)
+        #expect(carrier.placement == .carried && carrier.node?.parent === socket)
+        tick(["prep": plate], "stove")
+        #expect(carrier.placement == .setDown)
+        // Back to prep, then straight to the pantry: the plate is set down there and the jar pops up.
+        for _ in 0..<60 { tick([:], "stove") }
+        tick(["prep": plate], "prep"); tick(["prep": plate], nil)
+        tick(["prep": plate, "pantry": .init(kind: .skill, name: "pdf")], "pantry")
+        #expect(carrier.item?.kind == .skill && carrier.origin == "pantry" && carrier.placement == .counter && carrier.fading == 1)
+        for _ in 0..<20 { tick(["pantry": .init(kind: .skill, name: "pdf")], "pantry") }
+        #expect(carrier.fading == 0)
     }
 }
