@@ -267,7 +267,9 @@ extension WorkspaceNavigationTests {
             func scrolls(_ view: NSView) -> [NSScrollView] {
                 (view as? NSScrollView).map { [$0] } ?? view.subviews.flatMap(scrolls)
             }
-            let scroll = try #require(scrolls(host).max(by: { ($0.documentView?.bounds.height ?? 0) < ($1.documentView?.bounds.height ?? 0) }))
+            func documentHeight(_ view: NSScrollView) -> CGFloat { view.documentView?.bounds.height ?? 0 }
+            let tallest: NSScrollView? = scrolls(host).max { documentHeight($0) < documentHeight($1) }
+            let scroll = try #require(tallest)
             NotificationCenter.default.post(name: NSScrollView.willStartLiveScrollNotification, object: scroll)
             let limit = max(0, (scroll.documentView?.bounds.height ?? 0) - scroll.contentView.bounds.height)
             let delta: CGFloat = index % 20 < 10 ? 240 : -240

@@ -911,8 +911,10 @@ extension ChefKitchenTests {
         #expect(!WorkspaceAgentPresentation.awaitsAnswer(agent("a", .done).value, entries: asked + [Entry(id: "a", kind: "You", text: "Dark blue", timestamp: nil)]))
         // The repeated question shows once in the conversation.
         let rows = ConversationHistory.rows(asked, mode: .conversation)
-        #expect(rows.flatMap(\.entries).filter { $0.kind == "Assistant" }.count == 1)
-        #expect(ConversationHistory.rows(asked, mode: .detailed).flatMap(\.entries).count == 3)
+        let assistantEntries = rows.flatMap(\.entries).filter { $0.kind == "Assistant" }.count
+        #expect(assistantEntries == 1)
+        let detailedEntries = ConversationHistory.rows(asked, mode: .detailed).flatMap(\.entries).count
+        #expect(detailedEntries == 3)
         // At the bell with a question emote.
         var waiting = agent("a", .done); waiting.value.status = .waiting; waiting.value.attentionReason = .input
         #expect(KitchenLayout.work(for: waiting.value).area == "bell" && ChefEmote.lasting(waiting, review: nil) == .question)
