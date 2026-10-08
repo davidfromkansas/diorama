@@ -20,6 +20,9 @@ enum PantryCarry {
         return last.hasPrefix("mcp__") ? item(tool: last, detail: "") : item(tool: "Skill", detail: last)
     }
     static func item(tool: String, detail: String) -> Item? {
+        // A skill read from an installed plugin (…/plugins/cache/<marketplace>/<plugin>/…/SKILL.md)
+        // is that plugin's.
+        if KitchenActivity.isSkillFile(detail), let plugin = pluginFolder(detail) { return Item(kind: .plugin, name: plugin) }
         guard let resource = LiveResources.resource(tool: tool, detail: detail) else { return nil }
         switch resource.kind {
         case .skill:
@@ -32,6 +35,11 @@ enum PantryCarry {
             if let plugin = resource.plugin { return Item(kind: .plugin, name: plugin) }
             return Item(kind: .connector, name: resource.name)
         }
+    }
+    static func pluginFolder(_ text: String) -> String? {
+        guard let range = text.range(of: "/plugins/cache/") else { return nil }
+        let parts = text[range.upperBound...].split(separator: "/")
+        return parts.count > 2 ? String(parts[1]) : nil
     }
     /// The models, by kind (`assets/props`: salsa_jar, plugin_crate, connector_object).
     static var models: [Kind: SCNNode] {
