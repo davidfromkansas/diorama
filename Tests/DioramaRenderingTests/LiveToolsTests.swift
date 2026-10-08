@@ -105,4 +105,43 @@ import Testing
         host.cacheDisplay(in: host.bounds, to: rep)
         try #require(rep.representation(using: .png, properties: [:])).write(to: URL(fileURLWithPath: "/tmp/diorama-live-bar.png"))
     }
+
+    @Test func skillsFoldIntoNamespaceStacks() {
+        func skill(_ name: String) -> AllResourcesPalette.Entry {
+            .init(item: CapabilityLibraryItem(id: "s:" + name, name: name, kind: .skill, provider: .codex), providers: [.codex])
+        }
+        let groups = AllResourcesPalette.skillGroups(["vercel:auth", "vercel:ai-sdk", "pdf", "solo:one", "unity:a", "unity:b", "unity:c"].map(skill))
+        #expect(groups.stacks.map(\.name) == ["vercel", "unity"] && groups.stacks[1].skills.count == 3)
+        #expect(groups.loose.map(\.item.name) == ["pdf", "solo:one"])
+    }
+
+    /// Opt-in render of the All palette's grid with a realistic inventory.
+    @Test func captureAllGrid() throws {
+        guard ProcessInfo.processInfo.environment["DIORAMA_UTILITY_CAPTURE"] == "1" else { return }
+        var items: [CapabilityLibraryItem] = []
+        for (name, state) in [("GitHub", CapabilityAvailability.available), ("Linear", .available), ("Slack", .connectionNeeded), ("Figma", .available), ("Sentry", .unverified),
+                              ("Postgres", .available), ("Notion", .available), ("Stripe", .disabled), ("Supabase", .available), ("arcade", .connectionNeeded), ("computer-use", .unverified),
+                              ("cua_repl", .unverified), ("Blender", .available), ("Docker", .available), ("Cloudflare", .unverified), ("Google Calendar", .available)] {
+            items.append(.init(id: "m:" + name, name: name, kind: .tool, provider: .codex, source: "MCP server", availability: state))
+        }
+        for name in ["Arcade", "ChatGPT Space", "Codex Document Control"] { items.append(.init(id: "a:" + name, name: name, kind: .app, provider: .codex, availability: .available)) }
+        for name in ["pdf", "plugin-creator", "presentations", "sites", "spreadsheets", "unity", "visualize", "work-pets", "vercel", "figma", "github"] {
+            items.append(.init(id: "p:" + name, name: name, kind: .plugin, provider: .codex, availability: .available))
+        }
+        for name in ["vercel:ai-sdk", "vercel:auth", "vercel:bootstrap", "vercel:deploy", "unity:scenes", "unity:shaders", "sf:asset-check", "sf:miniature-style",
+                     "company-research", "img2threejs", "pdf", "docx", "swift-testing", "artifact-design"] {
+            items.append(.init(id: "s:" + name, name: name, description: "Does " + name, kind: .skill, provider: .codex, availability: .available))
+        }
+        let snapshot = CapabilityLibrarySnapshot(context: .init(provider: .codex, folder: "/tmp"), items: items)
+        let palette = AllResourcesPalette(library: LibraryModel(), folder: "/tmp", sessions: [:], armFor: ("c", "Sage"),
+                                          claude: CapabilityLibrarySnapshot(context: .init(provider: .claude, folder: "/tmp")), codex: snapshot) {}
+            .frame(width: 1000, height: 760).padding(20).background(Color(red: 0.48, green: 0.31, blue: 0.2))
+        let host = NSHostingView(rootView: palette)
+        host.frame = NSRect(x: 0, y: 0, width: 1040, height: 800)
+        host.layoutSubtreeIfNeeded()
+        RunLoop.main.run(until: Date().addingTimeInterval(0.4))
+        let rep = try #require(host.bitmapImageRepForCachingDisplay(in: host.bounds))
+        host.cacheDisplay(in: host.bounds, to: rep)
+        try #require(rep.representation(using: .png, properties: [:])).write(to: URL(fileURLWithPath: "/tmp/diorama-all-grid.png"))
+    }
 }
