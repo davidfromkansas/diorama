@@ -90,17 +90,26 @@ import Testing
         let now = Date()
         let agents = [chef("a", "Sage", tool: "mcp__github__get", at: now), chef("b", "Eli", tool: "mcp__postgres__query", at: now),
                       chef("c", "Opal", tool: "mcp__plugin_vercel_vercel__deploy", at: now)]
+        let onHand = ToolInventory(claude: CapabilityLibrarySnapshot(context: .init(provider: .claude, folder: "/tmp"), items:
+            ["GitHub", "Figma", "Linear", "acme"].map { CapabilityLibraryItem(id: "m:" + $0, name: $0, kind: .tool, provider: .claude, source: "MCP server", availability: .available) }
+            + [CapabilityLibraryItem(id: "p:vercel", name: "vercel", kind: .plugin, provider: .claude)]
+            + (1...12).map { CapabilityLibraryItem(id: "s:\($0)", name: "skill-\($0)", kind: .skill, provider: .claude) }),
+            codex: CapabilityLibrarySnapshot(context: .init(provider: .codex, folder: "/tmp")))
+        #expect(onHand.servers == 4 && onHand.plugins == 1 && onHand.skills == 12 && onHand.featured.prefix(3) == ["Figma", "GitHub", "Linear"])
         let view = VStack(spacing: 30) {
-            LiveToolsBar(agents: agents, total: 64) {}
+            LiveToolsBar(agents: [], inventory: onHand, openAll: {})
+            LiveToolsBar(agents: agents, openAll: {})
             HStack(spacing: 10) {
                 ForEach(["GitHub", "Linear", "Slack", "Figma", "Sentry", "Notion", "Stripe", "Supabase", "Acme Internal", "Blender"], id: \.self) { BrandIcon(name: $0) }
             }
         }
         .padding(40).frame(width: 900).background(Color(red: 0.48, green: 0.31, blue: 0.2))
+        // Offscreen snapshots don't advance animations; show the settled layout.
+        .transaction { $0.disablesAnimations = true }
         let host = NSHostingView(rootView: view)
         host.frame = NSRect(origin: .zero, size: host.fittingSize)
         host.layoutSubtreeIfNeeded()
-        RunLoop.main.run(until: Date().addingTimeInterval(0.3))
+        RunLoop.main.run(until: Date().addingTimeInterval(1.5))
         let rep = try #require(host.bitmapImageRepForCachingDisplay(in: host.bounds))
         host.cacheDisplay(in: host.bounds, to: rep)
         try #require(rep.representation(using: .png, properties: [:])).write(to: URL(fileURLWithPath: "/tmp/diorama-live-bar.png"))
