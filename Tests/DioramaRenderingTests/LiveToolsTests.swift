@@ -144,4 +144,22 @@ import Testing
         host.cacheDisplay(in: host.bounds, to: rep)
         try #require(rep.representation(using: .png, properties: [:])).write(to: URL(fileURLWithPath: "/tmp/diorama-all-grid.png"))
     }
+
+    /// Opt-in render of the All palette while Codex is still being read.
+    @Test func captureAllGridLoading() throws {
+        guard ProcessInfo.processInfo.environment["DIORAMA_UTILITY_CAPTURE"] == "1" else { return }
+        let claude = CapabilityLibrarySnapshot(context: .init(provider: .claude, folder: "/tmp"), items: [
+            .init(id: "p:vercel", name: "vercel", kind: .plugin, provider: .claude, availability: .unverified),
+            .init(id: "s:vercel:auth", name: "vercel:auth", kind: .skill, provider: .claude), .init(id: "s:vercel:ai", name: "vercel:ai-sdk", kind: .skill, provider: .claude),
+            .init(id: "s:pdf", name: "pdf", kind: .skill, provider: .claude)])
+        let palette = AllResourcesPalette(library: LibraryModel(), folder: "/tmp", sessions: [:], claude: claude, codex: nil) {}
+            .frame(width: 1240, height: 460).padding(20).background(Color(red: 0.48, green: 0.31, blue: 0.2))
+        let host = NSHostingView(rootView: palette)
+        host.frame = NSRect(x: 0, y: 0, width: 1280, height: 500)
+        host.layoutSubtreeIfNeeded()
+        RunLoop.main.run(until: Date().addingTimeInterval(0.4))
+        let rep = try #require(host.bitmapImageRepForCachingDisplay(in: host.bounds))
+        host.cacheDisplay(in: host.bounds, to: rep)
+        try #require(rep.representation(using: .png, properties: [:])).write(to: URL(fileURLWithPath: "/tmp/diorama-all-loading.png"))
+    }
 }

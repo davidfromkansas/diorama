@@ -270,6 +270,17 @@ struct AllResourcesPalette: View {
         let q = query.trimmingCharacters(in: .whitespaces).lowercased()
         return all.filter { q.isEmpty || $0.name.lowercased().contains(q) || $0.description.lowercased().contains(q) }
     }
+    /// Which providers are still being read, for the columns' loading state.
+    private var loadingLabel: String? {
+        let claudeLoading = filter != .codex && (claude.loading || claude.snapshot == nil)
+        let codexLoading = filter != .claude && (codex.loading || codex.snapshot == nil)
+        switch (claudeLoading, codexLoading) {
+        case (true, true): return "Checking Claude and Codex…"
+        case (true, false): return "Checking Claude…"
+        case (false, true): return "Checking Codex…"
+        default: return nil
+        }
+    }
     static func isServer(_ item: CapabilityLibraryItem) -> Bool { item.kind == .tool && item.source == "MCP server" }
 
     var body: some View {
@@ -300,23 +311,24 @@ struct AllResourcesPalette: View {
             }
             .padding(12)
             Rectangle().fill(SidebarStyle.divider).frame(height: 1)
-            if items.isEmpty {
-                Text(claude.loading || codex.loading ? "Stocking the shelves…" : "Nothing matches").font(.system(size: 12)).foregroundStyle(SidebarStyle.secondary)
+            if items.isEmpty && loadingLabel == nil {
+                Text("Nothing matches").font(.system(size: 12)).foregroundStyle(SidebarStyle.secondary)
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
             } else {
                 // One column per kind, each four icons wide and scrolling on its own, so a long
                 // skills list never pushes servers and plugins off screen.
                 let groups = Self.skillGroups(skills)
+                let loading = loadingLabel
                 HStack(alignment: .top, spacing: 12) {
-                    PaletteColumn(items: servers.count) {
+                    PaletteColumn(items: servers.count, loading: loading, tint: SidebarStyle.tint(.inProgress)) {
                         sectionHeader("Servers & apps", count: servers.count, shelf: "Appliances", symbol: "server.rack", tint: SidebarStyle.tint(.inProgress))
                     } content: { tiles { ForEach(servers) { serverTile($0) } } }
                     Rectangle().fill(SidebarStyle.divider).frame(width: 1)
-                    PaletteColumn(items: plugins.count) {
+                    PaletteColumn(items: plugins.count, loading: loading, tint: SidebarStyle.tint(.needsYou)) {
                         sectionHeader("Plugins", count: plugins.count, shelf: "Crates", symbol: "shippingbox.fill", tint: SidebarStyle.tint(.needsYou))
                     } content: { tiles { ForEach(plugins) { pluginTile($0) } } }
                     Rectangle().fill(SidebarStyle.divider).frame(width: 1)
-                    PaletteColumn(items: groups.stacks.count + groups.loose.count) {
+                    PaletteColumn(items: groups.stacks.count + groups.loose.count, loading: loading, tint: SidebarStyle.tint(.done)) {
                         sectionHeader("Skills", count: skills.count, shelf: "Jars", symbol: "sparkles", tint: SidebarStyle.tint(.done))
                     } content: { skillShelf(groups) }
                 }
@@ -611,6 +623,9 @@ private struct SparkPath: ViewModifier, Animatable {
 private struct PaletteColumn<Header: View, Content: View>: View {
     /// How many tiles the grid holds, for the count of those still below.
     let items: Int
+    /// While a provider is still being read: what's being checked.
+    var loading: String? = nil
+    var tint = SidebarStyle.tint(.inProgress)
     @ViewBuilder let header: Header
     @ViewBuilder let content: Content
     @State private var below: CGFloat = 0
@@ -621,7 +636,26 @@ private struct PaletteColumn<Header: View, Content: View>: View {
             header
             GeometryReader { viewport in
                 ScrollView(.vertical) {
-                    VStack(alignment: .leading, spacing: 10) { content }
+                    VStack(alignment: .leading, spacing: 10) {
+                        content
+                        if let loading {
+                            // Generative Loaders' matrix, in the column's colour: big while the column
+                            // is still empty, a small row under what has arrived otherwise.
+                            if items == 0 {
+                                VStack(spacing: 14) {
+                                    MatrixLoader(color: NSColor(tint.dot), animate: true).frame(width: 24, height: 24).scaleEffect(1.8)
+                                    Text(loading).font(.system(size: 12)).foregroundStyle(SidebarStyle.secondary)
+                                }
+                                .frame(maxWidth: .infinity).padding(.top, 70)
+                            } else {
+                                HStack(spacing: 8) {
+                                    MatrixLoader(color: NSColor(tint.dot), animate: true).frame(width: 24, height: 24).scaleEffect(0.75).frame(width: 18, height: 18)
+                                    Text(loading).font(.system(size: 11.5)).foregroundStyle(SidebarStyle.secondary)
+                                }
+                                .frame(maxWidth: .infinity).padding(.top, 6)
+                            }
+                        }
+                    }
                         .padding(.bottom, 24)
                         .background(GeometryReader { proxy in
                             let frame = proxy.frame(in: .named(space))
