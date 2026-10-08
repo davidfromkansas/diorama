@@ -250,12 +250,19 @@ struct AllResourcesPalette: View {
     let sessions: [Provider: String]
     var armFor: (conversation: String, name: String)?
     let close: () -> Void
+    init(library: LibraryModel, folder: String, sessions: [Provider: String], armFor: (conversation: String, name: String)? = nil,
+         claude: CapabilityLibrarySnapshot? = nil, codex: CapabilityLibrarySnapshot? = nil, close: @escaping () -> Void) {
+        self.library = library; self.folder = folder; self.sessions = sessions; self.armFor = armFor; self.close = close
+        _claude = State(initialValue: CapabilityLibraryModel(snapshot: claude))
+        _codex = State(initialValue: CapabilityLibraryModel(snapshot: codex))
+    }
     enum Filter: String, CaseIterable { case all = "All", claude = "Claude", codex = "Codex" }
     @State private var filter = Filter.all
     @State private var query = ""
     @State private var claude = CapabilityLibraryModel()
     @State private var codex = CapabilityLibraryModel()
-    @State private var expanded: Set<String> = []
+    @State private var openPlugin: String?
+    @State private var openStack: String?
     @FocusState private var searchFocused: Bool
 
     private var items: [CapabilityLibraryItem] {
@@ -268,6 +275,7 @@ struct AllResourcesPalette: View {
     var body: some View {
         let items = self.items
         let servers = Self.merged(items.filter { Self.isServer($0) || $0.kind == .app })
+            .sorted { Self.rank($0.item) != Self.rank($1.item) ? Self.rank($0.item) < Self.rank($1.item) : $0.item.name.localizedStandardCompare($1.item.name) == .orderedAscending }
         let plugins = Self.merged(items.filter { $0.kind == .plugin })
         let skills = Self.merged(items.filter { $0.kind == .skill })
         let toConnect = items.filter { $0.availability == .connectionNeeded }.count
@@ -296,12 +304,20 @@ struct AllResourcesPalette: View {
                 Text(claude.loading || codex.loading ? "Stocking the shelves…" : "Nothing matches").font(.system(size: 12)).foregroundStyle(SidebarStyle.secondary)
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
             } else {
-                HStack(alignment: .top, spacing: 16) {
-                    column("MCP servers and apps", servers.count, "appliances") { ForEach(servers) { serverRow($0) } }
-                    column("Plugins", plugins.count, "crates") { ForEach(plugins) { pluginRow($0) } }
-                    column("Skills", skills.count, "jars") { ForEach(skills) { skillRow($0) } }
+                ScrollView(.vertical) {
+                    LazyVStack(alignment: .leading, spacing: 14, pinnedViews: [.sectionHeaders]) {
+                        Section { tiles { ForEach(servers) { serverTile($0) } } } header: {
+                            sectionHeader("MCP servers and apps", count: servers.count, shelf: "Appliances", symbol: "server.rack", tint: SidebarStyle.tint(.inProgress), note: "To connect first, then A–Z")
+                        }
+                        Section { tiles { ForEach(plugins) { pluginTile($0) } } } header: {
+                            sectionHeader("Plugins", count: plugins.count, shelf: "Crates", symbol: "shippingbox.fill", tint: SidebarStyle.tint(.needsYou), note: "Click one to see what it brings")
+                        }
+                        Section { skillShelf(skills) } header: {
+                            sectionHeader("Skills", count: skills.count, shelf: "Jars", symbol: "sparkles", tint: SidebarStyle.tint(.done), note: "Grouped by namespace · click a stack to open it")
+                        }
+                    }
+                    .padding(.horizontal, 12).padding(.bottom, 12)
                 }
-                .padding(.horizontal, 10).padding(.vertical, 12)
             }
             HStack(spacing: 16) {
                 Text(armFor.map { "Click a skill to arm it for \($0.name)" } ?? "Select a chef to arm skills for it")
@@ -349,100 +365,183 @@ struct AllResourcesPalette: View {
         return order.compactMap { entries[$0] }
     }
 
-    private func column<Content: View>(_ title: String, _ count: Int, _ shelf: String, @ViewBuilder content: () -> Content) -> some View {
-        VStack(alignment: .leading, spacing: 6) {
-            HStack(alignment: .firstTextBaseline, spacing: 6) {
-                Text(title).font(.system(size: 12.5, weight: .bold)).foregroundStyle(SidebarStyle.title)
-                Text("\(count) · pantry \(shelf)").font(.system(size: 11.5)).foregroundStyle(SidebarStyle.secondary)
-            }
-            .padding(.horizontal, 10)
-            ScrollView(.vertical) { LazyVStack(alignment: .leading, spacing: 2) { content() } }
+    /// Needs a connection first, then ready, then installed, then disabled.
+    static func rank(_ item: CapabilityLibraryItem) -> Int {
+        switch item.availability { case .connectionNeeded: 0; case .available: 1; case .unverified: 2; case .disabled: 3 }
+    }
+    /// A section's title: big, in its kind's colour, pinned while its tiles scroll under it.
+    private func sectionHeader(_ title: String, count: Int, shelf: String, symbol: String, tint: SidebarStyle.Tint, note: String) -> some View {
+        HStack(spacing: 10) {
+            Image(systemName: symbol).font(.system(size: 13, weight: .semibold)).foregroundStyle(.white)
+                .frame(width: 26, height: 26).background(RoundedRectangle(cornerRadius: 7, style: .continuous).fill(tint.dot))
+            Text(title).font(.system(size: 16, weight: .bold)).foregroundStyle(SidebarStyle.title)
+            Text("\(count)").font(.system(size: 12, weight: .bold)).monospacedDigit().foregroundStyle(tint.text)
+                .padding(.horizontal, 8).frame(minHeight: 20).background(Capsule().fill(tint.dot.opacity(0.18)))
+            Text("pantry " + shelf.lowercased()).font(.system(size: 12)).foregroundStyle(SidebarStyle.secondary)
+            Spacer(minLength: 8)
+            Text(note).font(.system(size: 11.5)).foregroundStyle(SidebarStyle.secondary).lineLimit(1)
         }
-        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
+        .padding(.horizontal, 12).frame(height: 42)
+        .background(RoundedRectangle(cornerRadius: 10, style: .continuous).fill(tint.band))
+        .overlay(alignment: .leading) { RoundedRectangle(cornerRadius: 2).fill(tint.dot).frame(width: 4).padding(.vertical, 8) }
+        .padding(.top, 10)
+        .background(SidebarStyle.background)
+        .accessibilityElement(children: .combine).accessibilityAddTraits(.isHeader)
+    }
+    private func tiles<Content: View>(@ViewBuilder _ content: () -> Content) -> some View {
+        LazyVGrid(columns: [GridItem(.adaptive(minimum: 80, maximum: 96), spacing: 2)], alignment: .leading, spacing: 4) { content() }
     }
     private func providers(_ entry: Entry) -> String {
         entry.providers.map { $0 == .claude ? "Claude" : "Codex" }.sorted().joined(separator: " · ")
     }
-    private func status(_ item: CapabilityLibraryItem) -> some View {
-        let (text, color): (String, Color) = switch item.availability {
-        case .available: ("Ready", SidebarStyle.secondary)
+    /// One word under a tile: what it needs, if anything.
+    private func statusWord(_ item: CapabilityLibraryItem) -> (String, Color) {
+        switch item.availability {
+        case .available: ("", SidebarStyle.secondary)
         case .connectionNeeded: ("Connect", SidebarStyle.tint(.needsYou).text)
         case .disabled: ("Disabled", Color(red: 0.56, green: 0.56, blue: 0.58))
         case .unverified: ("Installed", SidebarStyle.secondary)
         }
-        return Text(text).font(.system(size: 11.5)).foregroundStyle(color)
     }
-    private func serverRow(_ entry: Entry) -> some View {
-        HStack(spacing: 10) {
-            BrandIcon(name: entry.item.name, size: 26).opacity(entry.item.availability == .disabled ? 0.4 : 1)
-            VStack(alignment: .leading, spacing: 1) {
-                Text(entry.item.name).font(.system(size: 12.5, weight: .semibold)).foregroundStyle(SidebarStyle.title).lineLimit(1)
-                Text((entry.item.kind == .app ? "App" : "MCP server") + " · " + providers(entry)).font(.system(size: 11)).foregroundStyle(SidebarStyle.secondary).lineLimit(1)
-            }
-            Spacer(minLength: 4)
-            status(entry.item)
+    private func tile<Icon: View>(_ name: String, sub: String, subColor: Color, help: String, @ViewBuilder icon: () -> Icon) -> some View {
+        VStack(spacing: 5) {
+            icon()
+            Text(name).font(.system(size: 11, weight: .medium)).foregroundStyle(SidebarStyle.title).lineLimit(1).truncationMode(.middle)
+            Text(sub).font(.system(size: 10)).foregroundStyle(subColor).lineLimit(1).frame(height: 12)
         }
-        .padding(.horizontal, 10).frame(height: 40)
-        .help(entry.item.description.isEmpty ? entry.item.name : entry.item.description)
+        .padding(.horizontal, 3).padding(.top, 8).padding(.bottom, 6)
+        .frame(maxWidth: .infinity)
+        .contentShape(RoundedRectangle(cornerRadius: 10))
+        .help(help)
     }
-    private func pluginRow(_ entry: Entry) -> some View {
-        let open = expanded.contains(entry.id)
-        let kids = items.filter { $0.pluginID == entry.item.id && $0.kind != .plugin }
-        let summary = [kids.filter { $0.kind == .skill }.count, kids.filter { Self.isServer($0) }.count]
-        let text = [summary[0] > 0 ? "\(summary[0]) skill" + (summary[0] == 1 ? "" : "s") : nil, summary[1] > 0 ? "\(summary[1]) MCP server" + (summary[1] == 1 ? "" : "s") : nil]
-            .compactMap { $0 }.joined(separator: " · ")
-        return VStack(alignment: .leading, spacing: 0) {
-            Button { if open { expanded.remove(entry.id) } else { expanded.insert(entry.id) } } label: {
-                HStack(spacing: 10) {
-                    Image(systemName: "chevron.right").font(.system(size: 9, weight: .bold)).foregroundStyle(SidebarStyle.secondary)
-                        .rotationEffect(.degrees(open ? 90 : 0)).frame(width: 8)
-                    BrandIcon(name: entry.item.name, size: 26)
-                    VStack(alignment: .leading, spacing: 1) {
-                        Text(entry.item.name).font(.system(size: 12.5, weight: .semibold)).foregroundStyle(SidebarStyle.title).lineLimit(1)
-                        Text("Plugin" + (text.isEmpty ? "" : " · " + text) + " · " + providers(entry)).font(.system(size: 11)).foregroundStyle(SidebarStyle.secondary).lineLimit(1)
+    private func serverTile(_ entry: Entry) -> some View {
+        let (word, color) = statusWord(entry.item)
+        return tile(entry.item.name, sub: word, subColor: color,
+                    help: [entry.item.name, (entry.item.kind == .app ? "App" : "MCP server") + " · " + providers(entry), entry.item.description].filter { !$0.isEmpty }.joined(separator: "\n")) {
+            BrandIcon(name: entry.item.name, size: 38)
+                .opacity(entry.item.availability == .disabled ? 0.4 : 1)
+                .overlay(alignment: .topTrailing) {
+                    if entry.item.availability == .connectionNeeded {
+                        Circle().fill(SidebarStyle.tint(.needsYou).dot).frame(width: 11, height: 11)
+                            .overlay(Circle().strokeBorder(SidebarStyle.background, lineWidth: 2)).offset(x: 3, y: -3)
                     }
-                    Spacer(minLength: 4)
-                    status(entry.item)
                 }
-                .padding(.horizontal, 10).frame(height: 40).contentShape(Rectangle())
+        }
+        .accessibilityElement(children: .combine)
+    }
+    private func pluginContents(_ entry: Entry) -> [CapabilityLibraryItem] { items.filter { $0.pluginID == entry.item.id && $0.kind != .plugin } }
+    private func pluginTile(_ entry: Entry) -> some View {
+        let kids = pluginContents(entry)
+        let skills = kids.filter { $0.kind == .skill }.count, servers = kids.filter { Self.isServer($0) }.count
+        let summary = [skills > 0 ? "\(skills) skill" + (skills == 1 ? "" : "s") : nil, servers > 0 ? "\(servers) MCP" : nil].compactMap { $0 }.joined(separator: " · ")
+        let (word, color) = statusWord(entry.item)
+        return Button { openPlugin = entry.id } label: {
+            tile(entry.item.name, sub: word.isEmpty ? summary : word, subColor: word.isEmpty ? SidebarStyle.secondary : color,
+                 help: entry.item.name + " · plugin · " + providers(entry) + (entry.item.description.isEmpty ? "" : "\n" + entry.item.description)) {
+                BrandIcon(name: entry.item.name, size: 38)
+                    .overlay(alignment: .bottomLeading) {
+                        Image(systemName: "shippingbox").font(.system(size: 7.5, weight: .semibold)).foregroundStyle(Color(red: 0.33, green: 0.33, blue: 0.35))
+                            .frame(width: 15, height: 15)
+                            .background(RoundedRectangle(cornerRadius: 5, style: .continuous).fill(Color.white))
+                            .overlay(RoundedRectangle(cornerRadius: 5, style: .continuous).strokeBorder(Color.black.opacity(0.15), lineWidth: 1))
+                            .offset(x: -4, y: 4)
+                    }
             }
-            .buttonStyle(.plain).pointingHand()
-            .accessibilityValue(open ? "expanded" : "collapsed")
-            if open {
+        }
+        .buttonStyle(.plain).pointingHand()
+        .popover(isPresented: Binding(get: { openPlugin == entry.id }, set: { if !$0 { openPlugin = nil } }), arrowEdge: .bottom) {
+            VStack(alignment: .leading, spacing: 8) {
+                HStack(spacing: 10) {
+                    BrandIcon(name: entry.item.name, size: 32)
+                    VStack(alignment: .leading, spacing: 1) {
+                        Text(entry.item.name).font(.system(size: 14, weight: .bold))
+                        Text("Plugin · " + providers(entry)).font(.system(size: 11.5)).foregroundStyle(SidebarStyle.secondary)
+                    }
+                }
+                if !entry.item.description.isEmpty { Text(entry.item.description).font(.system(size: 12)).foregroundStyle(SidebarStyle.secondary).fixedSize(horizontal: false, vertical: true) }
+                Rectangle().fill(SidebarStyle.divider).frame(height: 1)
+                if kids.isEmpty { Text("Nothing listed inside").font(.system(size: 12)).foregroundStyle(SidebarStyle.secondary) }
                 ForEach(kids) { kid in
                     HStack(spacing: 8) {
                         Image(systemName: kid.kind == .skill ? "sparkle" : "server.rack").font(.system(size: 10, weight: .semibold))
-                            .foregroundStyle(kid.kind == .skill ? SidebarStyle.tint(.done).dot : SidebarStyle.accent)
-                        Text(kid.name).font(.system(size: 12)).foregroundStyle(SidebarStyle.title).lineLimit(1)
+                            .foregroundStyle(kid.kind == .skill ? SidebarStyle.tint(.done).dot : SidebarStyle.accent).frame(width: 14)
+                        Text(kid.name).font(.system(size: 12.5)).lineLimit(1)
+                        Spacer(minLength: 8)
                         Text(kid.kind == .skill ? "Skill" : "MCP server").font(.system(size: 11)).foregroundStyle(SidebarStyle.secondary)
                     }
-                    .padding(.leading, 52).frame(height: 26)
                 }
-                if kids.isEmpty { Text("Nothing listed inside").font(.system(size: 11.5)).foregroundStyle(SidebarStyle.secondary).padding(.leading, 52).frame(height: 26) }
             }
+            .padding(14).frame(width: 300)
+            .environment(\.colorScheme, .light)
         }
-        .background(RoundedRectangle(cornerRadius: 8, style: .continuous).fill(open ? Color(red: 0.98, green: 0.973, blue: 0.96) : .clear))
     }
-    private func skillRow(_ entry: Entry) -> some View {
+    /// Skills, with any namespace of two or more ("vercel:…") folded into one stack.
+    static func skillGroups(_ skills: [Entry]) -> (stacks: [(name: String, skills: [Entry])], loose: [Entry]) {
+        var byPrefix: [String: [Entry]] = [:], order: [String] = []
+        for entry in skills {
+            guard let colon = entry.item.name.firstIndex(of: ":") else { continue }
+            let prefix = String(entry.item.name[..<colon])
+            if byPrefix[prefix] == nil { order.append(prefix) }
+            byPrefix[prefix, default: []].append(entry)
+        }
+        let stacks = order.compactMap { prefix in byPrefix[prefix].flatMap { $0.count >= 2 ? (name: prefix, skills: $0) : nil } }
+        let grouped = Set(stacks.flatMap { $0.skills.map(\.id) })
+        return (stacks, skills.filter { !grouped.contains($0.id) })
+    }
+    @ViewBuilder private func skillShelf(_ skills: [Entry]) -> some View {
+        let groups = Self.skillGroups(skills)
+        tiles {
+            ForEach(groups.stacks, id: \.name) { stack in
+                Button { openStack = openStack == stack.name ? nil : stack.name } label: {
+                    tile(stack.name + ":", sub: "\(stack.skills.count) skills", subColor: SidebarStyle.secondary, help: "\(stack.skills.count) \(stack.name) skills") {
+                        ZStack(alignment: .topLeading) {
+                            RoundedRectangle(cornerRadius: 10, style: .continuous).fill(SidebarStyle.tint(.done).band.opacity(0.7)).frame(width: 32, height: 32).offset(x: 6, y: -4)
+                            RoundedRectangle(cornerRadius: 10, style: .continuous).fill(SidebarStyle.tint(.done).band.opacity(0.85)).frame(width: 34, height: 34).offset(x: 3, y: -2)
+                            skillIcon
+                        }
+                        .overlay(alignment: .topTrailing) {
+                            Text("\(stack.skills.count)").font(.system(size: 10, weight: .bold)).monospacedDigit().foregroundStyle(.white)
+                                .padding(.horizontal, 5).frame(minWidth: 18, minHeight: 18).background(Capsule().fill(SidebarStyle.tint(.done).text))
+                                .offset(x: 9, y: -7)
+                        }
+                    }
+                    .background(RoundedRectangle(cornerRadius: 10, style: .continuous).fill(openStack == stack.name ? SidebarStyle.tint(.done).band : .clear))
+                }
+                .buttonStyle(.plain).pointingHand()
+            }
+            ForEach(groups.loose) { skillTile($0) }
+        }
+        if let name = openStack, let stack = groups.stacks.first(where: { $0.name == name }) {
+            VStack(alignment: .leading, spacing: 6) {
+                HStack {
+                    Text("\(name): · \(stack.skills.count) skills").font(.system(size: 12.5, weight: .bold)).foregroundStyle(SidebarStyle.tint(.done).text)
+                    Spacer()
+                    UtilityIconButton(symbol: "xmark", help: "Close") { openStack = nil }
+                }
+                tiles { ForEach(stack.skills) { skillTile($0, prefix: name + ":") } }
+            }
+            .padding(10)
+            .background(RoundedRectangle(cornerRadius: 12, style: .continuous).fill(SidebarStyle.tint(.done).band.opacity(0.55)))
+        }
+    }
+    private var skillIcon: some View {
+        Image(systemName: "sparkle").font(.system(size: 15, weight: .bold)).foregroundStyle(SidebarStyle.tint(.done).dot)
+            .frame(width: 38, height: 38).background(RoundedRectangle(cornerRadius: 11, style: .continuous).fill(SidebarStyle.tint(.done).band))
+    }
+    private func skillTile(_ entry: Entry, prefix: String = "") -> some View {
         let armed = armFor.map { (library.armedCapabilities[$0.conversation] ?? []).contains { $0.path == entry.item.source } } ?? false
+        let name = prefix.isEmpty ? entry.item.name : String(entry.item.name.dropFirst(prefix.count))
         return Button {
             if let armFor { library.arm(CapabilityInput(name: entry.item.name, path: entry.item.source, kind: "skill"), for: armFor.conversation) }
         } label: {
-            HStack(spacing: 10) {
-                Image(systemName: "sparkle").font(.system(size: 12, weight: .bold)).foregroundStyle(SidebarStyle.tint(.done).dot)
-                    .frame(width: 26, height: 26).background(RoundedRectangle(cornerRadius: 8, style: .continuous).fill(SidebarStyle.tint(.done).band))
-                VStack(alignment: .leading, spacing: 1) {
-                    Text(entry.item.name).font(.system(size: 12.5, weight: .semibold)).foregroundStyle(SidebarStyle.title).lineLimit(1)
-                    Text([entry.item.description, providers(entry)].filter { !$0.isEmpty }.joined(separator: " · ")).font(.system(size: 11)).foregroundStyle(SidebarStyle.secondary).lineLimit(1)
+            tile(name, sub: armed ? "Armed" : "", subColor: SidebarStyle.tint(.done).text,
+                 help: [entry.item.name, entry.item.description, providers(entry), armFor.map { "Click to arm for \($0.name)" } ?? ""].filter { !$0.isEmpty }.joined(separator: "\n")) {
+                skillIcon.overlay(alignment: .topTrailing) {
+                    if armed { Image(systemName: "checkmark.circle.fill").font(.system(size: 13)).foregroundStyle(SidebarStyle.tint(.done).text).background(Circle().fill(.white)).offset(x: 4, y: -4) }
                 }
-                Spacer(minLength: 4)
-                if armed { Label("Armed", systemImage: "checkmark.circle.fill").labelStyle(.titleAndIcon).font(.system(size: 11.5, weight: .semibold)).foregroundStyle(SidebarStyle.tint(.done).text) }
-                else if armFor != nil { Text("Arm").font(.system(size: 11.5)).foregroundStyle(SidebarStyle.secondary) }
             }
-            .padding(.horizontal, 10).frame(height: 40).contentShape(Rectangle())
         }
-        .buttonStyle(.plain).pointingHand().disabled(armFor == nil)
-        .help(armFor.map { "Arm \(entry.item.name) for \($0.name)'s next message" } ?? entry.item.description)
+        .buttonStyle(.plain).pointingHand()
     }
 }
 
