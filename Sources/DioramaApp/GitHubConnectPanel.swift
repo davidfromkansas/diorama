@@ -114,7 +114,7 @@ struct GitHubConnectPanel: View {
 struct GitHubMarkTile: View {
     let size: CGFloat, mark: CGFloat
     private static let image: NSImage? = {
-        guard let url = Bundle.module.url(forResource: "GitHub", withExtension: "svg", subdirectory: "ConnectorBrand"),
+        guard let url = Bundle.dioramaResources?.url(forResource: "GitHub", withExtension: "svg", subdirectory: "ConnectorBrand"),
               let image = NSImage(contentsOf: url) else { return nil }
         image.isTemplate = true
         return image

@@ -5,7 +5,7 @@ struct AgentStatusIcon: NSViewRepresentable {
     let status: AgentSidebarStatus
     let animate: Bool
     static let images: [AgentSidebarStatus: NSImage] = Dictionary(uniqueKeysWithValues: AgentSidebarStatus.allCases.compactMap { status in
-        guard let url = Bundle.module.url(forResource: status.label.lowercased(), withExtension: "png", subdirectory: "AgentStatus"),
+        guard let url = Bundle.dioramaResources?.url(forResource: status.label.lowercased(), withExtension: "png", subdirectory: "AgentStatus"),
               let source = CGImageSourceCreateWithURL(url as CFURL, nil),
               let thumbnail = CGImageSourceCreateThumbnailAtIndex(source, 0, [
                 kCGImageSourceCreateThumbnailFromImageAlways: true,

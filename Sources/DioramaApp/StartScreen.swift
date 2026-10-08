@@ -79,7 +79,7 @@ private struct StartProviderCard: View {
             }
         }
         var image: NSImage? {
-            guard let url = Bundle.module.url(forResource: mark, withExtension: "svg", subdirectory: "ConnectorBrand"),
+            guard let url = Bundle.dioramaResources?.url(forResource: mark, withExtension: "svg", subdirectory: "ConnectorBrand"),
                   let image = NSImage(contentsOf: url) else { return nil }
             image.isTemplate = true
             return image
