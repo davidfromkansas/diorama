@@ -132,7 +132,8 @@ public enum KitchenActivity: String, Sendable, CaseIterable {
     }
     public static func isResource(tool: String) -> Bool {
         let name = tool.lowercased()
-        return name.hasPrefix("mcp__") || resourceTools.contains(name)
+        // Code mode spells them with underscores (`read_mcp_resource`).
+        return name.hasPrefix("mcp__") || resourceTools.contains(name.replacingOccurrences(of: "_", with: ""))
     }
     /// A skill's instructions (`…/skills/<name>/SKILL.md`).
     public static func isSkillFile(_ text: String) -> Bool { text.contains("SKILL.md") }
@@ -142,7 +143,8 @@ public enum KitchenActivity: String, Sendable, CaseIterable {
         let folder = text[..<range.lowerBound].split(whereSeparator: { $0 == "/" || $0 == " " || $0 == "'" || $0 == "\"" }).last
         return folder.map(String.init)
     }
-    static let resourceTools: Set<String> = ["skill", "mcptoolcall", "listmcpresources", "readmcpresource", "listmcpresourcestool", "readmcpresourcetool"]
+    static let resourceTools: Set<String> = ["skill", "mcptoolcall", "listmcpresources", "readmcpresource", "listmcpresourcestool", "readmcpresourcetool",
+                                             "listmcpresourcetemplates", "listmcpresourcetemplatestool"]
 
     /// Tests anywhere in the script → testing; only read-only commands → researching; else commands.
     public static func classify(command: String) -> KitchenActivity {

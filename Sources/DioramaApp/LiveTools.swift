@@ -24,6 +24,13 @@ enum LiveResources {
             let name = detail.trimmingCharacters(in: .whitespacesAndNewlines).split(whereSeparator: \.isWhitespace).first.map(String.init) ?? ""
             return name.isEmpty ? nil : LiveResource(id: "skill:" + name, name: name, kind: .skill)
         }
+        // A skill read as an MCP resource: `skill://<name>`, or `skill://plugin_…/<name>` from a plugin.
+        if detail.hasPrefix("skill://") {
+            let parts = detail.dropFirst(8).split(separator: "/").map(String.init)
+            guard let name = parts.last, !name.isEmpty else { return nil }
+            let plugin = parts.count > 1 && parts[0].hasPrefix("plugin") ? parts[0] : nil
+            return LiveResource(id: "skill:" + name, name: name, kind: .skill, plugin: plugin)
+        }
         guard tool.hasPrefix("mcp__") else { return nil }
         let parts = tool.dropFirst(5).components(separatedBy: "__")
         guard var server = parts.first, !server.isEmpty else { return nil }

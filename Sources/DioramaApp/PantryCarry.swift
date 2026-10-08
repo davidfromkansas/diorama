@@ -17,6 +17,7 @@ enum PantryCarry {
     static func item(for agent: WorkspaceAgent) -> Item? {
         if let item = item(tool: agent.latestTool, detail: agent.latestToolDetail) { return item }
         guard let last = agent.turnWork.resources.last, !last.isEmpty else { return nil }
+        if last.hasPrefix("skill://") { return item(tool: "read_mcp_resource", detail: last) }
         return last.hasPrefix("mcp__") ? item(tool: last, detail: "") : item(tool: "Skill", detail: last)
     }
     static func item(tool: String, detail: String) -> Item? {
@@ -26,6 +27,8 @@ enum PantryCarry {
         guard let resource = LiveResources.resource(tool: tool, detail: detail) else { return nil }
         switch resource.kind {
         case .skill:
+            // A skill a plugin brought (fetched from it by MCP resource): its crate.
+            if resource.plugin != nil { return Item(kind: .plugin, name: resource.name) }
             // A namespaced skill ("vercel:deploy") comes from its plugin.
             if let colon = resource.name.firstIndex(of: ":"), colon != resource.name.startIndex {
                 return Item(kind: .plugin, name: String(resource.name[..<colon]))
