@@ -177,7 +177,8 @@ enum AgentSidebar {
         let tool = agent.latestTool, detail = agent.latestToolDetail
         guard !tool.isEmpty else { return "Working…" }
         let firstLine = detail.split(whereSeparator: \.isNewline).first.map(String.init) ?? ""
-        let file = firstLine.hasPrefix("/") || firstLine.contains(".") && !firstLine.contains(" ") ? (firstLine as NSString).lastPathComponent : ""
+        // A path when the detail is one (`/a/b/File.swift`), never a whole command line.
+        let file = !firstLine.contains(" ") && (firstLine.hasPrefix("/") || firstLine.contains(".")) ? (firstLine as NSString).lastPathComponent : ""
         let script = KitchenActivity.withoutHeredocs(KitchenActivity.shellScript(detail)).lowercased()
         switch KitchenActivity.classify(tool: tool, detail: detail) {
         case .planning: return "Planning next steps…"
