@@ -28,7 +28,8 @@ enum LiveResources {
         if detail.hasPrefix("skill://") {
             let parts = detail.dropFirst(8).split(separator: "/").map(String.init)
             guard let name = parts.last, !name.isEmpty else { return nil }
-            let plugin = parts.count > 1 && parts[0].hasPrefix("plugin") ? parts[0] : nil
+            // The plugin's own name when it's installed (see `PluginRegistry`), else its id.
+            let plugin = parts.count > 1 && parts[0].hasPrefix("plugin") ? PluginRegistry.shared.name(for: parts[0]) ?? parts[0] : nil
             return LiveResource(id: "skill:" + name, name: name, kind: .skill, plugin: plugin)
         }
         guard tool.hasPrefix("mcp__") else { return nil }

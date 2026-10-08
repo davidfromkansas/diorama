@@ -28,7 +28,7 @@ enum PantryCarry {
         switch resource.kind {
         case .skill:
             // A skill a plugin brought (fetched from it by MCP resource): its crate.
-            if resource.plugin != nil { return Item(kind: .plugin, name: resource.name) }
+            if let plugin = resource.plugin { return Item(kind: .plugin, name: plugin.hasPrefix("plugin_") ? resource.name : plugin) }
             // A namespaced skill ("vercel:deploy") comes from its plugin.
             if let colon = resource.name.firstIndex(of: ":"), colon != resource.name.startIndex {
                 return Item(kind: .plugin, name: String(resource.name[..<colon]))
