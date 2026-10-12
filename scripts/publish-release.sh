@@ -37,6 +37,7 @@ Download **$image**, open it, and drag **Diorama** into **Applications**. No Git
 
 - Requires Apple Silicon (M1 or newer) and macOS 14 or later. Intel Macs are not supported.
 - Connect OpenAI or Claude during onboarding; GitHub setup is optional and never automatically uploads code.
+- Anonymous usage stats (a random install ID, the app and macOS version, and when you first open Diorama and add a project; never code, prompts, project names or files) are on by default and can be turned off in onboarding or Settings.
 - The corresponding official Codex CLI or Claude Code CLI must be installed and authenticated. Desktop apps are optional. Claude subscription authentication is supported.
 - Swift regression and Claude helper tests passed. Installer signature, notarization ticket, and Gatekeeper checks passed.
 - Early testing build: fresh-Mac setup and authentication still need user testing. Claude Desktop observation depends on its local storage format and excludes Chat, Cowork, cloud, and SSH sessions.

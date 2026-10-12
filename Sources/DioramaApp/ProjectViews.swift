@@ -110,6 +110,7 @@ struct ProjectViewSelection: Codable, Equatable {
             $0.folderIdentity == project.folderIdentity || ($0.isGitBacked && project.isGitBacked && $0.commonDirectory == project.commonDirectory)
         }) { selectedID = existing.id; return }
         projects.append(project); selectedID = project.id; save()
+        UsageStats.shared.record(.firstProject)
     }
     func sessions(_ project: DioramaProject, library: LibraryModel) -> [Session] {
         // Fast path: nothing about projects, sessions or associations changed since the last
@@ -722,6 +723,7 @@ struct ProjectDraftView: View {
                     _ = try await ProjectGit.localBranches(found.folder)
                     if !projects.projects.contains(where: { $0.commonDirectory == found.commonDirectory }) {
                         projects.projects.append(found); projects.save()
+                        UsageStats.shared.record(.firstProject)
                     }
                     projects.update(projectID) { $0.draftStart = SessionStartOptions(folder: url.resolvingSymlinksInPath().path, reference: "", createWorktree: start.createWorktree) }
                     await loadStart(resetReference: true)
