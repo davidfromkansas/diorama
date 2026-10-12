@@ -49,26 +49,24 @@ extension ExecutionController {
         defer { changingPermissions.remove(id) }
         guard var task = tasks[id], task.attached else { throw ExecutionRPCRejection("Reconnect before choosing permissions.") }
         guard !requests.values.contains(where: { $0.threadID == id && $0.isBlocking }) else { throw ExecutionRPCRejection("Resolve the outstanding request before changing permissions.") }
-        if task.permissionsUnconfirmed && choice == .inherit { throw ExecutionRPCRejection("Permission outcome is unconfirmed. Select a mode to reconcile before sending.") }
+        // Nothing chosen and nothing confirmed never blocks Send: the message goes out in the
+        // provider's own default (or the mode you last picked here, re-applied below).
         let moved = task.permissionFolder.map { URL(fileURLWithPath: $0).standardizedFileURL != URL(fileURLWithPath: task.folder).standardizedFileURL } ?? false
-        if moved && choice == .inherit { throw ExecutionRPCRejection("The working folder changed. Choose permissions for the new workspace before sending.") }
         let selected = model.isEmpty ? task.model : model
         // Inherit keeps live provider settings. A bookmark is not a request to change them.
         // Leaving Claude Plan Mode retains the existing explicit execution-mode transition.
         let leavingClaudePlan = task.provider == .claude && task.approvalPolicy.string == "plan" && mode != "plan"
-        let desired = choice == .inherit ? (leavingClaudePlan ? task.permissionPreference : nil) : choice
+        // A mode you picked follows the conversation to a moved working folder.
+        var desired = choice == .inherit ? (leavingClaudePlan || moved ? task.permissionPreference : nil) : choice
+        // Leaving an imported Plan Mode session with no mode picked: Claude's own default.
+        if desired == nil, leavingClaudePlan { desired = providerDefaults.choice(for: .claude) ?? .user }
         if let desired, let reason = permissionUnavailable(desired, model: selected) { throw ExecutionRPCRejection(reason) }
         guard let desired else {
-            if task.provider == .claude, task.approvalPolicy.string == "plan", mode != "plan" {
-                throw ExecutionRPCRejection("Choose execution permissions before leaving this imported Plan Mode session.")
-            }
-            guard task.approvalPolicy != .null, task.provider == .claude || task.sandbox != .null || task.activePermissionProfile != .null else {
-                throw ExecutionRPCRejection("Permissions unconfirmed. Choose a permission mode before sending.")
-            }
+            tasks[id]?.permissionsUnconfirmed = false
             if task.permissionNotice == "Provider permissions differ from your saved choice. Select a mode before sending." {
                 tasks[id]?.permissionNotice = nil
             }
-            return // Preserve known custom settings without replacing them with a preset.
+            return // Keep whatever the provider is running, its own default or known custom settings.
         }
         guard desired != .inherit, task.provider == .claude || desired != .acceptEdits else {
             throw ExecutionRPCRejection("This permission option is not supported by the selected provider.")
@@ -87,7 +85,6 @@ extension ExecutionController {
                 task.approvalPolicy = .string(effective); task.sandbox = .null
                 task.model = reply["model"].string ?? selected
             } catch {
-                tasks[id]?.permissionsUnconfirmed = true
                 tasks[id]?.permissionNotice = "Claude permission change failed: \(error.localizedDescription). No message was sent."
                 throw ExecutionRPCRejection(tasks[id]!.permissionNotice!)
             }
@@ -117,14 +114,15 @@ extension ExecutionController {
                     throw ExecutionRPCRejection("Codex did not confirm the requested permissions.")
                 }
             } catch {
-                tasks[id]?.permissionsUnconfirmed = true
                 tasks[id]?.permissionNotice = "Permission change could not be confirmed. No message was sent. \(error.localizedDescription)"
                 throw ExecutionRPCRejection(tasks[id]!.permissionNotice!)
             }
         }
         guard tasks[id]?.attached == true, tasks[id]?.phase.active != true else { throw ExecutionRPCRejection("Conversation changed while applying permissions. Reconnect before sending.") }
         task.permissionsUnconfirmed = false
-        task.permissionPreference = desired; task.permissionFolder = task.folder; task.permissionNotice = nil
+        // Only a mode you picked is remembered; a fallback to the provider default isn't.
+        if choice != .inherit { task.permissionPreference = desired }
+        task.permissionFolder = task.folder; task.permissionNotice = nil
         tasks[id] = task
         persist()
     }

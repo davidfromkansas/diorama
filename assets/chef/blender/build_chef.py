@@ -275,14 +275,19 @@ def main():
     for pb in arm.pose.bones:
         pb.location = (0, 0, 0); pb.rotation_quaternion = (1, 0, 0, 0)
     arm.animation_data.action = None
+    # The app shows the chef a couple of hundred pixels tall: smaller JPEG textures look the same
+    # there (docs/restaurant/guests/downsample-comparison.png) and shrink the file ~6x. The
+    # editable .blend above keeps full resolution.
+    import texture_budget
+    texture_budget.apply(mesh, base=1024, normal=512, metal_roughness=256)
     bpy.ops.object.select_all(action="DESELECT")
     arm.select_set(True); mesh.select_set(True)
     glb = os.path.join(OUT, "chef-animated.glb")
     bpy.ops.export_scene.gltf(filepath=glb, use_selection=True, export_animations=True,
                               export_animation_mode="ACTIONS", export_force_sampling=True,
                               export_frame_step=1, export_def_bones=False, export_skins=True,
-                              export_influence_nb=4, export_yup=True, export_image_format="AUTO",
-                              export_optimize_animation_size=False, export_rest_position_armature=True,
+                              export_influence_nb=4, export_yup=True, export_image_format="JPEG", export_image_quality=82,
+                              export_optimize_animation_size=True, export_rest_position_armature=True,
                               export_anim_slide_to_zero=True, export_leaf_bone=False)
 
     src_hash = hashlib.sha256(open(SRC, "rb").read()).hexdigest()

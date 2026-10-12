@@ -6,9 +6,13 @@ import SceneKit
     static func make(_ area: KitchenArea) -> SCNNode {
         switch area.id {
         case "elevator": return elevator(area)
-        case "bell": return bell(area)
+        case "bell": return KitchenFixtures.make(area) ?? bell(area)
         case "break": return breakTable(area)
-        case "pantry": return pantry(area)
+        case "pantry": return KitchenFixtures.make(area) ?? pantry(area)
+        // The modelled range; the procedural counter stands in if it can't load.
+        case "stove": return KitchenStove.shared?.make() ?? counter(area)
+        case "cooking": return KitchenIsland.shared?.make(area) ?? counter(area)
+        case "order", "prep", "tasting": return KitchenFixtures.make(area) ?? counter(area)
         default: return counter(area)
         }
     }
@@ -190,31 +194,60 @@ import SceneKit
         return root
     }
 
-    /// The break room: a low coffee table between two rows of Eames lounge chairs (the bundled
-    /// Herman Miller Classic model). Each chair sits behind a chef slot, facing the table.
+    /// The break room (`BreakRoomLayout`): arcade cabinets against the far wall, the vending
+    /// machine and the espresso machine on its coffee bar against the left wall, and two Eames
+    /// lounge chairs (the bundled Herman Miller Classic model) across a round walnut side table.
     static let loungeChairScale: CGFloat = 1.45
     /// How far a seated chef's root sits in front of its chair's centre.
     static let loungeChairSetback: Float = 0.12
     private static func breakTable(_ area: KitchenArea) -> SCNNode {
         let root = SCNNode(); root.name = area.id
         root.position = SCNVector3(area.footprint.midX, KitchenLayout.floorTop, area.footprint.midY)
+        let center = SIMD2(Float(area.footprint.midX), Float(area.footprint.midY))
         let walnut = material(NSColor(red: 0.34, green: 0.2, blue: 0.1, alpha: 1))
         let ceramic = material(NSColor(red: 0.96, green: 0.94, blue: 0.86, alpha: 1))
-        let w = area.footprint.width - 0.6, d = area.footprint.height * 0.6, top: CGFloat = 0.42
-        let slab = SCNBox(width: w, height: 0.06, length: d, chamferRadius: 0.03); slab.materials = [walnut]
-        let table = SCNNode(geometry: slab); table.name = "coffee table"; table.position.y = top; root.addChildNode(table)
-        for x in [-w / 2 + 0.2, w / 2 - 0.2] { for z in [-d / 2 + 0.12, d / 2 - 0.12] {
-            let legShape = SCNCylinder(radius: 0.035, height: top); legShape.materials = [walnut]
-            let leg = SCNNode(geometry: legShape); leg.position = SCNVector3(x, top / 2, z); root.addChildNode(leg)
-        } }
-        for i in 0..<4 {
-            let pot = SCNCylinder(radius: 0.09, height: 0.12); pot.materials = [ceramic]
-            let node = SCNNode(geometry: pot); node.position = SCNVector3(-w / 2 + 0.6 + CGFloat(i) * (w - 1.2) / 3, top + 0.09, 0)
+        let top: CGFloat = 0.5, radius = area.footprint.width / 2
+        let disc = SCNCylinder(radius: radius, height: 0.05); disc.materials = [walnut]
+        let table = SCNNode(geometry: disc); table.name = "side table"; table.position.y = top; root.addChildNode(table)
+        let stemShape = SCNCylinder(radius: 0.04, height: top); stemShape.materials = [walnut]
+        let stem = SCNNode(geometry: stemShape); stem.position.y = top / 2; root.addChildNode(stem)
+        let footShape = SCNCylinder(radius: radius * 0.6, height: 0.03); footShape.materials = [walnut]
+        let foot = SCNNode(geometry: footShape); foot.position.y = 0.015; root.addChildNode(foot)
+        for x: CGFloat in [-0.09, 0.1] {
+            let cup = SCNCylinder(radius: 0.05, height: 0.09); cup.materials = [ceramic]
+            let node = SCNNode(geometry: cup); node.position = SCNVector3(x, top + 0.07, x * 0.6); root.addChildNode(node)
+        }
+        func place(_ node: SCNNode, at point: SIMD2<Float>, facing: Float) {
+            node.eulerAngles.y = CGFloat(facing)
+            node.position = SCNVector3(CGFloat(point.x - center.x), node.position.y, CGFloat(point.y - center.y))
             root.addChildNode(node)
         }
+        // The coffee bar, and the machines (the espresso machine on the bar's top).
+        var barTop: SCNNode?
+        if let bar = (try? GLBStaticMeshes.load("coffee_bar", subdirectory: "KitchenStations"))?["coffee_bar"] {
+            let node = bar.clone(); node.name = "coffee bar"
+            place(node, at: BreakRoomLayout.coffeeBar.center, facing: BreakRoomLayout.coffeeBar.facing)
+            barTop = node.childNode(withName: "machine", recursively: true)
+        }
+        let models = KitchenFood.models(in: "BreakRoom")
+        for machine in BreakRoomLayout.machines {
+            guard let template = models[machine.asset] else { continue }
+            let node = template.clone(); node.name = "break machine:" + machine.asset
+            node.simdScale = SIMD3(repeating: machine.scale)
+            if machine.kind == .espresso {
+                // Brushed steel without an environment to reflect reads darker than it is.
+                node.enumerateHierarchy { n, _ in n.geometry?.materials.forEach { $0.metalness.contents = 0.4; $0.roughness.contents = 0.35 } }
+            }
+            if machine.onBar, let anchor = barTop {
+                let spot = anchor.simdConvertPosition(.zero, to: root)
+                node.position.y = CGFloat(spot.y)
+                place(node, at: center + SIMD2(spot.x, spot.z), facing: machine.facing)
+            } else {
+                place(node, at: machine.center, facing: machine.facing)
+            }
+        }
         if let chair = OfficeLoungeAssets.template("EamesLounge") {
-            let center = SIMD2(Float(area.footprint.midX), Float(area.footprint.midY))
-            for seat in KitchenLayout.chefSlots[area.id] ?? [] {
+            for seat in BreakRoomLayout.chairs {
                 let forward = SIMD2(sin(seat.facing), cos(seat.facing))
                 let spot = seat.stand - forward * loungeChairSetback - center
                 let node = chair.clone(); node.name = "lounge chair"

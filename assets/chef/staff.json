@@ -1,0 +1,17 @@
+{
+  "note": "Kitchen staff, fitted to the chef's skeleton by blender/build_variant.py (build_variants.sh --staff). The manager (head chef) comes in from the dining room when a chef strikes the gong and talks with it until you answer. Never assigned to an agent.",
+  "budget": {
+    "triangles": 5000,
+    "base": 1024,
+    "normal": 512,
+    "metal_roughness": 256,
+    "bake": true
+  },
+  "characters": [
+    {
+      "id": "manager",
+      "name": "Head chef",
+      "source": "Meshy_AI_Little_Chef_with_Wood_1009020807_texture.glb"
+    }
+  ]
+}

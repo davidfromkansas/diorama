@@ -44,7 +44,7 @@ private actor PermissionTransport: ExecutionTransport {
         let controller = ExecutionController(transport: stub, journal: journal)
         await controller.connect()
         let id = try await controller.prepare(folder: "/tmp", title: "Test", model: "")
-        #expect(controller.tasks[id]?.permissionPreference == .autoReview)
+        #expect(controller.tasks[id]?.permissionPreference == nil) // Nothing picked: your provider default.
         await stub.configure(fail: true)
         do { try await controller.send(id: id, prompt: "Fixture", approvalReview: .user); Issue.record("Expected message rejection") } catch {}
         #expect(controller.tasks[id]?.permissionPreference == .user)
@@ -63,7 +63,7 @@ private actor PermissionTransport: ExecutionTransport {
         await stub.configure(reject: true)
         do { try await c.send(id: id, prompt: "Fixture", approvalReview: .user); Issue.record("Expected rejection") } catch {}
         #expect(await stub.calls.filter { $0.0 == "turn/start" }.isEmpty)
-        #expect(c.tasks[id]?.permissionPreference == .autoReview)
+        #expect(c.tasks[id]?.permissionPreference == nil)
         #expect(c.tasks[id]?.permissionNotice != nil)
     }
     @Test func claudeRestoresExecutionPreferenceAfterPlanning() async throws {
@@ -77,9 +77,16 @@ private actor PermissionTransport: ExecutionTransport {
         #expect(controller.tasks[task.id]?.approvalPolicy == .string("acceptEdits"))
         #expect(await stub.calls.last?.1["executionPermissionMode"] == .string("acceptEdits"))
         #expect(await stub.calls.last?.1["sandboxPolicy"] == .null)
+        // Leaving an imported Plan Mode session with nothing picked uses your Claude default.
+        let home = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        defer { try? FileManager.default.removeItem(at: home) }
+        controller.providerDefaults = ProviderPermissionDefaults(home: home)
+        try controller.providerDefaults.set(.fullAccess, for: .claude)
         controller.tasks[task.id]?.permissionPreference = nil
         controller.tasks[task.id]?.approvalPolicy = .string("plan")
-        do { try await controller.preparePermissions(id: task.id, mode: "default"); Issue.record("Imported Plan Mode guessed an execution preference") } catch {}
+        try await controller.preparePermissions(id: task.id, mode: "default")
+        #expect(await stub.calls.last?.1["permissionMode"] == .string("bypassPermissions"))
+        #expect(controller.tasks[task.id]?.permissionPreference == nil) // A fallback isn't remembered as your pick.
     }
     @Test func externalMismatchPreservesConfirmedSettings() async throws {
         let c = ExecutionController(transport: PermissionTransport())
@@ -90,13 +97,17 @@ private actor PermissionTransport: ExecutionTransport {
         try await c.preparePermissions(id: task.id)
         #expect(c.tasks[task.id]?.approvalReviewer == "user")
     }
-    @Test func movedWorkspaceRequiresChoiceAndReplacedApprovalCannotBeAnswered() async throws {
-        let c = ExecutionController(transport: PermissionTransport())
+    @Test func movedWorkspaceReappliesYourModeAndReplacedApprovalCannotBeAnswered() async throws {
+        let stub = PermissionTransport(), c = ExecutionController(transport: stub)
         await c.connect()
         var task = ExecutedTask(id: "test", title: "Test", folder: "/tmp/new", attached: true)
         task.permissionFolder = "/tmp/old"; task.permissionPreference = .autoReview
         c.tasks[task.id] = task
-        do { try await c.preparePermissions(id: task.id); Issue.record("Old workspace permissions reused") } catch {}
+        // The mode you picked is applied again for the new folder, rather than blocking Send.
+        try await c.preparePermissions(id: task.id)
+        let resume = await stub.calls.last { $0.0 == "thread/resume" }?.1
+        #expect(resume?["cwd"] == .string("/tmp/new"))
+        #expect(resume?["config"]["sandbox_workspace_write.writable_roots"] == .array([.string("/tmp/new")]))
         let old = ExecutionRequest(wireID: .string("reused"), method: "item/commandExecution/requestApproval", params: .object(["threadId": .string(task.id)]))
         let current = ExecutionRequest(wireID: .string("reused"), method: old.method, params: old.params)
         await c.receive(.object(["id": current.wireID, "method": .string(current.method), "params": current.params]))
@@ -156,7 +167,7 @@ extension PermissionLifecycleTests {
         }
     }
 
-    @Test func inheritPreservesCustomProfileAndRejectsUnconfirmedChange() async throws {
+    @Test func inheritPreservesCustomProfileAndSendsWhenUnconfirmed() async throws {
         let stub = PermissionTransport(), c = ExecutionController(transport: stub)
         var task = ExecutedTask(id: "custom", title: "Custom", folder: "/tmp", attached: true)
         task.permissionPreference = .fullAccess
@@ -166,8 +177,10 @@ extension PermissionLifecycleTests {
         try await c.preparePermissions(id: task.id)
         #expect(await stub.calls.isEmpty)
         #expect(c.tasks[task.id]?.activePermissionProfile == task.activePermissionProfile)
+        // An unconfirmed change no longer blocks Send: the provider's settings stay as they are.
         c.tasks[task.id]?.permissionsUnconfirmed = true
-        await #expect(throws: ExecutionRPCRejection.self) { try await c.preparePermissions(id: task.id) }
+        try await c.preparePermissions(id: task.id)
         #expect(await stub.calls.isEmpty)
+        #expect(c.tasks[task.id]?.permissionsUnconfirmed == false)
     }
 }

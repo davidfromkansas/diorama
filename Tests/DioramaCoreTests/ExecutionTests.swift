@@ -276,8 +276,11 @@ private actor ExecutionStub: ExecutionTransport {
         let stub = ExecutionStub(); let c = ExecutionController(transport: stub)
         await c.connect()
         let id = try await c.prepare(folder: "/tmp", title: "Defaults", model: "")
-        #expect(await stub.parameters["thread/start"]?["approvalsReviewer"] == .string("auto_review"))
-        #expect(c.tasks[id]?.approvalReviewer == "auto_review")
+        // Nothing chosen: no permission parameters, so Codex starts in your own default.
+        #expect(await stub.parameters["thread/start"]?["approvalsReviewer"] == .null)
+        #expect(await stub.parameters["thread/start"]?["approvalPolicy"] == .null)
+        #expect(await stub.parameters["thread/start"]?["sandbox"] == .null)
+        #expect(c.tasks[id]?.permissionPreference == nil)
         try await c.send(id: id, prompt: "Keep settings")
         #expect(await stub.parameters["turn/start"]?["approvalsReviewer"] == .null)
         try await c.resumeImported(imported())
@@ -454,5 +457,59 @@ extension ExecutionTests {
         let instructions = await stub.parameters["thread/start"]?["developerInstructions"].string
         #expect(instructions == AgentInstructions.compose(nil))
         #expect(instructions?.contains("update_plan") == true)
+    }
+}
+
+/// A Claude conversation that resumes in its default mode, as Claude Code does.
+private actor ClaudeResumeStub: ExecutionTransport {
+    nonisolated let events = AsyncStream<WireValue> { $0.finish() }
+    private(set) var permissionRequests: [String] = []
+    var acceptPermissions = true
+    func refusePermissions() { acceptPermissions = false }
+    func connect() {}
+    func request(_ method: String, _ params: WireValue) throws -> WireValue {
+        switch method {
+        case "thread/read": return .object(["thread": .object(["id": params["threadId"], "cwd": .string(NSTemporaryDirectory())])])
+        case "thread/goal/get": return .object(["goal": .null])
+        case "thread/resume": return .object(["thread": .object(["id": params["threadId"]]), "model": .string("claude/default"), "approvalPolicy": .string("default")])
+        case "diorama/permissions/set":
+            let mode = params["permissionMode"].string ?? ""
+            permissionRequests.append(mode)
+            guard acceptPermissions else { throw ExecutionRPCRejection("Auto mode unavailable for this model.") }
+            return .object(["permissionMode": .string(mode)])
+        case "turn/start": throw AppServerFailure("Fixture must never start a turn")
+        default: return .object([:])
+        }
+    }
+    func respond(id: WireValue, result: WireValue) {}
+    func reject(id: WireValue, message: String) {}
+    func shutdown() {}
+}
+
+@MainActor struct ClaudeReconnectTests {
+    private func restored(_ stub: ClaudeResumeStub) async -> (ExecutionController, Session) {
+        let controller = ExecutionController(transport: stub)
+        await controller.connect()
+        var task = ExecutedTask(id: "claude-thread", provider: .claude, title: "Restored", folder: NSTemporaryDirectory(), parentID: nil, phase: .disconnected)
+        task.permissionPreference = .autoReview
+        controller.tasks[task.id] = task
+        return (controller, task.session)
+    }
+    @Test func reconnectingPutsBackTheSavedClaudeMode() async throws {
+        let stub = ClaudeResumeStub()
+        let (controller, session) = await restored(stub)
+        try await controller.resumeImported(session)
+        #expect(await stub.permissionRequests == ["auto"])
+        #expect(controller.tasks["claude-thread"]?.approvalPolicy.string == "auto")
+        #expect(controller.tasks["claude-thread"]?.permissionsUnconfirmed == false)
+    }
+    @Test func aSavedModeThatCannotBeRestoredRunsInTheDefaultAndSaysSo() async throws {
+        let stub = ClaudeResumeStub(); await stub.refusePermissions()
+        let (controller, session) = await restored(stub)
+        try await controller.resumeImported(session)
+        #expect(controller.tasks["claude-thread"]?.attached == true)
+        // Send isn't blocked; the note names the mode that didn't come back.
+        #expect(controller.tasks["claude-thread"]?.permissionsUnconfirmed == false)
+        #expect(controller.tasks["claude-thread"]?.permissionNotice == "Couldn’t restore Approve for me. Using your Claude default.")
     }
 }

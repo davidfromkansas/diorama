@@ -21,6 +21,45 @@ extension KitchenLayout {
     static let minimumDwell: Double = 2
     /// How long a newly arrived chef reads its order at the rail.
     static let orderReading: Double = 3
+    /// The arrival wave (`arrive_wave`: two jumps waving both hands, 2.4 s) and a beat after it,
+    /// before it heads for the rail.
+    static let arrivalWave: Double = 2.6
+    /// The service gong hangs at the bell footprint's centre, its face toward the camera.
+    static var gongCenter: SIMD2<Float> {
+        let f = areas.first { $0.id == "bell" }?.footprint ?? .init(x: -0.9, y: 4.9, width: 1.8, height: 0.6)
+        return SIMD2(Float(f.midX), Float(f.midY))
+    }
+    /// Where a chef stands to strike the gong: in front of it and to its right, turned 45° toward
+    /// it, so its mallet head (1.25 ahead and 0.17 to the right of it at impact, see the
+    /// `strike_gong` clip) lands on the gong's face just right of centre.
+    static var gongStrike: ChefStation {
+        let facing = -0.75 * Float.pi, forward = SIMD2(sin(facing), cos(facing)), right = SIMD2(-cos(facing), sin(facing))
+        let impact = gongCenter + SIMD2(0.1, 0.1)
+        return ChefStation(id: "gong", area: "gong", stand: impact - forward * 0.89 * chefScale - right * 0.12 * chefScale, facing: facing)
+    }
+    /// Where the manager comes in from the dining room and leaves again: the open front of the
+    /// kitchen between the break room and the serving window.
+    static var diningDoor: ChefStation {
+        ChefStation(id: "dining door", area: "door", stand: SIMD2(1.9, Float(floor.maxY) - 0.6), facing: .pi)
+    }
+    /// Where the manager stands to talk with a chef waiting at `stand`: out from the gong, a step
+    /// to one side, facing the chef; the first spot that is free floor and clear of other
+    /// waiting chefs (`others`).
+    static func managerSpot(talkingTo stand: SIMD2<Float>, others: [SIMD2<Float>]) -> ChefStation {
+        let navigation = chefNavigation
+        var out = stand - gongCenter
+        out = simd_length(out) > 0.01 ? simd_normalize(out) : SIMD2(0, -1)
+        let side = SIMD2(-out.y, out.x), reach = 1.6 as Float
+        let candidates = [out + side * 0.6, out - side * 0.6, out, side, -side].map { stand + simd_normalize($0) * reach }
+        let spot = candidates.first { p in navigation.isFree(p) && others.allSatisfy { simd_distance($0, p) > 0.9 } } ?? candidates[0]
+        let toward = stand - spot
+        return ChefStation(id: "manager", area: "manager", stand: spot, facing: atan2(toward.x, toward.y))
+    }
+    /// Just outside the elevator doors, facing the camera: a new chef steps out here and waves.
+    static var elevatorLanding: ChefStation {
+        let door = areas.first { $0.id == "elevator" }?.footprint ?? .init(x: -11.6, y: -7.8, width: 2.4, height: 2.0)
+        return ChefStation(id: "elevator landing", area: "elevator", stand: SIMD2(Float(door.midX), Float(door.maxY) + 1.2), facing: 0)
+    }
 
     /// Where an agent's chef works. Station ids are `KitchenArea.id`s.
     struct ChefWork: Equatable {
@@ -98,11 +137,18 @@ extension KitchenLayout {
         let shot = work.oneShot.map { ChefIntent.OneShot(id: "\($0):\(agent.status.rawValue):\(cause)", clip: $0, restored: restored) }
         let key = [work.area ?? "here", slot?.id ?? "", work.loop, work.hand?.rawValue ?? "", shot?.id ?? ""].joined(separator: "|")
         return ChefIntent(key: key, station: work.area == nil ? nil : slot, loop: work.loop, oneShot: shot, hand: work.hand,
-                          pickup: work.deliversPlate && !restored ? pickup : nil, urgent: work.urgent, prelude: restored ? nil : work.prelude)
+                          pickup: work.deliversPlate && !restored ? pickup : nil, urgent: work.urgent, prelude: restored ? nil : work.prelude,
+                          strike: work.area == "bell" && shot != nil && !restored ? gongStrike : nil)
     }
     /// A new agent reads its order at the rail before starting work.
+    /// A new chef's first steps: out of the elevator, then a wave to the camera.
+    static func exitIntent(for agent: String) -> ChefIntent {
+        ChefIntent(key: "arrival-exit", station: elevatorLanding, loop: "idle_available",
+                   oneShot: .init(id: "arrive_wave:" + agent, clip: "arrive_wave", restored: false))
+    }
+    /// Then to the order rail, to read its ticket.
     static func arrivalIntent(at slot: ChefStation) -> ChefIntent {
-        ChefIntent(key: "arrival|" + slot.id, station: slot, loop: "read_ticket", hand: .ticket, prelude: "arrive_wave")
+        ChefIntent(key: "arrival|" + slot.id, station: slot, loop: "read_ticket", hand: .ticket)
     }
 
     /// Stand slots per area, in preference order. Chefs face the counter, standing so their
@@ -125,18 +171,17 @@ extension KitchenLayout {
             switch area.id {
             case "elevator":
                 slots = [ChefStation(id: "", area: area.id, stand: SIMD2(Float(f.midX), Float(f.midY)), facing: 0)]
-            case "bell": // a ring around the bell, everyone facing it
-                let center = SIMD2(Float(f.midX), Float(f.midY)), radius = 0.5 + reach + 0.55
-                slots = (0..<area.spots).map { i in
-                    let angle = Float(i) / Float(area.spots) * 2 * .pi + .pi / 2
-                    let stand = center + SIMD2(cos(angle), sin(angle)) * radius
+            case "bell": // a curve behind and beside the gong, everyone facing it (its face stays in view)
+                let center = gongCenter, radius = Float(1.7)
+                let order: [Float] = [0, -38, 38, -76, 76, -100] // the middle first, then out to the sides
+                slots = order.map { degrees in
+                    let angle = degrees * .pi / 180
+                    let stand = center + SIMD2(sin(angle), -cos(angle)) * radius
                     let toward = center - stand
                     return ChefStation(id: "", area: area.id, stand: stand, facing: atan2(toward.x, toward.y))
                 }
-            case "break": // seats along both sides of the table
-                let seat = Float(0.7), gap = (maxX - minX) / Float(area.spots / 2)
-                slots = row(area.id, from: SIMD2(minX, minZ - seat), to: SIMD2(maxX, minZ - seat), facing: 0, gap: gap)
-                    + row(area.id, from: SIMD2(minX, maxZ + seat), to: SIMD2(maxX, maxZ + seat), facing: .pi, gap: gap)
+            case "break": // the machines, the two chairs and the standing circles (see `BreakRoom`)
+                slots = BreakRoomLayout.spots.map(\.station)
             case "pantry": // a few roomy spots along the shelves
                 slots = row(area.id, from: SIMD2(maxX + reach, minZ), to: SIMD2(maxX + reach, maxZ), facing: -.pi / 2, gap: (maxZ - minZ) / Float(area.spots))
             default:
@@ -162,7 +207,7 @@ extension KitchenLayout {
         let clearance = 0.35 * chefScale
         navigation.min = SIMD2(Float(floor.minX) + clearance, Float(floor.minY) + clearance)
         navigation.max = SIMD2(Float(floor.maxX) - clearance, Float(floor.maxY) - clearance)
-        let fixtures = areas.filter { $0.id != "elevator" }.map(\.footprint) + connectors + breakRoomWalls + elevatorWalls
+        let fixtures = areas.filter { $0.id != "elevator" }.map(\.footprint) + connectors + breakRoomWalls + elevatorWalls + BreakRoomLayout.obstacles
         navigation.obstacles = fixtures.map { r in
             .init(min: SIMD2(Float(r.minX) - clearance, Float(r.minY) - clearance), max: SIMD2(Float(r.maxX) + clearance, Float(r.maxY) + clearance))
         }

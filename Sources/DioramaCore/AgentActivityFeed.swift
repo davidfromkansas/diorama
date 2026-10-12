@@ -130,12 +130,23 @@ public enum AgentActivityFeed {
                 if let call { open[call] = result.count - 1 }
                 return
             }
+            // Looking at an image (a screenshot it took, a file you attached): said as such.
+            if ["view_image", "imageview"].contains(tool.lowercased()) {
+                append(FeedEntry(id: id, kind: .research, title: "Viewed " + (detail.isEmpty ? "an image" : Self.name(detail)), detail: "", outcome: .done, time: time))
+                return
+            }
             let activity = KitchenActivity.classify(tool: tool, detail: detail)
             switch activity {
             case .researching:
+                // Looking at an image, or a read-only command that isn't reading a file
+                // (`git diff`, `du`): a line of its own, said as what it was.
+                if let own = Self.ownLine(tool: tool, detail: detail) {
+                    append(FeedEntry(id: id, kind: .research, title: own, detail: "", outcome: .done, time: time))
+                    return
+                }
                 let item = Self.subject(tool: tool, detail: detail)
-                // Runs of reading and searching merge into one line.
-                if let index = result.indices.last, result[index].kind == .research {
+                // Runs of reading files merge into one line.
+                if let index = result.indices.last, result[index].kind == .research, result[index].title.hasPrefix("Looked at ") {
                     var items = result[index].detail.split(separator: "\n").map(String.init)
                     if !items.contains(item) { items.append(item) }
                     result[index].detail = items.joined(separator: "\n")
@@ -156,7 +167,7 @@ public enum AgentActivityFeed {
                 append(FeedEntry(id: id, kind: .planning, title: "Updated the plan", outcome: .done, time: time))
             case .testing, .commands:
                 let script = KitchenActivity.shellScript(detail)
-                let line = script.split(whereSeparator: \.isNewline).first.map(String.init) ?? script
+                let line = Self.brief(script.split(whereSeparator: \.isNewline).first.map(String.init) ?? script)
                 let short = line.count > 60 ? String(line.prefix(59)) + "…" : line
                 append(FeedEntry(id: id, kind: activity == .testing ? .test : .command, title: (activity == .testing ? "Tested · " : "Ran ") + short,
                                  detail: script, outcome: .running, time: time))
@@ -198,9 +209,40 @@ public enum AgentActivityFeed {
             }
         }
 
+        /// A word that names a file: a path with a folder or an extension (not a flag or a pattern).
+        static func isPath(_ word: String) -> Bool {
+            let word = word.trimmingCharacters(in: CharacterSet(charactersIn: "'\"`;"))
+            guard !word.hasPrefix("-"), !word.contains("://"), word.rangeOfCharacter(from: CharacterSet(charactersIn: "*?$|<>(){}[]=,")) == nil else { return false }
+            let last = (word as NSString).lastPathComponent
+            return word.contains("/") && !last.isEmpty || last.contains(".") && last.first != "." && last.last != "."
+        }
+        /// A command line with its paths cut to file names: `cat build/a/log.txt` reads `cat log.txt`.
+        static func brief(_ line: String) -> String {
+            line.split(separator: " ", omittingEmptySubsequences: false).map { word in
+                let text = String(word)
+                guard text.contains("/"), isPath(text) else { return text }
+                let trimmed = text.trimmingCharacters(in: CharacterSet(charactersIn: "'\"`;"))
+                let short = (trimmed as NSString).lastPathComponent
+                return text.replacingOccurrences(of: trimmed, with: short.isEmpty ? trimmed : short)
+            }.joined(separator: " ")
+        }
         static func name(_ path: String) -> String {
             let trimmed = path.trimmingCharacters(in: .whitespaces)
             return (trimmed as NSString).lastPathComponent
+        }
+        /// Research that isn't reading files, as its own line: viewing an image, or a read-only
+        /// command that names no file. Nil for reads, listings and searches (they merge).
+        static func ownLine(tool: String, detail: String) -> String? {
+            let lower = tool.lowercased()
+            if ["view_image", "imageview"].contains(lower) { return "Viewed " + (detail.isEmpty ? "an image" : name(detail)) }
+            guard KitchenActivity.commandTools.contains(lower) else { return nil }
+            let script = KitchenActivity.shellScript(detail)
+            let words = KitchenActivity.commandWords(script).first?.map { Substring($0) } ?? script.split(separator: " ")
+            guard let first = words.first else { return nil }
+            if ["ls", "find", "fd", "tree", "pwd", "cat", "head", "tail", "less", "more", "nl"].contains(String(first)) || (first == "rg" && words.contains("--files")) { return nil }
+            if words.dropFirst().contains(where: { isPath(String($0)) }) { return nil }
+            let line = brief(script.split(whereSeparator: \.isNewline).first.map(String.init) ?? script)
+            return "Ran " + (line.count > 60 ? String(line.prefix(59)) + "…" : line)
         }
         /// What a read or search looked at: a file name, or the command in short.
         static func subject(tool: String, detail: String) -> String {
@@ -217,7 +259,9 @@ public enum AgentActivityFeed {
                 if let first = words.first, ["cat", "head", "tail", "less", "more", "nl"].contains(String(first)), let file = words.last(where: { !$0.hasPrefix("-") && $0 != first }) {
                     return name(String(file))
                 }
-                let line = script.split(whereSeparator: \.isNewline).first.map(String.init) ?? script
+                // `sed -n '1,80p' Sources/App/Foo.swift`, `rg Foo src/Bar.swift`: the file it reads.
+                if let file = words.dropFirst().last(where: { Self.isPath(String($0)) }) { return name(String(file)) }
+                let line = Self.brief(script.split(whereSeparator: \.isNewline).first.map(String.init) ?? script)
                 return line.count > 40 ? String(line.prefix(39)) + "…" : line
             }
             if lower.contains("search") || lower.contains("fetch") { return detail.isEmpty ? "the web" : String(detail.prefix(40)) }

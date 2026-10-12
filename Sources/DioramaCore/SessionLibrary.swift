@@ -342,7 +342,7 @@ public actor SessionLibrary {
                     classification = .conversation; evidence = "isSidechain=false"
                 }
                 if project.isEmpty { project = record["cwd"] as? String ?? "" }
-                if record["type"] as? String == "user", record["isMeta"] as? Bool != true, preview.isEmpty, let msg = record["message"] as? [String: Any] {
+                if record["type"] as? String == "user", !ClaudeNormalizer.isSystemRecord(record), preview.isEmpty, let msg = record["message"] as? [String: Any] {
                     preview = titlePreview(content(msg["content"]))
                 }
             }

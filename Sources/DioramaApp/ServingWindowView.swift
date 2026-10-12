@@ -23,6 +23,7 @@ struct ServingWindowView: View {
     @State private var fixEdited = false
     @State private var mergeMethod: ServingWindowGit.MergeMethod = .squash
     @State private var refreshingPR = false
+    @State private var browsing: ChangesBrowsing?
     private var reviews: KitchenReviews { .shared }
     private var project: DioramaProject? { library.projects.projects.first { $0.id == agent.projectID } }
     private var workspace: ProjectWorkspace? { project?.workspaces.first { $0.threadID == session.sessionID } }
@@ -80,6 +81,7 @@ struct ServingWindowView: View {
                 do { try await Task.sleep(for: .seconds(openPR?.health == .checking ? 10 : 30)) } catch { return }
             }
         }
+        .sheet(item: $browsing) { ChangesBrowser(browsing: $0) }
         .sheet(isPresented: $showPR, onDismiss: { Task { await afterPR() } }) {
             if let project, let workspace { GitHubPRView(projectID: project.id, workspace: workspace, library: library) }
         }
@@ -106,7 +108,7 @@ struct ServingWindowView: View {
     }
     private var modelName: String {
         let task = library.execution.tasks[session.sessionID]
-        return AgentSidebar.modelName(task.flatMap { $0.model.isEmpty ? nil : $0.model } ?? agent.value.reportedModel, provider: agent.value.provider, catalog: library.execution.models)
+        return AgentSidebar.modelName(task.flatMap(\.namedModel) ?? agent.value.reportedModel, provider: agent.value.provider, catalog: library.execution.models)
     }
     private var finished: String? {
         guard let date = agent.value.meaningfulUpdatedAt else { return nil }
@@ -137,8 +139,18 @@ struct ServingWindowView: View {
                     if changes.files.isEmpty {
                         note("No file changes in this task.")
                     } else {
-                        ForEach(changes.files.prefix(Self.fileLimit)) { file in fileRow(file) }
-                        if changes.files.count > Self.fileLimit { note("and \(changes.files.count - Self.fileLimit) more") }
+                        ForEach(changes.files.prefix(Self.fileLimit)) { file in
+                            Button { browsing = ChangesBrowsing(workspace: workspace, snapshot: changes, start: file.path) } label: { fileRow(file).contentShape(Rectangle()) }
+                                .buttonStyle(.plain).pointingHand()
+                        }
+                        if changes.files.count > Self.fileLimit {
+                            Button { browsing = ChangesBrowsing(workspace: workspace, snapshot: changes) } label: {
+                                Text("and \(changes.files.count - Self.fileLimit) more").font(.system(size: 12, weight: .medium)).underline()
+                                    .frame(maxWidth: .infinity, alignment: .leading).padding(.horizontal, 16).frame(height: 30)
+                            }
+                            .buttonStyle(.plain).foregroundStyle(SidebarStyle.tint(.inProgress).text).pointingHand()
+                            .accessibilityLabel("Show all \(changes.files.count) changed files")
+                        }
                     }
                 } else {
                     ProgressView().controlSize(.small).frame(height: 34)
@@ -324,9 +336,9 @@ struct ServingWindowView: View {
             }
             Button(workspace?.pullRequest == nil ? "Push & open PR…" : "Update PR…") { showPR = true }
                 .buttonStyle(ModalSecondaryButtonStyle()).disabled(busy != nil || active)
-            if workspace?.pullRequest != nil || !uncommitted {
+            if workspace?.pullRequest != nil || !uncommitted || library.demo != nil {
                 Button(busy == "merge" ? "Merging…" : mergeTitle) { Task { await merge() } }
-                    .buttonStyle(ModalSecondaryButtonStyle()).disabled(busy != nil || active || (uncommitted && workspace?.pullRequest == nil))
+                    .buttonStyle(ModalSecondaryButtonStyle()).disabled(busy != nil || active || (uncommitted && workspace?.pullRequest == nil && library.demo == nil))
             }
         }
         if openPR == nil || workspace == nil {
@@ -360,6 +372,7 @@ struct ServingWindowView: View {
     private func refresh() async {
         guard let workspace else { return }
         changes = try? await SessionChanges.snapshot(workspace, scope: .session)
+        if let changes { SessionChangeCounts.shared.record(workspace, changes) }
         uncommitted = (try? await ServingWindowGit.hasUncommittedChanges(worktree: workspace.folder)) ?? false
     }
     private func run(_ name: String, _ body: () async throws -> Void) async {
@@ -468,6 +481,11 @@ struct ServingWindowView: View {
     }
     private func merge() async {
         guard let project, let workspace else { return }
+        if library.demo != nil {
+            // The development demo merges nothing: a moment of "Merging…", then done.
+            busy = "merge"; try? await Task.sleep(for: .milliseconds(600)); busy = nil
+            approve(note: "Merged into \(project.base)"); return
+        }
         await run("merge") {
             if let pr = workspace.pullRequest, pr.state == "OPEN" {
                 // Merge what was checked: refuse if GitHub's view changed since the last refresh.

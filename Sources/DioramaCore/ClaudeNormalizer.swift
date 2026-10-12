@@ -36,6 +36,12 @@ public struct ClaudePresentation: Codable, Equatable, Sendable {
 
 /// Normalizes saved Claude evidence. It never executes tools or interprets prose as instructions.
 public enum ClaudeNormalizer {
+    /// A user-role record nobody typed: injected context (`isMeta`), or a notice Claude Code only
+    /// records in the transcript, such as a background task reported stopped when a session is
+    /// resumed. Neither starts a turn.
+    public static func isSystemRecord(_ r: [String: Any]) -> Bool {
+        r["isMeta"] as? Bool == true || r["queueTranscriptOnly"] as? Bool == true
+    }
     private static let ignored = Set(["thinking", "redacted_thinking", "signature", "queue-operation", "last-prompt", "summary", "custom-title", "agent-name", "file-history-snapshot", "atis-latch"])
     private static let internalAttachments = Set(["hook_success", "environment", "model", "deferred_tools_delta", "agent_listing_delta", "mcp_instructions_delta", "skill_listing", "auto_mode", "total_tokens_reminder", "session_context", "date", "remote_session_change", "prompt_snapshot"])
     private static func bounded(_ text: String, limit: Int = 64 * 1024) -> String {
@@ -120,7 +126,7 @@ public enum ClaudeNormalizer {
                         for i in calls.values where entries[i].claude?.status == "Running" { entries[i].claude?.status = "Interrupted" }
                         entries.append(entry(id, "Event", "Interrupted", .init(title: "Interrupted", status: "Interrupted", agentID: agent)))
                     } else {
-                        let kind = r["isMeta"] as? Bool == true ? "System context" : type == "user" ? "You" : "Assistant"
+                        let kind = isSystemRecord(r) ? "System context" : type == "user" ? "You" : "Assistant"
                         let cleaned = kind == "Assistant" ? text.replacingOccurrences(of: #"(?m)^DIORAMA_GOAL_[A-Fa-f0-9-]{36}:(?:COMPLETE|CONTINUE|BLOCKED)[ \t]*$"#, with: "", options: .regularExpression) : text
                         for (partIndex, part) in MessageContent.split(cleaned, provider: .claude).enumerated() where !part.text.isEmpty {
                             entries.append(entry(id + ":\(partIndex)", part.context ? "System context" : kind, part.text))

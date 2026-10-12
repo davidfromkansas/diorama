@@ -189,6 +189,10 @@ extension LibraryModel {
     /// Archives (or restores) a Codex thread through its app-server, or a Claude conversation
     /// through Claude Desktop's session file and Diorama's own record (`ClaudeArchive`).
     func setArchived(_ session: Session, archived: Bool) async throws {
+        if demo != nil {
+            if let index = sessions.firstIndex(where: { $0.id == session.id }) { sessions[index] = session.updated(archived: archived) }
+            return
+        }
         switch session.provider {
         case .codex: try await execution.setArchived(session: session, archived: archived)
         case .claude:

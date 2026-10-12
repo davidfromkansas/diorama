@@ -44,6 +44,9 @@ import DioramaCore
         if enabled && observed.values.contains(where: { $0 > builtAt }) { scheduleBuild() }
     }
 
+    /// Sources, plus the bundled models and textures (rebuilt kitchen pieces reload too).
+    static let watched: Set<String> = ["swift", "mjs", "json", "glb", "jpg", "png"]
+
     static func sourceDates(root: URL) -> [String: Date] {
         var result: [String: Date] = [:]
         let keys: Set<URLResourceKey> = [.isDirectoryKey, .contentModificationDateKey]
@@ -54,7 +57,7 @@ import DioramaCore
             for case let file as URL in files {
                 if file.lastPathComponent == "node_modules" { files.skipDescendants(); continue }
                 guard let values = try? file.resourceValues(forKeys: keys), values.isDirectory != true,
-                      ["swift", "mjs", "json"].contains(file.pathExtension) else { continue }
+                      Self.watched.contains(file.pathExtension) else { continue }
                 result[file.path] = values.contentModificationDate ?? .distantPast
             }
         }

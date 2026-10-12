@@ -85,6 +85,17 @@ public enum SessionChanges {
         }
         return result
     }
+    /// A changed file's size before (at the task's base) and now, in bytes; nil for a side that
+    /// doesn't exist (added, deleted).
+    public static func sizes(_ file: ChangedFile, workspace: ProjectWorkspace, scope: ChangeScope) async -> (old: Int?, new: Int?) {
+        let url = URL(fileURLWithPath: workspace.folder).appendingPathComponent(file.path)
+        let new = (try? url.resourceValues(forKeys: [.fileSizeKey]))?.fileSize
+        guard !file.untracked, file.status != "Added" else { return (nil, new) }
+        let base = scope == .session ? workspace.baseCommit : "HEAD"
+        let old = (try? await git(workspace.folder, ["cat-file", "-s", base + ":" + (file.oldPath ?? file.path)]))
+            .flatMap { Int($0.trimmingCharacters(in: .whitespacesAndNewlines)) }
+        return (old, new)
+    }
     public static func diff(_ file: ChangedFile, workspace: ProjectWorkspace, scope: ChangeScope) async throws -> String {
         guard !workspace.cleaned, FileManager.default.fileExists(atPath: workspace.folder) else { throw AppServerFailure("Worktree unavailable") }
         if file.untracked {

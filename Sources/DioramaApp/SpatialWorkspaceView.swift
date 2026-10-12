@@ -18,6 +18,9 @@ struct SpatialWorkspaceView: View {
     private var serversExpanded: Bool { get { state.serversExpanded } nonmutating set { state.serversExpanded = newValue } }
     private var inboxSelection: InboxThread? { get { state.inboxSelection } nonmutating set { state.inboxSelection = newValue } }
     @State private var creationProject: AgentCreationDestination?
+    /// A task just created here: its agent is selected (as a click on its row would) once it appears.
+    @State private var createdConversation: String?
+    @State private var createdAt = Date.distantPast
     @State private var reviewing: SpatialAgent?
     /// The conversation whose pending request is open in the Review request modal.
     @State private var requestReview: SpatialAgent?
@@ -210,7 +213,13 @@ struct SpatialWorkspaceView: View {
     private func presentations<Content: View>(_ content: Content, focus: SpatialFocus, roster: LiveAgentRosterModel) -> some View {
         content
             .sheet(item: $creationProject) { destination in
-                NewAgentModal(library: library, projectID: destination.id)
+                NewAgentModal(library: library, projectID: destination.id, created: { conversation in
+                    createdConversation = conversation; createdAt = Date(); selectCreated(world)
+                }, failed: { project, message in
+                    // Starting it failed after the modal closed: back to the modal, draft and error.
+                    createdConversation = nil
+                    DispatchQueue.main.async { creationProject = AgentCreationDestination(id: project, error: message) }
+                }, initialError: destination.error)
             }
             .sheet(item: $reviewing) { agent in
                 if let session = world.team(.team(project: agent.projectID, conversation: agent.conversationID))?.session {
@@ -223,6 +232,9 @@ struct SpatialWorkspaceView: View {
                 }
             }
             .environment(\.avatarPopoverDismissals, avatarPopovers)
+            .onChange(of: [library.spatial.pendingCreation ?? "", visible ? "visible" : ""], initial: true) { openPendingCreation() }
+            // The pantry card belongs to the project it was opened in.
+            .onChange(of: library.projects.selectedID) { pantryOpen = false }
             // ⇧⌘K: every tool the agents can use.
             .background {
                 Button("All tools") { if visible, kitchenSelected, state.focus != .portfolio { allToolsOpen.toggle() } }
@@ -273,13 +285,20 @@ struct SpatialWorkspaceView: View {
             }
             .onChange(of: state.showArchived) { _, _ in refreshWorld() }
             .onChange(of: snapshot) { _, new in
+                // A task just created here is selected as soon as it appears, scanning or not.
+                selectCreated(new)
                 guard visible, cachedProject == state.focus.projectID, !library.isScanning, library.scannedAt != nil else { return }
                 if let selection = inspection, !new.teams.flatMap(\.agents).contains(where: { $0.id == selection.agentID }) { inspection = nil }
+                // A task just created here takes a moment to join the view: wait for it rather
+                // than falling back to the project (which would also drop its selection).
+                if let created = createdConversation, state.focus.conversationID == created,
+                   !new.teams.contains(where: { $0.session.id == created }), Date().timeIntervalSince(createdAt) < 20 { return }
                 let resolved = new.resolved(state.focus)
                 if resolved != state.focus {
                     go(resolved)
                     state.notice = "The selected item is no longer available in this view. Showing its nearest available parent."
                 }
+                selectCreated(new)
             }
             .task(id: "plans-\(visible)-\(liveRefresh)-\(library.paused)-\(state.focus)-\(inspection?.nodeName ?? "")") {
                 guard visible, liveRefresh, !library.paused, state.focus != .portfolio else { return }
@@ -298,6 +317,7 @@ struct SpatialWorkspaceView: View {
                     do { try await Task.sleep(for: .seconds(2)) } catch { return }
                 }
             }
+            .onChange(of: library.demoRevision) { library.observationClock = Date(); refreshWorld() }
             .task(id: "\(visible)-\(liveRefresh)-\(state.focus.conversationID ?? "")") {
                 guard visible, liveRefresh else { return }
                 while !Task.isCancelled {
@@ -371,7 +391,8 @@ struct SpatialWorkspaceView: View {
                             selectedAgentID: focus.agentID, deselect: { deselectAgent(focus) }, openPantry: { pantryOpen = true },
                             cameraMoved: { away in DispatchQueue.main.async { kitchenCameraAway = away } }, resetCamera: kitchenCameraResets,
                             holding: { hold in DispatchQueue.main.async { kitchenHold = hold } },
-                            archiveBlocker: { library.archiveBlocker($0) }, archive: { archiveFromKitchen($0) }, trashFrame: trashFrame)
+                            archiveBlocker: { library.archiveBlocker($0) }, archive: { archiveFromKitchen($0) }, trashFrame: trashFrame,
+                            changedFiles: { changedFiles($0) }, modelName: { modelName($0) })
             .overlay(alignment: .bottomLeading) {
                 // Only once the camera has moved; the controls stay in the kitchen's accessibility help.
                 if visible, focus.agentID == nil, kitchenCameraAway {
@@ -540,38 +561,12 @@ struct SpatialWorkspaceView: View {
             }
             .disabled(inspection != nil).accessibilityHidden(inspection != nil)
     }
-    /// The agent card: one row per conversation in this project, grouped by what it needs, from
-    /// the same state the kitchen uses (status, pending requests, serving-window reviews).
-    private func sidebarItems(_ teams: [SpatialTeam]) -> [AgentSidebarItem] {
-        let execution = library.execution
-        let workspaces = Dictionary(library.projects.projects.flatMap(\.workspaces).compactMap { w in w.threadID.map { ($0, w) } }) { first, _ in first }
-        let inputs = teams.map { team in
-            AgentSidebar.Input(session: team.session, agents: team.agents,
-                               review: team.agents.first { $0.value.isMain }.flatMap { KitchenReviews.shared.state($0.conversationID) },
-                               reviewNote: team.agents.first { $0.value.isMain }.flatMap { KitchenReviews.shared.note($0.conversationID) },
-                               model: execution.tasks[team.session.sessionID].flatMap { $0.model.isEmpty ? nil : $0.model },
-                               requests: execution.requests.values.filter { $0.threadID == team.session.sessionID }.count,
-                               question: pendingQuestion(team),
-                               workspaceBranch: workspaces[team.session.sessionID]?.branch,
-                               pullRequest: workspaces[team.session.sessionID]?.pullRequest)
-        }
-        return AgentSidebar.items(inputs, catalog: execution.models, order: AgentSidebarOrder.shared.order)
-    }
-    /// What a conversation is waiting on you for, in a line: the oldest pending request's question
-    /// or command, else (a question asked in chat) the agent's last message.
-    private func pendingQuestion(_ team: SpatialTeam) -> String? {
-        let execution = library.execution
-        if let request = RequestReviewModal.pending(execution, thread: team.session.sessionID).first {
-            if let question = request.params["questions"].array.first?["question"].string { return question }
-            if let command = request.params["command"].string { return "Wants to run " + command }
-            return request.params["reason"].string
-        }
-        guard team.agents.contains(where: { $0.value.isMain && $0.value.attentionReason == .input && $0.value.status == .waiting }),
-              let asked = execution.tasks[team.session.sessionID]?.transcript.entries.last(where: { $0.kind == "Assistant" })?.text else { return nil }
-        // The question itself: the message's last sentence that asks something.
-        if let question = TurnQuestion.asking(asked) { return question.text }
-        let sentences = asked.split(whereSeparator: { ".!\n".contains($0) }).map { $0.trimmingCharacters(in: .whitespaces) }.filter { !$0.isEmpty }
-        return sentences.last { $0.hasSuffix("?") } ?? sentences.last
+    private func sidebarItems(_ teams: [SpatialTeam]) -> [AgentSidebarItem] { library.agentSidebarItems(teams) }
+    /// Home's New task opens this project with its Create modal, once the workspace is showing.
+    private func openPendingCreation() {
+        guard visible, let project = library.spatial.pendingCreation, library.projects.selectedID == project else { return }
+        library.spatial.pendingCreation = nil
+        creationProject = AgentCreationDestination(id: project)
     }
     private func agentSidebar(_ teams: [SpatialTeam], focus: SpatialFocus, reveal: AgentSidebarGroup? = nil, openBoard: (() -> Void)? = nil) -> some View {
         let items = sidebarItems(teams)
@@ -593,7 +588,8 @@ struct SpatialWorkspaceView: View {
         if KitchenReviews.shared.state(agent.conversationID) == .needsFix { reviewing = agent; return }
         let thread = world.team(.team(project: agent.projectID, conversation: agent.conversationID))?.session.sessionID
         // A pending request, or a question asked in the chat, opens the modal to answer it.
-        if let thread, !RequestReviewModal.pending(library.execution, thread: thread).isEmpty || RequestReviewModal.chatQuestion(library.execution, thread: thread) != nil { requestReview = agent } else { go(conversationFocus(agent)) }
+        if let thread, !RequestReviewModal.pending(library.execution, thread: thread).isEmpty || RequestReviewModal.chatQuestion(library.execution, thread: thread) != nil
+            || library.demo?.questions[agent.conversationID] != nil { requestReview = agent } else { go(conversationFocus(agent)) }
     }
     /// Camera/monitor updates may arrive every frame. Project the library once per observation
     /// tick instead of repeating provider and membership lookups during those view updates.
@@ -607,6 +603,7 @@ struct SpatialWorkspaceView: View {
             while projectRecency.count > 24 { projectWorlds.removeValue(forKey: projectRecency.removeFirst()) }
         }
         if cachedWorld != next { cachedWorld = next }
+        selectCreated(next)
     }
 
     private func toolbar(_ world: SpatialWorld, focus: SpatialFocus) -> some View {
@@ -809,38 +806,36 @@ struct SpatialWorkspaceView: View {
         }
     }
     private func workScreen(_ agent: SpatialAgent, team: SpatialTeam) -> some View {
-        VStack(spacing: 0) {
-            HStack {
-                VStack(alignment: .leading, spacing: 3) {
-                    Text(agent.value.name).font(.headline).foregroundStyle(.primary)
-                    Text(agent.value.isMain ? team.title : TaskTitle.compact(agent.value.task))
-                        .font(.subheadline).foregroundStyle(.secondary).lineLimit(1)
-                        .help(TaskTitle.full(agent.value.isMain ? team.session.title : agent.value.task))
-                        .accessibilityLabel(TaskTitle.full(agent.value.isMain ? team.session.title : agent.value.task))
-                    let workspaces = library.projects.projects.first(where: { $0.id == team.projectID })?.workspaces ?? []
-                    Label(AvatarMessagePresentation.branch(session: team.session, workspaces: workspaces), systemImage: "arrow.triangle.branch")
-                        .font(.caption).foregroundStyle(.secondary).lineLimit(1)
-                }
-                Spacer(minLength: 12)
-                Button { screenActivity = false; state.conversationPanelVisible = false } label: {
-                    Image(systemName: "xmark").font(.system(size: 12, weight: .semibold))
-                        .foregroundStyle(.secondary).frame(width: 28, height: 28)
-                        .background(Color.black.opacity(0.06), in: Circle())
-                }.pointingHand().buttonStyle(.plain).help("Close conversation").accessibilityLabel("Close conversation")
-            }.padding(.horizontal, 20).padding(.vertical, 12).background(Color(white: 0.97))
-            Divider()
-            if agent.value.isMain {
-                if screenActivity {
+        let header = headerInfo(agent, team: team)
+        return VStack(spacing: 0) {
+            if agent.value.isMain && !screenActivity {
+                // The conversation draws the header itself: it holds the model and the tools.
+                SessionView(session: team.session, model: library, hasLocalReview: true,
+                    activityAction: { section in library.activityState(team.session).section = section; screenActivity = true },
+                    shellContent: true, embeddedWorkScreen: true)
+                    .environment(\.avatarHeader, header)
+            } else {
+                AvatarConversationHeader(info: header)
+                Divider()
+                if agent.value.isMain {
                     SessionActivityPanel(session: team.session, library: library, state: library.activityState(team.session), close: { screenActivity = false })
                 } else {
-                    SessionView(session: team.session, model: library, hasLocalReview: true,
-                        activityAction: { section in library.activityState(team.session).section = section; screenActivity = true },
-                        shellContent: true, embeddedWorkScreen: true)
+                    SpatialChildWorkScreen(library: library, session: team.session, agent: agent.value)
                 }
-            } else {
-                SpatialChildWorkScreen(library: library, session: team.session, agent: agent.value)
             }
         }.id(agent.id)
+    }
+    /// The header's who and what: the agent, its task as its tag and agent-panel row name it
+    /// (updated each turn), and its branch.
+    private func headerInfo(_ agent: SpatialAgent, team: SpatialTeam) -> AvatarHeaderInfo {
+        _ = TaskLabels.shared.revision
+        let label = agent.value.isMain ? TaskLabels.shared.title(agent) : ""
+        let fallback = agent.value.isMain ? team.title : TaskTitle.compact(agent.value.task)
+        let workspaces = library.projects.projects.first(where: { $0.id == team.projectID })?.workspaces ?? []
+        return AvatarHeaderInfo(name: agent.value.name, task: label.isEmpty ? fallback : label,
+                                taskDetail: TaskTitle.full(agent.value.isMain ? team.session.title : agent.value.task),
+                                branch: AvatarMessagePresentation.branch(session: team.session, workspaces: workspaces),
+                                close: { screenActivity = false; state.conversationPanelVisible = false })
     }
     private func openInboxConversation(_ thread: InboxThread, world: SpatialWorld) {
         let available = library.spatialWorld(showArchived: true)
@@ -854,6 +849,19 @@ struct SpatialWorkspaceView: View {
     }
     /// The focused project's agents (or the focused standalone conversation's); none at portfolio.
     /// A chef dropped in the trash: archive its conversation, with a few seconds to undo.
+    /// The model an agent runs on, named as the agent panel names it.
+    private func modelName(_ agent: SpatialAgent) -> String {
+        let session = library.sessions.first { $0.id == agent.conversationID }
+        let running = session.flatMap { library.execution.tasks[$0.sessionID] }.flatMap(\.namedModel)
+        return AgentSidebar.modelName(running ?? agent.value.reportedModel, provider: agent.value.provider, catalog: library.execution.models)
+    }
+    /// How many files an agent's task changed since it began (git, as its Changes panel counts).
+    private func changedFiles(_ agent: SpatialAgent) -> Int? {
+        guard let session = library.sessions.first(where: { $0.id == agent.conversationID }),
+              let workspace = library.projects.projects.first(where: { $0.id == agent.projectID })?.workspaces.first(where: { $0.threadID == session.sessionID })
+        else { return nil }
+        return SessionChangeCounts.shared.count(workspace)
+    }
     private func archiveFromKitchen(_ agent: SpatialAgent) {
         guard let session = library.sessions.first(where: { $0.id == agent.conversationID }) else { return }
         let name = agent.value.name
@@ -895,6 +903,15 @@ struct SpatialWorkspaceView: View {
         withAnimation(reduced ? nil : .spring(duration: 0.28)) { model.board = open }
     }
     /// An agent selected with its conversation panel open.
+    /// Selects a just-created task's agent the way clicking its row in the agent panel does, once
+    /// it's in the view; only while its conversation is still the one on screen.
+    private func selectCreated(_ snapshot: SpatialWorld) {
+        guard let conversation = createdConversation else { return }
+        guard state.focus.conversationID == conversation else { createdConversation = nil; return }
+        guard let main = snapshot.teams.first(where: { $0.session.id == conversation })?.agents.first(where: { $0.value.isMain }) else { return }
+        createdConversation = nil
+        go(conversationFocus(main))
+    }
     private func conversationFocus(_ agent: SpatialAgent) -> SpatialFocus {
         .agent(project: agent.projectID, conversation: agent.conversationID, agent: agent.id, expanded: true)
     }
@@ -978,7 +995,11 @@ private struct SpatialChildWorkScreen: View {
     }
 }
 
-private struct AgentCreationDestination: Identifiable { let id: String }
+private struct AgentCreationDestination: Identifiable {
+    let id: String
+    /// Why the last start failed, shown when the modal reopens.
+    var error: String? = nil
+}
 
 private extension View {
     /// Overlays fade away while a chef is held, without leaving the layout (the kitchen keeps its size).

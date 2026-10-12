@@ -150,4 +150,19 @@ struct ExternalObservationTests {
         #expect(await observer.read(session, hookDirectory: nil).activity.state == .working)
     }
 
+    /// Resuming a Claude session can record a stopped background task as a user message only kept
+    /// in the transcript. Nobody answers it, so it mustn't leave the agent looking busy.
+    @Test func claudeTranscriptOnlyNoticeDoesNotStartATurn() async throws {
+        let (url, base) = try fixture(); defer { try? FileManager.default.removeItem(at: url) }
+        let session = Session(id: "Claude:notice", provider: .claude, url: url, sessionID: base.sessionID, title: "Notice", project: "/tmp", modified: Date(), bytes: 0, archived: false, parentID: nil)
+        let observer = ExternalSessionObserver()
+        try append(#"{"type":"user","timestamp":"2026-09-26T15:00:00Z","message":{"content":"Start the server"}}"# + "\n", to: url)
+        try append(#"{"type":"assistant","timestamp":"2026-09-26T15:00:05Z","message":{"stop_reason":"end_turn","content":[{"type":"text","text":"Running at localhost:5199."}]}}"# + "\n", to: url)
+        let before = await observer.read(session, hookDirectory: nil).activity.state
+        try append(#"{"type":"user","timestamp":"2026-09-26T16:00:00Z","origin":{"kind":"task-notification"},"promptSource":"system","queueTranscriptOnly":true,"message":{"role":"user","content":"<task-notification><status>stopped</status></task-notification>"}}"# + "\n", to: url)
+        let after = await observer.read(session, hookDirectory: nil)
+        #expect(before == .finished)
+        #expect(after.activity.state == before)
+    }
+
 }

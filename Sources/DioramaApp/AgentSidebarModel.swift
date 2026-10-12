@@ -82,6 +82,9 @@ enum AgentSidebar {
         var reviewNote: String? = nil
         /// The model the conversation runs on, when the execution layer knows it.
         var model: String?
+        /// What it's working on, in four words, updated each turn (the chef's tag shows the
+        /// same); the conversation's own title until there is one.
+        var title: String? = nil
         var requests = 0
         /// The pending question or request, in a line (from the protocol request or the chat).
         var question: String? = nil
@@ -142,7 +145,7 @@ enum AgentSidebar {
             case .done, .idle: progress = nil
             }
             return AgentSidebarItem(id: main.id, conversationID: main.conversationID, projectID: main.projectID,
-                                    title: TaskTitle.full(input.session.displayTitle), group: group, status: status,
+                                    title: input.title.flatMap { $0.isEmpty ? nil : $0 } ?? TaskTitle.full(input.session.displayTitle), group: group, status: status,
                                     model: modelName(input.model ?? value.reportedModel, provider: value.provider, catalog: catalog),
                                     activity: activity, requests: input.requests,
                                     order: order(main.conversationID, value.meaningfulUpdatedAt ?? input.session.modified), progress: progress,
@@ -261,7 +264,7 @@ enum AgentSidebar {
 
 /// When the sidebar first saw each conversation, kept across launches so rows keep their place.
 final class AgentSidebarOrder {
-    static let shared = AgentSidebarOrder()
+    static let shared = AgentSidebarOrder(defaults: DemoMode.sharedDefaults)
     private let defaults: UserDefaults
     private let key = "agentSidebar.firstSeen.v1"
     private var seen: [String: Date]
@@ -281,10 +284,10 @@ final class AgentSidebarOrder {
 /// Collapsed groups, remembered per project.
 enum AgentSidebarCollapse {
     static func key(_ project: String) -> String { "agentSidebar.collapsed." + project }
-    static func load(_ project: String, defaults: UserDefaults = .standard) -> Set<AgentSidebarGroup> {
+    static func load(_ project: String, defaults: UserDefaults = DemoMode.sharedDefaults) -> Set<AgentSidebarGroup> {
         Set((defaults.array(forKey: key(project)) as? [Int] ?? []).compactMap(AgentSidebarGroup.init(rawValue:)))
     }
-    static func save(_ groups: Set<AgentSidebarGroup>, project: String, defaults: UserDefaults = .standard) {
+    static func save(_ groups: Set<AgentSidebarGroup>, project: String, defaults: UserDefaults = DemoMode.sharedDefaults) {
         defaults.set(groups.map(\.rawValue).sorted(), forKey: key(project))
     }
 }

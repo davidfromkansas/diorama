@@ -58,6 +58,8 @@ final class LibraryModel {
     @ObservationIgnored let planDiscovery: AgentPlanDiscovery
     var portfolio: PortfolioStore
     var activityPanels: [String: ActivityPanelState] = [:]
+    /// Per conversation: the model and effort chosen for its next message.
+    @ObservationIgnored var composerChoiceStore: [String: ComposerChoices] = [:]
     let conversations: DioramaConversationModel
     /// Skills armed from the kitchen's command bar, by conversation, until its composer picks
     /// them up for the next message.
@@ -170,6 +172,14 @@ final class LibraryModel {
         persistOutgoing()
     }
     var developmentReload: DevelopmentReload?
+    /// The development demo's made-up projects (`--record-demo`); nil everywhere else.
+    @ObservationIgnored var demo: DemoFixture?
+    /// Bumped when the demo changes its agents, so the kitchen shows it at once.
+    var demoRevision = 0
+    /// The demo's stand-in for sending a message (nothing goes to Codex or Claude).
+    @ObservationIgnored var demoSend: ((Session, String) -> Void)?
+    /// The demo's stand-in for creating a task: makes up the conversation and returns its id.
+    @ObservationIgnored var demoCreate: ((String, String) -> String)?
     let execution: ExecutionController
     let observationHookDirectory: URL?
     init(execution: ExecutionController? = nil, projects: ProjectModel? = nil, conversations: DioramaConversationModel? = nil, navigation: WorkspaceNavigation? = nil, observationHookDirectory: URL? = HookStore.directory, sharedOwner: LibraryModel? = nil, draftDefaults: UserDefaults = .standard) {
@@ -224,6 +234,7 @@ final class LibraryModel {
     }
     var nativeTranscript: Transcript {
         let session = selected
+        if let demo, let id = session?.id, let made = demo.transcripts[id] { return made }
         let savedHistory = transcriptSessionID == session?.id ? transcript : Transcript()
         let task = session.flatMap { execution.tasks[$0.sessionID] }
         let useLive = session?.observationOnly != true && task?.attached == true && task?.transcript.entries.isEmpty == false
@@ -246,6 +257,16 @@ final class LibraryModel {
             }
         }
         return saved
+    }
+    /// Sessions whose files just changed. A conversation that switched provider stays one row:
+    /// its current session stands in for the whole conversation and earlier ones stay hidden.
+    func mergeChanged(_ changed: [Session]) {
+        for incoming in conversations.project(changed) {
+            if let index = sessions.firstIndex(where: { $0.id == incoming.id }) {
+                // Full reconciliation owns Desktop classification and richer API metadata.
+                sessions[index] = incoming.retainingDiscoveryMetadata(from: sessions[index])
+            } else { sessions.append(incoming) }
+        }
     }
     func syncOwnedSessions() {
         let existing = Set(sessions.map(\.id))
@@ -295,12 +316,16 @@ final class LibraryModel {
     var transcriptSessionID: String?
     var readingTranscriptID: String?
     func historyIsLoading(_ session: Session) -> Bool {
-        guard !paused else { return false }
+        guard !paused, demo == nil else { return false }
         return transcriptSessionID != session.id ||
             ((transcript.entries.isEmpty || transcript.error != nil) && readingTranscriptID == session.id)
     }
     var entryLimit = 300
     var showConnections = false
+    /// The GitHub modal (connect, or manage the connection), from Home's GitHub card.
+    var showGitHub = false
+    /// An add-project flow Home asked for: "Connect Project", "Open GitHub project" or "New Project".
+    var addProject: String?
     var paused: Bool {
         get { sharedOwner?.paused ?? ownedPaused }
         set { if let sharedOwner { sharedOwner.paused = newValue } else { ownedPaused = newValue } }
@@ -390,12 +415,7 @@ final class LibraryModel {
                 let incomingSessions = await changed
                 self.portfolio.register(incomingSessions)
                 guard !self.paused, !Task.isCancelled else { return }
-                for incoming in incomingSessions {
-                    if let index = self.sessions.firstIndex(where: { $0.id == incoming.id }) {
-                        // Full reconciliation owns Desktop classification and richer API metadata.
-                        self.sessions[index] = incoming.retainingDiscoveryMetadata(from: self.sessions[index])
-                    } else { self.sessions.append(incoming) }
-                }
+                self.mergeChanged(incomingSessions)
                 self.refreshProjectInbox()
                 // The periodic pass reconciles metadata-only changes and archives.
                 if paths.contains(where: { $0.hasSuffix(".json") }) { Task { await self.refresh() } }
@@ -452,7 +472,7 @@ final class LibraryModel {
         if !Task.isCancelled && !paused {
             execution.observeDesktopSessions(local.sessions)
             var indices = Dictionary(uniqueKeysWithValues: sessions.enumerated().map { ($0.element.id, $0.offset) })
-            for incoming in local.sessions {
+            for incoming in conversations.project(local.sessions) {
                 if let index = indices[incoming.id] {
                     if incoming.modified > sessions[index].modified { sessions[index] = incoming.retainingDiscoveryMetadata(from: sessions[index]) }
                 } else {
@@ -497,6 +517,9 @@ final class LibraryModel {
 
     private func readCurrentSelection() async {
         guard let session = selected else { transcript = Transcript(); transcriptSessionID = nil; return }
+        if let demo {
+            transcript = demo.transcripts[session.id] ?? Transcript(); transcriptSessionID = session.id; return
+        }
         let selectionGeneration = navigation.projectTabs.generation
         readingTranscriptID = session.id
         defer { if readingTranscriptID == session.id { readingTranscriptID = nil } }
@@ -558,7 +581,7 @@ final class WeakLibraryWindow {
 
 @main
 struct DioramaApp: App {
-    @State private var model = LibraryModel()
+    @State private var model = DemoMode.active ? DemoMode.library() : LibraryModel()
     @State private var updates = AppUpdateCoordinator()
     @AppStorage("agentOnboardingComplete") private var onboarded = false
     /// Per process, so every cold launch opens on the start screen.
@@ -566,7 +589,9 @@ struct DioramaApp: App {
     @NSApplicationDelegateAdaptor(DioramaApplicationDelegate.self) private var delegate
     var body: some Scene {
         WindowGroup("Diorama") {
-            if CommandLine.arguments.contains("--inbox-benchmark") {
+            if DemoMode.active {
+                DemoRecorderView(library: model)
+            } else if CommandLine.arguments.contains("--inbox-benchmark") {
                 SceneBenchmarkView(withInbox: true)
             } else if CommandLine.arguments.contains("--scene-benchmark") || Bundle.main.object(forInfoDictionaryKey: "DioramaSceneBenchmark") as? Bool == true {
                 SceneBenchmarkView()
@@ -763,6 +788,7 @@ struct LibraryView: View {
 
 struct SessionView: View {
     @Environment(\.avatarMessages) private var avatarMessages
+    @Environment(\.avatarHeader) private var avatarHeader
     let session: Session
     @Bindable var model: LibraryModel
     var hasLocalReview = false
@@ -1022,6 +1048,15 @@ struct SessionView: View {
                     .font(.caption).foregroundStyle(.secondary).padding(.horizontal, 20).padding(.bottom, 8)
             }
             }
+            if avatarMessages, let header = avatarHeader {
+                // iMessage header: who, what they're on, the branch, the model; the tools behind ⋯.
+                let task = model.execution.tasks[session.sessionID]
+                let messageable = task?.attached == true || ExecutionController.resumeUnavailableReason(session) == nil
+                AvatarConversationHeader(info: header,
+                    model: messageable ? AnyView(HeaderModelMenu(controller: model.execution, choices: model.composerChoices(session),
+                                                                 effectiveModel: task?.model ?? "", effectiveEffort: task?.effort ?? "")) : nil,
+                    tools: AnyView(avatarTools))
+            }
             if !model.historyIsLoading(session), let error = model.observations[session.id]?.error {
                 HStack {
                     Label("Observation unavailable: " + error, systemImage: "exclamationmark.triangle")
@@ -1059,11 +1094,14 @@ struct SessionView: View {
                     } else if effectiveMode == .activity {
                         SessionActivityPanel(session: session, library: model, state: activityState, close: { model.viewMode = .conversation })
                     } else if model.historyIsLoading(session) && transcript.entries.isEmpty {
-                        ConversationHistoryLoader().frame(maxWidth: .infinity, maxHeight: .infinity)
+                        if avatarMessages { AvatarConversationLoader(agent: avatarHeader?.name).frame(maxWidth: .infinity, maxHeight: .infinity) }
+                        else { ConversationHistoryLoader().frame(maxWidth: .infinity, maxHeight: .infinity) }
                     } else if model.paused && model.transcriptSessionID != session.id {
                         ContentUnavailableView("Observation paused", systemImage: "pause.circle", description: Text("Resume observation to load conversation history."))
+                            .frame(maxHeight: .infinity)
                     } else if !model.historyIsLoading(session), let error = transcript.error {
                         ContentUnavailableView("Transcript unavailable", systemImage: "exclamationmark.triangle", description: Text(error))
+                            .frame(maxHeight: .infinity)
                     } else {
                         ScrollViewReader { scroll in
                         List {

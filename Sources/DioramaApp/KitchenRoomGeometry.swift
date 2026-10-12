@@ -13,7 +13,6 @@ import SceneKit
         let trim = material(NSColor(red: 0.16, green: 0.25, blue: 0.21, alpha: 1))
         let stone = material(NSColor(red: 0.76, green: 0.73, blue: 0.61, alpha: 1))
         let glass = material(NSColor(red: 0.47, green: 0.65, blue: 0.69, alpha: 1))
-        let oak = (0..<4).map { i in material(NSColor(red: 0.43 + Double(i) * 0.025, green: 0.28 + Double(i) * 0.022, blue: 0.15 + Double(i) * 0.017, alpha: 1)) }
         // Connecting cabinets follow the station worktop height (scaled about the floor line).
         let cabinets = SCNNode(); cabinets.name = "connecting cabinets"
         let k = CGFloat(KitchenLayout.heightScale)
@@ -26,7 +25,10 @@ import SceneKit
         }
         let counter = material(NSColor(red: 0.9, green: 0.87, blue: 0.77, alpha: 1))
         let brass = material(NSColor(red: 0.63, green: 0.45, blue: 0.22, alpha: 1))
-        for r in KitchenLayout.connectors {
+        // The modelled French cabinets (green lacquer, brass, marble); these plain ones otherwise.
+        let modelled = KitchenFixtures.connectors()
+        if let modelled { cabinets.removeFromParentNode(); root.addChildNode(modelled) }
+        for r in modelled == nil ? KitchenLayout.connectors : [] {
             box("connecting cabinet", r.width - 0.10, 0.87, r.height - 0.10, r.midX, 0.72, r.midY, trim, in: cabinets)
             box("connecting counter", r.width, 0.20, r.height, r.midX, 1.262, r.midY, counter, in: cabinets)
             let sideways = r.height > r.width
@@ -45,18 +47,9 @@ import SceneKit
                 }
             }
         }
-        // Staggered oak boards, with shared materials and deliberate, visible seams.
+        // French limestone with clover cabochons and a rope border (`KitchenFloor`).
         let floor = KitchenLayout.floor
-        let rows = Int(floor.height / 0.5), cols = Int(floor.width / 2) + 1
-        for row in 0..<rows {
-            let offset: CGFloat = row % 2 == 0 ? 0 : -1
-            for col in 0..<cols {
-                let start = max(floor.minX, floor.minX + CGFloat(col) * 2 + offset)
-                let end = min(floor.maxX, floor.minX + 2 + CGFloat(col) * 2 + offset)
-                guard end > start else { continue }
-                box("oak board", end - start - 0.018, 0.018, 0.48, (start + end) / 2, 0.11, floor.minY + 0.25 + CGFloat(row) * 0.5, oak[(row * 3 + col) % 4])
-            }
-        }
+        root.addChildNode(KitchenFloor.make())
         let back = floor.minY + 0.13
         box("back wall", floor.width, 2.9, 0.22, floor.midX, 1.55, back, plaster)
         box("back cornice", floor.width, 0.14, 0.28, floor.midX, 3.04, back + 0.02, trim)

@@ -94,12 +94,7 @@ struct GitHubPRView: View {
             do { let result = try await SessionChanges.diff(file, workspace: workspace, scope: .uncommitted); if focusedFile == file.path { patch = result } }
             catch { patch = error.localizedDescription }
         }
-        .sheet(isPresented: $showAccount) {
-            VStack(alignment: .leading, spacing: 20) {
-                GitHubSettingsView()
-                HStack { Spacer(); Button("Done") { showAccount = false }.pointingHand() }
-            }.padding(24).frame(width: 620)
-        }
+        .sheet(isPresented: $showAccount) { GitHubConnectionModal() }
     }
     private func load() async {
         guard !active else { return }

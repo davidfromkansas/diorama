@@ -38,6 +38,10 @@ struct GitHubAccountTests {
             (Data("{}".utf8), HTTPURLResponse(url: request.url!, statusCode: status, httpVersion: nil, headerFields: nil)!)
         })
         await #expect(throws: (any Error).self) { try await account.identity() }
+        if status == 401 {
+            // An expired or revoked login is told apart from other failures (the GitHub button asks to reconnect).
+            await #expect(throws: GitHubAuthError.expired("Your GitHub authorization expired. Reconnect in Settings.")) { try await account.identity() }
+        }
     }
     @Test func denialExpirationAndCancellationDoNotSaveTokens() async throws {
         let tokens = TestGitHubTokens()

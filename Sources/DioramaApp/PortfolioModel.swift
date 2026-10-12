@@ -43,6 +43,8 @@ struct HomeUsage: Equatable {
     var tokens = TokenSplit()
     var byProject: [Node] = []
     var byPlan: [Node] = []
+    /// Each project's tokens per day for the last seven days, oldest first and ending today.
+    var projectDays: [String: [TokenSplit]] = [:]
     var loading = false
     func planName(_ provider: Provider) -> String { ProviderLimits.planName(provider, plans[provider]) }
 }
@@ -53,6 +55,11 @@ struct HomeUsage: Equatable {
     var observations: [String: ExternalObservationSnapshot] = [:]
     var projectOrder: [String] = []
     var scrollID: String?
+    /// Every project's permanent lot in the overworld city, shared by all windows.
+    private(set) var cityLots = OverworldLotLedger()
+    /// Projects that joined the city this session, and when, so they can rise into place.
+    private(set) var cityArrivals: [String: Date] = [:]
+    private let cityLotsURL: URL?
     private var restored = false
     private var sourceFolders: [String: String] = [:]
     private var primarySources: [String: Session] = [:]
@@ -79,6 +86,11 @@ struct HomeUsage: Equatable {
         // Without a cache (tests) nothing is persisted and no provider command runs.
         limitsURL = cache?.deletingLastPathComponent().appendingPathComponent("provider-limits-v1.json")
         limits = ProviderLimitsCache.load(limitsURL)
+        cityLotsURL = cache == nil ? nil : FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask).first?
+            .appendingPathComponent("Diorama/city-lots-v1.json")
+        if let cityLotsURL, let data = try? Data(contentsOf: cityLotsURL), let saved = try? JSONDecoder().decode(OverworldLotLedger.self, from: data) {
+            cityLots = saved
+        }
         if let old = cache?.deletingLastPathComponent().appendingPathComponent("portfolio-usage-v1.json") { try? FileManager.default.removeItem(at: old) }
     }
     func register(_ sessions: [Session]) {
@@ -103,6 +115,19 @@ struct HomeUsage: Equatable {
         return projectOrder.compactMap { lookup[$0] } + projects.filter { !projectOrder.contains($0.id) }
     }
     func usage(_ id: String) -> PortfolioUsageSummary { usages[id] ?? .init() }
+    /// Gives new projects a lot and frees removed ones; existing projects never move.
+    func placeInCity(_ projects: [(id: String, district: OverworldDistrictKey)]) {
+        let next = cityLots.assigning(projects)
+        guard next != cityLots else { return }
+        // The first placement builds the whole city at once; only later arrivals rise in.
+        if !cityLots.lots.isEmpty {
+            for id in next.lots.keys where cityLots.lots[id] == nil { cityArrivals[id] = .now }
+        }
+        cityLots = next
+        guard let cityLotsURL, let data = try? JSONEncoder().encode(next) else { return }
+        try? FileManager.default.createDirectory(at: cityLotsURL.deletingLastPathComponent(), withIntermediateDirectories: true)
+        try? data.write(to: cityLotsURL, options: .atomic)
+    }
 
     func refresh(_ library: LibraryModel) async {
         guard !refreshing, !library.paused else { return }
@@ -224,16 +249,17 @@ struct HomeUsage: Equatable {
         })
         var counted = Set<String>(), projects: [HomeUsage.Node] = [], plans: [Provider: TokenSplit] = [:]
         for project in library.projects.projects {
-            var tokens = TokenSplit()
+            var tokens = TokenSplit(), days = Array(repeating: TokenSplit(), count: 7)
             // Subagent transcripts are separate model calls, so unlike the all-time lower bound they are included.
             for (key, source) in knownSources[project.id] ?? [:] where counted.insert(key).inserted {
                 guard let file = saved[key] else { continue }
                 next.loading = next.loading || file.loading
                 let recent = file.ledger.recent(days: 7)
                 tokens = tokens + recent
+                days = zip(days, file.ledger.daily(days: 7)).map { $0 + $1 }
                 plans[source.provider, default: TokenSplit()] = plans[source.provider, default: TokenSplit()] + recent
             }
-            if tokens.total > 0 { projects.append(.init(id: project.id, name: project.name, tokens: tokens)) }
+            if tokens.total > 0 { projects.append(.init(id: project.id, name: project.name, tokens: tokens)); next.projectDays[project.id] = days }
         }
         // Sessions outside Diorama projects are grouped by the folder they ran in.
         var folders: [String: TokenSplit] = [:]

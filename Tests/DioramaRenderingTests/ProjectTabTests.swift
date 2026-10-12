@@ -33,6 +33,37 @@ import Testing
         #expect(restored.home == store.home); #expect(restored.cameras == store.cameras)
         store.close("b"); #expect(store.selected == .home)
     }
+    @Test func homeLayoutRestoresAndToleratesOlderSavedState() throws {
+        var home = DesktopHomeState()
+        home.layout = .city
+        #expect(home.city && !home.list)
+        let restored = try JSONDecoder().decode(DesktopHomeState.self, from: JSONEncoder().encode(home))
+        #expect(restored.layout == .city)
+        let legacy = try JSONDecoder().decode(DesktopHomeState.self, from: Data(#"{"section":"Recents","query":"x","list":true}"#.utf8))
+        #expect(legacy.layout == .list); #expect(legacy.section == .recents); #expect(legacy.query == "x")
+    }
+    @Test func buildingSizeFollowsConversationsAndLogTokens() {
+        let empty = PortfolioBuildingMetrics(conversations: 0, tokens: nil)
+        #expect(empty == PortfolioBuildingMetrics(width: 2, depth: 2, floors: 2))
+        #expect(PortfolioBuildingMetrics(conversations: 4, tokens: 1_000_000).floors == 5)
+        // The skyline follows the tallest building present, never the theoretical maximum.
+        let street = PortfolioBuilding.skyline([(id: "a", metrics: empty), (id: "b", metrics: empty)])
+        #expect(street >= PortfolioBuilding.minimumSkyline)
+        #expect(PortfolioBuilding.skyline([(id: "a", metrics: empty), (id: "t", metrics: .init(width: 4, depth: 4, floors: 9))]) > street)
+        let huge = PortfolioBuildingMetrics(conversations: 500, tokens: 900_000_000_000)
+        #expect(huge == PortfolioBuildingMetrics(width: 4, depth: 4, floors: PortfolioBuildingMetrics.maxFloors))
+        #expect(PortfolioBuilding.hash("p", 3) == PortfolioBuilding.hash("p", 3))
+        #expect(PortfolioBuildingStyle.lowRises.count == 12); #expect(PortfolioBuildingStyle.towers.count == 12)
+        #expect(Set(PortfolioBuildingStyle.lowRises + PortfolioBuildingStyle.towers).count == PortfolioBuildingStyle.allCases.count)
+        let low = PortfolioBuildingMetrics(width: 3, depth: 3, floors: 3), tower = PortfolioBuildingMetrics(width: 4, depth: 4, floors: 9)
+        #expect(PortfolioBuildingStyle.lowRises.contains(.of(projectID: "p", metrics: low)))
+        #expect(PortfolioBuildingStyle.towers.contains(.of(projectID: "p", metrics: tower)))
+        #expect(PortfolioBuildingStyle.of(projectID: "p", metrics: tower) == PortfolioBuildingStyle.of(projectID: "p", metrics: tower))
+        for style in PortfolioBuildingStyle.allCases {
+            // Every silhouette fits the shared scale, including its roof and spire.
+            #expect(PortfolioMassing(style, metrics: tower).extent <= PortfolioBuilding.maxExtent)
+        }
+    }
     @Test func shortcutsRecentsAndMigration() {
         let store = ProjectTabStore(migration: .project("p", "c"))
         #expect(store.selected == .project("p")); #expect(store.workspaces["p"]?.focus.conversationID == "c")
@@ -93,6 +124,18 @@ import Testing
         library.closeProjectTab("p0"); library.selectProjectTab("p0")
         #expect(library.spatial.focus.agentID == "avatar")
         #expect(library.navigation.projectTabs.cameras["p0"]?.x == 8)
+    }
+    @Test func removingAProjectClosesItsTabAndDropsItFromTheList() {
+        let library = model()
+        library.selectProjectTab("p1"); library.selectProjectTab("p2")
+        library.removeProject("p2")
+        #expect(!library.projects.projects.contains { $0.id == "p2" })
+        #expect(!library.navigation.projectTabs.projects.contains("p2"))
+        #expect(library.navigation.projectTabs.selected == .project("p1")) // The neighbouring tab.
+        #expect(library.projects.selectedID != "p2")
+        library.removeProject("p5") // Not open in a tab: just leaves the list.
+        #expect(!library.projects.projects.contains { $0.id == "p5" })
+        #expect(library.projects.projects.count == 18)
     }
     @Test func namespacePersistenceAndMissingProjects() {
         let storage = defaults()

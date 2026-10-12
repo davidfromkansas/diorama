@@ -2,21 +2,21 @@ import AVFoundation
 import Foundation
 
 /// Foley for the kitchen: what each chef clip sounds like, pinned to points in the clip so a
-/// knife lands with its chop and a plate with its release. Sounds are CC0 clips from Kenney's
-/// RPG Audio, Impact Sounds and Interface Sounds packs (assets/kitchen-sounds/README.md), bundled
-/// as `Resources/KitchenSounds/<sound>-<n>.caf`; each play picks a variant at a slightly varied pitch.
+/// knife lands with its chop and a plate with its release. Sounds are synthesised, mostly in an
+/// Overcooked style (assets/kitchen-sounds/README.md), bundled as
+/// `Resources/KitchenSounds/<sound>-<n>.caf`; each play picks a variant at a slightly varied pitch.
 nonisolated enum KitchenSound: String, CaseIterable, Sendable {
-    case step, chop, clink, tap, page, pot, grab, plate, cloche, clatter, bell, error, cheer, ding, chair
+    case step, chop, clink, tap, page, pot, grab, plate, cloche, clatter, gong, error, cheer, ding, chair
 
     var variants: Int {
         switch self {
         case .step: 5
         case .chop, .clink, .tap, .page, .pot, .plate, .chair: 3
-        case .grab, .cloche, .clatter, .bell: 2
+        case .grab, .cloche, .clatter, .gong: 2
         case .error, .cheer, .ding: 1
         }
     }
-    /// Mixed so busy stations sit under the moments that call for attention (bell, error, serving).
+    /// Mixed so busy stations sit under the moments that call for attention (gong, error, serving).
     var volume: Float {
         switch self {
         case .step: 0.18
@@ -29,7 +29,7 @@ nonisolated enum KitchenSound: String, CaseIterable, Sendable {
         case .plate: 0.6
         case .cloche: 0.45
         case .clatter: 0.4
-        case .bell: 0.7
+        case .gong: 0.75
         case .error: 0.3
         case .cheer: 0.3
         case .ding: 0.35
@@ -58,8 +58,7 @@ nonisolated enum KitchenSound: String, CaseIterable, Sendable {
         "present_review": [(.marker("release"), .plate)],
         "cover_dish": [(.marker("release"), .cloche)],
         "cancel_cleanup": [(.marker("release"), .clatter)],
-        "request_input": [(.at(0.2), .bell)],
-        "blocked_react": [(.at(0.1), .bell)],
+        "strike_gong": [(.marker("impact"), .gong)],
         "error_react": [(.at(0), .error)],
         "celebrate_done": [(.at(0.1), .cheer)],
         "arrive_wave": [(.at(0), .ding)],
@@ -108,10 +107,12 @@ nonisolated final class KitchenAudio: @unchecked Sendable {
     }
 
     var enabled: Bool { UserDefaults.standard.object(forKey: Self.enabledKey) as? Bool ?? true }
+    /// Silences the kitchen for a while without changing the setting (the demo recording's warm-up).
+    var muted = false
 
     /// `pan` runs -1 (left) … 1 (right); `level` scales the sound's own volume (0…1).
     func play(_ sound: KitchenSound, pan: Float, level: Float = 1) {
-        guard Self.available else { return }
+        guard Self.available, !muted else { return }
         queue.async { [self] in
             guard enabled else { return }
             let now = CACurrentMediaTime()

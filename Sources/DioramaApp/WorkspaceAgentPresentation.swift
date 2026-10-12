@@ -342,6 +342,7 @@ extension LibraryModel {
     }
     func workspaceAgents(_ session: Session?) -> [WorkspaceAgent] {
         guard let session else { return [.ready] }
+        if let agents = demo?.agents[session.id] { return agents }
         let segments = conversations.record(session.id)?.segments
             ?? [ConversationSegment(nativeID: session.sessionID, provider: session.provider, model: "")]
         let sources = segments.compactMap { segment -> WorkspaceActivitySource? in

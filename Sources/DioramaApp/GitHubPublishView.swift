@@ -43,7 +43,7 @@ struct GitHubPublishView: View {
         .task { name = project.name; await load() }
         .onDisappear { operation?.cancel() }
         .sheet(isPresented: $showAccount, onDismiss: { Task { await load() } }) {
-            VStack(alignment: .leading, spacing: 20) { GitHubSettingsView(); HStack { Spacer(); Button("Done") { showAccount = false }.pointingHand() } }.padding(24).frame(width: 620)
+            GitHubConnectionModal()
         }
     }
     private func load() async {

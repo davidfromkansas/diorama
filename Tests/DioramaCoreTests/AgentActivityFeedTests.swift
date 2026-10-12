@@ -28,6 +28,29 @@ struct AgentActivityFeedTests {
         #expect(feed[4].outcome == .done && feed[4].duration == 15)
     }
 
+    @Test func shellReadsNameTheFileAndCommandsDropTheirFolders() {
+        let feed = AgentActivityFeed.entries(from: [
+            event("started"),
+            event("toolStarted", tool: "exec_command", detail: "sed -n '1,210p' tools/blender/chef_rig.py", call: "1"), event("toolFinished", call: "1"),
+            event("toolStarted", tool: "Edit", detail: "/r/a.swift", call: "2"),
+            event("toolStarted", tool: "exec_command", detail: "python3 tools/blender/build_traveler.py --out build/out.glb", call: "3"),
+        ])
+        #expect(feed.map(\.title) == ["Started a turn", "Looked at chef_rig.py", "Edited a.swift", "Ran python3 build_traveler.py --out out.glb"])
+    }
+
+    @Test func imagesAndCommandsGetTheirOwnLinesOnlyFileReadsMerge() {
+        let feed = AgentActivityFeed.entries(from: [
+            event("started"),
+            event("toolStarted", tool: "Read", detail: "/r/a.swift", call: "1"),
+            event("toolStarted", tool: "Read", detail: "/r/b.swift", call: "2"),
+            event("toolStarted", tool: "imageView", detail: "", call: "3"),
+            event("toolStarted", tool: "view_image", detail: "/tmp/boss_call.png", call: "4"),
+            event("toolStarted", tool: "exec_command", detail: "git diff --stat", call: "5"), event("toolFinished", call: "5"),
+            event("toolStarted", tool: "exec_command", detail: "cat README.md", call: "6"),
+        ])
+        #expect(feed.map(\.title) == ["Started a turn", "Looked at a.swift, b.swift", "Viewed an image", "Viewed boss_call.png", "Ran git diff --stat", "Looked at README.md"])
+    }
+
     @Test func codexHistoryCountsEachCallOnce() {
         func record(_ title: String, _ status: String, id: String, detail: String = "", data: WireValue = .null) -> SessionActivityRecord {
             SessionActivityRecord(id: id + ":r:" + UUID().uuidString, provider: "Codex", sessionID: "s", nativeID: id, kind: "tool", title: title,

@@ -19,3 +19,12 @@ assets/chef/verify/node_modules/
 # Reproducible delivery archive and local probe synchronization markers
 assets/capybara-delivery.zip
 artifacts/**/*.ready
+
+# Original Meshy downloads for the chef characters (about 20 MB each); not in git.
+# assets/chef/build_variants.sh rebuilds from them when present.
+assets/chef/variants/source/
+
+# Original Meshy downloads for the restaurant guests; not in git (only the downsampled builds ship).
+assets/chef/guests/source/
+assets/chef/staff/source/
+assets/breakroom/source/

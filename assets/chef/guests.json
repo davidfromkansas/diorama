@@ -1,0 +1,62 @@
+{
+  "note": "Restaurant guests, fitted to the chef's skeleton by blender/build_variant.py (build_variants.sh --guests). They sit at the tables outside the kitchen; seen small and from afar, so their budget is lower than the chefs'.",
+  "budget": {
+    "triangles": 3000,
+    "base": 512,
+    "normal": 512,
+    "metal_roughness": 256,
+    "bake": true
+  },
+  "characters": [
+    {
+      "id": "sweater",
+      "name": "Sweater",
+      "source": "Meshy_AI_Cozy_Character_Turnar_1009135958_texture.glb"
+    },
+    {
+      "id": "cardigan",
+      "name": "Cardigan",
+      "source": "Meshy_AI_Cozy_Character_Turnar_1009140036_texture.glb"
+    },
+    {
+      "id": "gentleman",
+      "name": "Gentleman",
+      "source": "Meshy_AI_Dapper_Gentleman_Char_1009135921_texture.glb"
+    },
+    {
+      "id": "emerald",
+      "name": "Emerald",
+      "source": "Meshy_AI_Emerald_Rose_Doll_Tur_1009135927_texture.glb"
+    },
+    {
+      "id": "festive",
+      "name": "Festive",
+      "source": "Meshy_AI_Festive_Character_Tur_1009135950_texture.glb"
+    },
+    {
+      "id": "golden",
+      "name": "Golden",
+      "source": "Meshy_AI_Golden_Festival_Doll_1009135940_texture.glb"
+    },
+    {
+      "id": "rosie",
+      "name": "Rosie",
+      "source": "Meshy_AI_Rosie_Turnaround_1009140023_texture.glb"
+    },
+    {
+      "id": "explorer",
+      "name": "Explorer",
+      "source": "Meshy_AI_Sunny_Day_Explorer_1008202325_texture.glb"
+    },
+    {
+      "id": "traveler",
+      "name": "Traveler",
+      "source": "Meshy_AI_Tiny_Traveler_1008202045_texture.glb"
+    },
+    {
+      "id": "urban",
+      "name": "Urban",
+      "source": "Meshy_AI_Urban_Groove_Characte_1009140009_texture.glb"
+    }
+  ]
+}

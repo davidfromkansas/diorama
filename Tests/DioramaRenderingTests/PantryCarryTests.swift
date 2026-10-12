@@ -84,7 +84,56 @@ import Testing
     }
 
     @Test func theModelsAreBundled() {
-        #expect(PantryCarry.models.count == 4)
+        #expect(PantryCarry.models.count == 7)
+        #expect(PantryCarry.models[.idea] != nil && PantryCarry.models[.board] != nil && PantryCarry.models[.pot] != nil)
+    }
+
+    @Test func eachStationHandsOverItsOwnThingToCarryToTheNextOne() {
+        let carrier = PantryCarrier(models: [.idea: SCNNode(), .board: SCNNode(), .pot: SCNNode()])
+        let floor = SCNNode(), socket = SCNNode()
+        var wanted: [String: PantryCarry.Item] = [:]
+        for area in ["order", "cooking", "stove"] { wanted[area] = PantryCarry.stationItem(area: area) }
+        func tick(_ area: String?, delivering: Bool = false) {
+            carrier.sync(wanted: wanted, area: area, reducedMotion: false, delta: 0.1, carrySocket: socket, fit: nil, floor: floor, counterTop: 0.9, delivering: delivering)
+        }
+        #expect(PantryCarry.stationItem(area: "tasting") == nil)
+        // The order rail's lightbulb is carried off and set down wherever the chef goes next.
+        tick("order")
+        #expect(carrier.item?.kind == .idea && carrier.placement == .counter)
+        // Staying at the station keeps the same one: no new pop each tick.
+        let bulb = carrier.node
+        for _ in 0..<5 { tick("order") }
+        #expect(carrier.node === bulb && carrier.fading == 0)
+        tick(nil)
+        #expect(carrier.placement == .carried && carrier.node?.parent === socket)
+        tick("tasting")
+        #expect(carrier.placement == .setDown)
+        // Straight from the cooking island to the stove: the board is set down there and the pot appears.
+        for _ in 0..<60 { tick("tasting") }
+        tick("cooking")
+        #expect(carrier.item?.kind == .board && carrier.placement == .counter)
+        // The chopped board lies on the board spot, still, under the knife.
+        for _ in 0..<10 { tick("cooking") }
+        let rest = PantryCarrier.boardSpot + SIMD3(0, 0.9, 0)
+        #expect(simd_distance(carrier.node!.simdPosition, rest) < 0.001)
+        tick(nil); tick("stove")
+        #expect(carrier.item?.kind == .pot && carrier.placement == .counter && carrier.fading == 1)
+    }
+
+    @Test func aChefTakingItsDishToServingLeavesTheStationsThingBehind() {
+        let carrier = PantryCarrier(models: [.board: SCNNode()])
+        let floor = SCNNode(), socket = SCNNode()
+        let wanted = ["cooking": PantryCarry.stationItem(area: "cooking")!]
+        func tick(_ area: String?, delivering: Bool) {
+            carrier.sync(wanted: wanted, area: area, reducedMotion: false, delta: 0.1, carrySocket: socket, fit: nil, floor: floor, counterTop: 0.9, delivering: delivering)
+        }
+        tick("cooking", delivering: false)
+        #expect(carrier.carrying)
+        // It picks up its dish here: the board is set down where it lies, and nothing is carried.
+        tick("cooking", delivering: true)
+        #expect(!carrier.carrying && carrier.fading == 1)
+        tick(nil, delivering: true)
+        #expect(carrier.placement == .none && carrier.node == nil)
     }
 
     @Test func thePlateCarriesTheStepTheAgentIsStarting() {

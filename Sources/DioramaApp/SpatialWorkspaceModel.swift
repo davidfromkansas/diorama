@@ -125,6 +125,8 @@ struct SpatialWorld: Equatable {
     var inboxSelection: InboxThread?
     var conversationWidth: Double?
     var conversationPanelVisible = false
+    /// A project whose Create (new task) modal should open once its workspace shows, set from Home.
+    var pendingCreation: String?
     var showArchived = false
     var notice: String?
     var resetGeneration = 0

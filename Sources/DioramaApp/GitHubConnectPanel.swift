@@ -7,62 +7,62 @@ enum GitHubSignIn {
     static var pending = 0
 }
 
-/// Connects Diorama's GitHub account in place: device-code sign-in, the code to enter, and the
-/// Keychain permission a separately signed build may need. Shared by setup and Add GitHub project.
+/// Connects Diorama's GitHub account in place, inside setup and Add GitHub project: device-code
+/// sign-in, the code to enter, and the Keychain permission a separately signed build may need. It
+/// shows the shared `GitHubConnection`, so it always agrees with the home button and the GitHub modal.
 struct GitHubConnectPanel: View {
     var changed: ((GitHubIdentity?) -> Void)? = nil
-    @State private var identity: GitHubIdentity?
-    @State private var status = "Checking connection…"
-    @State private var code: GitHubDeviceCode?
-    @State private var loginTask: Task<Void, Never>?
-    @State private var checking = false
+    @State private var connection = GitHubConnection.shared
 
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
             authPanel
-            if needsKeychain && code == nil { keychainRow }
-            else if identity == nil, loginTask == nil, !checking, status != "Checking connection…", status != "Not connected" {
-                Text(status).font(.system(size: 11)).foregroundStyle(.secondary).textSelection(.enabled)
+            if connection.state == .needsKeychain { keychainRow }
+            else if case .needsAttention(let problem) = connection.state {
+                Text(problem.message).font(.system(size: 11)).foregroundStyle(.secondary).textSelection(.enabled)
+            } else if let error = connection.signInError, connection.login == nil, !connection.signingIn {
+                Text(error).font(.system(size: 11)).foregroundStyle(.secondary).textSelection(.enabled)
             }
         }
-        .task { await check() }
-        .onChange(of: identity?.login) { changed?(identity) }
-        .onDisappear { loginTask?.cancel() }
+        .task { await connection.refresh() }
+        .onChange(of: connection.login) { changed?(connection.identity) }
     }
-
-    /// Diorama found a saved login, but macOS needs permission before this build can read it.
-    private var needsKeychain: Bool { identity == nil && status.contains("Keychain") && !status.contains("Could not") }
 
     private var authPanel: some View {
         VStack(alignment: .leading, spacing: 0) {
             HStack(spacing: 14) {
                 GitHubMarkTile(size: 44, mark: 22)
                 VStack(alignment: .leading, spacing: 4) {
-                    Text(identity.map { "Connected as @" + $0.login } ?? "Connect your GitHub account").font(.system(size: 14, weight: .semibold))
-                    Text(identity == nil ? "Diorama opens GitHub in your browser. Your password is never shared." : "Diorama can now import, publish, and open pull requests.")
+                    Text(connection.login.map { "Connected as @" + $0 } ?? "Connect your GitHub account").font(.system(size: 14, weight: .semibold))
+                    Text(connection.login == nil ? "Diorama opens GitHub in your browser. Your password is never shared." : "Diorama can now import, publish, and open pull requests.")
                         .font(.system(size: 11)).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
                 }
                 Spacer(minLength: 8)
-                if identity != nil {
-                    Label("Connected", systemImage: "checkmark.circle.fill").font(.system(size: 11, weight: .semibold)).foregroundStyle(.green)
-                } else if checking && loginTask == nil {
+                switch connection.state {
+                case .connected:
+                    Label("Connected", systemImage: "checkmark.circle.fill").font(.system(size: 11, weight: .semibold)).foregroundStyle(GitHubStyle.green)
+                case .checking:
                     ProgressView().controlSize(.small).accessibilityLabel("Checking GitHub connection")
-                } else if code == nil {
-                    Button(action: connect) {
+                case .signingIn:
+                    Button("Cancel") { connection.cancelSignIn() }.buttonStyle(.plain).font(.system(size: 11, weight: .semibold)).foregroundStyle(.secondary).pointingHand()
+                default:
+                    Button { connection.connect() } label: {
                         HStack(spacing: 9) { Text("Continue with GitHub"); Image(systemName: "arrow.up.right").font(.system(size: 10, weight: .bold)) }
-                    }.buttonStyle(GitHubContinueButtonStyle()).pointingHand().disabled(loginTask != nil)
+                    }.buttonStyle(GitHubContinueButtonStyle()).pointingHand().disabled(connection.signingIn)
                 }
             }
-            if let code {
+            if case .signingIn(let code, _, _) = connection.state {
                 Divider().padding(.top, 14).padding(.bottom, 12)
                 HStack(spacing: 11) {
                     Text("ENTER THIS CODE ON GITHUB").font(.system(size: 9, weight: .semibold, design: .monospaced)).tracking(0.5).foregroundStyle(.secondary)
-                    Text(code.user_code).font(.system(size: 14, weight: .semibold, design: .monospaced)).tracking(1.5).textSelection(.enabled)
+                    Text(code).font(.system(size: 14, weight: .semibold, design: .monospaced)).tracking(1.5).textSelection(.enabled)
                         .padding(.horizontal, 10).padding(.vertical, 7)
                         .background(.black.opacity(0.25), in: RoundedRectangle(cornerRadius: 7))
                         .overlay(RoundedRectangle(cornerRadius: 7).strokeBorder(.primary.opacity(0.15)))
-                    Button { NSPasteboard.general.clearContents(); NSPasteboard.general.setString(code.user_code, forType: .string) } label: { Image(systemName: "doc.on.doc") }
+                    Button { NSPasteboard.general.clearContents(); NSPasteboard.general.setString(code, forType: .string) } label: { Image(systemName: "doc.on.doc") }
                         .buttonStyle(.borderless).help("Copy code").accessibilityLabel("Copy code").pointingHand()
+                    Button { connection.openVerification() } label: { Image(systemName: "arrow.up.right.square") }
+                        .buttonStyle(.borderless).help("Open GitHub again").accessibilityLabel("Open GitHub again").pointingHand()
                     Spacer(minLength: 8)
                     ProgressView().controlSize(.mini)
                     Text("Waiting for browser confirmation…").font(.system(size: 10)).foregroundStyle(.secondary)
@@ -79,34 +79,12 @@ struct GitHubConnectPanel: View {
             Text("Diorama found a saved GitHub login. macOS needs your permission to use it.")
                 .font(.system(size: 11)).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
             Spacer(minLength: 8)
-            Button("Allow Keychain access…") {
-                checking = true
-                Task.detached {
-                    _ = try? GitHubCredentials.loadRecord(allowInteraction: true)
-                    await check()
-                }
-            }.controlSize(.small).pointingHand().disabled(checking || loginTask != nil)
+            Button("Allow Keychain access…") { Task { await connection.allowKeychainAccess() } }
+                .controlSize(.small).pointingHand().disabled(connection.checking || connection.signingIn)
         }
         .padding(.horizontal, 14).padding(.vertical, 10)
         .background(.primary.opacity(0.03), in: RoundedRectangle(cornerRadius: 10))
         .overlay(RoundedRectangle(cornerRadius: 10).strokeBorder(.primary.opacity(0.08)))
-    }
-    private func check() async {
-        checking = true; defer { checking = false }
-        do { identity = try await GitHubAccount.shared.identity(); status = "Connected" }
-        catch { identity = nil; status = error.localizedDescription }
-    }
-    private func connect() {
-        GitHubSignIn.pending += 1
-        loginTask = Task {
-            defer { loginTask = nil; code = nil; GitHubSignIn.pending -= 1 }
-            do {
-                let device = try await GitHubAccount.shared.startLogin(); code = device
-                NSWorkspace.shared.open(URL(string: "https://github.com/login/device")!)
-                identity = try await GitHubAccount.shared.finishLogin(device); status = "Connected"
-            } catch is CancellationError { status = "Sign-in cancelled" }
-            catch { status = error.localizedDescription }
-        }
     }
 }
 

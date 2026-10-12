@@ -19,12 +19,17 @@ struct AttachmentPicker: View {
     var showsAttachments = true
     var iconOnly = false
     var menuRow = false
+    /// The iMessage + menu's "Photos & Files" row.
+    var avatarRow = false
     var showIntegrations: (() -> Void)? = nil
     @State private var error: String?
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
             if showsButton { HStack {
-                if menuRow {
+                if avatarRow {
+                    Button(action: chooseFiles) { AvatarMenuRow(icon: "photo.on.rectangle", color: .blue, title: "Photos & Files") }
+                        .buttonStyle(.plain).pointingHand().disabled(disabled)
+                } else if menuRow {
                     Button(action: chooseFiles) { ComposerOptionLabel(title: "Add attachment", icon: "paperclip") }.pointingHand()
                         .buttonStyle(HoverButtonStyle(inset: 0)).disabled(disabled)
                 } else if let showIntegrations {

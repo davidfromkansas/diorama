@@ -297,7 +297,7 @@ public enum ActivityParser {
             if r["type"] as? String == "user", let soleText, interruptionMarkers.contains(soleText) {
                 return [event("interrupted", .interrupted)]
             }
-            if r["type"] as? String == "user", r["isMeta"] as? Bool != true,
+            if r["type"] as? String == "user", !ClaudeNormalizer.isSystemRecord(r),
                !blocks.contains(where: { $0["type"] as? String == "tool_result" }),
                message["content"] is String || blocks.contains(where: { $0["type"] as? String == "text" }) {
                 events.append(event("started", .working))

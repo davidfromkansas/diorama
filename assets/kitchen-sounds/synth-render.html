@@ -1,0 +1,199 @@
+<!doctype html><html><body><pre id="out">rendering</pre><script>
+const VARIANTS = { step:5, chop:3, clink:3, tap:3, page:3, pot:3, grab:2, plate:3, cloche:2, clatter:2, gong:2, error:1, cheer:1, ding:1, chair:3 };
+const VOLUME = { step:.18, chop:.35, clink:.3, tap:.35, page:.6, pot:.18, grab:1, plate:.6, cloche:.45, clatter:.4, gong:.75, error:.3, cheer:.3, ding:.35, chair:.6 };
+const PICKS = {"step": "oc-step", "chair": "oc-chair", "chop": "oc-chop", "pot": "oc-pot", "clink": "oc-clink", "tap": "oc-tap", "page": "flip", "grab": "oc-grab", "plate": "oc-plate", "cloche": "oc-cloche", "clatter": "oc-clatter", "gong": "softgong", "ding": "musicbox", "cheer": "oc-cheer", "error": "oc-error"};
+const SR = 44100;
+let ctx, master, send, noiseBuf;
+function bus(t, vol) { const g = ctx.createGain(); g.gain.value = vol; g.connect(master); g.connect(send); return g; }
+/* synth building blocks; every frequency is scaled by r (pitch) */
+function env(param, t, a, d, peak) {
+  param.setValueAtTime(0.0001, t);
+  param.linearRampToValueAtTime(peak, t + a);
+  param.exponentialRampToValueAtTime(0.0001, t + a + d);
+}
+function tone(o, t, { type = 'sine', f, f2, glide, a = 0.003, d = 0.2, g = 0.5, r = 1, vib = 0, vibRate = 6, lp }) {
+  const os = ctx.createOscillator(); os.type = type;
+  os.frequency.setValueAtTime(f * r, t);
+  if (f2) os.frequency.exponentialRampToValueAtTime(f2 * r, t + (glide || a + d));
+  if (vib) { const l = ctx.createOscillator(), lg = ctx.createGain(); l.frequency.value = vibRate; lg.gain.value = vib * f * r; l.connect(lg); lg.connect(os.frequency); l.start(t); l.stop(t + a + d + 0.05); }
+  const ga = ctx.createGain(); env(ga.gain, t, a, d, g);
+  let node = os;
+  if (lp) { const fl = ctx.createBiquadFilter(); fl.type = 'lowpass'; fl.frequency.value = lp * r; os.connect(fl); node = fl; }
+  node.connect(ga); ga.connect(o);
+  os.start(t); os.stop(t + a + d + 0.05);
+}
+function noise(o, t, { type = 'bandpass', f = 1000, f2, Q = 1, a = 0.002, d = 0.1, g = 0.5, r = 1, flutter = 0 }) {
+  const s = ctx.createBufferSource(); s.buffer = noiseBuf;
+  const fl = ctx.createBiquadFilter(); fl.type = type; fl.Q.value = Q;
+  fl.frequency.setValueAtTime(f * r, t);
+  if (f2) fl.frequency.exponentialRampToValueAtTime(f2 * r, t + a + d);
+  const ga = ctx.createGain(); env(ga.gain, t, a, d, g);
+  s.connect(fl); fl.connect(ga);
+  if (flutter) { const am = ctx.createGain(); am.gain.value = 0.5; const l = ctx.createOscillator(); const lg = ctx.createGain(); l.frequency.value = flutter; lg.gain.value = 0.5; l.connect(lg); lg.connect(am.gain); l.start(t); l.stop(t + a + d + 0.05); ga.connect(am); am.connect(o); }
+  else ga.connect(o);
+  s.start(t, Math.random() * 0.5); s.stop(t + a + d + 0.05);
+}
+function metal(o, t, base, ratios, { d = 0.4, g = 0.3, r = 1, a = 0.001 } = {}) {
+  ratios.forEach((k, i) => tone(o, t, { f: base * k, a, d: d / (1 + i * 0.35), g: g / (1 + i * 0.6), r }));
+}
+const N = (n) => 440 * Math.pow(2, (n - 69) / 12); // midi note to Hz
+
+/* ---------- the sounds ---------- */
+const GROUPS = [
+  { name: 'Movement', blurb: 'Chefs crossing the kitchen and settling in.', sounds: ['step', 'chair'] },
+  { name: 'Cooking', blurb: 'The busy, repeated sounds of work at the stations. These sit lowest in the mix.', sounds: ['chop', 'pot', 'clink', 'tap', 'page'] },
+  { name: 'Serving', blurb: 'Picking things up, plating, covering and clearing.', sounds: ['grab', 'plate', 'cloche', 'clatter'] },
+  { name: 'Moments', blurb: 'One-off sounds that ask for your attention.', sounds: ['gong', 'ding', 'cheer', 'error'] },
+];
+
+const SOUNDS = {
+  step: { label: 'Footstep', when: "Chef's footsteps, two per stride, while walking, running or carrying a dish.", cues: 'walk · run · carry_walk', source: 'Kenney footstep_concrete 000–004',
+    alts: [
+      { id: 'felt', name: 'Felt pad', desc: 'Soft, muffled slipper step. Barely there under a busy kitchen.', play: (o, t, r) => { noise(o, t, { type: 'lowpass', f: 450, Q: 0.7, d: 0.06, g: 0.9, r }); tone(o, t, { f: 95, f2: 70, d: 0.05, g: 0.6, r }); } },
+      { id: 'clack', name: 'Wooden clack', desc: 'Little wooden clog on a tiled floor, like a toy figure.', play: (o, t, r) => { noise(o, t, { f: 1900, Q: 5, d: 0.03, g: 1.1, r }); tone(o, t, { type: 'triangle', f: 640, f2: 420, d: 0.04, g: 0.35, r }); } },
+      { id: 'squeak', name: 'Squeaky shoe', desc: 'Tiny rubber chirp with a soft thump. Playful, a little silly.', play: (o, t, r) => { tone(o, t, { f: 1500, f2: 2000, glide: 0.06, a: 0.01, d: 0.06, g: 0.12, r }); tone(o, t, { f: 110, f2: 80, d: 0.04, g: 0.45, r }); } },
+      { id: 'patter', name: 'Patter blip', desc: 'Rounded pitched tap, Animal Crossing style.', play: (o, t, r) => { tone(o, t, { f: N(67 + (Math.random() < 0.5 ? 0 : 2)), d: 0.05, g: 0.35, r }); noise(o, t, { type: 'lowpass', f: 700, d: 0.03, g: 0.4, r }); } },
+    ] },
+  chair: { label: 'Chair', when: 'Chair creak as a chef sits down for a break and again when they stand up.', cues: 'sit_down · stand_up', source: 'Kenney creak1–3',
+    alts: [
+      { id: 'creak', name: 'Little creak', desc: 'Short, high wooden creak. Cuter than a real chair.', play: (o, t, r) => { tone(o, t, { type: 'sawtooth', f: 420, f2: 300, a: 0.02, d: 0.18, g: 0.12, r, vib: 0.08, vibRate: 38, lp: 1400 }); } },
+      { id: 'cushion', name: 'Cushion puff', desc: 'Soft whoomph of sitting onto a padded seat.', play: (o, t, r) => { noise(o, t, { type: 'lowpass', f: 1400, f2: 250, a: 0.02, d: 0.2, g: 0.8, r }); tone(o, t, { f: 90, f2: 60, a: 0.01, d: 0.12, g: 0.5, r }); } },
+      { id: 'boing', name: 'Boing down', desc: 'Small spring settling. Cartoon chair.', play: (o, t, r) => { tone(o, t, { f: 320, f2: 140, glide: 0.2, a: 0.005, d: 0.25, g: 0.35, r, vib: 0.05, vibRate: 14 }); } },
+    ] },
+  chop: { label: 'Chop', when: 'Knife hitting the board, twice per chopping cycle.', cues: 'working_chop', source: 'Kenney chop, knifeSlice, knifeSlice2',
+    alts: [
+      { id: 'thunk', name: 'Block thunk', desc: 'Knife on a thick wooden board. Round and woody.', play: (o, t, r) => { tone(o, t, { type: 'triangle', f: 240, f2: 150, d: 0.07, g: 0.7, r }); noise(o, t, { f: 2600, Q: 2, d: 0.015, g: 0.6, r }); } },
+      { id: 'crisp', name: 'Crisp veggie', desc: 'Bright crunch, like cutting a carrot.', play: (o, t, r) => { noise(o, t, { type: 'highpass', f: 3000, d: 0.025, g: 0.6, r }); noise(o, t + 0.018, { f: 4800, Q: 3, d: 0.02, g: 0.5, r }); tone(o, t, { f: 170, d: 0.04, g: 0.35, r }); } },
+      { id: 'toy', name: 'Toy knife', desc: 'Tiny pitched tick, Cooking Mama style.', play: (o, t, r) => { tone(o, t, { type: 'square', f: 900, f2: 500, d: 0.035, g: 0.18, r, lp: 2500 }); tone(o, t, { f: 200, d: 0.04, g: 0.4, r }); } },
+    ] },
+  pot: { label: 'Pot', when: 'Pot noise at the stove while a chef waits for a tool to finish.', cues: 'waiting_tool', source: 'Kenney metalPot1–3',
+    alts: [
+      { id: 'rattle', name: 'Lid rattle', desc: 'Three quick light taps of a lid jiggling on the pot.', play: (o, t, r) => { [0, 0.06, 0.115].forEach((dt, i) => metal(o, t + dt, 1150 * rnd(0.97, 1.03), [1, 1.51, 2.31], { d: 0.12, g: 0.35 / (1 + i * 0.5), r })); } },
+      { id: 'blorp', name: 'Bubble blorp', desc: 'A few soup bubbles popping. Gentle and round.', play: (o, t, r) => { [0, 0.09, 0.2].forEach((dt) => tone(o, t + dt, { f: rnd(250, 340), f2: rnd(600, 800), glide: 0.05, a: 0.004, d: 0.06, g: 0.4, r })); } },
+      { id: 'simmer', name: 'Simmer', desc: 'Soft hiss with one bubble, like a pot on low heat.', play: (o, t, r) => { noise(o, t, { f: 3200, Q: 0.8, a: 0.12, d: 0.35, g: 0.25, r }); tone(o, t + 0.15, { f: 300, f2: 700, glide: 0.05, d: 0.06, g: 0.3, r }); } },
+    ] },
+  clink: { label: 'Clink', when: 'Spoon or cup clink when a chef tastes a dish or sips a drink on break.', cues: 'testing_dish · sit_sip', source: 'Kenney impactGlass_light 000–002',
+    alts: [
+      { id: 'ting', name: 'Glass ting', desc: 'Clean, bright single ring.', play: (o, t, r) => { metal(o, t, 2350, [1, 2.47, 4.1], { d: 0.45, g: 0.35, r }); } },
+      { id: 'teacup', name: 'Teacup clink', desc: 'Two light ticks of china on a saucer.', play: (o, t, r) => { metal(o, t, 1800, [1, 2.35], { d: 0.14, g: 0.35, r }); metal(o, t + 0.07, 1850, [1, 2.35], { d: 0.12, g: 0.2, r }); } },
+      { id: 'spoon', name: 'Spoon on bowl', desc: 'Lower, warmer ring of a spoon tapping a ceramic bowl.', play: (o, t, r) => { metal(o, t, 1050, [1, 2.6, 4.3], { d: 0.6, g: 0.3, r }); noise(o, t, { f: 3000, Q: 2, d: 0.01, g: 0.3, r }); } },
+    ] },
+  tap: { label: 'Tap', when: 'Pen tap on the recipe while a chef is planning.', cues: 'planning_recipe', source: 'Kenney click_001–003',
+    alts: [
+      { id: 'pencil', name: 'Pencil tap', desc: 'Dry wooden tick of a pencil on paper.', play: (o, t, r) => { noise(o, t, { f: 2600, Q: 4, d: 0.012, g: 0.9, r }); tone(o, t, { type: 'triangle', f: 1200, d: 0.02, g: 0.2, r }); } },
+      { id: 'marker', name: 'Marker click', desc: 'Crisp plastic click of a pen cap.', play: (o, t, r) => { noise(o, t, { type: 'highpass', f: 4000, d: 0.008, g: 0.7, r }); noise(o, t + 0.03, { type: 'highpass', f: 5000, d: 0.006, g: 0.4, r }); } },
+      { id: 'pop', name: 'Idea pop', desc: 'Small rising bubble, as if a thought just landed.', play: (o, t, r) => { tone(o, t, { f: 600, f2: 1300, glide: 0.04, d: 0.05, g: 0.3, r }); } },
+    ] },
+  page: { label: 'Page', when: 'Page flip when a chef researches in the cookbook or reads a new ticket.', cues: 'researching_book · read_ticket', source: 'Kenney bookFlip1–3',
+    alts: [
+      { id: 'flip', name: 'Paper flip', desc: 'Quick fluttering riffle of a few pages.', play: (o, t, r) => { noise(o, t, { f: 1800, f2: 5200, Q: 1.2, a: 0.02, d: 0.14, g: 0.45, r, flutter: 45 }); } },
+      { id: 'ticket', name: 'Ticket slide', desc: 'Smooth swish of a paper slip pulled off the rail.', play: (o, t, r) => { noise(o, t, { type: 'highpass', f: 1500, f2: 3500, a: 0.06, d: 0.1, g: 0.35, r }); } },
+      { id: 'book', name: 'Cookbook thump', desc: 'Heavy book flopping open on the counter.', play: (o, t, r) => { noise(o, t, { type: 'lowpass', f: 900, d: 0.09, g: 0.7, r }); tone(o, t, { f: 120, f2: 80, d: 0.08, g: 0.45, r }); noise(o, t + 0.04, { f: 3000, d: 0.06, g: 0.15, r, flutter: 40 }); } },
+    ] },
+  grab: { label: 'Grab', when: 'A hand closing on an ingredient or dish as a chef picks it up.', cues: 'pickup', source: 'Kenney handleSmallLeather, handleSmallLeather2',
+    alts: [
+      { id: 'pluck', name: 'Soft pluck', desc: 'Short woody pluck, like lifting a toy block.', play: (o, t, r) => { tone(o, t, { type: 'triangle', f: 520, f2: 720, glide: 0.03, d: 0.06, g: 0.4, r }); noise(o, t, { f: 2000, Q: 3, d: 0.01, g: 0.3, r }); } },
+      { id: 'bloop', name: 'Pick-up bloop', desc: 'Upward pop, the classic "got it" item sound.', play: (o, t, r) => { tone(o, t, { f: 420, f2: 950, glide: 0.07, a: 0.004, d: 0.08, g: 0.35, r }); } },
+      { id: 'cloth', name: 'Apron rustle', desc: 'Quick cloth rustle of an arm reaching.', play: (o, t, r) => { noise(o, t, { type: 'bandpass', f: 1400, Q: 0.8, a: 0.015, d: 0.07, g: 0.5, r, flutter: 30 }); } },
+    ] },
+  plate: { label: 'Plate', when: 'A plate set down on the counter, when putting something down or presenting a dish for review.', cues: 'putdown · present_review', source: 'Kenney impactPlate_light 000–002',
+    alts: [
+      { id: 'ceramic', name: 'Ceramic clack', desc: 'Light, tidy china knock.', play: (o, t, r) => { metal(o, t, 1600, [1, 1.84, 2.56], { d: 0.14, g: 0.3, r }); noise(o, t, { f: 3500, Q: 2, d: 0.012, g: 0.4, r }); tone(o, t, { f: 220, d: 0.04, g: 0.25, r }); } },
+      { id: 'tray', name: 'Wooden tray', desc: 'Warm knock of a dish on a wooden serving board.', play: (o, t, r) => { tone(o, t, { type: 'triangle', f: 380, f2: 330, d: 0.09, g: 0.45, r }); noise(o, t, { f: 900, Q: 2, d: 0.03, g: 0.5, r }); } },
+      { id: 'marimba', name: 'Serving chime', desc: 'Two soft marimba notes: here you go.', play: (o, t, r) => { tone(o, t, { f: N(72), d: 0.22, g: 0.3, r }); tone(o, t, { f: N(72) * 4, d: 0.05, g: 0.06, r }); tone(o, t + 0.09, { f: N(79), d: 0.3, g: 0.3, r }); tone(o, t + 0.09, { f: N(79) * 4, d: 0.05, g: 0.06, r }); } },
+    ] },
+  cloche: { label: 'Cloche', when: 'The silver dome set over a finished dish.', cues: 'cover_dish', source: 'Kenney impactMetal_light 000–001',
+    alts: [
+      { id: 'dome', name: 'Silver dome ting', desc: 'Bright metal ring that hangs for a moment.', play: (o, t, r) => { metal(o, t, 1300, [1, 1.63, 2.62, 3.9], { d: 0.9, g: 0.25, r }); noise(o, t, { f: 4000, Q: 2, d: 0.01, g: 0.3, r }); } },
+      { id: 'swoosh', name: 'Swoosh and clink', desc: 'Dome sweeps down, then lands with a small clink.', play: (o, t, r) => { noise(o, t, { f: 500, f2: 3000, Q: 1.2, a: 0.1, d: 0.06, g: 0.35, r }); metal(o, t + 0.16, 1700, [1, 2.4], { d: 0.35, g: 0.3, r }); } },
+      { id: 'thup', name: 'Muted dome', desc: 'Low, padded thup. Calm rather than shiny.', play: (o, t, r) => { tone(o, t, { f: 190, f2: 150, d: 0.12, g: 0.5, r }); metal(o, t, 880, [1, 2.2], { d: 0.25, g: 0.12, r }); } },
+    ] },
+  clatter: { label: 'Clatter', when: 'Things dumped in a bin when a chef clears up a cancelled order.', cues: 'cancel_cleanup', source: 'Kenney impactTin_medium 000–001',
+    alts: [
+      { id: 'tin', name: 'Tin tumble', desc: 'A handful of light metal pieces bouncing.', play: (o, t, r) => { let dt = 0; for (let i = 0; i < 6; i++) { metal(o, t + dt, rnd(900, 1600), [1, 1.47, 2.2], { d: 0.15, g: 0.3 / (1 + i * 0.3), r }); dt += rnd(0.04, 0.08); } } },
+      { id: 'spoons', name: 'Wooden spoons', desc: 'Utensils knocking together in a crock.', play: (o, t, r) => { let dt = 0; for (let i = 0; i < 5; i++) { noise(o, t + dt, { f: rnd(1200, 2200), Q: 5, d: 0.03, g: 0.9 / (1 + i * 0.3), r }); tone(o, t + dt, { type: 'triangle', f: rnd(500, 750), d: 0.04, g: 0.2, r }); dt += rnd(0.05, 0.09); } } },
+      { id: 'tumble', name: 'Cartoon tumble', desc: 'Descending bonks with a soft crash at the end.', play: (o, t, r) => { [76, 72, 69, 64].forEach((n, i) => tone(o, t + i * 0.07, { type: 'triangle', f: N(n), d: 0.08, g: 0.3, r })); noise(o, t + 0.28, { f: 2500, Q: 0.7, d: 0.18, g: 0.35, r }); } },
+    ] },
+  gong: { label: 'Gong', when: 'A chef strikes the gong when they need you to look at something.', cues: 'strike_gong', source: 'Generated by make_gong.py (bronze partials, felt mallet)',
+    alts: [
+      { id: 'bell', name: 'Warm bell', desc: 'Round hand-bell tone. Gets attention without startling.', play: (o, t, r) => { metal(o, t, 523, [1, 2.0, 2.76, 5.4], { d: 1.8, g: 0.35, r }); tone(o, t, { f: 1046, d: 0.3, g: 0.08, r }); } },
+      { id: 'triangle', name: 'Triangle ding', desc: 'Chuckwagon triangle, three quick strikes.', play: (o, t, r) => { [0, 0.13, 0.26].forEach((dt, i) => metal(o, t + dt, 1760, [1, 2.43, 3.9], { d: i === 2 ? 1.2 : 0.4, g: 0.2, r })); } },
+      { id: 'timer', name: 'Kitchen timer', desc: 'Wind-up egg timer bell rattling for a moment.', play: (o, t, r) => { for (let i = 0; i < 18; i++) metal(o, t + i * 0.04, 2600, [1, 1.5], { d: 0.06, g: 0.16, r }); } },
+      { id: 'softgong', name: 'Soft gong', desc: 'Small, mellow gong with a slow swell. Closest to today.', play: (o, t, r) => { metal(o, t, 196, [1, 1.52, 2.1, 2.98], { a: 0.02, d: 2.4, g: 0.45, r }); noise(o, t, { type: 'lowpass', f: 300, d: 0.05, g: 0.4, r }); } },
+    ] },
+  ding: { label: 'Ding', when: 'Elevator arrival, as a new chef steps into the kitchen and waves.', cues: 'arrive_wave', source: 'Kenney bong_001',
+    alts: [
+      { id: 'bingbong', name: 'Bing-bong', desc: 'Two-note doorbell chime: someone is here.', play: (o, t, r) => { metal(o, t, N(76), [1, 2, 3], { d: 0.6, g: 0.3, r }); metal(o, t + 0.28, N(72), [1, 2, 3], { d: 0.9, g: 0.3, r }); } },
+      { id: 'musicbox', name: 'Music box', desc: 'Short tinkly three-note hello.', play: (o, t, r) => { [84, 88, 91].forEach((n, i) => { tone(o, t + i * 0.09, { type: 'triangle', f: N(n), d: 0.35, g: 0.22, r }); tone(o, t + i * 0.09, { f: N(n) * 3, d: 0.08, g: 0.05, r }); }); } },
+      { id: 'servicebell', name: 'Service bell', desc: 'Front-desk counter bell, one bright ding.', play: (o, t, r) => { metal(o, t, 2200, [1, 2.41, 3.8], { d: 1.1, g: 0.25, r }); noise(o, t, { type: 'highpass', f: 5000, d: 0.01, g: 0.3, r }); } },
+    ] },
+  cheer: { label: 'Cheer', when: 'A chef celebrates finishing a task.', cues: 'celebrate_done', source: 'Kenney confirmation_002',
+    alts: [
+      { id: 'arp', name: 'Rising arpeggio', desc: 'Happy four-note climb, C E G C.', play: (o, t, r) => { [72, 76, 79, 84].forEach((n, i) => tone(o, t + i * 0.075, { type: 'triangle', f: N(n), d: i === 3 ? 0.45 : 0.15, g: 0.35, r })); } },
+      { id: 'sparkle', name: 'Sparkle', desc: 'Quick shower of bright twinkles going up.', play: (o, t, r) => { for (let i = 0; i < 8; i++) tone(o, t + i * 0.04, { f: N(84 + i * 2 + Math.floor(rnd(0, 2))), d: 0.18, g: 0.15, r }); } },
+      { id: 'fanfare', name: 'Toy fanfare', desc: 'Kazoo-like ta-daa from a party horn.', play: (o, t, r) => { tone(o, t, { type: 'sawtooth', f: N(67), a: 0.01, d: 0.12, g: 0.18, r, lp: 1800 }); tone(o, t + 0.14, { type: 'sawtooth', f: N(72), a: 0.02, d: 0.5, g: 0.2, r, lp: 2000, vib: 0.01, vibRate: 6 }); } },
+    ] },
+  error: { label: 'Error', when: 'A chef reacts when something goes wrong.', cues: 'error_react', source: 'Kenney error_004',
+    alts: [
+      { id: 'bonk', name: 'Soft bonk', desc: 'Gentle head-bonk. Oops, not alarm.', play: (o, t, r) => { tone(o, t, { f: 240, f2: 150, glide: 0.12, d: 0.16, g: 0.6, r }); noise(o, t, { type: 'lowpass', f: 600, d: 0.04, g: 0.4, r }); } },
+      { id: 'uhoh', name: 'Uh-oh', desc: 'Two falling notes, like a sad little horn.', play: (o, t, r) => { tone(o, t, { type: 'triangle', f: N(67), a: 0.01, d: 0.16, g: 0.4, r }); tone(o, t + 0.18, { type: 'triangle', f: N(62), f2: N(60), glide: 0.3, a: 0.01, d: 0.35, g: 0.4, r, vib: 0.015, vibRate: 7 }); } },
+      { id: 'buzz', name: 'Low buzz', desc: 'Short, muffled buzzer. Clear but not harsh.', play: (o, t, r) => { tone(o, t, { type: 'square', f: 150, a: 0.01, d: 0.22, g: 0.25, r, lp: 500 }); tone(o, t + 0.26, { type: 'square', f: 130, a: 0.01, d: 0.25, g: 0.25, r, lp: 500 }); } },
+    ] },
+};
+
+/* ---------- Overcooked-style options: short, punchy, cartoon-bright (made in code, in the spirit of the game) ---------- */
+const OC = {
+  step: { name: 'Overcooked-style: pitter-pat', desc: 'Quick, light rubber-soled patter, the busy scurry of chefs dashing between stations.', play: (o, t, r) => { noise(o, t, { f: 1900, Q: 1.6, d: 0.022, g: 0.8, r }); tone(o, t, { type: 'triangle', f: 240, f2: 170, d: 0.03, g: 0.35, r }); } },
+  chair: { name: 'Overcooked-style: stool bonk', desc: 'A hollow plastic stool bonk with a little bounce.', play: (o, t, r) => { tone(o, t, { type: 'triangle', f: 330, f2: 210, d: 0.09, g: 0.5, r }); tone(o, t + 0.07, { type: 'triangle', f: 260, f2: 200, d: 0.05, g: 0.2, r }); noise(o, t, { type: 'lowpass', f: 600, d: 0.03, g: 0.3, r }); } },
+  chop: { name: 'Overcooked-style: chk-chk', desc: 'A crisp knife strike with a crunchy veggie snap and a woody board thunk: fast and satisfying on repeat.', play: (o, t, r) => { noise(o, t, { f: 3800, Q: 2.2, d: 0.025, g: 0.9, r }); tone(o, t, { f: 170, f2: 110, d: 0.05, g: 0.55, r }); noise(o, t + 0.008, { f: 1300, Q: 3, d: 0.04, g: 0.45, r }); } },
+  pot: { name: 'Overcooked-style: bubbling pot', desc: 'Cartoon bubbles popping over a soft simmer.', play: (o, t, r) => { [0, 0.09, 0.2].forEach((dt, i) => tone(o, t + dt, { f: 260 + i * 60, f2: 620 + i * 80, d: 0.06, g: 0.3, r })); noise(o, t, { type: 'lowpass', f: 900, d: 0.3, g: 0.12, r, flutter: 14 }); } },
+  clink: { name: 'Overcooked-style: taste tink', desc: 'A bright spoon-on-bowl tink, like checking the soup.', play: (o, t, r) => metal(o, t, 2300, [1, 2.71, 4.1], { d: 0.35, g: 0.28, r }) },
+  tap: { name: 'Overcooked-style: recipe boop', desc: 'A bouncy UI boop, like ticking off a recipe step.', play: (o, t, r) => tone(o, t, { type: 'triangle', f: 640, f2: 900, d: 0.06, g: 0.45, r }) },
+  page: { name: 'Overcooked-style: ticket fwip', desc: 'An order ticket whipping off the rail.', play: (o, t, r) => noise(o, t, { f: 1800, f2: 5200, Q: 1.3, d: 0.09, g: 0.6, r }) },
+  grab: { name: 'Overcooked-style: pickup pop', desc: 'The classic grab: a round, plasticky pop that rises.', play: (o, t, r) => { tone(o, t, { f: 280, f2: 880, glide: 0.05, d: 0.07, g: 0.6, r }); noise(o, t, { type: 'lowpass', f: 1200, d: 0.02, g: 0.2, r }); } },
+  plate: { name: 'Overcooked-style: plate clunk', desc: 'A chunky ceramic set-down with a low thunk under it.', play: (o, t, r) => { tone(o, t, { type: 'triangle', f: 950, d: 0.045, g: 0.35, r }); noise(o, t, { f: 2600, Q: 2.5, d: 0.03, g: 0.45, r }); tone(o, t, { f: 140, f2: 100, d: 0.07, g: 0.5, r }); } },
+  cloche: { name: 'Overcooked-style: order served', desc: 'Ding-ding! A bright two-note serve jingle with a coin clink on top.', play: (o, t, r) => { metal(o, t, N(84), [1, 2.5], { d: 0.35, g: 0.25, r }); metal(o, t + 0.11, N(91), [1, 2.5], { d: 0.55, g: 0.25, r }); metal(o, t + 0.2, 3400, [1, 1.6], { d: 0.12, g: 0.1, r }); } },
+  clatter: { name: 'Overcooked-style: dish drop', desc: 'Plates and pans tumbling: a quick cartoon crash.', play: (o, t, r) => { [0, 0.05, 0.11, 0.19].forEach((dt, i) => metal(o, t + dt, 1700 - i * 230, [1, 2.3, 3.7], { d: 0.16, g: 0.2, r })); noise(o, t, { type: 'lowpass', f: 700, d: 0.12, g: 0.4, r }); } },
+  gong: { name: 'Overcooked-style: new order bell', desc: 'The service bell: two quick dings when something needs you, like a new order arriving.', play: (o, t, r) => { metal(o, t, 1480, [1, 2.62, 4.13], { d: 0.6, g: 0.3, r }); metal(o, t + 0.17, 1480, [1, 2.62, 4.13], { d: 0.9, g: 0.3, r }); } },
+  ding: { name: 'Overcooked-style: chef arrives', desc: 'A whoosh in and a cheerful ding as a new chef pops into the kitchen.', play: (o, t, r) => { noise(o, t, { f: 700, f2: 3000, Q: 1, d: 0.16, g: 0.35, r }); metal(o, t + 0.12, N(88), [1, 2.4], { d: 0.5, g: 0.25, r }); } },
+  cheer: { name: 'Overcooked-style: tip jingle', desc: 'A rising arpeggio and coins: the payoff for a dish done right.', play: (o, t, r) => { [72, 76, 79, 84].forEach((n, i) => tone(o, t + i * 0.06, { type: 'triangle', f: N(n), d: 0.2, g: 0.28, r })); [0.24, 0.29, 0.35].forEach((dt) => metal(o, t + dt, 3000 + Math.random() * 600, [1, 1.5], { d: 0.12, g: 0.12, r })); } },
+  error: { name: 'Overcooked-style: failed order', desc: 'A sad cartoon "bwah-bwaah" when an order fails.', play: (o, t, r) => { tone(o, t, { type: 'sawtooth', f: 330, f2: 300, d: 0.22, g: 0.22, r, lp: 900 }); tone(o, t + 0.24, { type: 'sawtooth', f: 280, f2: 200, d: 0.45, g: 0.22, r, lp: 800 }); } },
+};
+Object.entries(OC).forEach(([s, alt]) => SOUNDS[s].alts.unshift({ id: 'oc-' + s, ...alt }));
+
+
+// Long enough for each sound's tail and echo.
+const LENGTH = { gong: 3.2, cheer: 1.2, ding: 1.2, error: 1.2, cloche: 1.2 };
+async function render(s, id) {
+  const seconds = LENGTH[s] || 0.8;
+  ctx = new OfflineAudioContext(1, Math.ceil(SR * seconds), SR);
+  master = ctx.createGain(); master.gain.value = 0.9;
+  const comp = ctx.createDynamicsCompressor(); comp.threshold.value = -6; comp.ratio.value = 4;
+  master.connect(comp); comp.connect(ctx.destination);
+  send = ctx.createGain(); send.gain.value = 0.16;
+  const d1 = ctx.createDelay(0.5); d1.delayTime.value = 0.075;
+  const fb = ctx.createGain(); fb.gain.value = 0.28;
+  const lp = ctx.createBiquadFilter(); lp.type = 'lowpass'; lp.frequency.value = 2600;
+  send.connect(d1); d1.connect(lp); lp.connect(fb); fb.connect(d1); lp.connect(master);
+  noiseBuf = ctx.createBuffer(1, SR, SR);
+  const ch = noiseBuf.getChannelData(0); for (let i = 0; i < ch.length; i++) ch[i] = Math.random() * 2 - 1;
+  const alt = SOUNDS[s].alts.find(a => a.id === id);
+  alt.play(bus(0.005, VOLUME[s]), 0.005, 1);
+  const out = await ctx.startRendering();
+  // Undo the board's per-sound volume: the app applies its own (the same numbers).
+  const data = out.getChannelData(0), scaled = new Float32Array(data.length);
+  for (let i = 0; i < data.length; i++) scaled[i] = data[i] / VOLUME[s];
+  return scaled;
+}
+(async () => {
+  const result = {};
+  for (const [s, id] of Object.entries(PICKS)) {
+    result[s] = [];
+    for (let v = 0; v < VARIANTS[s]; v++) {
+      const samples = await render(s, id);
+      result[s].push(Array.from(samples, x => Math.round(x * 10000) / 10000));
+    }
+  }
+  document.getElementById('out').textContent = JSON.stringify(result);
+})();
+</script></body></html>
