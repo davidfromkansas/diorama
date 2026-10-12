@@ -7,6 +7,7 @@ struct AgentSettingsView: View {
     var finish: (() -> Void)? = nil
     var cancel: (() -> Void)? = nil
     @AppStorage private var defaultModel: String
+    @AppStorage private var shareUsageStats: Bool
     private let loginAction: ((Bool) -> Void)?
     @Environment(\.scenePhase) private var scenePhase
     @State private var info: WireValue = .null
@@ -24,6 +25,7 @@ struct AgentSettingsView: View {
     init(controller: ExecutionController, onboarding: Bool = false, defaults: UserDefaults = .standard, loginAction: ((Bool) -> Void)? = nil, cancel: (() -> Void)? = nil, finish: (() -> Void)? = nil) {
         self.controller = controller; self.onboarding = onboarding; self.finish = finish; self.cancel = cancel; self.loginAction = loginAction
         _defaultModel = AppStorage(wrappedValue: "", "defaultAgentModel", store: defaults)
+        _shareUsageStats = AppStorage(wrappedValue: true, UsageStats.enabledKey, store: defaults)
     }
     private var selectionAvailable: Bool { OnboardingModels.isAvailable(defaultModel, models: controller.models, connections: info) }
     private var anyConnected: Bool { info["codex"].bool || info["claude"].bool }
@@ -51,6 +53,10 @@ struct AgentSettingsView: View {
                             Text("You can choose another model in each conversation.").font(.caption).foregroundStyle(.secondary)
                         }
                         if let notice { Text(notice).font(.callout).foregroundStyle(.secondary).textSelection(.enabled) }
+                        VStack(alignment: .leading, spacing: 4) {
+                            Toggle("Share anonymous usage stats", isOn: $shareUsageStats).pointingHand()
+                            Text(UsageStats.disclosure).font(.caption).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
+                        }
                         if !onboarding {
                             Divider()
                             GitHubSettingsView()

@@ -171,6 +171,8 @@ Every imported session is now observed for recorded activity, even when unselect
 
 The bundle includes `DioramaReporter`, copied to a stable Application Support location when enabled. It never depends on the GUI or returns approval/continuation decisions. It stores limited tool names, paths, command previews, and error excerpts locally for seven days / 50 MiB; these can contain sensitive information. **Clear activity history** removes retained hook records, not original transcripts. Neither image hosts nor telemetry services receive this data.
 
+**Usage stats.** Diorama sends trydiorama.com two anonymous milestones, once each: when an install first opens the app and when it first adds a project. Each carries a random install ID, the app version and build, and the macOS version; never code, prompts, project names, paths or account details. It's on by default and can be turned off in onboarding or Settings (**Share anonymous usage stats**). Tests, demo modes and development builds never send; `DIORAMA_USAGE_ENDPOINT` points a development build at a test endpoint.
+
 Run `swift test` for state ordering, long-running turns, incremental files, configuration merging/removal, privacy, retention, UI filters, and native filesystem notification coverage. `python3 scripts/probe_reporter.py` tests the reporter and a disposable, disconnected Claude invocation without using normal credentials/settings. The optional `DesignatedActivityProbe` test requires `DIORAMA_PROBE_TRANSCRIPT` and writes content-free evidence to `DIORAMA_PROBE_OUTPUT` when supplied.
 
 ## Conversation interface — 0.3.2

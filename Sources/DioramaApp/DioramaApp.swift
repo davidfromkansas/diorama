@@ -607,6 +607,8 @@ struct DioramaApp: App {
                     if model.developmentReload == nil { model.developmentReload = DevelopmentReload.configured(library: model) }
                     delegate.developmentReload = model.developmentReload
                     model.syncOwnedSessions()
+                    UsageStats.shared.record(.firstLaunch)
+                    UsageStats.shared.flush()
                 }
                 // Pull requests: CI, conflicts and merges move the chefs; finished fixes get pushed.
                 .task { await PRWatcher.shared.run(library: model) }
