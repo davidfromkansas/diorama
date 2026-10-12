@@ -71,7 +71,9 @@ private actor UnreachableTransport: ExecutionTransport {
         window.contentView = nil
     }
 
-    @Test func permissionsOnlyAskForAttentionWhenSendIsBlocked() {
+    /// Permissions never block Send (unset, a message goes out in your Codex or Claude default):
+    /// only a change that didn't apply asks for attention.
+    @Test func permissionsOnlyAskForAttentionWhenAChangeDidNotApply() {
         func picker(policy: WireValue = .null, stale: Bool = false, unconfirmed: Bool = false, notice: String? = nil, lastKnown: ApprovalReviewChoice? = nil) -> ApprovalReviewPicker {
             ApprovalReviewPicker(selection: .constant(.inherit), reviewer: "user", policy: policy,
                                  sandbox: .object(["type": .string("workspaceWrite")]), stale: stale, unconfirmed: unconfirmed,
@@ -80,9 +82,9 @@ private actor UnreachableTransport: ExecutionTransport {
         #expect(!picker(policy: .string("on-request")).unsettled, "Connected with reported settings")
         #expect(!picker(stale: true, lastKnown: .user).unsettled, "Connecting, showing the last known mode")
         #expect(!picker(stale: true).unsettled, "Connecting, nothing known yet")
-        #expect(picker(policy: .string("on-request"), unconfirmed: true).unsettled, "A change wasn't confirmed")
-        #expect(picker(policy: .string("on-request"), notice: "Changed").unsettled)
-        #expect(picker().unsettled, "Connected but the provider reported nothing")
+        #expect(!picker(policy: .string("on-request"), unconfirmed: true).unsettled, "Not yet confirmed: sending still uses your default")
+        #expect(picker(policy: .string("on-request"), notice: "Changed").unsettled, "A change that didn't apply")
+        #expect(!picker().unsettled, "Nothing reported: your provider default")
     }
 
     @Test func planGoalAndQueueKeepTheirRules() {
