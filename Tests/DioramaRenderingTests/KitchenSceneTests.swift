@@ -24,8 +24,9 @@ import Testing
         let projected = (view.floorCorners + view.framingPoints).map(view.projectPoint)
         let occupiedHeight = min(650, projected.map(\.y).max()!) - max(0, projected.map(\.y).min()!)
         // The 24×16 lifecycle room is wider than tall, so a square view is width-limited; low,
-        // chef-height worktops add little projected height. Allow one pixel for rounding.
-        #expect(occupiedHeight >= 650 * 0.6 - 1)
+        // chef-height worktops add little projected height; the break room's machines against the
+        // left wall stay fully in view, which costs about a percent. Allow one pixel for rounding.
+        #expect(occupiedHeight >= 650 * 0.59 - 1)
         for fixture in KitchenLayout.connectors + KitchenLayout.breakRoomWalls + KitchenLayout.elevatorWalls {
             #expect(KitchenLayout.floor.contains(fixture))
         }
@@ -35,7 +36,7 @@ import Testing
         #expect(!view.allowsCameraControl)
         #expect(!view.isPlaying && !view.rendersContinuously)
         #expect(KitchenLayout.areas.map(\.id) == ["elevator", "order", "prep", "cooking", "stove", "tasting", "bell", "serving", "break", "pantry"])
-        #expect(KitchenLayout.areas.map(\.spots) == [1, 3, 6, 6, 6, 3, 6, 5, 10, 4])
+        #expect(KitchenLayout.areas.map(\.spots) == [1, 3, 6, 6, 6, 3, 6, 5, 10, 3])
     }
     @Test func captureKitchenViewportSizes() throws {
         guard ProcessInfo.processInfo.environment["DIORAMA_KITCHEN_CAPTURE"] == "1" else { return }

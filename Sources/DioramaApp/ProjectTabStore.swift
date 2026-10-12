@@ -14,8 +14,29 @@ struct DesktopHomeState: Codable, Equatable {
     var section: HomeSection = .all
     var query = ""
     var list = false
+    var city = false
+    /// Where the overworld city map is looking; nil frames the whole city.
+    var cityCamera: OverworldCamera?
     var scrollID: String?
     var importedSession: String?
+    var layout: HomeLayout {
+        get { city ? .city : list ? .list : .grid }
+        set { list = newValue == .list; city = newValue == .city }
+    }
+}
+enum HomeLayout: Hashable { case grid, list, city }
+extension DesktopHomeState {
+    // Saved state predates some keys; missing ones fall back to defaults instead of discarding all tabs.
+    init(from decoder: Decoder) throws {
+        let values = try decoder.container(keyedBy: CodingKeys.self)
+        section = try values.decodeIfPresent(HomeSection.self, forKey: .section) ?? .all
+        query = try values.decodeIfPresent(String.self, forKey: .query) ?? ""
+        list = try values.decodeIfPresent(Bool.self, forKey: .list) ?? false
+        city = try values.decodeIfPresent(Bool.self, forKey: .city) ?? false
+        cityCamera = try values.decodeIfPresent(OverworldCamera.self, forKey: .cityCamera)
+        scrollID = try values.decodeIfPresent(String.self, forKey: .scrollID)
+        importedSession = try values.decodeIfPresent(String.self, forKey: .importedSession)
+    }
 }
 struct ProjectPresentationSnapshot: Codable, Equatable {
     var focus: SpatialFocus
@@ -150,6 +171,14 @@ extension LibraryModel {
         navigation.projectTabs.historyAnchors = scrollPositions
     }
     func selectProjectTab(_ id: String) { selectDesktopTab(.project(id), userOpened: true) }
+    /// Drops a project from Diorama: its tab closes and it leaves the list. Its folder, files and
+    /// Codex/Claude conversations are left as they are.
+    func removeProject(_ id: String) {
+        closeProjectTab(id)
+        projects.projects.removeAll { $0.id == id }
+        if projects.selectedID == id { projects.selectedID = nil }
+        projects.save()
+    }
     func selectDesktopTab(_ tab: DesktopTab, userOpened: Bool = false) {
         navigation.projectTabs.pickerPresented = false
         if navigation.projectTabs.selected == tab, projects.selectedID != nil {

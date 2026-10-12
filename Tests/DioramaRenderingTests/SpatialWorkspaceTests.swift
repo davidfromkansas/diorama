@@ -73,6 +73,25 @@ import Testing
         #expect(execution.tasks.isEmpty)
     }
 
+    /// Switching a conversation's model to another provider starts a new native session. When its
+    /// file changes it must update the conversation's one chef, not add a second.
+    @Test func aSwitchedConversationStaysOneChefAsItsSessionsChange() throws {
+        let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        defer { try? FileManager.default.removeItem(at: root) }
+        let conversations = DioramaConversationModel(file: root.appendingPathComponent("conversations.json"))
+        let old = session("old")
+        let current = session("current", provider: .claude)
+        var merged = DioramaConversation(session: old, model: "")
+        merged.segments.append(ConversationSegment(nativeID: current.sessionID, provider: .claude, model: ""))
+        conversations.records = [merged]
+        let library = LibraryModel(execution: ExecutionController(), projects: ProjectModel(storageURL: root.appendingPathComponent("projects.json")), conversations: conversations)
+        library.sessions = conversations.project([old, current])
+        library.mergeChanged([current])
+        library.mergeChanged([old])
+        #expect(library.sessions.count == 1)
+        #expect(library.sessions.first?.id == merged.id && library.sessions.first?.sessionID == current.sessionID)
+    }
+
     @Test func workScreenPreservesOfficeCameraOnOpenAndClose() {
         let view = SpatialSceneView()
         let snapshot = world()

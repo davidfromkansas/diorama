@@ -16,7 +16,7 @@ enum AgentSidebarStatus: Int, CaseIterable {
 }
 
 @Observable @MainActor final class AgentCompletionViews {
-    static let shared = AgentCompletionViews()
+    static let shared = AgentCompletionViews(defaults: DemoMode.sharedDefaults)
     private(set) var revision = 0
     private let defaults: UserDefaults
     private var viewed: [String: Bool]

@@ -92,6 +92,23 @@ public struct PortfolioUsageLedger: Codable, Equatable, Sendable {
         let scope = resultTotal > responseTotal ? resultDays : responseDays
         return sum(scope.values.map { ($0.day, $0.split) })
     }
+    /// The same tokens as `recent(days:)`, one entry per local calendar day, oldest first and
+    /// ending today.
+    public func daily(days: Int, now: Date = Date(), calendar: Calendar = .current) -> [TokenSplit] {
+        let keys = (0..<max(days, 0)).reversed().map { offset in
+            Self.day(calendar.date(byAdding: .day, value: -offset, to: now) ?? now, calendar: calendar)
+        }
+        var byDay: [String: TokenSplit] = [:]
+        if cumulative != nil {
+            byDay = cumulativeDays
+        } else {
+            let responseTotal = responses.values.reduce(0, Self.add), resultTotal = results.values.reduce(0, Self.add)
+            for value in (resultTotal > responseTotal ? resultDays : responseDays).values {
+                if let day = value.day { byDay[day] = byDay[day, default: TokenSplit()] + value.split }
+            }
+        }
+        return keys.map { byDay[$0] ?? TokenSplit() }
+    }
     public static func count(_ usage: WireValue, provider: Provider) -> Int64? {
         func number(_ keys: [String]) -> Int64? {
             for key in keys {

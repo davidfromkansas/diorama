@@ -41,12 +41,14 @@ nonisolated struct ChefManifest: Decodable, Sendable {
 /// Hand props a chef can hold. Each maps to a node in `chef-props.glb` and the clip whose
 /// grip the manifest fitted it to.
 nonisolated enum ChefProp: String, CaseIterable, Sendable {
-    case card, book, knife, spoon, plate, ticket, mug, cloche
+    case card, book, knife, spoon, plate, ticket, mug, cloche, mallet, can
     var node: String {
         switch self {
         case .ticket: "prop_ticket"
         case .mug: "prop_mug"
         case .cloche: "prop_cloche"
+        case .mallet: "prop_gong_mallet"
+        case .can: "prop_can"
         case .card: "prop_recipe_card"
         case .book: "prop_cookbook"
         case .knife: "prop_knife"
@@ -57,7 +59,7 @@ nonisolated enum ChefProp: String, CaseIterable, Sendable {
     var socket: String {
         switch self {
         case .card, .book, .ticket: "socket_hand.L"
-        case .knife, .spoon, .mug, .cloche: "socket_hand.R"
+        case .knife, .spoon, .mug, .cloche, .mallet, .can: "socket_hand.R"
         case .plate: "socket_carry"
         }
     }
@@ -71,6 +73,8 @@ nonisolated enum ChefProp: String, CaseIterable, Sendable {
         case .ticket: "read_ticket"
         case .mug: "sit_sip"
         case .cloche: "cover_dish"
+        case .mallet: "strike_gong"
+        case .can: "stand_sip"
         }
     }
 }

@@ -138,14 +138,16 @@ def clip_research():
 
 
 # Overcooked 2 reference: the game's "Chop" animation fires an "Impact" event that advances
-# chopping progress, at ~0.2 s per impact (see docs/chef-rig-report.md). So: a fast, short-stroke
-# 5 Hz chop, two impacts per 0.4 s loop, with a small whole-body bounce on every hit.
+# chopping progress (see docs/chef-rig-report.md). The kitchen is seen from above, so the stroke is
+# big enough to read from there: the knife rises well above the head line, holds a beat at the top
+# with the blade up, then comes down hard; two impacts per 0.8 s loop, a whole-body bounce on each.
 CHOP_DOWN = (-0.11, -0.40, 0.707)      # wrist target at impact (fitted so the edge meets the board)
 CHOP_HOLD = (0.15, -0.455, BOARD_TOP + 0.045)
 CHOP_AIM_DOWN = (0.25, -0.85, -0.50)     # steady fist: blade forward, slightly inward, edge down
-CHOP_AIM_UP = (0.25, -0.85, -0.30)       # wrist cocks back a little on the up-stroke
-CHOP_PERIOD = 0.4
-CHOP_IMPACTS = (2 / 30, 8 / 30)          # impacts land exactly on baked frames 2 and 8
+CHOP_AIM_UP = (-0.15, -0.25, 0.95)       # raised: the blade points up, so the knife reads from above
+CHOP_RAISE = (-0.14, 0.12, 0.50)         # wrist at the top: about 50 cm up and out to the side, clear of the hat from above
+CHOP_PERIOD = 0.8
+CHOP_IMPACTS = (6 / 30, 18 / 30)         # impacts on baked frames 6 and 18; each wind-up starts 6 frames before (frame 0 opens the loop)
 
 
 def clip_chop():
@@ -154,15 +156,17 @@ def clip_chop():
     for k, t_hit in enumerate(CHOP_IMPACTS):
         dx = 0.014 * k  # second chop lands a little further along the carrot
         hit = add(CHOP_DOWN, (dx, 0, 0))
-        top = add(hit, (0, 0.02, 0.085))
-        t0 = t_hit - 2 / 30
+        top = add(hit, CHOP_RAISE)
         keys += [
-            (t0, merge(base, hand_R=top, aimdir_R=CHOP_AIM_UP, rot__chest=(3, 0, 0))),
+            # Up to the top, a beat there, then down hard; after the hit it lifts toward the next.
+            (t_hit - 6 / 30, merge(base, hand_R=top, aimdir_R=CHOP_AIM_UP, rot__chest=(-2, 0, 0), rot__head=(10, 0, 0))),
+            (t_hit - 4 / 30, merge(base, hand_R=add(top, (0, 0, 0.015)), aimdir_R=CHOP_AIM_UP, rot__chest=(-3, 0, 0), rot__head=(10, 0, 0))),
             (t_hit, merge(base, hand_R=hit, aimdir_R=CHOP_AIM_DOWN, loc__hips=(0, 0.025, -0.022),
                           rot__chest=(5, 0, 0), rot__head=(15.5, 0, 0), rot__hat=(1.2, 0, 0),
                           hand_L=add(CHOP_HOLD, (0, 0, -0.005)))),
             (t_hit + 1 / 30, merge(base, hand_R=add(hit, (0, 0.005, 0.012)), aimdir_R=CHOP_AIM_DOWN,
                                    loc__hips=(0, 0.025, -0.017), rot__chest=(4.5, 0, 0), rot__head=(15, 0, 0))),
+            (t_hit + 3 / 30, merge(base, hand_R=add(hit, (0, 0.02, 0.12)), aimdir_R=CHOP_AIM_DOWN, rot__chest=(2, 0, 0))),
         ]
     return dict(duration=CHOP_PERIOD, loop=True,
                 markers={"impact": CHOP_IMPACTS[0], "impact_2": CHOP_IMPACTS[1]}, keys=keys)
@@ -411,19 +415,29 @@ def clip_carry_walk():
 # ----------------------------------------------------------------- lifecycle clips (phase 2)
 # Arrival: the chef steps out of the elevator toward the camera and waves.
 def clip_arrive_wave():
-    wave = P(hand_R=RAISED, rot__hand_R=(-10, 0, 0), rot__clavicle_R=(0, 12, 0), rot__chest=(-3, -4, 0),
-             rot__head=(-8, 0, -6), pole_R=(-0.70, 0.30, 0.60))
-    return dict(duration=1.8, loop=False, keys=[
+    """Out of the elevator: both hands up waving at you, jumping up and down twice, then a few
+    more waves standing before heading to the order rail."""
+    raised_L = (-RAISED[0], RAISED[1], RAISED[2])
+    wave = P(hand_R=RAISED, hand_L=raised_L, rot__clavicle_R=(0, 12, 0), rot__clavicle_L=(0, -12, 0),
+             rot__chest=(-4, 0, 0), rot__head=(-10, 0, 0), pole_R=(-0.70, 0.30, 0.60), pole_L=(0.70, 0.30, 0.60))
+    def tilt(deg):  # both hands wave outward together
+        return dict(rot__hand_R=(-10, 0, deg), rot__hand_L=(-10, 0, -deg))
+    crouch = dict(loc__hips=(0, 0, -0.07), rot__spine=(6, 0, 0))
+    air = dict(loc__hips=(0, 0, 0.17), foot_L=(0, 0, 0.15), foot_R=(0, 0, 0.15), rot__hat=(-4, 0, 0))
+    land = dict(loc__hips=(0, 0, -0.06), rot__hat=(4, 0, 0))
+    return dict(duration=2.4, loop=False, keys=[
         (0.0, P()),
-        (0.15, P(loc__hips=(0, 0, -0.03), rot__spine=(4, 0, 0))),
-        (0.32, P(loc__hips=(0, -0.02, 0.03), foot_L=(0, -0.04, 0.04), foot_R=(0, -0.04, 0.04), rot__hat=(-2, 0, 0))),
-        (0.48, P(loc__hips=(0, 0, -0.01), rot__hat=(2, 0, 0))),
-        (0.7, wave),
-        (0.88, merge(wave, rot__hand_R=(-10, 0, 22))),
-        (1.06, merge(wave, rot__hand_R=(-10, 0, -18))),
-        (1.24, merge(wave, rot__hand_R=(-10, 0, 22))),
-        (1.42, merge(wave, rot__hand_R=(-10, 0, -10))),
-        (1.8, P(rot__head=(2, 0, 0))),
+        (0.14, merge(wave, **crouch, **tilt(20))),
+        (0.32, merge(wave, **air, **tilt(-20))),        # first jump
+        (0.5, merge(wave, **land, **tilt(22))),
+        (0.68, merge(wave, **air, **tilt(-22))),        # second jump
+        (0.86, merge(wave, **land, **tilt(20))),
+        (1.04, merge(wave, loc__hips=(0, 0, 0.0), **tilt(-20))),
+        (1.24, merge(wave, **tilt(22))),
+        (1.44, merge(wave, **tilt(-20))),
+        (1.64, merge(wave, **tilt(20))),
+        (1.84, merge(wave, **tilt(-10))),
+        (2.4, P(rot__head=(2, 0, 0))),
     ])
 
 
@@ -501,6 +515,107 @@ def clip_sit_chat():
         (1.4, merge(talk, rot__head=(10, 0, 18))),
         (2.0, merge(talk, rot__head=(4, -3, 24), loc__hips=add(SIT_HIPS, (0, 0, 0.012)))),  # laugh
         (2.3, merge(talk, rot__head=(10, 0, 22), loc__hips=SIT_HIPS)),
+    ])
+
+
+# Restaurant guests, seated at a table (top about 0.71 chef units high, their plate about 0.41
+# ahead of the root). Their table partner sits straight across, so talking faces forward.
+TABLE_TOP = 0.714
+PLATE = (-0.06, -0.41, TABLE_TOP)
+LEAN_TABLE = dict(rot__hips=(-4, 0, 0), rot__spine=(6, 0, 0), rot__chest=(4, 0, 0),
+                  rot__clavicle_L=(0, 0, -14), rot__clavicle_R=(0, 0, 14))
+
+
+def clip_sit_talk():
+    """Telling a story across the table: hands take turns at chest height, nods and a little
+    torso turn with each point."""
+    base = merge(SIT, **LEAN_TABLE, rot__head=(6, 0, 0), hand_L=(0.30, -0.26, 0.76), hand_R=(-0.30, -0.26, 0.76))
+    return dict(duration=3.2, loop=True, keys=[
+        (0.0, base),
+        (0.4, merge(base, hand_R=(-0.24, -0.34, 0.86), rot__hand_R=(-35, 0, 25), rot__chest=(4, 0, -6), rot__head=(2, 0, -4))),
+        (0.8, merge(base, hand_R=(-0.30, -0.30, 0.82), rot__hand_R=(-20, 0, -15), rot__head=(10, 0, -2))),
+        (1.3, merge(base, rot__head=(4, 0, 2))),
+        (1.7, merge(base, hand_L=(0.24, -0.34, 0.86), rot__hand_L=(-35, 0, -25), rot__chest=(4, 0, 6), rot__head=(2, 0, 5))),
+        (2.1, merge(base, hand_L=(0.30, -0.30, 0.82), rot__hand_L=(-20, 0, 15), rot__head=(11, 0, 3))),
+        (2.6, merge(base, rot__head=(5, 0, 0))),
+    ])
+
+
+def clip_sit_laugh():
+    """A big laugh: thrown back, shoulders shaking, a hand on the belly, the other patting the table."""
+    back = merge(SIT, rot__hips=(-20, 0, 0), rot__chest=(-4, 0, 0), rot__head=(-4, 0, 0),
+                 hand_L=(0.16, -0.30, 0.68), rot__hand_L=(0, 0, -30), hand_R=(-0.26, -0.33, TABLE_TOP + 0.03),
+                 rot__clavicle_L=(0, 6, -8), rot__clavicle_R=(0, -6, 8))
+    up = lambda m: merge(m, loc__hips=add(SIT_HIPS, (0, 0, 0.014)), rot__clavicle_L=(0, 12, -8), rot__clavicle_R=(0, -12, 8))
+    return dict(duration=2.4, loop=True, keys=[
+        (0.0, back),
+        (0.2, up(merge(back, hand_R=(-0.26, -0.33, TABLE_TOP + 0.09)))),
+        (0.4, back),
+        (0.6, up(merge(back, rot__head=(-8, 0, 4)))),
+        (0.8, merge(back, hand_R=(-0.26, -0.33, TABLE_TOP + 0.09))),
+        (1.0, up(merge(back, rot__head=(-6, 0, -3)))),
+        (1.3, merge(back, rot__hips=(-16, 0, 0), rot__head=(0, 0, 0))),
+        (1.8, merge(back, rot__hips=(-12, 0, 0), rot__head=(2, 0, 6), hand_R=(-0.30, -0.30, TABLE_TOP + 0.03))),
+    ])
+
+
+def clip_sit_gesture():
+    """Expressive: hands thrown wide ("can you believe it"), a point across the table, a shrug."""
+    base = merge(SIT, **LEAN_TABLE, rot__head=(6, 0, 0), hand_L=(0.30, -0.26, 0.76), hand_R=(-0.30, -0.26, 0.76))
+    wide = merge(base, hand_L=(0.44, -0.22, 0.94), hand_R=(-0.44, -0.22, 0.94), rot__hand_L=(-40, 0, -40), rot__hand_R=(-40, 0, 40),
+                 rot__chest=(-4, 0, 0), rot__head=(-6, 0, 0), pole_L=BACK_POLE["L"], pole_R=BACK_POLE["R"])
+    point = merge(base, hand_R=(-0.12, -0.42, 0.88), rot__hand_R=(-60, 0, 0), rot__chest=(6, 0, -8), rot__head=(4, 0, -4))
+    shrug = merge(base, hand_L=(0.38, -0.18, 0.84), hand_R=(-0.38, -0.18, 0.84), rot__hand_L=(-50, 0, -30), rot__hand_R=(-50, 0, 30),
+                  rot__clavicle_L=(0, 14, -6), rot__clavicle_R=(0, -14, 6), rot__head=(4, 14, 0))
+    return dict(duration=3.6, loop=True, keys=[
+        (0.0, base),
+        (0.45, wide),
+        (1.0, wide),
+        (1.4, point),
+        (1.6, merge(point, hand_R=(-0.12, -0.44, 0.86))),
+        (1.8, point),
+        (2.3, shrug),
+        (2.8, shrug),
+    ])
+
+
+def clip_sit_eat():
+    """Eating from the plate in front: lean in, scoop with the spoon, bring it up, chew."""
+    lean = merge(SIT, rot__hips=(-2, 0, 0), rot__spine=(10, 0, 0), rot__chest=(8, 0, 0), rot__head=(18, 0, 0),
+                 loc__hips=add(SIT_HIPS, (0, -0.02, 0)), rot__clavicle_L=(0, 0, -16), rot__clavicle_R=(0, 0, 22),
+                 hand_L=(0.24, -0.30, TABLE_TOP + 0.03), rot__hand_L=(0, 0, -20),
+                 pole_R=DOWN_POLE["R"])
+    scoop = merge(lean, hand_R=(-0.08, -0.36, TABLE_TOP + 0.05), rot__hand_R=(20, 0, 10))
+    lift = merge(lean, rot__spine=(4, 0, 0), rot__chest=(2, 0, 0), rot__head=(4, 0, 0),
+                 hand_R=(-0.09, -0.33, 0.98), rot__hand_R=(-30, 0, 10), rot__clavicle_R=(0, 0, 26))
+    chew = lambda nod: merge(lean, rot__spine=(6, 0, 0), rot__head=(10 + nod, 0, 0), hand_R=(-0.20, -0.32, TABLE_TOP + 0.08), rot__hand_R=(0, 0, 10))
+    return dict(duration=3.0, loop=True, markers={"bite": 1.0}, keys=[
+        (0.0, chew(0)),
+        (0.45, scoop),
+        (0.65, merge(scoop, hand_R=(-0.04, -0.37, TABLE_TOP + 0.05))),
+        (1.0, lift),
+        (1.25, lift),
+        (1.6, chew(6)),
+        (1.9, chew(0)),
+        (2.2, chew(6)),
+        (2.5, chew(0)),
+    ])
+
+
+def clip_sit_cheer():
+    """Their dish arrives: both hands up, a happy bounce, then settle back."""
+    up = merge(SIT, rot__hips=(-12, 0, 0), rot__head=(-8, 0, 0), hand_L=(0.30, -0.12, 1.12), hand_R=(-0.30, -0.12, 1.12),
+               rot__hand_L=(-60, 0, 0), rot__hand_R=(-60, 0, 0), rot__clavicle_L=(0, 16, -6), rot__clavicle_R=(0, -16, 6),
+               pole_L=BACK_POLE["L"], pole_R=BACK_POLE["R"])
+    hop = merge(up, loc__hips=add(SIT_HIPS, (0, 0, 0.02)))
+    return dict(duration=1.6, loop=False, keys=[
+        (0.0, SIT),
+        (0.3, up),
+        (0.5, hop),
+        (0.7, up),
+        (0.9, hop),
+        (1.1, up),
+        (1.6, SIT),
     ])
 
 
@@ -590,6 +705,220 @@ def clip_fix_wait():
     ])
 
 
+# ----------------------------------------------------------------- the gong and the manager
+# A chef that needs you strikes the gong with a felt mallet (prop_gong_mallet, right hand), then
+# waits; the manager (the head chef) comes over and they talk until you answer.
+GONG_STRIKE = (-0.12, -0.43, 0.92)        # wrist at impact: the mallet head lands 0.45 ahead of it
+
+
+def clip_strike_gong():
+    """A big wind-up over the right shoulder, the whole body turning into the swing, a little
+    recoil as the mallet bounces off the gong, then standing proud while it rings."""
+    wind = P(hand_R=(-0.40, 0.08, 1.04), rot__hand_R=(-70, 0, 10), rot__clavicle_R=(0, 14, 0),
+             pole_R=(-0.70, 0.30, 0.60), rot__chest=(-6, 0, -18), rot__hips=(0, 0, -8),
+             loc__hips=(0, 0.02, 0), hand_L=(0.40, -0.22, 0.72), rot__head=(-6, 0, -4))
+    hit = P(hand_R=GONG_STRIKE, rot__hand_R=(-10, 0, 0), rot__clavicle_R=(0, 0, 18), pole_R=DOWN_POLE["R"],
+            rot__chest=(6, 0, 12), rot__hips=(8, 0, 8), loc__hips=(0, -0.03, -0.012), rot__spine=(4, 0, 0),
+            hand_L=(0.42, -0.08, 0.64), rot__head=(4, 0, 6))
+    return dict(duration=1.8, loop=False, markers={"impact": 0.75}, keys=[
+        (0.0, P()),
+        (0.38, wind),
+        (0.62, merge(hit, hand_R=(-0.30, -0.24, 1.0), rot__hand_R=(-40, 0, 5), rot__chest=(0, 0, 0))),
+        (0.75, hit),
+        (0.9, merge(hit, hand_R=(-0.22, -0.34, 0.98), rot__hand_R=(-25, 0, 0))),
+        (1.3, P(hand_R=(-0.42, -0.10, 0.78), rot__hand_R=(-20, 0, 0), rot__chest=(-5, 0, 0), rot__head=(-8, 0, 0),
+                hand_L=(0.36, 0.0, 0.62), rot__hand_L=(0, 40, 0))),
+        (1.8, P()),
+    ])
+
+
+def clip_talk_reply():
+    """Waiting chef talking with the manager: listens and nods, explains with a hand, shrugs."""
+    base = P(rot__chest=(-3, 0, 0), rot__head=(2, 0, 0), hand_L=(0.40, -0.12, 0.62), hand_R=(-0.40, -0.12, 0.62))
+    explain = merge(base, hand_R=(-0.28, -0.32, 0.88), rot__hand_R=(-35, 0, 25), rot__chest=(4, 0, -6), rot__head=(0, 0, -4))
+    shrug = merge(base, hand_L=(0.38, -0.18, 0.84), hand_R=(-0.38, -0.18, 0.84), rot__hand_L=(-50, 0, -30), rot__hand_R=(-50, 0, 30),
+                  rot__clavicle_L=(0, 14, -6), rot__clavicle_R=(0, -14, 6), rot__head=(4, 14, 0))
+    return dict(duration=4.8, loop=True, keys=[
+        (0.0, base),
+        (0.4, merge(base, rot__head=(12, 0, 0))),             # nod
+        (0.7, merge(base, rot__head=(-2, 0, 0))),
+        (1.0, merge(base, rot__head=(11, 0, 0))),
+        (1.4, base),
+        (1.8, explain),
+        (2.2, merge(explain, hand_R=(-0.30, -0.28, 0.82), rot__hand_R=(-20, 0, -15))),
+        (2.6, explain),
+        (3.1, shrug),
+        (3.6, merge(shrug, rot__head=(6, 10, 0))),
+        (4.2, merge(base, rot__head=(8, 0, 0))),
+        (4.8, base),
+    ])
+
+
+def clip_manager_talk():
+    """The head chef talking a chef through it: points with the wooden spoon, wags it, a hand on
+    the hip, nods and a reassuring open hand."""
+    hip = dict(hand_L=(0.34, 0.02, 0.62), rot__hand_L=(0, 40, 0), rot__clavicle_L=(0, 4, 0))
+    base = P(rot__chest=(-4, 0, 0), rot__head=(-2, 0, 0), hand_R=(-0.38, -0.20, 0.80), rot__hand_R=(-20, 0, 0), **hip)
+    point = merge(base, hand_R=(-0.14, -0.42, 0.92), rot__hand_R=(-55, 0, 0), rot__chest=(6, 0, -8), rot__head=(4, 0, -4))
+    open_hand = merge(base, hand_L=(0.30, -0.32, 0.84), rot__hand_L=(-40, 0, -30), rot__chest=(2, 0, 6), rot__head=(6, 0, 4))
+    return dict(duration=5.2, loop=True, keys=[
+        (0.0, base),
+        (0.5, point),
+        (0.75, merge(point, rot__hand_R=(-55, 0, 18))),       # wag the spoon
+        (1.0, merge(point, rot__hand_R=(-55, 0, -16))),
+        (1.25, merge(point, rot__hand_R=(-55, 0, 14))),
+        (1.6, base),
+        (2.0, merge(base, rot__head=(10, 0, 0))),             # nod while listening
+        (2.4, merge(base, rot__head=(-1, 0, 0))),
+        (2.8, merge(base, rot__head=(9, 0, 2))),
+        (3.3, open_hand),
+        (3.8, merge(open_hand, hand_L=(0.32, -0.30, 0.80), rot__head=(8, 0, 6))),
+        (4.4, merge(base, rot__head=(4, -8, 0))),
+        (5.2, base),
+    ])
+
+
+# ----------------------------------------------------------------- the break room
+# Machines are scaled to the chef (BreakRoom.swift): the arcade's control panel at 0.75 chef units,
+# just past the reach of a counter (0.43 ahead); the vending machine's buttons at 0.82; the espresso
+# machine on a worktop-height bar, its buttons at 0.72 and its group head at 0.66.
+ARCADE_STICK = (0.13, -0.45, 0.76)
+ARCADE_BUTTONS = (-0.15, -0.45, 0.77)
+
+
+def clip_play_arcade():
+    """Gaming: left hand wiggling the joystick, right hand mashing buttons, bobbing along, leaning
+    in for the hard part, and a fist pump when it wins."""
+    base = merge(P(**LEAN_WORK), rot__hips=(6, 0, 0), rot__head=(-6, 0, 0), hand_L=ARCADE_STICK, hand_R=ARCADE_BUTTONS,
+                 rot__hand_L=(-10, 0, 0), rot__hand_R=(-10, 0, 0))
+    def at(t, dl=(0, 0, 0), dr=(0, 0, 0), **kw):
+        return (t, merge(base, hand_L=add(ARCADE_STICK, dl), hand_R=add(ARCADE_BUTTONS, dr), **kw))
+    tap = (0, 0, -0.03)
+    win = P(hand_R=(-0.46, -0.10, 1.16), rot__hand_R=(-30, 0, 0), rot__clavicle_R=(0, 12, 0), pole_R=(-0.70, 0.30, 0.6),
+            rot__chest=(-6, 0, -4), rot__head=(-10, 0, -6), hand_L=(0.40, -0.12, 0.66), loc__hips=(0, 0, 0.03))
+    return dict(duration=6.0, loop=True, markers={"win": 4.6}, keys=[
+        at(0.0),
+        at(0.3, dl=(0.04, 0, 0), dr=tap),
+        at(0.55, dl=(-0.03, 0.02, 0)),
+        at(0.8, dl=(0.0, -0.03, 0), dr=tap, loc__hips=(0, 0, -0.01)),
+        at(1.05, dl=(-0.04, 0, 0)),
+        at(1.3, dl=(0.03, 0.02, 0), dr=tap),
+        at(1.6, rot__hips=(10, 0, 0), rot__spine=(6, 0, 0), rot__head=(4, 0, 0)),          # leaning in
+        at(1.8, dl=(0.04, 0, 0), dr=tap, rot__hips=(10, 0, 0), rot__spine=(6, 0, 0), rot__head=(4, 0, 0)),
+        at(2.0, dl=(-0.04, 0, 0), dr=tap, rot__hips=(10, 0, 0), rot__spine=(6, 0, 0), rot__head=(4, 0, 0)),
+        at(2.2, dl=(0.04, 0, 0), dr=tap, rot__hips=(10, 0, 0), rot__spine=(6, 0, 0), rot__head=(4, 0, 0)),
+        at(2.4, dl=(-0.04, 0, 0), dr=tap, rot__hips=(10, 0, 0), rot__spine=(6, 0, 0), rot__head=(4, 0, 0)),
+        at(2.8, dl=(0, -0.02, 0), loc__hips=(0, 0, -0.012)),
+        at(3.2, dl=(0.03, 0, 0), dr=tap),
+        at(3.5, dl=(-0.03, 0.02, 0), loc__hips=(0, 0, -0.012)),
+        at(3.8, dr=tap),
+        at(4.1, dl=(0.04, 0, 0), dr=tap),
+        (4.6, win),
+        (4.9, merge(win, hand_R=(-0.46, -0.10, 1.04), loc__hips=(0, 0, -0.01))),
+        (5.15, merge(win, loc__hips=(0, 0, 0.03))),
+        at(5.6),
+    ])
+
+
+VEND_BUTTONS = (-0.30, -0.46, 0.82)
+
+
+def clip_use_vending():
+    """Picks a soda: presses a few buttons, waits for the clunk, crouches to the tray, comes up with it."""
+    look = P(rot__head=(-10, 0, -6), rot__chest=(-2, 0, -4), hand_L=(0.40, -0.10, 0.62))
+    press = merge(look, hand_R=VEND_BUTTONS, rot__hand_R=(-50, 0, 0), rot__clavicle_R=(0, 0, 14))
+    crouch = P(loc__hips=(0, -0.01, -0.06), rot__hips=(24, 0, 0), rot__spine=(12, 0, 0), rot__head=(12, 0, 0),
+               hand_R=(-0.18, -0.46, 0.48), rot__hand_R=(-20, 0, 0),
+               hand_L=(0.34, -0.20, 0.50), pole_R=DOWN_POLE["R"], pole_L=DOWN_POLE["L"])
+    return dict(duration=3.4, loop=False, markers={"grab": 2.3}, keys=[
+        (0.0, P()),
+        (0.35, press),
+        (0.5, merge(press, hand_R=add(VEND_BUTTONS, (0, -0.03, 0)))),
+        (0.7, press),
+        (0.85, merge(press, hand_R=add(VEND_BUTTONS, (0, -0.03, -0.06)))),
+        (1.05, merge(press, hand_R=add(VEND_BUTTONS, (0, 0, -0.06)))),
+        (1.5, merge(look, hand_R=(-0.42, -0.10, 0.62), rot__head=(4, 0, 0))),   # the clunk
+        (2.0, crouch),
+        (2.3, merge(crouch, hand_R=(-0.18, -0.48, 0.44))),
+        (2.8, P(hand_R=(-0.30, -0.20, 0.64), rot__head=(-4, 0, 0))),
+        (3.4, P(hand_R=(-0.30, -0.20, 0.64))),
+    ])
+
+
+def clip_brew_espresso():
+    """Pulls a shot: presses the button, waits with a hand on the hip, takes the cup from under
+    the group head."""
+    press = P(hand_R=(-0.10, -0.50, 0.72), rot__hand_R=(-55, 0, 0), rot__clavicle_R=(0, 0, 16), rot__head=(6, 0, 0),
+              rot__hips=(6, 0, 0), hand_L=(0.40, -0.10, 0.62))
+    wait = P(hand_R=(-0.34, 0.02, 0.62), rot__hand_R=(0, -40, 0), hand_L=(0.34, 0.02, 0.62), rot__hand_L=(0, 40, 0),
+             rot__head=(8, 0, 6), rot__chest=(-3, 0, 0))
+    take = P(hand_R=(-0.06, -0.50, 0.64), rot__hand_R=(0, 0, 0), rot__clavicle_R=(0, 0, 18), rot__hips=(8, 0, 0),
+             rot__spine=(4, 0, 0), rot__head=(10, 0, 0), hand_L=(0.40, -0.10, 0.62), pole_R=DOWN_POLE["R"])
+    return dict(duration=3.6, loop=False, markers={"grab": 2.6}, keys=[
+        (0.0, P()),
+        (0.4, press),
+        (0.55, merge(press, hand_R=(-0.10, -0.52, 0.70))),
+        (0.8, press),
+        (1.3, wait),
+        (1.8, merge(wait, rot__head=(10, 0, -4))),
+        (2.3, merge(wait, rot__head=(6, 0, 4))),
+        (2.6, take),
+        (3.1, P(hand_R=MUG_REST, rot__hand_R=(0, 0, 0), rot__clavicle_R=(0, 0, 12))),
+        (3.6, P(hand_R=MUG_REST, rot__hand_R=(0, 0, 0), rot__clavicle_R=(0, 0, 12))),
+    ])
+
+
+def clip_stand_sip():
+    """Standing about with a coffee or a can: sips, looks around, a little weight shift."""
+    hold = P(hand_R=MUG_REST, rot__hand_R=(0, 0, 0), rot__clavicle_R=(0, 0, 12), hand_L=(0.42, -0.06, 0.60))
+    sip = merge(hold, hand_R=MUG_LIP, rot__hand_R=(-25, 0, 0), rot__head=(-6, 0, 0), rot__clavicle_R=(0, 0, 24))
+    return dict(duration=4.2, loop=True, markers={"sip": 1.3}, keys=[
+        (0.0, hold),
+        (0.8, merge(hold, rot__head=(4, 0, 10), loc__hips=(0.01, 0, 0))),
+        (1.3, sip),
+        (1.9, sip),
+        (2.4, hold),
+        (3.2, merge(hold, rot__head=(2, 0, -12), loc__hips=(-0.01, 0, 0))),
+    ])
+
+
+def clip_stand_listen():
+    """Listening in a circle: nods along, tilts the head, hands loosely clasped, shifts its weight."""
+    base = P(hand_L=(0.20, -0.30, 0.60), hand_R=(-0.20, -0.30, 0.60), rot__hand_L=(0, 0, -30), rot__hand_R=(0, 0, 30),
+             rot__chest=(-2, 0, 0), rot__head=(4, 0, 0))
+    return dict(duration=4.2, loop=True, keys=[
+        (0.0, base),
+        (0.5, merge(base, rot__head=(13, 0, 0))),
+        (0.8, merge(base, rot__head=(2, 0, 0))),
+        (1.1, merge(base, rot__head=(12, 0, 0))),
+        (1.6, merge(base, rot__head=(4, 10, 6), loc__hips=(0.012, 0, 0))),
+        (2.6, merge(base, rot__head=(6, 10, 6), loc__hips=(0.012, 0, 0))),
+        (3.1, merge(base, rot__head=(12, 0, 0))),
+        (3.6, merge(base, rot__head=(3, -6, -4), loc__hips=(-0.006, 0, 0))),
+    ])
+
+
+def clip_stand_laugh():
+    """A big standing laugh: thrown back, a hand on the belly, shoulders shaking, a knee slap."""
+    back = P(rot__hips=(-8, 0, 0), rot__chest=(-6, 0, 0), rot__head=(-12, 0, 0), hand_L=(0.16, -0.36, 0.62),
+             rot__hand_L=(0, 0, -30), hand_R=(-0.42, -0.10, 0.62), rot__clavicle_L=(0, 6, -8), rot__clavicle_R=(0, -6, 8))
+    up = lambda m: merge(m, loc__hips=(0, 0, 0.018), rot__clavicle_L=(0, 12, -8), rot__clavicle_R=(0, -12, 8))
+    slap = merge(back, rot__hips=(14, 0, 0), rot__spine=(8, 0, 0), rot__head=(6, 0, 0), hand_R=(-0.26, -0.40, 0.36),
+                 pole_R=DOWN_POLE["R"], loc__hips=(0, 0, -0.03))
+    return dict(duration=2.6, loop=True, keys=[
+        (0.0, back),
+        (0.2, up(back)),
+        (0.4, back),
+        (0.6, up(merge(back, rot__head=(-14, 0, 4)))),
+        (0.8, back),
+        (1.1, slap),
+        (1.35, merge(slap, hand_R=(-0.26, -0.40, 0.44))),
+        (1.6, slap),
+        (2.0, up(back)),
+        (2.3, merge(back, rot__head=(-8, 0, -4))),
+    ])
+
+
 CLIPS = {
     "idle_available": clip_idle,
     "planning_recipe": clip_planning,
@@ -620,9 +949,23 @@ CLIPS = {
     "sit_idle": clip_sit_idle,
     "sit_sip": clip_sit_sip,
     "sit_chat": clip_sit_chat,
+    "sit_talk": clip_sit_talk,
+    "sit_laugh": clip_sit_laugh,
+    "sit_gesture": clip_sit_gesture,
+    "sit_eat": clip_sit_eat,
+    "sit_cheer": clip_sit_cheer,
     "cover_dish": clip_cover_dish,
     "merge_ready": clip_merge_ready,
     "merge_ready_wait": clip_merge_ready_wait,
     "fix_react": clip_fix_react,
     "fix_wait": clip_fix_wait,
+    "strike_gong": clip_strike_gong,
+    "talk_reply": clip_talk_reply,
+    "manager_talk": clip_manager_talk,
+    "play_arcade": clip_play_arcade,
+    "use_vending": clip_use_vending,
+    "brew_espresso": clip_brew_espresso,
+    "stand_sip": clip_stand_sip,
+    "stand_listen": clip_stand_listen,
+    "stand_laugh": clip_stand_laugh,
 }

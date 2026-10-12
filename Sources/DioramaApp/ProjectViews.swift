@@ -237,9 +237,15 @@ struct ProjectsRootView: View {
         } message: { Text(library.workflowError ?? "") }
         .sheet(isPresented: $library.showInbox) { AttentionInbox(model: library) }
         .sheet(isPresented: $library.showConnections) { ConnectionsView(model: library) }
+        .sheet(isPresented: $library.showGitHub) { GitHubConnectionModal() }
         .sheet(isPresented: $library.showMessageSearch) { ConversationSearchView(model: library, threadID: nil) }
         .onChange(of: library.execution.tasks.keys.sorted()) { library.syncOwnedSessions() }
         .onChange(of: projects.selectedID, initial: true) { library.projectNavigation = projects.selectedID != "imported" }
+        .onChange(of: library.addProject) {
+            guard let request = library.addProject else { return }
+            library.addProject = nil
+            if request == "Connect Project" { connectFolder() } else { addMode = request }
+        }
         .onChange(of: addMode) { if addMode != nil { library.captureProjectPresentation(); library.navigation.projectTabs.pickerPresented = false } }
         .onChange(of: library.showNewTask) {
             if library.showNewTask {
@@ -260,17 +266,20 @@ struct ProjectsRootView: View {
             }
         }
     }
-    @ViewBuilder private var addActions: some View {
-        Button {
-            let panel = NSOpenPanel(); panel.canChooseDirectories = true; panel.canChooseFiles = false
-            panel.begin { response in
-                if response == .OK, let url = panel.url {
-                    Task { do { let opened = try await ProjectFolder.open(url.path); library.captureProjectPresentation(); projects.add(opened); if let id = projects.selectedID { library.selectProjectTab(id) }; addMode = nil } catch { projects.error = error.localizedDescription } }
-                }
+    /// Picks a folder already on this Mac and opens it as a project.
+    private func connectFolder() {
+        let panel = NSOpenPanel(); panel.canChooseDirectories = true; panel.canChooseFiles = false
+        panel.begin { response in
+            if response == .OK, let url = panel.url {
+                Task { do { let opened = try await ProjectFolder.open(url.path); library.captureProjectPresentation(); projects.add(opened); if let id = projects.selectedID { library.selectProjectTab(id) }; addMode = nil } catch { projects.error = error.localizedDescription } }
             }
-        } label: { Label("Connect Project", systemImage: "folder") }.pointingHand()
+        }
+    }
+    @ViewBuilder private var addActions: some View {
+        Button { connectFolder() } label: { Label("Connect Project", systemImage: "folder") }.pointingHand()
         Button { addMode = "Open GitHub project" } label: {
-            Label { Text("Open GitHub Project") } icon: { ConnectorMark(server: "github").accessibilityHidden(true) }
+            // Same weight and size as the folder and plus icons beside it.
+            Label { Text("Open GitHub Project") } icon: { GitHubSymbol.icon.accessibilityHidden(true) }
         }.pointingHand()
         Button { addMode = "New Project" } label: { Label("New Project", systemImage: "plus") }.pointingHand()
     }
@@ -354,12 +363,7 @@ struct AddProjectView: View {
                     .buttonStyle(.borderedProminent).disabled(operation != nil || name.isEmpty || name.contains("/") || name == "." || name == "..")
             }
         }.padding(24).frame(width: 560).onDisappear { operation?.cancel() }
-        .sheet(isPresented: $showGitHub) {
-            VStack(alignment: .leading, spacing: 20) {
-                GitHubSettingsView()
-                HStack { Spacer(); Button("Done") { showGitHub = false }.pointingHand().keyboardShortcut(.defaultAction) }
-            }.padding(24).frame(width: 620)
-        }
+        .sheet(isPresented: $showGitHub) { GitHubConnectionModal() }
     }
     private func start() {
         error = nil
@@ -451,7 +455,7 @@ struct ProjectDetailView: View {
                     Button("Connect GitHub repository…") { remoteSheet = true }.pointingHand().disabled(!project.isGitBacked)
                     if !project.isGitBacked { Text("Git features require a Git repository.") }
                     Divider()
-                    Button("Remove from Diorama") { projects.projects.removeAll { $0.id == projectID }; projects.selectedID = nil; projects.save() }.pointingHand().disabled(projects.busy.contains(projectID))
+                    Button("Remove from Diorama") { library.removeProject(projectID) }.pointingHand().disabled(projects.busy.contains(projectID))
                 } label: { Image(systemName: "ellipsis") }.pointingHand().menuStyle(.borderlessButton).fixedSize()
                 Button("New Session") { library.navigate(.project(projectID, nil)); library.focusWorkspaceComposer() }.pointingHand()
                     .disabled(projects.busy.contains(projectID) || !project.isGitBacked)
@@ -532,6 +536,12 @@ struct ProjectDraftView: View {
     var creationProjectPicker = AnyView(EmptyView())
     var creationClose = AnyView(EmptyView())
     var created: ((String, String) -> Void)? = nil
+    /// The task is on its way (checks that need nothing passed): the composer can close at once.
+    var started: (() -> Void)? = nil
+    /// Starting it failed after the composer closed; the draft is kept for another try.
+    var failed: ((String) -> Void)? = nil
+    /// An error to show on opening (a start that failed after the composer had closed).
+    var initialError: String? = nil
     @State private var model = UserDefaults.standard.string(forKey: "defaultAgentModel") ?? ""
     @State private var effort = ""
     @State private var approval: ApprovalReviewChoice = .inherit
@@ -636,8 +646,9 @@ struct ProjectDraftView: View {
         }.padding(compact ? 20 : 28).frame(maxWidth: 850)
         .task {
             model = project.draftModel ?? UserDefaults.standard.string(forKey: "defaultAgentModel") ?? ""
+            if let initialError { error = initialError }
             attachments = project.draftAttachments.compactMap { try? ConversationAttachment(url: URL(fileURLWithPath: $0)) }
-            await library.execution.connect()
+            if library.demo == nil { await library.execution.connect() }
             await loadStart(resetReference: project.draftStart == nil)
             if compact { ComposerNSTextView.focusVisible() }
 
@@ -720,6 +731,7 @@ struct ProjectDraftView: View {
     }
     private func requestSend() {
         guard !loadingStart else { return }
+        if library.demo != nil { send(); return }
         Task {
             if prepared == nil, !start.createWorktree, await ProjectGit.currentBranch(start.folder) != start.reference {
                 confirmSwitch = true
@@ -743,6 +755,21 @@ struct ProjectDraftView: View {
             }
         }
         let linkedFrom = project.linkedFrom, selectedMode = mode, selectedGoal = goal
+        started?()
+        // The development demo makes up the new conversation; nothing reaches Codex or Claude.
+        if let demoCreate = library.demoCreate {
+            // As in the real flow, the modal is gone before the new agent shows up: spawning it
+            // in the same moment kept the modal on screen over the elevator.
+            Task { @MainActor in
+                try? await Task.sleep(for: .milliseconds(350))
+                let selected = demoCreate(projectID, prompt)
+                projects.update(projectID) { $0.draft = ""; $0.draftAttachments = []; $0.selectedSession = selected }
+                projects.busy.remove(projectID)
+                library.selectedID = selected; attachments = []
+                created?(projectID, selected)
+            }
+            return
+        }
         Task {
             defer { projects.busy.remove(projectID) }
             do {
@@ -797,7 +824,7 @@ struct ProjectDraftView: View {
                 }
                 library.selectedID = selected; attachments = []
                 created?(projects.projects.first(where: { $0.workspaces.contains(where: { $0.id == work.id }) })?.id ?? projectID, selected)
-            } catch { self.error = error.localizedDescription }
+            } catch { self.error = error.localizedDescription; failed?(error.localizedDescription) }
         }
     }
 }

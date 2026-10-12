@@ -1,0 +1,58 @@
+{
+  "base": "chef-animated.glb",
+  "characters": [
+    {
+      "id": "manager",
+      "asset": "staff-manager.glb",
+      "source": {
+        "file": "Meshy_AI_Little_Chef_with_Wood_1009020807_texture.glb",
+        "sha256": "a193e304d4cc0fe651f8654c3fec38d39fec1f79bbdc683c044ea208d9f9b0a5"
+      },
+      "source_triangles": 668776,
+      "triangles": 5000,
+      "vertices": 2502,
+      "floor_shift_blender": [
+        0.00065,
+        0.03306,
+        0.95063
+      ],
+      "arms": {
+        "membership": "bone heat",
+        "L": {
+          "hand": [
+            0.4415,
+            -0.0641,
+            0.4949
+          ],
+          "tip": [
+            0.482,
+            -0.0644,
+            0.5185
+          ],
+          "swing_deg": 19.38,
+          "stretch": 1.1889,
+          "arm_vertices": 140
+        },
+        "R": {
+          "hand": [
+            -0.3859,
+            -0.3312,
+            0.7549
+          ],
+          "tip": [
+            -0.4239,
+            -0.3158,
+            0.7564
+          ],
+          "swing_deg": 57.92,
+          "stretch": 1.3098,
+          "arm_vertices": 242
+        },
+        "bridges_removed": 10
+      },
+      "tail": null,
+      "tail_vertices": 0,
+      "name": "Head chef"
+    }
+  ]
+}

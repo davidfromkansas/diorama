@@ -457,8 +457,35 @@ def build():
 def export(path):
     bpy.ops.object.select_all(action="DESELECT")
     for o in bpy.data.collections["Restaurant"].objects: o.select_set(True)
+    strip_unseen()
+    # No textures, so texture coordinates are a quarter of the vertex data for nothing; only the
+    # water keeps them (the app's shimmer shader animates across them).
+    for ob in [o for o in bpy.context.scene.objects if o.type == "MESH" and o.select_get() and o.name != "water"]:
+        while ob.data.uv_layers:
+            ob.data.uv_layers.remove(ob.data.uv_layers[0])
     bpy.ops.export_scene.gltf(filepath=path, export_format="GLB", use_selection=True, export_yup=True,
                               export_apply=True, export_materials="EXPORT", export_extras=False)
+
+
+def strip_unseen():
+    """Remove faces no kitchen camera can see. Every kitchen camera looks down at 62°, so a face
+    turned more than ~37° below horizontal faces away from it: tile and stone undersides, lower
+    bevels, the bottoms of cylinders. (Renders from the app's camera are pixel-identical; only
+    the low review angles in docs/restaurant can see a few undersides.) Only faces of closed
+    surfaces go: a sheet, like an umbrella panel, is its own only side."""
+    removed = 0
+    for ob in [o for o in bpy.context.scene.objects if o.type == "MESH" and o.select_get()]:
+        bpy.context.view_layer.objects.active = ob
+        for m in list(ob.modifiers):
+            bpy.ops.object.modifier_apply(modifier=m.name)
+        mw = ob.matrix_world.to_3x3()
+        bm = bmesh.new(); bm.from_mesh(ob.data)
+        hidden = [f for f in bm.faces
+                  if (mw @ f.normal).normalized().z < -0.6 and all(len(e.link_faces) == 2 for e in f.edges)]
+        bmesh.ops.delete(bm, geom=hidden, context="FACES")
+        bm.to_mesh(ob.data); bm.free()
+        removed += len(hidden)
+    print("RESTAURANT hidden faces removed", removed)
 
 if __name__ == "__main__" and "--" in sys.argv:
     out = sys.argv[sys.argv.index("--") + 1]

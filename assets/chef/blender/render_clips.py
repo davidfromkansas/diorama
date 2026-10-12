@@ -20,13 +20,25 @@ bpy.ops.mesh.primitive_cube_add(size=1)
 counter = bpy.context.active_object; counter.name = "verify_counter"
 counter.scale = (1.0, 0.45, st["counter_top"]); counter.location = (0, -st["counter_front_from_root"] - 0.225, st["counter_top"] / 2)
 counter.data.materials.append(cm)
+# Restaurant table for the seated guest clips (chef units: top 0.714, plate 0.41 ahead, chair seat 0.457).
+bpy.ops.mesh.primitive_cube_add(size=1)
+table = bpy.context.active_object; table.name = "verify_table"
+table.scale = (0.9, 0.9, 0.04); table.location = (0, -0.70, 0.714 - 0.02)
+table.data.materials.append(cm)
+bpy.ops.mesh.primitive_cube_add(size=1)
+chair = bpy.context.active_object; chair.name = "verify_chair"
+chair.scale = (0.5, 0.45, 0.04); chair.location = (0, 0.10, 0.457 - 0.02)
+chair.data.materials.append(cm)
+TABLE_CLIPS = {"sit_talk", "sit_laugh", "sit_gesture", "sit_eat", "sit_cheer", "sit_sip", "sit_chat", "sit_idle"}
 STATION_CLIPS = {"working_chop", "testing_dish", "waiting_tool", "present_review", "putdown", "pickup", "cancel_cleanup"}
 def place(name, loc):
     o = props[name]; o.hide_render = False
     o.matrix_world = Matrix.Translation(loc)
 HELD = {"planning_recipe": [("prop_recipe_card", "planning_recipe")], "researching_book": [("prop_cookbook", "researching_book")],
         "working_chop": [("prop_knife", "working_chop")], "testing_dish": [("prop_spoon", "testing_dish")],
-        "carry_idle": [("prop_plate", "carry_idle")], "carry_walk": [("prop_plate", "carry_idle")]}
+        "carry_idle": [("prop_plate", "carry_idle")], "carry_walk": [("prop_plate", "carry_idle")],
+        "sit_sip": [("prop_mug", "sit_sip")], "sit_eat": [("prop_spoon", "testing_dish")],
+        "strike_gong": [("prop_gong_mallet", "strike_gong")], "stand_sip": [("prop_mug", "sit_sip")]}
 bfront = -st["counter_front_from_root"] - 0.14
 for clip in clips:
     meta = man["clips"][clip]
@@ -39,6 +51,7 @@ for clip in clips:
     frames = sorted(set([0, n // 4, n // 2, (3 * n) // 4] + [round(v * n) for v in meta["markers"].values()]))
     for o in props.values(): o.hide_render = True
     counter.hide_render = clip not in STATION_CLIPS
+    table.hide_render = chair.hide_render = clip not in TABLE_CLIPS
     for f in frames:
         bpy.context.scene.frame_set(f)
         for o in props.values(): o.hide_render = True
@@ -54,6 +67,7 @@ for clip in clips:
             props["prop_ingredient"].hide_render = False
             props["prop_ingredient"].matrix_world = Matrix.Translation((0.03, bfront - 0.02, st["counter_top"] + 0.02))
         if clip == "testing_dish": place("prop_plate", Vector((-0.12, bfront, st["counter_top"])))
+        if clip in TABLE_CLIPS: place("prop_plate", Vector((-0.06, -0.41, 0.714)))
         if clip == "waiting_tool": place("prop_pot", Vector((-0.12, bfront, st["counter_top"])))
         for prop, fit in held:
             a = man["attach"][prop][fit]

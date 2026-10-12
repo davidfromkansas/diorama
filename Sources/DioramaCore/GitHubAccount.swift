@@ -15,6 +15,27 @@ public struct GitHubAPIError: LocalizedError, Sendable {
     public var errorDescription: String? { message }
 }
 
+/// Why Diorama can't use its GitHub login, for the connection's own UI (the messages are the ones
+/// shown before this had a type).
+public enum GitHubAuthError: LocalizedError, Equatable, Sendable {
+    /// No saved login.
+    case notConnected
+    /// GitHub rejected the login (expired or revoked), or it could not be refreshed.
+    case expired(String)
+    /// macOS must ask before this build can read the saved login.
+    case keychainNeedsPermission
+    /// The saved login could not be read.
+    case keychain
+    public var errorDescription: String? {
+        switch self {
+        case .notConnected: "Connect GitHub in Settings to continue."
+        case .expired(let message): message
+        case .keychainNeedsPermission: "macOS requires access to Diorama's saved GitHub login. Use Allow Keychain access in GitHub Settings, then retry."
+        case .keychain: "Diorama could not access its GitHub login in Keychain."
+        }
+    }
+}
+
 public struct GitHubToken: Codable, Sendable {
     public var accessToken: String
     public var refreshToken: String?
@@ -39,8 +60,8 @@ public enum GitHubCredentials {
             kSecAttrAccount: "github.com", kSecReturnData: true, kSecMatchLimit: kSecMatchLimitOne,
             kSecUseAuthenticationContext: context] as CFDictionary, &result)
         if status == errSecItemNotFound { return nil }
-        if status == errSecInteractionNotAllowed || status == errSecAuthFailed { throw AppServerFailure("macOS requires access to Diorama's saved GitHub login. Use Allow Keychain access in GitHub Settings, then retry.") }
-        guard status == errSecSuccess, let data = result as? Data else { throw AppServerFailure("Diorama could not access its GitHub login in Keychain.") }
+        if status == errSecInteractionNotAllowed || status == errSecAuthFailed { throw GitHubAuthError.keychainNeedsPermission }
+        guard status == errSecSuccess, let data = result as? Data else { throw GitHubAuthError.keychain }
         return (try? JSONDecoder().decode(GitHubToken.self, from: data)) ?? String(data: data, encoding: .utf8).map { GitHubToken(accessToken: $0) }
     }
     public static func load() throws -> String? { try loadRecord()?.accessToken }
@@ -205,12 +226,12 @@ public actor GitHubAccount {
         guard let stored = try cached ?? loadToken() else { return nil }
         cached = stored
         if let expiry = stored.expiresAt, expiry < Date().addingTimeInterval(60) {
-            guard let refresh = stored.refreshToken, let client = configuredClientID ?? Self.clientID else { throw AppServerFailure("Reconnect GitHub in Settings.") }
+            guard let refresh = stored.refreshToken, let client = configuredClientID ?? Self.clientID else { throw GitHubAuthError.expired("Reconnect GitHub in Settings.") }
             let expected = generation
             let data = try await publicRequest("https://github.com/login/oauth/access_token", body: ["client_id": client, "refresh_token": refresh, "grant_type": "refresh_token"])
             let value = try JSONDecoder().decode(WireValue.self, from: data)
             guard expected == generation else { throw CancellationError() }
-            guard let token = value["access_token"].string else { throw AppServerFailure("Your GitHub login expired. Reconnect in Settings.") }
+            guard let token = value["access_token"].string else { throw GitHubAuthError.expired("Your GitHub login expired. Reconnect in Settings.") }
             let record = Self.token(value, accessToken: token)
             try saveToken(record); cached = record
             return token
@@ -219,7 +240,7 @@ public actor GitHubAccount {
     }
     public func api(_ path: String, method: String = "GET", body: WireValue? = nil) async throws -> Data {
         guard path.hasPrefix("/"), !path.hasPrefix("//"), let url = URL(string: "https://api.github.com" + path), url.host == "api.github.com" else { throw AppServerFailure("Invalid GitHub destination.") }
-        guard let token = try await accessToken() else { throw AppServerFailure("Connect GitHub in Settings to continue.") }
+        guard let token = try await accessToken() else { throw GitHubAuthError.notConnected }
         let expected = generation
         var request = URLRequest(url: url); request.timeoutInterval = 30; request.httpMethod = method
         request.setValue("Bearer " + token, forHTTPHeaderField: "Authorization")
@@ -230,7 +251,7 @@ public actor GitHubAccount {
         guard expected == generation else { throw AppServerFailure("GitHub disconnected. The operation may have completed; reconnect and check before retrying.") }
         switch response.statusCode {
         case 200..<300: return data
-        case 401: throw AppServerFailure("Your GitHub authorization expired. Reconnect in Settings.")
+        case 401: throw GitHubAuthError.expired("Your GitHub authorization expired. Reconnect in Settings.")
         case 403 where response.value(forHTTPHeaderField: "X-GitHub-SSO") != nil: throw AppServerFailure("Your organization requires GitHub authorization approval.")
         case 429: throw AppServerFailure("GitHub is rate limiting requests. Try again later.")
         case 403 where response.value(forHTTPHeaderField: "X-RateLimit-Remaining") == "0": throw AppServerFailure("GitHub's rate limit was reached. Try again later.")

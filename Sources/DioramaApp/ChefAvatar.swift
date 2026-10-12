@@ -9,20 +9,88 @@ import simd
                         "working_chop", "waiting_tool", "testing_dish", "request_input", "wait_input", "blocked_wait",
                         "error_react", "present_review", "wait_review", "unknown_wait", "cancel_cleanup", "pickup",
                         "blocked_react", "celebrate_done", "arrive_wave", "read_ticket", "sit_down", "stand_up",
-                        "sit_idle", "sit_sip", "sit_chat", "cover_dish",
-                        "merge_ready", "merge_ready_wait", "fix_react", "fix_wait"],
+                        "sit_idle", "sit_sip", "sit_chat", "sit_talk", "sit_laugh", "sit_gesture", "sit_eat", "sit_cheer", "cover_dish",
+                        "merge_ready", "merge_ready_wait", "fix_react", "fix_wait", "strike_gong", "talk_reply", "manager_talk",
+                        "play_arcade", "use_vending", "brew_espresso", "stand_sip", "stand_listen", "stand_laugh"],
         instanceName: "chef")
     static let shared: Result<ChefAssets, Error> = Result { try ChefAssets() }
     let rig: WorkspaceCapybaraAsset
     let props: [String: SCNNode]
     let manifest: ChefManifest
+    /// Every character a chef can wear: the original chef first, then the characters fitted to
+    /// its skeleton (`chef-variants.json`, built by assets/chef/build_variants.sh).
+    let characters: [ChefCharacter]
+    static let classic = "classic"
+    private var loaded: [String: WorkspaceCapybaraAsset] = [:]
+    private var preloading = false
     init() throws {
         manifest = try ChefManifest.load()
         rig = try WorkspaceCapybaraAsset.load("chef-animated", subdirectory: "Chef", spec: Self.spec)
         props = try GLBStaticMeshes.load("chef-props", subdirectory: "Chef")
         guard Set(manifest.clips.keys).isSubset(of: Set(rig.clips.keys)) else { throw WorkspaceCapybaraAsset.AssetError.invalid("Chef manifest names clips the GLB lacks") }
+        let fitted = WorkspaceCapybaraAsset.resourceBundle.url(forResource: "chef-variants", withExtension: "json", subdirectory: "Chef")
+            .flatMap { try? JSONDecoder().decode(ChefCharacterList.self, from: Data(contentsOf: $0)).characters } ?? []
+        characters = [ChefCharacter(id: Self.classic, name: "Chef", asset: "chef-animated.glb")] + fitted
+        guests = WorkspaceCapybaraAsset.resourceBundle.url(forResource: "guest-list", withExtension: "json", subdirectory: "Restaurant")
+            .flatMap { try? JSONDecoder().decode(ChefCharacterList.self, from: Data(contentsOf: $0)).characters }?
+            .map { ChefCharacter(id: Self.guestPrefix + $0.id, name: $0.name, asset: $0.asset, folder: "Restaurant") } ?? []
+        staff = WorkspaceCapybaraAsset.resourceBundle.url(forResource: "staff-list", withExtension: "json", subdirectory: "Chef")
+            .flatMap { try? JSONDecoder().decode(ChefCharacterList.self, from: Data(contentsOf: $0)).characters }?
+            .map { ChefCharacter(id: Self.staffPrefix + $0.id, name: $0.name, asset: $0.asset) } ?? []
+    }
+    /// Kitchen staff (`Chef/staff-list.json`): the manager, who comes over to talk with chefs
+    /// that struck the gong. Never worn by an agent's chef.
+    let staff: [ChefCharacter]
+    static let staffPrefix = "staff:"
+    static let manager = staffPrefix + "manager"
+    /// The restaurant's guests (`Restaurant/guest-list.json`): characters on the chef's skeleton
+    /// that sit at the tables outside. Never worn by an agent's chef.
+    let guests: [ChefCharacter]
+    static let guestPrefix = "guest:"
+    /// A character's rig: its own mesh and textures, the chef's skeleton and clips. Loaded the
+    /// first time a chef wears it (`preload` warms them all off the main thread); the original
+    /// chef stands in for one that can't load.
+    func rig(for character: String) -> WorkspaceCapybaraAsset {
+        if character == Self.classic { return rig }
+        if let asset = loaded[character] { return asset }
+        guard let entry = (characters + guests + staff).first(where: { $0.id == character }), let url = url(entry),
+              let asset = try? WorkspaceCapybaraAsset(data: Data(contentsOf: url), spec: Self.spec, clipsFrom: rig) else { return rig }
+        loaded[character] = asset
+        return asset
+    }
+    /// Load every character in the background, so a new chef never waits on its files.
+    func preload() {
+        guard !preloading else { return }
+        preloading = true
+        let base = rig, spec = Self.spec
+        let pending = (characters + guests + staff).filter { $0.id != Self.classic && loaded[$0.id] == nil }.compactMap { c in url(c).map { (c.id, $0) } }
+        guard !pending.isEmpty else { return }
+        Task.detached(priority: .utility) { [weak self] in
+            for (id, url) in pending {
+                guard let data = try? Data(contentsOf: url),
+                      let asset = try? WorkspaceCapybaraAsset(data: data, spec: spec, clipsFrom: base) else { continue }
+                await MainActor.run { if self?.loaded[id] == nil { self?.loaded[id] = asset } }
+            }
+        }
+    }
+    private func url(_ character: ChefCharacter) -> URL? {
+        WorkspaceCapybaraAsset.resourceBundle.url(forResource: (character.asset as NSString).deletingPathExtension, withExtension: "glb", subdirectory: character.folder)
     }
 }
+
+/// A chef character: an id (what agents are assigned) and its asset.
+nonisolated struct ChefCharacter: Decodable, Sendable, Equatable {
+    let id: String
+    let name: String
+    let asset: String
+    /// The resource folder its asset is in.
+    var folder = "Chef"
+    private enum CodingKeys: String, CodingKey { case id, name, asset }
+    init(id: String, name: String, asset: String, folder: String = "Chef") {
+        self.id = id; self.name = name; self.asset = asset; self.folder = folder
+    }
+}
+private nonisolated struct ChefCharacterList: Decodable { let characters: [ChefCharacter] }
 
 /// One rendered chef. Navigation (position, heading) applies to `root`, which is never scaled;
 /// `visual` scales the skinned model so props and attach offsets scale with it. Each chef owns its
@@ -86,11 +154,15 @@ nonisolated final class ChefAvatar: @unchecked Sendable {
     private let squirmBones: [String: SCNNode]
     private var soundClip: (token: Int, time: Float)?
 
-    @MainActor init(id: String, assets: ChefAssets, scale: Float, navigation: WorkspaceCapybaraNavigation) {
-        self.id = id; asset = assets.rig; templates = assets.props; manifest = assets.manifest
+    /// The character this chef wears (`ChefAssets.characters`).
+    let character: String
+
+    @MainActor init(id: String, assets: ChefAssets, scale: Float, navigation: WorkspaceCapybaraNavigation, character: String = ChefAssets.classic) {
+        self.id = id; self.character = character
+        asset = assets.rig(for: character); templates = assets.props; manifest = assets.manifest
         dishTemplates = KitchenFood.templates
         pantryCarry = PantryCarrier(models: PantryCarry.models)
-        rig = assets.rig.makeInstance()
+        rig = asset.makeInstance()
         director = ChefDirector(clips: assets.manifest.clips, unit: scale, navigation: navigation)
         baseScale = scale
         let instance = rig
@@ -133,87 +205,15 @@ nonisolated final class ChefAvatar: @unchecked Sendable {
         last = (command.name, time, command.loop)
         syncProps()
         let fit = manifest.attach[ChefProp.plate.node]?[ChefProp.plate.fitClip]
-        pantryCarry.sync(wanted: ["pantry": pantryItem, "prep": prepItem].compactMapValues { $0 }, area: director.station?.area, reducedMotion: director.reducedMotion, delta: delta,
+        // What there is to pick up where: the pantry's resource, prep's plate, and each station's own
+        // item (order rail, cooking island, stove).
+        var wanted = ["pantry": pantryItem, "prep": prepItem].compactMapValues { $0 }
+        for area in ["order", "cooking", "stove"] { wanted[area] = PantryCarry.stationItem(area: area) }
+        let delivering = director.held.contains(.plate) || director.intent?.pickup != nil
+        pantryCarry.sync(wanted: wanted, area: director.station?.area, reducedMotion: director.reducedMotion, delta: delta,
                          carrySocket: rig.bone(ChefProp.plate.socket), fit: fit.map { ($0.simdPosition, $0.simdQuaternion) },
-                         floor: visual, counterTop: manifest.stations.counterTop)
+                         floor: visual, counterTop: manifest.stations.counterTop, delivering: delivering)
         director.carriesJar = pantryCarry.carrying
-    }
-
-    /// Dresses this chef as a diner: the outfit texture on its own copy of the skinned mesh
-    /// (vertex data stays shared), without the hat.
-    @MainActor func dressAsDiner(_ outfit: NSImage?) {
-        silent = true
-        guard let node = rig.nodes.first(where: { $0.skinner != nil }), let skin = node.skinner,
-              let base = node.geometry, let dressed = Self.withoutHat(base) ?? base.copy() as? SCNGeometry else { return }
-        // The hat's crown follows the hat bone but its band follows the head: leave out every
-        // triangle wholly above the hairline (bind pose, chef units; hair and skin end at 1.46).
-        dressed.materials = base.materials.map { material in
-            let copy = (material.copy() as? SCNMaterial) ?? material
-            if let outfit { copy.diffuse.contents = outfit }
-            return copy
-        }
-        let skinner = SCNSkinner(baseGeometry: dressed, bones: skin.bones, boneInverseBindTransforms: skin.boneInverseBindTransforms,
-                                 boneWeights: skin.boneWeights, boneIndices: skin.boneIndices)
-        skinner.skeleton = skin.skeleton
-        node.geometry = dressed; node.skinner = skinner
-    }
-
-    /// Above this (bind pose, chef units) everything is hat; between `headTop` and it, the hat's
-    /// band shares the height with the hair, so it goes by colour (white or teal texels).
-    static let hairline: Float = 1.47, headTop: Float = 1.28
-    @MainActor private static var hatlessCache: [ObjectIdentifier: SCNGeometry] = [:]
-    /// The chef mesh without its hat (same vertex data), computed once per rig.
-    @MainActor static func withoutHat(_ geometry: SCNGeometry) -> SCNGeometry? {
-        if let cached = hatlessCache[ObjectIdentifier(geometry)] { return cached.copy() as? SCNGeometry }
-        guard let positions = geometry.sources(for: .vertex).first, positions.usesFloatComponents, positions.bytesPerComponent == 4 else { return nil }
-        func floats(_ source: SCNGeometrySource, _ component: Int) -> [Float] {
-            source.data.withUnsafeBytes { raw in
-                (0..<source.vectorCount).map { raw.load(fromByteOffset: source.dataOffset + $0 * source.dataStride + component * 4, as: Float.self) }
-            }
-        }
-        let heights = floats(positions, 1)
-        let uvSource = geometry.sources(for: .texcoord).first
-        let us = uvSource.map { floats($0, 0) } ?? [], vs = uvSource.map { floats($0, 1) } ?? []
-        let texture = (geometry.firstMaterial?.diffuse.contents as? NSImage).flatMap { image -> NSBitmapImageRep? in
-            image.cgImage(forProposedRect: nil, context: nil, hints: nil).map(NSBitmapImageRep.init(cgImage:))
-        }
-        func hatColoured(_ u: Float, _ v: Float) -> Bool {
-            guard let texture else { return true }
-            let x = min(texture.pixelsWide - 1, max(0, Int(u * Float(texture.pixelsWide))))
-            let y = min(texture.pixelsHigh - 1, max(0, Int(v * Float(texture.pixelsHigh))))
-            guard let c = texture.colorAt(x: x, y: y)?.usingColorSpace(.sRGB) else { return false }
-            let high = max(c.redComponent, c.greenComponent, c.blueComponent), low = min(c.redComponent, c.greenComponent, c.blueComponent)
-            let saturation = high > 0 ? (high - low) / high : 0
-            let white = saturation < 0.22 && high > 0.5
-            let teal = c.blueComponent > c.redComponent + 0.05 && c.greenComponent > c.redComponent && high > 0.2
-            return white || teal
-        }
-        let elements = geometry.elements.map { element -> SCNGeometryElement in
-            guard element.primitiveType == .triangles else { return element }
-            let width = element.bytesPerIndex
-            var kept = Data(); kept.reserveCapacity(element.data.count)
-            element.data.withUnsafeBytes { raw in
-                func index(_ k: Int) -> Int {
-                    width == 4 ? Int(raw.load(fromByteOffset: k * 4, as: UInt32.self)) : width == 2 ? Int(raw.load(fromByteOffset: k * 2, as: UInt16.self)) : Int(raw.load(fromByteOffset: k, as: UInt8.self))
-                }
-                for t in 0..<element.primitiveCount {
-                    let corners = [index(t * 3), index(t * 3 + 1), index(t * 3 + 2)]
-                    guard corners.allSatisfy({ $0 < heights.count }) else { continue }
-                    let low = corners.map { heights[$0] }.min() ?? 0
-                    if low > hairline { continue }
-                    if low > headTop, !us.isEmpty, corners.allSatisfy({ $0 < us.count }) {
-                        let u = corners.map { us[$0] }.reduce(0, +) / 3, v = corners.map { vs[$0] }.reduce(0, +) / 3
-                        if hatColoured(u, v) { continue }
-                    }
-                    kept.append(contentsOf: UnsafeRawBufferPointer(rebasing: raw[(t * 3 * width)..<((t + 1) * 3 * width)]))
-                }
-            }
-            return SCNGeometryElement(data: kept, primitiveType: .triangles, primitiveCount: kept.count / (3 * width), bytesPerIndex: width)
-        }
-        let result = SCNGeometry(sources: geometry.sources, elements: elements)
-        result.materials = geometry.materials
-        hatlessCache[ObjectIdentifier(geometry)] = result
-        return result.copy() as? SCNGeometry
     }
 
     /// Picked up: a startled jolt, then legs paddling in the air (`run`) with the body, head and
@@ -341,7 +341,10 @@ nonisolated final class ChefAvatar: @unchecked Sendable {
         }
         return dishNode?.node
     }
-    /// Carried and served as the plate; on the board while chopping; at tasting while tasting.
+    /// The chopped board is on the counter: it stands in for the dish on the cutting board.
+    var choppingOnBoard: Bool { pantryCarry.placement == .counter && pantryCarry.item?.kind == .board }
+    /// Carried and served as the plate; on the board while chopping (unless the chopped board is
+    /// there); at tasting while tasting.
     private func syncDish(_ node: SCNNode?) {
         guard let node else { return }
         let station = director.station?.area, clip = director.clip.name
@@ -351,7 +354,7 @@ nonisolated final class ChefAvatar: @unchecked Sendable {
             parent = socket; position = fit?.simdPosition ?? .zero; orientation = fit?.simdQuaternion ?? orientation; spot = "carry"
         } else if director.placedPlate != nil {
             position = Self.passSpot; spot = "pass"
-        } else if station == "cooking", clip == "working_chop" {
+        } else if station == "cooking", clip == "working_chop", !choppingOnBoard {
             position = Self.boardSpot; spot = "board"
         } else if station == "tasting", clip == "testing_dish" {
             position = Self.tastingSpot; spot = "tasting"

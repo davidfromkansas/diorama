@@ -30,6 +30,8 @@ import Observation
         var state: State
         var completionKey: String
         var note: String? = nil
+        /// The pull request's checks, one per block of the chef's progress bar.
+        var checks: [ChefTagContent.Check]? = nil
     }
     /// A fix you sent back for a pull request: when the agent's turn ends, Diorama pushes the
     /// result to the same PR.
@@ -39,7 +41,7 @@ import Observation
         var mergedFiles: [String] = []
         var sent = Date()
     }
-    static let shared = KitchenReviews()
+    static let shared = KitchenReviews(defaults: DemoMode.sharedDefaults)
     private(set) var entries: [String: Entry] = [:]
     private(set) var fixes: [String: Fix] = [:]
     private let defaults: UserDefaults
@@ -52,6 +54,7 @@ import Observation
         if let data = defaults.data(forKey: Self.fixesKey), let saved = try? JSONDecoder().decode([String: Fix].self, from: data) { fixes = saved }
     }
     func note(_ conversation: String) -> String? { entries[conversation]?.note }
+    func checks(_ conversation: String) -> [ChefTagContent.Check]? { entries[conversation]?.checks }
     func setFix(_ conversation: String, _ fix: Fix?) {
         fixes[conversation] = fix
         if let data = try? JSONEncoder().encode(fixes) { defaults.set(data, forKey: Self.fixesKey) }
@@ -88,12 +91,12 @@ import Observation
         DispatchQueue.main.async { [self] in entries = next; save() }
     }
 
-    func set(_ conversation: String, _ state: State, note: String? = nil) {
+    func set(_ conversation: String, _ state: State, note: String? = nil, checks: [ChefTagContent.Check]? = nil) {
         guard var entry = entries[conversation] else {
-            entries[conversation] = Entry(state: state, completionKey: "manual:" + UUID().uuidString, note: note); save(); return
+            entries[conversation] = Entry(state: state, completionKey: "manual:" + UUID().uuidString, note: note, checks: checks); save(); return
         }
-        guard entry.state != state || (note != nil && entry.note != note) else { return }
-        entry.state = state; if let note { entry.note = note }
+        guard entry.state != state || (note != nil && entry.note != note) || (checks != nil && entry.checks != checks) else { return }
+        entry.state = state; if let note { entry.note = note }; if let checks { entry.checks = checks }
         entries[conversation] = entry; save()
     }
     func clear(_ conversation: String) { entries[conversation] = nil; save() }

@@ -49,6 +49,11 @@ public extension ExecutedTask {
         [.submitting, .working, .approval, .input].contains(phase) || (phase == .disconnected && requiresReconciliation)
     }
 }
+public extension ExecutedTask {
+    /// The model this task names, or nil when it doesn't name a real one: nothing yet, or
+    /// Claude's "default" placeholder. Labels then fall back to the model the session reports.
+    var namedModel: String? { model.isEmpty || model == "claude/default" ? nil : model }
+}
 public struct ExecutedTask: Identifiable, Sendable {
     public let id: String
     public var provider: Provider = .codex
@@ -175,14 +180,23 @@ public final class ExecutionController {
     public static var defaultJournal: URL {
         FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent("Library/Application Support/Diorama/owned-tasks.json")
     }
+    /// Where your Codex and Claude default permissions live (tests point this elsewhere).
+    public var providerDefaults = ProviderPermissionDefaults()
     public init(transport: any ExecutionTransport = CodexExecutionTransport(), journal: URL? = nil) {
         self.transport = transport; self.journal = journal
         activityDirectory = journal?.deletingLastPathComponent().appendingPathComponent("SessionActivity")
         activityStore = activityDirectory.map { SessionActivityStore(directory: $0) }
+        // Diorama used to save "Approve for me" on every new conversation as if you'd picked it.
+        // Once, forget those so conversations follow your Codex/Claude default instead.
+        let providerDefaultsMarker = journal?.deletingLastPathComponent().appendingPathComponent("permissions-follow-provider-defaults")
+        let forgetImplicitDefaults = providerDefaultsMarker.map { !FileManager.default.fileExists(atPath: $0.path) } ?? false
+        if let providerDefaultsMarker, forgetImplicitDefaults { FileManager.default.createFile(atPath: providerDefaultsMarker.path, contents: Data()) }
         if let journal, let data = try? Data(contentsOf: journal), let saved = try? JSONDecoder().decode([TaskBookmark].self, from: data) {
-            for item in saved { tasks[item.id] = ExecutedTask(id: item.id, title: item.title, folder: item.folder, parentID: item.parentID, phase: .disconnected, error: "Previous run: read saved history and explicitly reconnect before sending. No work has been restarted.")
+            // Restored detached and idle: nothing restarts on its own, and Send reconnects, so
+            // there's nothing to tell the person until something actually goes wrong.
+            for item in saved { tasks[item.id] = ExecutedTask(id: item.id, title: item.title, folder: item.folder, parentID: item.parentID, phase: .disconnected)
                 tasks[item.id]?.model = item.model ?? ""
-                tasks[item.id]?.permissionPreference = item.permissionPreference
+                tasks[item.id]?.permissionPreference = forgetImplicitDefaults && item.permissionPreference == .autoReview ? nil : item.permissionPreference
                 tasks[item.id]?.permissionFolder = item.permissionFolder ?? item.folder
                 tasks[item.id]?.projectContext = item.projectContext
                 tasks[item.id]?.provider = Provider(rawValue: item.provider ?? "") ?? .codex
@@ -245,22 +259,27 @@ public final class ExecutionController {
     public func connectionInfo() async -> WireValue {
         (try? await transport.request("diorama/connections", .object([:]))) ?? .null
     }
-    public func prepare(folder: String, title: String, model: String, projectContext: String? = nil, permission: ApprovalReviewChoice = .autoReview) async throws -> String {
+    /// `.inherit` starts the conversation in the provider's own default (its settings file);
+    /// any other choice is applied to this conversation only.
+    public func prepare(folder: String, title: String, model: String, projectContext: String? = nil, permission: ApprovalReviewChoice = .inherit) async throws -> String {
         guard !stopping else { throw AppServerFailure("Diorama is shutting down agents. Try again in a moment.") }
         guard connected else { throw AppServerFailure("Connect an account before creating a task") }
         var isDirectory: ObjCBool = false
         guard folder.hasPrefix("/"), FileManager.default.fileExists(atPath: folder, isDirectory: &isDirectory), isDirectory.boolValue else { throw AppServerFailure("Choose an existing working folder") }
         if !model.isEmpty, !models.contains(where: { $0.id == model }) { throw AppServerFailure("Choose a model from the provider catalog") }
-        let initialPermission: ApprovalReviewChoice = permission == .inherit ? .autoReview : permission
+        let initialPermission: ApprovalReviewChoice? = permission == .inherit ? nil : permission
         if model.hasPrefix("claude/"), initialPermission == .autoReview, models.first(where: { $0.id == model })?.supportsAutoMode == false {
             throw ExecutionRPCRejection("Automatic review is unavailable for this model. Choose Accept edits or Ask for approval.")
         }
-        if !model.hasPrefix("claude/"), let reason = permissionUnavailable(initialPermission, model: model) { throw ExecutionRPCRejection(reason) }
+        if !model.hasPrefix("claude/"), let initialPermission, let reason = permissionUnavailable(initialPermission, model: model) { throw ExecutionRPCRejection(reason) }
         creatingCount += 1; defer { creatingCount -= 1 }
         var params: [String: WireValue] = ["cwd": .string(folder), "threadSource": .string("user")]
-        if !model.hasPrefix("claude/") { params["sandbox"] = .string(initialPermission == .fullAccess ? "danger-full-access" : "workspace-write"); params["approvalPolicy"] = .string(initialPermission == .fullAccess ? "never" : "on-request"); params["approvalsReviewer"] = .string(initialPermission == .autoReview ? "auto_review" : "user") }
-        if !model.hasPrefix("claude/"), initialPermission != .fullAccess { params["config"] = .object(["sandbox_workspace_write.network_access": .bool(false)]) }
-        if model.hasPrefix("claude/") { params["permissionMode"] = .string(initialPermission.claudeMode ?? "auto") }
+        // Nothing chosen: no permission parameters, so the provider starts in its own default.
+        if let initialPermission, !model.hasPrefix("claude/") {
+            params["sandbox"] = .string(initialPermission == .fullAccess ? "danger-full-access" : "workspace-write"); params["approvalPolicy"] = .string(initialPermission == .fullAccess ? "never" : "on-request"); params["approvalsReviewer"] = .string(initialPermission == .autoReview ? "auto_review" : "user")
+            if initialPermission != .fullAccess { params["config"] = .object(["sandbox_workspace_write.network_access": .bool(false)]) }
+        }
+        if let initialPermission, model.hasPrefix("claude/"), let mode = initialPermission.claudeMode { params["permissionMode"] = .string(mode) }
         if !model.isEmpty { params["model"] = .string(model) }
         if let instructions = AgentInstructions.compose(projectContext) { params["developerInstructions"] = .string(instructions) }
         let reply = try await transport.request("thread/start", .object(params))
@@ -451,6 +470,13 @@ public final class ExecutionController {
             task.permissionPreference = tasks[id]?.permissionPreference
             task.permissionFolder = tasks[id]?.permissionFolder
             task.projectContext = tasks[id]?.projectContext
+            // Reconnecting changes nothing about the work already done: keep what this
+            // conversation reported (its activity panel and when it last did something).
+            if let previous = tasks[id] {
+                task.activity = previous.activity
+                task.structuredActivity = previous.structuredActivity
+                task.work = previous.work
+            }
             if session.provider == .claude, let previous = tasks[id]?.model, !previous.isEmpty { task.model = previous }
             if reply["thread"]["status"]["type"].string == "active" {
                 task.phase = .working; task.requiresReconciliation = true
@@ -458,6 +484,19 @@ public final class ExecutionController {
             }
             task.workflow.steeredQueueIDs = tasks[id]?.workflow.steeredQueueIDs ?? []
             task.workflow.queueUncertain = !task.workflow.steeredQueueIDs.isEmpty
+            // A resumed Claude session starts in its default mode, so put back the mode chosen in
+            // Diorama. If that fails, Send asks for a mode rather than running in the wrong one.
+            if session.provider == .claude, task.phase == .ready, let saved = task.permissionPreference,
+               let target = saved.claudeMode, task.approvalPolicy.string != target {
+                let applied = try? await transport.request("diorama/permissions/set", .object([
+                    "threadId": .string(id), "permissionMode": .string(target), "executionPermissionMode": .string(target)
+                ]))
+                if applied?["permissionMode"].string == target { task.approvalPolicy = .string(target); task.sandbox = .null }
+                else {
+                    // Send still works, in Claude's own default; the note says which mode you got.
+                    task.permissionNotice = "Couldn’t restore \(saved.title). Using your Claude default."
+                }
+            }
             tasks[id] = task; persist()
         } catch {
             let detail = error.localizedDescription

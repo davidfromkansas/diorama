@@ -2,11 +2,18 @@ import AppKit
 import DioramaCore
 @preconcurrency import SceneKit
 
-/// What a chef fetched from the pantry, carried out in both hands: a salsa jar for a skill, a
-/// crate for a plugin, a connector object for an MCP server or app. It sits on the pantry counter
-/// while the chef is there, is carried (carry walk) to the next station, set down there and fades.
+/// What a chef picks up at a station and carries out in both hands: from the pantry a salsa jar
+/// for a skill, a crate for a plugin, a connector object for an MCP server or app; from prep a plan
+/// plate; from the order rail a lightbulb (the idea); from the cooking island the chopped board it
+/// worked on; from the stove its pot. It sits on the counter while the chef is there, is carried
+/// (carry walk) to the next station, set down there and fades.
 enum PantryCarry {
-    nonisolated enum Kind: String, Sendable { case skill, plugin, connector, plan }
+    nonisolated enum Kind: String, Sendable {
+        case skill, plugin, connector, plan, idea, board, pot
+        /// Kinds that stand for the station rather than the tool call: staying at the station
+        /// keeps the same one instead of popping a new one each call.
+        var sticky: Bool { [.plan, .idea, .board, .pot].contains(self) }
+    }
     nonisolated struct Item: Equatable, Sendable {
         let kind: Kind
         let name: String
@@ -58,15 +65,26 @@ enum PantryCarry {
         let task = TaskTitle.compact(agent.task).trimmingCharacters(in: .whitespacesAndNewlines)
         return Item(kind: .plan, name: task.isEmpty ? "Prep" : task)
     }
+    /// What there is to pick up at a station that always has the same thing: the order rail's
+    /// lightbulb, the cooking island's chopped board, the stove's pot.
+    nonisolated static func stationItem(area: String) -> Item? {
+        switch area {
+        case "order": Item(kind: .idea, name: "Order")
+        case "cooking": Item(kind: .board, name: "Chopped board")
+        case "stove": Item(kind: .pot, name: "Stove pot")
+        default: nil
+        }
+    }
     static func pluginFolder(_ text: String) -> String? {
         guard let range = text.range(of: "/plugins/cache/") else { return nil }
         let parts = text[range.upperBound...].split(separator: "/")
         return parts.count > 2 ? String(parts[1]) : nil
     }
-    /// The models, by kind (`assets/props`: salsa_jar, plugin_crate, connector_object).
+    /// The models, by kind (`assets/props`).
     static var models: [Kind: SCNNode] {
         var result: [Kind: SCNNode] = [:]
-        for (kind, id) in [(Kind.skill, "salsa_jar"), (.plugin, "plugin_crate"), (.connector, "connector_object"), (.plan, "plan_plate")] { result[kind] = KitchenProps.templates[id] }
+        for (kind, id) in [(Kind.skill, "salsa_jar"), (.plugin, "plugin_crate"), (.connector, "connector_object"), (.plan, "plan_plate"),
+                           (.idea, "lightbulb"), (.board, "chopped_board"), (.pot, "stove_pot")] { result[kind] = KitchenProps.templates[id] }
         return result
     }
 }
@@ -78,6 +96,17 @@ nonisolated final class PantryCarrier: @unchecked Sendable {
     init(models: [PantryCarry.Kind: SCNNode]) { self.models = models }
     enum Placement: Equatable { case none, counter, carried, setDown }
     static let size: Float = 0.5
+    /// Each kind's size (the models are normalized to a widest side of 1).
+    static func size(_ kind: PantryCarry.Kind?) -> Float {
+        switch kind {
+        case .idea: 0.35
+        case .board: 0.6
+        case .pot: 0.55
+        default: size
+        }
+    }
+    /// Where the chopped board rests while the chef chops on it: on the station's board spot.
+    static let boardSpot = SIMD3<Float>(-0.05, 0, 0.7)
     static let fade: Float = 3.5
 
     private(set) var placement = Placement.none
@@ -89,6 +118,8 @@ nonisolated final class PantryCarrier: @unchecked Sendable {
 
     /// The director carries it (carry walk) from the pantry until it's set down.
     var carrying: Bool { placement == .counter || placement == .carried }
+    /// Stations with a counter at `counterTop` to set things down on.
+    static let counterAreas: Set<String> = ["order", "prep", "cooking", "stove", "tasting", "pantry", "serving"]
 
     // Where it rests in the current placement; the animation plays on top of this.
     private var base = (position: SIMD3<Float>.zero, orientation: simd_quatf(ix: 0, iy: 0, iz: 0, r: 1))
@@ -102,22 +133,32 @@ nonisolated final class PantryCarrier: @unchecked Sendable {
     ///   - wanted: what there is to pick up at each pickup station ("pantry": what it's fetching,
     ///     "prep": the plate with its step).
     ///   - area: the station the chef stands at (nil while walking).
+    ///   - delivering: the chef is taking its dish to the serving window (picking it up or
+    ///     carrying it). The dish goes in its arms instead: anything picked up here is set down.
     func sync(wanted: [String: PantryCarry.Item], area: String?, reducedMotion: Bool, delta: Float,
-              carrySocket: SCNNode?, fit: (position: SIMD3<Float>, orientation: simd_quatf)?, floor: SCNNode, counterTop: Float) {
+              carrySocket: SCNNode?, fit: (position: SIMD3<Float>, orientation: simd_quatf)?, floor: SCNNode, counterTop: Float,
+              delivering: Bool = false) {
         self.reducedMotion = reducedMotion
         let step = max(0, min(delta, 0.1))
         phase += step; clock += step
         fadeRetired(step)
+        if let area, wanted[area] != nil, delivering {
+            // The dish wins: what it picked up here stays here, set down before it walks off.
+            if carrying { retire(floor: floor, counterTop: counterTop) }
+            return
+        }
         if let area, let want = wanted[area] {
-            if carrying && origin == area && item?.kind == want.kind && (want.kind == .plan || item == want) {
-                // Still at the station it came from: the plate's step follows the plan.
+            if carrying && origin == area && item?.kind == want.kind && (want.kind.sticky || item == want) {
+                // Still at the station it came from: the same thing (a plate's step follows the plan).
                 item = want
             } else {
                 // Whatever it was holding is set down here; the new thing pops onto the counter.
                 if carrying { retire(floor: floor, counterTop: counterTop) }
                 spawn(want); origin = area
             }
-            place(.counter, parent: floor, position: SIMD3(0, counterTop, 0.5), orientation: nil)
+            // The chopped board lies where the chef chops; everything else stands on the counter.
+            let spot = want.kind == .board ? Self.boardSpot + SIMD3(0, counterTop, 0) : SIMD3(0, counterTop, 0.5)
+            place(.counter, parent: floor, position: spot, orientation: nil)
             animate()
             return
         }
@@ -127,6 +168,11 @@ nonisolated final class PantryCarrier: @unchecked Sendable {
                 // Walking away: in both hands, on the carry socket like the plate.
                 if let carrySocket { place(.carried, parent: carrySocket, position: fit?.position ?? .zero, orientation: fit?.orientation) }
                 else { place(.carried, parent: floor, position: SIMD3(0, counterTop * 0.85, 0.32), orientation: nil) }
+            } else if !Self.counterAreas.contains(area!) {
+                // Arrived where there's no counter (the break room, the gong): nowhere to set it
+                // down, so it vanishes in a poof from the chef's arms rather than hanging in the air.
+                if let node, !reducedMotion { puff(node) }
+                clear(); return
             } else {
                 // Arrived somewhere else: set it down beside the chef, then let it fade.
                 faded = 0; opacity = 1; landed = false
@@ -151,6 +197,9 @@ nonisolated final class PantryCarrier: @unchecked Sendable {
         var offset = SIMD3<Float>.zero, scale = SIMD3<Float>(repeating: 1), turn = simd_quatf(ix: 0, iy: 0, iz: 0, r: 1)
         if !reducedMotion {
             switch placement {
+            case .counter where item?.kind == .board:
+                // The board pops into place and then lies still, so the knife meets it.
+                scale = SIMD3(repeating: Self.overshoot(min(1, phase / 0.45)))
             case .counter:
                 // Pops up out of the shelf with an overshoot and a half spin, then hovers.
                 let p = min(1, phase / 0.45)
@@ -183,7 +232,7 @@ nonisolated final class PantryCarrier: @unchecked Sendable {
         }
         node.simdPosition = base.position + offset
         node.simdOrientation = base.orientation * turn
-        node.simdScale = scale * Self.size
+        node.simdScale = scale * Self.size(item?.kind)
         node.opacity = CGFloat(opacity)
     }
     static func overshoot(_ p: Float) -> Float {
@@ -199,13 +248,15 @@ nonisolated final class PantryCarrier: @unchecked Sendable {
     /// The station the current item came from.
     private(set) var origin: String?
     /// Items put down when a new one was picked up at a pickup station, fading out beside the chef.
-    private var retired: [(node: SCNNode, time: Float)] = []
+    private var retired: [(node: SCNNode, time: Float, size: Float)] = []
     private func retire(floor: SCNNode, counterTop: Float) {
         guard let node else { return }
         if reducedMotion { node.removeFromParentNode() } else {
+            // Still on this counter: it stays where it lies. In the arms: set down beside the chef.
+            let lies = placement == .counter
             node.removeFromParentNode(); floor.addChildNode(node)
-            node.simdPosition = SIMD3(0.42, counterTop, 0.5); node.simdOrientation = simd_quatf(ix: 0, iy: 0, iz: 0, r: 1)
-            retired.append((node, 0))
+            node.simdPosition = lies ? base.position : SIMD3(0.42, counterTop, 0.5); node.simdOrientation = simd_quatf(ix: 0, iy: 0, iz: 0, r: 1)
+            retired.append((node, 0, Self.size(item?.kind)))
             puff(node)
         }
         self.node = nil; item = nil; origin = nil; placement = .none; opacity = 1; faded = 0
@@ -215,9 +266,9 @@ nonisolated final class PantryCarrier: @unchecked Sendable {
         retired = retired.compactMap { entry in
             let time = entry.time + step, gone = min(1, time / 1.2)
             entry.node.opacity = CGFloat(1 - gone)
-            entry.node.simdScale = SIMD3(repeating: Self.size * (1 - 0.45 * gone))
+            entry.node.simdScale = SIMD3(repeating: entry.size * (1 - 0.45 * gone))
             if gone >= 1 { entry.node.removeFromParentNode(); return nil }
-            return (entry.node, time)
+            return (entry.node, time, entry.size)
         }
     }
     /// How many put-down items are still fading, for tests.
@@ -227,7 +278,7 @@ nonisolated final class PantryCarrier: @unchecked Sendable {
         clear()
         guard let template = models[wanted.kind] else { return }
         let node = template.clone()
-        node.simdScale = SIMD3(repeating: Self.size)
+        node.simdScale = SIMD3(repeating: Self.size(wanted.kind))
         node.name = "pantry-carry"
         self.node = node; item = wanted; placement = .counter
         if !reducedMotion { puff(node, delay: 0.05) }
@@ -275,96 +326,14 @@ nonisolated final class PantryCarrier: @unchecked Sendable {
         case .skill: NSColor(red: 0.35, green: 0.85, blue: 0.45, alpha: 1)
         case .plugin: NSColor(red: 1.0, green: 0.7, blue: 0.25, alpha: 1)
         case .connector, .plan: NSColor(red: 0.4, green: 0.6, blue: 1.0, alpha: 1)
+        case .idea: NSColor(red: 1.0, green: 0.88, blue: 0.35, alpha: 1)
+        case .board: NSColor(red: 0.55, green: 0.85, blue: 0.4, alpha: 1)
+        case .pot: NSColor(red: 1.0, green: 0.55, blue: 0.3, alpha: 1)
         }
     }
     nonisolated(unsafe) private static let dot: NSImage = NSImage(size: NSSize(width: 32, height: 32), flipped: false) { rect in
         let gradient = NSGradient(colors: [.white, NSColor.white.withAlphaComponent(0)])
         gradient?.draw(in: NSBezierPath(ovalIn: rect), relativeCenterPosition: .zero)
         return true
-    }
-}
-
-/// The name of what's carried, floating over it: a pill in the live bar's colour for its kind,
-/// larger than a chef's name tag and wrapping to two lines.
-final class PantryCarryTag: NSView {
-    private let label = NSTextField(wrappingLabelWithString: "")
-    private let mark = NSTextField(labelWithString: "✦")
-    private var kind: PantryCarry.Kind?
-    static let maxWidth: CGFloat = 170
-
-    init() {
-        super.init(frame: .zero)
-        wantsLayer = true
-        layer?.cornerRadius = 9
-        layer?.borderWidth = 1
-        label.font = .systemFont(ofSize: 12, weight: .semibold)
-        label.maximumNumberOfLines = 2
-        label.lineBreakMode = .byWordWrapping
-        label.cell?.truncatesLastVisibleLine = true
-        label.alignment = .left
-        mark.font = .systemFont(ofSize: 11, weight: .bold)
-        addSubview(mark); addSubview(label)
-        isHidden = true
-    }
-    required init?(coder: NSCoder) { fatalError("init(coder:) has not been implemented") }
-    override func hitTest(_ point: NSPoint) -> NSView? { nil }
-
-    func show(_ item: PantryCarry.Item) {
-        if label.stringValue != item.name { label.stringValue = item.name; setAccessibilityLabel(item.name) }
-        guard kind != item.kind else { return }
-        kind = item.kind
-        let group: AgentSidebarGroup = item.kind == .skill ? .done : item.kind == .plugin ? .needsYou : .inProgress
-        let tint = SidebarStyle.tint(group)
-        layer?.backgroundColor = NSColor(tint.band).cgColor
-        layer?.borderColor = NSColor(tint.dot).withAlphaComponent(0.45).cgColor
-        label.textColor = NSColor(tint.text)
-        mark.textColor = NSColor(tint.dot)
-        mark.stringValue = item.kind == .skill ? "✦" : item.kind == .plugin ? "▣" : item.kind == .plan ? "☰" : "◉"
-    }
-    /// Lays the pill out around its text and returns its size.
-    func fit() -> CGSize {
-        let markSize = mark.intrinsicContentSize
-        label.preferredMaxLayoutWidth = Self.maxWidth - markSize.width - 22
-        let text = label.sizeThatFits(NSSize(width: label.preferredMaxLayoutWidth, height: 200))
-        let size = CGSize(width: ceil(text.width + markSize.width + 22), height: ceil(max(text.height, markSize.height) + 10))
-        mark.frame = CGRect(x: 8, y: (size.height - markSize.height) / 2, width: markSize.width, height: markSize.height)
-        label.frame = CGRect(x: 8 + markSize.width + 4, y: (size.height - text.height) / 2, width: text.width + 2, height: text.height)
-        return size
-    }
-}
-
-extension KitchenSceneView {
-    /// One floating tag per carrier, kept on the main thread.
-    private static var pantryTags: [ObjectIdentifier: PantryCarryTag] = [:]
-
-    /// Floats each carried item's name over it; hidden when another chef has the stage.
-    func placePantryCarryTags() {
-        chefLock.lock()
-        let carries = chefs.map { id, chef -> (String, ObjectIdentifier, PantryCarry.Item?, Float, SIMD3<Float>?) in
-            let carrier = chef.pantryCarry
-            let position = carrier.node.flatMap { $0.parent == nil ? nil : $0.simdWorldPosition }
-            return (id, ObjectIdentifier(carrier), carrier.item, carrier.opacity, position)
-        }
-        chefLock.unlock()
-        let here = Set(carries.map(\.1))
-        // Chefs that left this kitchen take their tags with them.
-        for (key, tag) in Self.pantryTags where tag.superview === self && !here.contains(key) {
-            tag.removeFromSuperview(); Self.pantryTags[key] = nil
-        }
-        for (id, key, item, opacity, position) in carries {
-            guard let item, let position, selectedID == nil || selectedID == id,
-                  let point = projectWithoutLock(position + SIMD3(0, 0.85 * KitchenLayout.chefScale, 0)) else {
-                Self.pantryTags[key]?.isHidden = true; continue
-            }
-            let tag = Self.pantryTags[key] ?? PantryCarryTag()
-            Self.pantryTags[key] = tag
-            if tag.superview !== self { addSubview(tag) }
-            tag.show(item)
-            let size = tag.fit()
-            let y = isFlipped ? bounds.height - point.y : point.y
-            tag.frame = CGRect(x: point.x - size.width / 2, y: isFlipped ? y - size.height : y, width: size.width, height: size.height)
-            tag.alphaValue = CGFloat(opacity)
-            tag.isHidden = false
-        }
     }
 }

@@ -63,7 +63,12 @@ import Observation
         if health == .merged, state != .merged { reviews.set(conversation, .merged, note: "Merged #\(pr.number)"); return }
         guard [.shipped, .checking, .needsFix, .committed].contains(state) else { return }
         let next = Self.review(for: pr)
-        reviews.set(conversation, next.state, note: next.note)
+        reviews.set(conversation, next.state, note: next.note, checks: Self.checks(pr))
+    }
+
+    /// Each check as a block of the chef's progress bar.
+    static func checks(_ pr: LinkedPullRequest) -> [ChefTagContent.Check] {
+        pr.checks.map { $0.result == "Passed" ? .passed : $0.result == "Failed" ? .failed : .running }
     }
 
     static func review(for pr: LinkedPullRequest) -> (state: KitchenReviews.State, note: String) {

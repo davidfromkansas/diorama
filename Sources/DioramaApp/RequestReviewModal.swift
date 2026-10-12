@@ -310,6 +310,10 @@ struct RequestReviewModal: View {
     @Environment(\.dismiss) private var dismiss
     /// The chat question shown, held so it stays while the reply is sent.
     @State private var chat: (question: String, context: String)?
+    /// The development demo's made-up question, with the agent's last message as its context.
+    private var demoQuestion: (question: String, context: String)? {
+        library.demo?.questions[session.id].map { ($0, library.demo?.contexts[session.id] ?? "") }
+    }
     /// One question with options and a plain answer: laid out side by side, 720 pt wide.
     static func sideBySide(_ request: ExecutionRequest) -> Bool {
         let list = request.params["questions"].array
@@ -334,7 +338,7 @@ struct RequestReviewModal: View {
             if let request = pending.first {
                 let kind = RequestKind(request)
                 ModalHeader(group: .needsYou, title: TaskTitle.full(session.displayTitle), status: kind.status,
-                            model: AgentSidebar.modelName(execution.tasks[session.sessionID].flatMap { $0.model.isEmpty ? nil : $0.model } ?? agent.value.reportedModel,
+                            model: AgentSidebar.modelName(execution.tasks[session.sessionID].flatMap(\.namedModel) ?? agent.value.reportedModel,
                                                           provider: agent.value.provider, catalog: execution.models),
                             question: kind == .question) { dismiss() }
                 RequestReviewContent(request: request, controller: execution, position: pending.count > 1 ? "1 of \(pending.count)" : nil, wide: true) {
@@ -342,10 +346,10 @@ struct RequestReviewModal: View {
                         .buttonStyle(.plain).font(.system(size: 12)).foregroundStyle(SidebarStyle.accent).pointingHand()
                 } skip: { dismiss() }
                 .id(request.id)
-            } else if let asked = chat ?? Self.chatQuestion(execution, thread: session.sessionID) {
+            } else if let asked = chat ?? Self.chatQuestion(execution, thread: session.sessionID) ?? demoQuestion {
                 // Asked in the chat rather than through a request: answer it here as a reply.
                 ModalHeader(group: .needsYou, title: TaskTitle.full(session.displayTitle), status: "Needs an answer",
-                            model: AgentSidebar.modelName(execution.tasks[session.sessionID].flatMap { $0.model.isEmpty ? nil : $0.model } ?? agent.value.reportedModel,
+                            model: AgentSidebar.modelName(execution.tasks[session.sessionID].flatMap(\.namedModel) ?? agent.value.reportedModel,
                                                           provider: agent.value.provider, catalog: execution.models),
                             question: true) { dismiss() }
                 ChatQuestionContent(question: asked.question, context: asked.context, session: session, library: library) {
@@ -357,7 +361,7 @@ struct RequestReviewModal: View {
         }
         .reviewModalSurface(width: pending.first.map(Self.sideBySide) == true ? 720 : ModalStyle.width)
         .onChange(of: pending.isEmpty, initial: true) { _, empty in
-            if empty, chat == nil, Self.chatQuestion(execution, thread: session.sessionID) == nil { dismiss() }
+            if empty, chat == nil, Self.chatQuestion(execution, thread: session.sessionID) == nil, demoQuestion == nil { dismiss() }
         }
     }
 }
@@ -414,6 +418,7 @@ struct ChatQuestionContent<Leading: View>: View {
         guard !text.isEmpty else { return }
         sending = true; error = nil
         Task {
+            if let demoSend = library.demoSend { demoSend(session, text); done(); return }
             do { try await library.execution.send(in: session, prompt: text); done() }
             catch { self.error = error.localizedDescription; sending = false }
         }

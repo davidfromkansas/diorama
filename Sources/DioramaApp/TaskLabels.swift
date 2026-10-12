@@ -1,24 +1,26 @@
 import CryptoKit
 import DioramaCore
 import Foundation
+import Observation
 
 /// Four-word task labels for name tags, written once per task by a small model from the agent's
 /// own provider (through Diorama's existing connection: `ExecutionController.taskLabel`) and kept
 /// in ~/Library/Application Support/Diorama/TaskLabels.json. A keyword label stands in until the
-/// written one arrives; `revision` moves when one does, so tags can refresh.
-final class TaskLabels {
+/// written one arrives; `revision` moves when one does, so tags and the agent panel (which
+/// observes it) can refresh.
+@Observable final class TaskLabels {
     static let shared = TaskLabels()
     private(set) var revision = 0
-    private var labels: [String: String]
-    private var pending: Set<String> = []
-    private var running = 0
-    private var waiting: [(key: String, task: String, latest: String?, provider: Provider)] = []
+    @ObservationIgnored private var labels: [String: String]
+    @ObservationIgnored private var pending: Set<String> = []
+    @ObservationIgnored private var running = 0
+    @ObservationIgnored private var waiting: [(key: String, task: String, latest: String?, provider: Provider)] = []
     /// What each chef's tag last showed, kept while a new turn's label is being written.
-    private var shown: [String: String] = [:]
+    @ObservationIgnored private var shown: [String: String] = [:]
     /// The newest message that counted (not an acknowledgement), per chef.
-    private var request: [String: String] = [:]
+    @ObservationIgnored private var request: [String: String] = [:]
     /// Writes a label (task, newest request, provider); set once the execution connection exists.
-    var generator: ((String, String?, Provider) async -> String?)?
+    @ObservationIgnored var generator: ((String, String?, Provider) async -> String?)?
     private let url = FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent("Library/Application Support/Diorama/TaskLabels.json")
     /// Test runs never call out to a model.
     static let generates = ProcessInfo.processInfo.environment["XCTestConfigurationFilePath"] == nil
@@ -30,6 +32,13 @@ final class TaskLabels {
     }
     static func key(_ task: String) -> String {
         SHA256.hash(data: Data(task.utf8)).prefix(12).map { String(format: "%02x", $0) }.joined()
+    }
+
+    /// What an agent is working on, in four words: its tag's task line and its agent-panel title.
+    func title(_ agent: SpatialAgent) -> String {
+        let value = agent.value
+        return label(agent: agent.id, for: TaskTitle.full(value.task), latest: value.latestRequest,
+                     provider: value.provider.lowercased().contains("claude") ? .claude : .codex)
     }
 
     /// The label for what a chef is working on now: the task, as updated by the newest message

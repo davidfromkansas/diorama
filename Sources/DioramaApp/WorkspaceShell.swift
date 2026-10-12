@@ -20,7 +20,7 @@ struct WorkspaceShell<AddActions: View>: View {
                         // One native renderer per window; tabs store no scene graphs.
                         SpatialWorkspaceView(library: library, visible: spatialVisible)
                             .opacity(spatialVisible ? 1 : 0).allowsHitTesting(spatialVisible).accessibilityHidden(!spatialVisible)
-                        DesktopHome(library: library, visible: tabs.selected == .home && !tabs.pickerPresented, addActions: addActions)
+                        HomeView(library: library, visible: tabs.selected == .home && !tabs.pickerPresented)
                             .opacity(tabs.selected == .home && !tabs.pickerPresented ? 1 : 0)
                             .allowsHitTesting(tabs.selected == .home && !tabs.pickerPresented).accessibilityHidden(tabs.selected != .home || tabs.pickerPresented)
                         if tabs.selected != .home && !spatialVisible && !tabs.pickerPresented {
@@ -69,11 +69,17 @@ struct WorkspaceShell<AddActions: View>: View {
         .onDisappear { library.flushDrafts(); library.captureProjectPresentation(); navigation.flushPersistence() }
     }
     @State private var folderAvailable = true
+    /// What each project's folder was last found to be, so opening a project shows its last-known
+    /// state at once instead of "unavailable" while the check runs.
+    @State private var foldersFound: [String: Bool] = [:]
     private func checkFolder() {
-        guard let project = library.projects.selected else { folderAvailable = false; return }
+        // Home has no project; leave the last answer alone so the next project doesn't start from "missing".
+        guard let project = library.projects.selected else { return }
         let id = project.id, generation = navigation.projectTabs.generation, path = project.folder
+        folderAvailable = foldersFound[id] ?? true
         Task {
             let exists = await Task.detached { var directory: ObjCBool = false; return FileManager.default.fileExists(atPath: path, isDirectory: &directory) && directory.boolValue }.value
+            foldersFound[id] = exists
             guard library.projects.selectedID == id, navigation.projectTabs.generation == generation else { return }
             folderAvailable = exists
         }
@@ -99,6 +105,8 @@ struct WorkspaceShell<AddActions: View>: View {
                 }
             }.pointingHand()
         }
+        // The pane stack pins its views to the top-left; centre this in the whole pane.
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
     }
     private var spatialVisible: Bool { !navigation.projectTabs.pickerPresented && navigation.projectTabs.selected != .home && folderAvailable && library.spatialWorkspaceVisible }
 }

@@ -133,8 +133,18 @@ struct ExecutionControls: View {
     @State private var prompt = ""
     @State private var attachments: [ConversationAttachment] = []
     @State private var pasteError: String?
-    @State private var model = ""
-    @State private var effort = ""
+    /// The model and effort for the next message, shared with the conversation header's model menu.
+    private var choices: ComposerChoices { library.composerChoices(session) }
+    private var model: String {
+        get { choices.model }
+        nonmutating set { choices.model = newValue }
+    }
+    private var effort: String {
+        get { choices.effort }
+        nonmutating set { choices.effort = newValue }
+    }
+    private var modelBinding: Binding<String> { Binding(get: { choices.model }, set: { choices.model = $0 }) }
+    private var effortBinding: Binding<String> { Binding(get: { choices.effort }, set: { choices.effort = $0 }) }
     @State private var approvalReview: ApprovalReviewChoice = .inherit
     @State private var mode = "default"
     @State private var capabilities: [CapabilityInput] = []
@@ -144,6 +154,10 @@ struct ExecutionControls: View {
     @State private var retryingWriter = false
     @State private var sending = false
     @State private var recoveredGoal: WireValue = .null
+    /// iMessage style connects a conversation as soon as it opens (Send would anyway), so the
+    /// permissions shown are the provider's. Retry bumps the attempt; a slow connect times out.
+    @State private var connectAttempt = 0
+    @State private var connectTimedOut = false
     /// Skills armed from the pantry (or dropped here), sent with the next message. They live in
     /// the library so the pantry can show what is armed.
     private var armed: [CapabilityInput] {
@@ -193,7 +207,7 @@ struct ExecutionControls: View {
                 if task.parentID == nil {
                     WorkflowControls(controller: library.execution, task: task, mode: $mode, capabilities: $capabilities, queueNext: $queueNext)
                         ArmedSkillsRow(skills: armedBinding, provider: session.provider)
-                        ConversationComposer(controller: library.execution, model: $model, effort: $effort, prompt: $prompt, attachments: $attachments, approvalReview: $approvalReview,
+                        ConversationComposer(controller: library.execution, model: modelBinding, effort: effortBinding, prompt: $prompt, attachments: $attachments, approvalReview: $approvalReview,
                                              effectiveModel: task.model, effectiveEffort: task.effort, reviewer: task.approvalReviewer, policy: task.approvalPolicy, sandbox: task.sandbox, sending: sending, active: task.phase.active, canSteer: library.execution.canSteer(id: task.id) || (queueNext && !library.execution.workflowBusy.contains(task.id) && !task.workflow.queueUncertain), queued: queueNext, capabilities: $capabilities, folder: task.folder, threadID: task.id, mode: $mode, goalMode: $goalMode, queueMode: $queueNext) {
                             submit()
                         }
@@ -251,16 +265,19 @@ struct ExecutionControls: View {
                     }.pointingHand().disabled(library.execution.resuming.contains(session.sessionID))
                 } else {
                     ArmedSkillsRow(skills: armedBinding, provider: session.provider)
-                    ConversationComposer(controller: library.execution, model: $model, effort: $effort, prompt: $prompt, attachments: $attachments, approvalReview: $approvalReview,
-                                         effectiveModel: session.provider == .claude ? "claude/default" : "", sending: sending, active: false, queued: queueNext, capabilities: $capabilities, folder: session.project, threadID: session.sessionID, mode: $mode, goalMode: $goalMode, queueMode: $queueNext) { submit() }
+                    ConversationComposer(controller: library.execution, model: modelBinding, effort: effortBinding, prompt: $prompt, attachments: $attachments, approvalReview: $approvalReview,
+                                         effectiveModel: session.provider == .claude ? "claude/default" : "", sending: sending, active: false, queued: queueNext, capabilities: $capabilities, folder: session.project, threadID: session.sessionID, mode: $mode, goalMode: $goalMode, queueMode: $queueNext,
+                                         connectionFailure: connectionFailure, reconnect: { connectAttempt += 1 }) { submit() }
                 }
                 if library.execution.resumeErrors[session.sessionID]?.contains("active goal") == true {
                     Button("Pause goal and reconnect") { Task { do { try await library.execution.pauseGoalAndResume(session: session) } catch { self.error = error.localizedDescription } } }.pointingHand()
                 }
-                if let message = error ?? library.execution.resumeErrors[session.sessionID] ?? library.execution.tasks[session.sessionID]?.error {
+                // In iMessage style a failed connect shows in the permissions spot instead.
+                if let message = error ?? (avatarMessages ? nil : library.execution.resumeErrors[session.sessionID]) ?? library.execution.tasks[session.sessionID]?.error {
                     Text(message).font(.caption).foregroundStyle(.orange).textSelection(.enabled)
                 }
             }.padding(16)
+            .task(id: "\(session.id)#\(connectAttempt)") { await connectOnOpen() }
         }
         }
         .task(id: session.id) {
@@ -288,9 +305,27 @@ struct ExecutionControls: View {
         .onChange(of: attachments) { library.saveDraft(session.id, text: prompt, attachments: attachments) }
     }
 
+    /// Connect a detached conversation when it opens. Never one whose last delivery is
+    /// uncertain or that can't be continued here; those keep their own prompts.
+    private func connectOnOpen() async {
+        let execution = library.execution, id = session.sessionID
+        connectTimedOut = false
+        guard avatarMessages, let task = execution.tasks[id], !task.attached || task.phase == .disconnected,
+              !task.requiresReconciliation, ExecutionController.resumeUnavailableReason(session) == nil else { return }
+        if !execution.resuming.contains(id) { Task { try? await execution.resumeImported(session) } }
+        try? await Task.sleep(for: .seconds(10))
+        guard !Task.isCancelled else { return }
+        if execution.tasks[id]?.attached != true, execution.resumeErrors[id] == nil { connectTimedOut = true }
+    }
+    private var connectionFailure: String? {
+        guard library.execution.tasks[session.sessionID]?.attached != true else { return nil }
+        return library.execution.resumeErrors[session.sessionID] ?? (connectTimedOut ? "Diorama couldn’t reach the provider." : nil)
+    }
+
     private func submit(retrying: Bool = false) {
         guard !sending else { return }
         let command = prompt.trimmingCharacters(in: .whitespacesAndNewlines)
+        if let demoSend = library.demoSend { demoSend(session, command); prompt = ""; return }
         if command == "/plan" { goalMode = false; let current = mode.isEmpty ? library.execution.tasks[session.sessionID]?.workflow.mode : mode; mode = current == "plan" ? "default" : "plan"; prompt = ""; return }
         if command == "/fork" { library.forkConversation(session); return }
         if command == "/review" {
@@ -453,12 +488,18 @@ struct ConversationComposer: View {
     var queueMode: Binding<Bool> = .constant(false)
     var queueAvailable = true
     var creationPresentation = false
+    /// iMessage style, while connecting a detached conversation: why it failed, and how to retry.
+    var connectionFailure: String? = nil
+    var reconnect: (() -> Void)? = nil
     let send: () -> Void
     @Environment(\.avatarMessages) private var avatarMessages
     @Environment(\.avatarConversationTools) private var avatarConversationTools
+    @Environment(\.avatarHeader) private var avatarHeader
     @State private var showingOptions = false
     @State private var showingCreationDetails = false
     @State private var showingCreationIntegrations = false
+    /// The + menu shows its permissions page instead of the main list.
+    @State private var choosingPermissions = false
     @FocusState private var optionsFocused: Bool
     @State private var messageHeight: CGFloat = 28
     @Environment(\.colorScheme) private var colorScheme
@@ -467,7 +508,7 @@ struct ConversationComposer: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
-            if let notice = composerPermissionNotice, approvalReview == .inherit {
+            if let notice = composerPermissionNotice, approvalReview == .inherit, !avatarMessages {
                 VStack(alignment: .leading, spacing: 6) {
                     Text(notice).font(.caption).foregroundStyle(.orange).textSelection(.enabled)
                     permissionControl
@@ -551,47 +592,148 @@ struct ConversationComposer: View {
     }
 
     private var messagesComposer: some View {
-        VStack(alignment: .leading, spacing: 8) {
-            let modes = [mode.wrappedValue == "plan" ? "Plan Mode" : nil, goalMode.wrappedValue ? "Goal" : nil, queueMode.wrappedValue ? "Queue" : nil].compactMap { $0 }
-            if !modes.isEmpty { Text(modes.joined(separator: " · ")).font(.caption).foregroundStyle(.secondary) }
-            HStack(alignment: .bottom, spacing: 10) {
-                Button { showingOptions.toggle() } label: {
-                    Image(systemName: "plus").font(.system(size: 21, weight: .medium)).foregroundStyle(.secondary).frame(width: 32, height: 36)
-                }.pointingHand().buttonStyle(.plain).accessibilityLabel("Conversation options")
+        let claude = (model.isEmpty ? effectiveModel : model).hasPrefix("claude/")
+        // Permissions never block Send; a change that didn't apply shows here as a note.
+        let attention = connectionFailure == nil && composerPermissionNotice != nil
+        let modesOn = mode.wrappedValue == "plan" || goalMode.wrappedValue || queueMode.wrappedValue
+        return VStack(alignment: .leading, spacing: 6) {
+            // Above the field: only what needs you, and any mode that's on.
+            if connectionFailure != nil || attention || modesOn {
+                HStack(spacing: 6) {
+                    if connectionFailure != nil { connectionChip }
+                    else if attention {
+                        Button { choosingPermissions = true; showingOptions = true } label: {
+                            Label { Text(composerPermissionNotice ?? "").lineLimit(1).truncationMode(.tail) } icon: { Image(systemName: "info.circle.fill").font(.system(size: 10)) }
+                                .labelStyle(AvatarCapsuleLabelStyle()).font(.system(size: 11.5, weight: .medium))
+                                .foregroundStyle(Color(red: 0.7, green: 0.37, blue: 0))
+                                .padding(.horizontal, 10).frame(height: 24)
+                                .background(Color(red: 1, green: 0.96, blue: 0.9), in: Capsule())
+                        }.buttonStyle(.plain).pointingHand()
+                    }
+                    if mode.wrappedValue == "plan" { modeCapsule("Plan", icon: "map") }
+                    if goalMode.wrappedValue { modeCapsule("Goal", icon: "scope") }
+                    if queueMode.wrappedValue { modeCapsule("Queue", icon: "text.line.last.and.arrowtriangle.forward") }
+                    Spacer(minLength: 0)
+                }.padding(.leading, 40)
+            }
+            HStack(alignment: .bottom, spacing: 8) {
+                Button { choosingPermissions = false; showingOptions.toggle() } label: {
+                    Image(systemName: "plus").font(.system(size: 15, weight: .semibold))
+                        .foregroundStyle(showingOptions ? Color.white : Color(white: 0.43))
+                        .frame(width: 32, height: 32)
+                        .background(showingOptions ? Color.blue : Color(white: 0.91), in: Circle())
+                        // Something in the menu needs you before you can send.
+                        .overlay(alignment: .topTrailing) {
+                            if attention || connectionFailure != nil {
+                                Circle().fill(Color.orange).frame(width: 10, height: 10)
+                                    .overlay(Circle().stroke(Color.white, lineWidth: 2)).offset(x: 1, y: -1)
+                            }
+                        }
+                }.pointingHand().buttonStyle(.plain)
+                    .accessibilityLabel(attention ? "Add. Permissions need attention" : "Add").help("Add photos, files, skills, permissions, or a mode")
+                    .padding(.bottom, 2)
                     .popover(isPresented: $showingOptions, arrowEdge: .top) {
-                        ScrollView {
-                            VStack(alignment: .leading, spacing: 16) {
-                                Text("Message options").font(.headline)
-                                VStack(alignment: .leading, spacing: 12) {
-                                    leadingControls
-                                    ComposerModelMenu(controller: controller, model: $model, effort: $effort, effectiveModel: effectiveModel, effectiveEffort: effectiveEffort).disabled(sending || active)
-                                }
-                                Divider()
-                                avatarConversationTools
-                            }.padding(18).frame(width: 340, alignment: .leading)
-                        }.frame(maxHeight: 540).environment(\.colorScheme, .light).tint(.blue)
+                        addMenu(claude: claude).padding(6).frame(width: 300)
+                            .environment(\.colorScheme, .light).tint(.blue)
                             .focusable().focused($optionsFocused)
                             .onAppear { optionsFocused = true }
-                    .avatarPopoverDismissal(isPresented: $showingOptions)
+                            .avatarPopoverDismissal(isPresented: $showingOptions)
                     }
-                VStack(alignment: .leading, spacing: 8) {
-                    if !attachments.isEmpty {
-                        ComposerAttachmentTray(attachments: $attachments, disabled: sending).padding(.top, 6)
+                    .sheet(isPresented: $showingCreationIntegrations) {
+                        IntegrationPicker(controller: controller, folder: folder, threadID: threadID, selection: capabilities)
                     }
-                    ZStack(alignment: .topLeading) {
-                    if prompt.isEmpty { Text("Message").foregroundStyle(.tertiary).padding(.leading, 5).padding(.top, 4).allowsHitTesting(false) }
-                    ComposerTextEditor(text: $prompt, attachments: $attachments, error: $pasteError, disabled: false, measuredHeight: $messageHeight) {
-                        if !sending && (!active || canSteer) && (!prompt.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || !attachments.isEmpty) { send() }
-                    }.frame(height: max(28, min(128, messageHeight)))
+                // The field, with the send button inside it.
+                HStack(alignment: .bottom, spacing: 6) {
+                    VStack(alignment: .leading, spacing: 8) {
+                        if !attachments.isEmpty {
+                            ComposerAttachmentTray(attachments: $attachments, disabled: sending).padding(.top, 6)
+                        }
+                        ZStack(alignment: .topLeading) {
+                            if prompt.isEmpty {
+                                Text(avatarHeader.map { "Message " + $0.name } ?? "Message").foregroundStyle(.tertiary)
+                                    .padding(.leading, 5).padding(.top, 4).allowsHitTesting(false)
+                            }
+                            ComposerTextEditor(text: $prompt, attachments: $attachments, error: $pasteError, disabled: false, measuredHeight: $messageHeight) {
+                                if !sending && (!active || canSteer) && (!prompt.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || !attachments.isEmpty) { send() }
+                            }.frame(height: max(28, min(128, messageHeight)))
+                        }
+                    }
+                    trailingControls.padding(.bottom, 3)
                 }
-                }
-                .padding(.horizontal, 10).padding(.vertical, 4)
-                .background(.white, in: RoundedRectangle(cornerRadius: 19))
-                .overlay(RoundedRectangle(cornerRadius: 19).stroke(Color.black.opacity(0.15)))
-                trailingControls
+                .padding(.leading, 10).padding(.trailing, 4).padding(.vertical, 2)
+                .background(.white, in: RoundedRectangle(cornerRadius: 18))
+                .overlay(RoundedRectangle(cornerRadius: 18).stroke(Color.black.opacity(0.15)))
             }
             if let pasteError { Text(pasteError).font(.caption).foregroundStyle(.orange) }
         }
+    }
+    /// The + menu: photos and files, skills and integrations (not for Claude, as before), and the
+    /// Plan, Goal and Queue switches.
+    @ViewBuilder private func addMenu(claude: Bool) -> some View {
+        if choosingPermissions {
+            VStack(alignment: .leading, spacing: 4) {
+                ZStack {
+                    Text("Permissions").font(.system(size: 14, weight: .semibold))
+                    HStack {
+                        Button { choosingPermissions = false } label: {
+                            HStack(spacing: 2) { Image(systemName: "chevron.left").font(.system(size: 12, weight: .semibold)); Text("Back") }
+                                .font(.system(size: 14)).foregroundStyle(Color.accentColor)
+                        }.buttonStyle(.plain).pointingHand()
+                        Spacer()
+                    }
+                }.padding(.horizontal, 8).padding(.vertical, 6)
+                permissionPicker(inlineDone: { choosingPermissions = false }).disabled(permissionsDisabled)
+            }
+        } else {
+            addMenuMain(claude: claude)
+        }
+    }
+    private func addMenuMain(claude: Bool) -> some View {
+        VStack(alignment: .leading, spacing: 0) {
+            AttachmentPicker(attachments: $attachments, disabled: sending, showsAttachments: false, avatarRow: true)
+            if !claude {
+                Button { showingOptions = false; showingCreationIntegrations = true } label: {
+                    AvatarMenuRow(icon: "puzzlepiece.extension", color: Color(red: 0.56, green: 0.36, blue: 0.85), title: "Skills & Integrations") {
+                        Image(systemName: "chevron.right").font(.system(size: 11, weight: .semibold)).foregroundStyle(.tertiary)
+                    }
+                }.buttonStyle(.plain).pointingHand().disabled(sending)
+            }
+            Divider().padding(.horizontal, 10).padding(.vertical, 6)
+            permissionPicker(menuRow: { choosingPermissions = true }).disabled(permissionsDisabled)
+            modeRow("Plan", icon: "map", color: Color(red: 0.19, green: 0.64, blue: 0.42), detail: "Plan before changing anything",
+                    isOn: ComposerModeToggles.plan(mode: mode, goal: goalMode), disabled: sending || active)
+            modeRow("Goal", icon: "scope", color: Color(red: 0.95, green: 0.6, blue: 0.29), detail: "Keep going until it's done",
+                    isOn: ComposerModeToggles.goal(mode: mode, goal: goalMode, queue: queueMode), disabled: sending || active)
+            modeRow("Queue", icon: "text.line.last.and.arrowtriangle.forward", color: Color(white: 0.56), detail: "Hold messages while it works",
+                    isOn: ComposerModeToggles.queue(goal: goalMode, queue: queueMode), disabled: sending || !queueAvailable)
+        }
+    }
+    private func modeRow(_ title: String, icon: String, color: Color, detail: String, isOn: Binding<Bool>, disabled: Bool) -> some View {
+        AvatarMenuRow(icon: icon, color: color, title: title, detail: detail) {
+            Toggle(title, isOn: isOn).labelsHidden().toggleStyle(.switch).fixedSize().pointingHand()
+        }.disabled(disabled)
+    }
+    /// Connecting a detached conversation failed or timed out: say so, and retry.
+    @ViewBuilder private var connectionChip: some View {
+        if let connectionFailure {
+            Button { reconnect?() } label: {
+                Label { Text("Couldn’t connect · Retry") } icon: { Image(systemName: "exclamationmark.triangle.fill").font(.system(size: 10)) }
+                    .labelStyle(AvatarCapsuleLabelStyle()).font(.system(size: 11.5, weight: .medium))
+                    .foregroundStyle(Color(red: 0.75, green: 0.16, blue: 0.12))
+                    .padding(.horizontal, 10).frame(height: 24)
+                    .background(Color(red: 1, green: 0.93, blue: 0.92), in: Capsule())
+            }
+            .buttonStyle(.plain).pointingHand().help(connectionFailure)
+            .accessibilityLabel("Couldn’t connect. \(connectionFailure) Retry")
+        }
+    }
+    private func modeCapsule(_ title: String, icon: String) -> some View {
+        Label { Text(title) } icon: { Image(systemName: icon).font(.system(size: 10)) }
+            .labelStyle(AvatarCapsuleLabelStyle()).font(.system(size: 11.5, weight: .medium))
+            .foregroundStyle(Color(red: 0.63, green: 0.36, blue: 0))
+            .padding(.horizontal, 10).frame(height: 24)
+            .background(Color(red: 1, green: 0.96, blue: 0.88), in: Capsule())
+            .accessibilityLabel(title + " is on")
     }
 
     private var switchingPermissionProvider: Bool { !model.isEmpty && model.hasPrefix("claude/") != effectiveModel.hasPrefix("claude/") }
@@ -608,13 +750,17 @@ struct ConversationComposer: View {
                     ComposerModeToggles(mode: mode, goal: goalMode, queue: queueMode, showQueue: !creationPresentation, modeDisabled: sending || active, queueDisabled: sending || !queueAvailable)
         }
     }
-    private var permissionControl: some View {
+    private var permissionControl: some View { permissionPicker().disabled(permissionsDisabled) }
+    private var permissionsDisabled: Bool { sending || active || controller.requests.values.contains { $0.threadID == threadID && $0.isBlocking } }
+    private func permissionPicker(menuRow: (() -> Void)? = nil, inlineDone: (() -> Void)? = nil) -> ApprovalReviewPicker {
         ApprovalReviewPicker(selection: $approvalReview, reviewer: switchingPermissionProvider ? nil : reviewer, policy: switchingPermissionProvider ? .null : policy, sandbox: switchingPermissionProvider ? .null : sandbox, iconOnly: true, claude: (model.isEmpty ? effectiveModel : model).hasPrefix("claude/"), isNew: threadID == nil || switchingPermissionProvider,
                         supportsAutoMode: controller.models.first(where: { $0.id == (model.isEmpty ? effectiveModel : model) })?.supportsAutoMode,
                         unavailable: Dictionary(uniqueKeysWithValues: ApprovalReviewChoice.allCases.compactMap { choice in controller.permissionUnavailable(choice, model: model.isEmpty ? effectiveModel : model).map { (choice, $0) } }),
                         stale: threadID.flatMap { controller.tasks[$0] }.map { !$0.attached } ?? false,
                         unconfirmed: threadID.flatMap { controller.tasks[$0]?.permissionsUnconfirmed } ?? false,
-                        notice: threadID.flatMap { controller.tasks[$0]?.permissionNotice }).disabled(sending || active || controller.requests.values.contains { $0.threadID == threadID && $0.isBlocking })
+                        notice: threadID.flatMap { controller.tasks[$0]?.permissionNotice }, capsule: avatarMessages,
+                        lastKnown: avatarMessages ? threadID.flatMap { controller.tasks[$0] }.flatMap { $0.attached ? nil : $0.permissionPreference } : nil,
+                        menuRow: menuRow, inlineDone: inlineDone)
     }
     private var creationOptions: some View {
         VStack(spacing: 2) {
@@ -670,7 +816,9 @@ struct ConversationComposer: View {
                     Button {
                         if active { stopTurn() } else { send() }
                     } label: {
-                        Image(systemName: active ? "stop.fill" : "arrow.up").font(.system(size: 18, weight: .semibold)).foregroundStyle(.white).frame(width: 36, height: 36)
+                        // Inside the iMessage field it's smaller, like Messages' send arrow.
+                        Image(systemName: active ? "stop.fill" : "arrow.up").font(.system(size: avatarMessages ? 13 : 18, weight: .bold)).foregroundStyle(.white)
+                            .frame(width: avatarMessages ? 28 : 36, height: avatarMessages ? 28 : 36)
                             .background(avatarMessages ? Color.blue : DioramaStyle.accent, in: Circle())
                     }.pointingHand()
                     .buttonStyle(.plain)
@@ -759,22 +907,34 @@ struct ComposerModeToggles: View {
     var body: some View {
         let layout = avatarMessages ? AnyLayout(VStackLayout(alignment: .leading, spacing: 12)) : AnyLayout(HStackLayout(spacing: 10))
         layout {
-            Toggle("Plan Mode", isOn: Binding(get: { mode == "plan" }, set: { enabled in
-                mode = enabled ? "plan" : "default"
-                if enabled { goal = false }
-            })).pointingHand().disabled(modeDisabled)
-            if showGoal { Toggle("Goal", isOn: Binding(get: { goal }, set: { enabled in
-                goal = enabled
-                if enabled { mode = "default"; queue = false }
-            })).pointingHand().disabled(modeDisabled).help("Use your next message as a goal to keep pursuing. Applies when sent.")
+            Toggle("Plan Mode", isOn: Self.plan(mode: $mode, goal: $goal)).pointingHand().disabled(modeDisabled)
+            if showGoal { Toggle("Goal", isOn: Self.goal(mode: $mode, goal: $goal, queue: $queue))
+                .pointingHand().disabled(modeDisabled).help("Use your next message as a goal to keep pursuing. Applies when sent.")
             }
             if showQueue {
-                Toggle("Queue", isOn: Binding(get: { queue }, set: { enabled in
-                    queue = enabled
-                    if enabled { goal = false }
-                })).pointingHand().disabled(queueDisabled).help("Queue your message for the next run")
+                Toggle("Queue", isOn: Self.queue(goal: $goal, queue: $queue)).pointingHand().disabled(queueDisabled).help("Queue your message for the next run")
             }
         }.toggleStyle(.switch).controlSize(.mini).font(.caption).fixedSize()
+    }
+    // The modes' rules, shared with the iMessage + menu: plan and goal exclude each other, and a
+    // goal isn't queued.
+    static func plan(mode: Binding<String>, goal: Binding<Bool>) -> Binding<Bool> {
+        Binding(get: { mode.wrappedValue == "plan" }, set: { enabled in
+            mode.wrappedValue = enabled ? "plan" : "default"
+            if enabled { goal.wrappedValue = false }
+        })
+    }
+    static func goal(mode: Binding<String>, goal: Binding<Bool>, queue: Binding<Bool>) -> Binding<Bool> {
+        Binding(get: { goal.wrappedValue }, set: { enabled in
+            goal.wrappedValue = enabled
+            if enabled { mode.wrappedValue = "default"; queue.wrappedValue = false }
+        })
+    }
+    static func queue(goal: Binding<Bool>, queue: Binding<Bool>) -> Binding<Bool> {
+        Binding(get: { queue.wrappedValue }, set: { enabled in
+            queue.wrappedValue = enabled
+            if enabled { goal.wrappedValue = false }
+        })
     }
 }
 

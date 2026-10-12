@@ -1,0 +1,82 @@
+{
+  "note": "Characters fitted to the chef's skeleton by blender/build_variant.py (see build_variants.sh). tail: a region behind the body (Blender floor space, y > behind, low < z < high) that follows the hips.",
+  "budget": {
+    "triangles": 5000,
+    "base": 1024,
+    "normal": 512,
+    "metal_roughness": 256,
+    "bake": true
+  },
+  "characters": [
+    {
+      "id": "capybara",
+      "name": "Capybara",
+      "source": "Meshy_AI_Capybara_Chef_Model_S_1009072419_texture.glb"
+    },
+    {
+      "id": "cat",
+      "name": "Cat",
+      "source": "Meshy_AI_Chef_Whiskerpaws_1009072411_texture.glb",
+      "tail": {
+        "behind": 0.18,
+        "low": 0.0,
+        "high": 0.5
+      }
+    },
+    {
+      "id": "pig",
+      "name": "Pig",
+      "source": "Meshy_AI_Chef_Pig_1009072400_texture.glb",
+      "tail": {
+        "behind": 0.31,
+        "low": 0.3,
+        "high": 0.65
+      }
+    },
+    {
+      "id": "monkey",
+      "name": "Monkey",
+      "source": "Meshy_AI_Chef_Monkey_1009072348_texture.glb"
+    },
+    {
+      "id": "tiger",
+      "name": "Tiger",
+      "source": "Meshy_AI_Tiger_Chef_Mascot_1009072340_texture.glb",
+      "tail": {
+        "behind": 0.16,
+        "low": 0.0,
+        "high": 0.62
+      }
+    },
+    {
+      "id": "bunny",
+      "name": "Bunny",
+      "source": "Meshy_AI_Chef_Bunny_1009072333_texture.glb",
+      "tail": {
+        "behind": 0.31,
+        "low": 0.3,
+        "high": 0.7
+      }
+    },
+    {
+      "id": "mouse",
+      "name": "Mouse",
+      "source": "Meshy_AI_Chef_Whiskers_1009072321_texture.glb"
+    },
+    {
+      "id": "little",
+      "name": "Little Chef",
+      "source": "Meshy_AI_Little_Chef_Character_1009072309_texture.glb"
+    },
+    {
+      "id": "puppy",
+      "name": "Puppy",
+      "source": "Meshy_AI_Puppy_Chef_Character__1009072300_texture.glb",
+      "tail": {
+        "behind": 0.3,
+        "low": 0.2,
+        "high": 0.75
+      }
+    }
+  ]
+}

@@ -23,7 +23,7 @@ import simd
 
     @Test func chefAssetsLoadWithSocketsClipsAndProps() throws {
         let assets = try ChefAssets.shared.get()
-        #expect(assets.rig.clips.count == 34)
+        #expect(assets.rig.clips.count == 48)
         #expect(Set(assets.manifest.clips.keys) == Set(assets.rig.clips.keys))
         let chef = assets.rig.makeInstance()
         #expect(chef.nodes.contains { $0.skinner?.bones.count == 26 })
@@ -32,12 +32,61 @@ import simd
             #expect(assets.props[prop.node] != nil)
             #expect(assets.manifest.attach[prop.node]?[prop.fitClip] != nil)
         }
-        #expect(assets.props.count == 11)
+        #expect(assets.props.count == 13)
+        // The manager: fitted to the chef's skeleton, never one of the agents' characters.
+        #expect(assets.staff.map(\.id) == [ChefAssets.manager] && !assets.characters.contains { $0.id == ChefAssets.manager })
+        #expect(assets.rig(for: ChefAssets.manager) !== assets.rig)
         #expect(assets.manifest.stations.counterTop == KitchenLayout.chefCounterTop)
         #expect(assets.manifest.stations.counterFrontFromRoot == KitchenLayout.chefCounterFront)
         #expect(assets.manifest.height == KitchenLayout.chefHeight)
         // The generalized reader still accepts the capybara.
         #expect(try WorkspaceCapybaraAsset.shared.get().makeInstance().nodes.contains { $0.skinner?.bones.count == 25 })
+    }
+
+    /// The characters chefs wear: each loads, has the chef's skeleton node for node, and plays
+    /// the chef's clips exactly as the chef does.
+    @Test func everyCharacterLoadsOnTheChefsSkeleton() throws {
+        let assets = try ChefAssets.shared.get()
+        #expect(assets.characters.count == 10)
+        #expect(Set(assets.characters.map(\.id)).count == 10)
+        for character in assets.characters {
+            let rig = assets.rig(for: character.id)
+            #expect(character.id == ChefAssets.classic || rig !== assets.rig, "\(character.id) fell back to the chef")
+            #expect(rig.nodeNames == assets.rig.nodeNames)
+            let chef = rig.makeInstance()
+            #expect(chef.nodes.contains { $0.skinner?.bones.count == 26 })
+            // Tangents come with the geometry: SceneKit never builds them while kitchens draw.
+            #expect(chef.nodes.contains { $0.geometry?.sources(for: .tangent).first?.componentsPerVector == 4 })
+            for socket in ["socket_hand.L", "socket_hand.R", "socket_carry"] { #expect(chef.bone(socket) != nil) }
+            let a = rig.pose("working_chop", time: 0.3), b = assets.rig.pose("working_chop", time: 0.3)
+            #expect(zip(a, b).allSatisfy { simd_distance($0.position, $1.position) < 1e-6 && abs(simd_dot($0.rotation.vector, $1.rotation.vector)) > 0.99999 })
+        }
+    }
+
+    @Test func aCharacterLoadsQuickly() throws {
+        let assets = try ChefAssets.shared.get()
+        let entry = try #require(assets.characters.last)
+        let data = try Data(contentsOf: try #require(WorkspaceCapybaraAsset.resourceBundle.url(forResource: (entry.asset as NSString).deletingPathExtension, withExtension: "glb", subdirectory: "Chef")))
+        let start = Date()
+        _ = try WorkspaceCapybaraAsset(data: data, spec: ChefAssets.spec, clipsFrom: assets.rig)
+        #expect(Date().timeIntervalSince(start) < 1)
+    }
+
+    @Test func aKitchenWearsTenDifferentCharactersBeforeAnyRepeats() throws {
+        let view = KitchenSceneView(frame: CGRect(x: 0, y: 0, width: 1000, height: 700))
+        view.characters = ChefCharacterModel(url: nil)
+        let crowd = (0..<12).map { agent("x\($0)", .working, tool: "Edit") }
+        view.apply(agents: Array(crowd.prefix(10)), active: false, reducedMotion: true)
+        #expect(Set(view.chefs.values.map(\.character)).count == 10)
+        view.apply(agents: crowd, active: false, reducedMotion: true)
+        #expect(view.chefs.count == 12)
+        // Gone and back: the same chef, the same character.
+        let returning = crowd[3].id
+        let worn = try #require(view.chefs[returning]).character
+        view.apply(agents: crowd.filter { $0.id != returning }, active: false, reducedMotion: true)
+        #expect(view.chefs[returning] == nil)
+        view.apply(agents: crowd, active: false, reducedMotion: true)
+        #expect(view.chefs[returning]?.character == worn)
     }
 
     @Test func chefLoadsQuicklyEnoughForTheMainThread() throws {
@@ -120,7 +169,7 @@ import simd
         #expect(KitchenFood.dish(for: "x", among: []) == nil)
     }
 
-    @Test func theTasksDishFollowsTheChefFromBoardToTastingToServing() throws {
+    @Test func theTasksDishFollowsTheChefFromTastingToServing() throws {
         let assets = try ChefAssets.shared.get(), table = KitchenLayout.chefSlots
         let chef = ChefAvatar(id: "a", assets: assets, scale: KitchenLayout.chefScale, navigation: KitchenLayout.chefNavigation)
         chef.dish = "pizza"
@@ -128,7 +177,8 @@ import simd
         chef.director.place(board.stand, heading: board.facing)
         chef.director.setIntent(KitchenLayout.intent(for: agent("main", .working, tool: "Edit", edits: true).value, at: board, pickup: nil, restored: false))
         for _ in 0..<10 { chef.update(1 / 30) }
-        #expect(chef.dishPlacement == "board")
+        // Chopping, the chef works on the chopped board, which stands in for the dish.
+        #expect(chef.choppingOnBoard && chef.dishPlacement == "hidden")
         chef.director.place(tasting.stand, heading: tasting.facing)
         chef.director.setIntent(KitchenLayout.intent(for: agent("main", .working, tool: "Bash", detail: "npm test", edits: true).value, at: tasting, pickup: nil, restored: false))
         for _ in 0..<10 { chef.update(1 / 30) }
@@ -162,12 +212,18 @@ import simd
         // With their own animations: a facepalm then head-scratching, a fist pump then hands on hips.
         #expect(KitchenLayout.work(for: stale, review: .needsFix).oneShot == "fix_react" && KitchenLayout.work(for: stale, review: .needsFix).loop == "fix_wait")
         #expect(KitchenLayout.work(for: stale, review: .shipped).oneShot == "merge_ready" && KitchenLayout.work(for: stale, review: .shipped).loop == "merge_ready_wait")
-        // And say so above the chef: a badge on the name tag.
-        #expect(ChefTagContent.Badge.make(.shipped, note: "Ready to merge")?.text == "Ready to merge")
-        #expect(ChefTagContent.Badge.make(.needsFix, note: "Needs a fix · test failed")?.text == "Needs a fix")
-        #expect(ChefTagContent.Badge.make(.checking, note: nil) == .testing)
-        #expect(ChefTagContent.Badge.make(.shipped, note: "Behind main") == .other("Behind main"))
-        #expect(ChefTagContent.Badge.make(.awaiting, note: nil) == nil)
+        // And say so above the chef: the tag's state and line, the checks as blocks of its bar.
+        let finished = agent("main", .done, freshness: .lastKnown)
+        let shipped = ChefTagContent.make(finished, review: .shipped, note: "Ready to merge", checks: [.passed, .passed])
+        #expect(shipped.phase == .shipped && shipped.line == "Ready to merge" && shipped.progress == .checks([.passed, .passed]))
+        let broken = ChefTagContent.make(finished, review: .needsFix, note: "Needs a fix · lint failed", checks: [.passed, .failed])
+        #expect(broken.phase == .needsFix && broken.phase.needsYou && broken.line == "lint failed" && broken.progress == .checks([.passed, .failed]))
+        #expect(ChefTagContent.make(finished, review: .checking, note: nil).phase == .checking)
+        #expect(ChefTagContent.make(finished, review: .shipped, note: "Behind main").line == "Behind main")
+        #expect(ChefTagContent.make(finished, review: .awaiting).phase == .done)
+        #expect(PRWatcher.checks(LinkedPullRequest(number: 1, title: "", url: "u", state: "OPEN", isDraft: false, headRefName: "b", headRefOid: "o",
+                                                   statusCheckRollup: [PRCheck(name: "a", conclusion: "SUCCESS"), PRCheck(name: "b", conclusion: "FAILURE"), PRCheck(name: "c", status: "IN_PROGRESS")]))
+                == [.passed, .failed, .running])
         // Feedback sends the chef back to work, not to the break room, before the new turn is reported.
         #expect(KitchenLayout.work(for: stale, review: .reworking).area == "prep")
         // Live work always wins over an old review.
@@ -371,13 +427,13 @@ import simd
         #expect(!calm.stepNames.contains("once:celebrate_done"))
     }
 
-    @Test func nameTagsShowAShortTaskAndEmotesShowState() {
+    @Test func tagsShowTheNameWhatTheChefIsDoingAndHowFarAlong() {
         var working = agent("main", .working, tool: "Edit", edits: true)
         working.value.task = "Add a clamp function\nwith tests"
         // A written four-word label when there is one, a keyword label until then.
         let labels = TaskLabels(labels: [TaskLabels.key("Add a clamp function with tests"): "Add Clamp Function"])
         var tag = ChefTagContent.make(working, review: nil, labels: labels)
-        #expect(tag.text == "Add Clamp Function" && tag.fullText == "Add a clamp function with tests" && !tag.stale && !tag.resting && tag.progress == nil)
+        #expect(tag.text == "Add Clamp Function" && tag.fullText == "Add a clamp function with tests" && !tag.stale && !tag.resting && tag.progress == .sweep)
         working.value.task = "Build a website that shows a three.js model of Salesforce Tower"
         tag = ChefTagContent.make(working, review: nil, labels: TaskLabels(labels: [:]))
         #expect(tag.text == "Build Website Three.js Model" && tag.fullText.hasPrefix("Build a website that shows"))
@@ -387,17 +443,30 @@ import simd
         #expect(TaskLabel.clean("**Fix Mobile Safari Login.**") == "Fix Mobile Safari Login")
         #expect(TaskLabel.clean("I need you to grant permissions to access the Paper design tool. However") == nil)
         #expect(TaskLabel.clean("") == nil)
-        // Lasting emotes: needing you, a dish at the pass; nothing while simply working or resting.
-        #expect(ChefEmote.lasting(working, review: nil) == nil)
-        #expect(ChefEmote.lasting(agent("a", .waiting, attention: .approval), review: nil) == .alert)
-        #expect(ChefEmote.lasting(agent("a", .waiting, attention: .input), review: nil) == .question)
-        // A pull request that needs a fix shows a wrench; one ready to merge, a check.
-        #expect(ChefEmote.lasting(agent("a", .done), review: .needsFix) == .wrench)
-        #expect(ChefEmote.lasting(agent("a", .done), review: .shipped) == .check)
-        #expect(ChefEmote.lasting(agent("a", .done), review: .awaiting) == .star)
-        #expect(ChefEmote.lasting(agent("main", .done), review: .approved) == nil)
+        // The phase: colour and symbol for what the chef is doing, or what it needs from you.
+        func phase(_ a: SpatialAgent, _ review: KitchenReviews.State? = nil) -> ChefTagContent.Phase { ChefTagContent.make(a, review: review).phase }
+        #expect(phase(working) == .working && ChefTagContent.make(working, review: nil).name == "Agent main")
+        #expect(phase(agent("a", .waiting, attention: .approval)) == .approval && phase(agent("a", .waiting, attention: .input)) == .waiting)
+        #expect(phase(agent("a", .failed)) == .failed && phase(agent("a", .stopped)) == .stopped && phase(agent("a", .ready)) == .idle)
+        #expect(phase(agent("a", .done), .awaiting) == .done && phase(agent("main", .done), .approved) == .idle)
+        #expect(ChefTagContent.Phase.approval.color != ChefTagContent.Phase.waiting.color)
+        #expect([ChefTagContent.Phase.waiting, .approval, .failed, .needsFix].allSatisfy(\.needsYou) && !ChefTagContent.Phase.working.needsYou)
+        // The line: the live step from the activity feed; a turn just begun is starting.
+        var live = agent("l", .working, tool: "Edit")
+        live.value.feed = [FeedEntry(id: "s", kind: .started, title: "Turn started", time: Date())]
+        #expect(phase(live) == .starting && ChefTagContent.make(live, review: nil).line == "starting…")
+        live.value.feed.append(FeedEntry(id: "e", kind: .editing, title: "Edited Foo.swift", outcome: .done, time: Date()))
+        live.value.lastToolAt = Date()
+        let edited = ChefTagContent.make(live, review: nil)
+        #expect(edited.phase == .working && edited.line == "Edited Foo.swift" && edited.progress == .sweep && edited.log.isEmpty)
+        // The log holds the steps before the live one, never the live one again.
+        live.value.feed.append(FeedEntry(id: "r", kind: .research, title: "Looked at Bar.swift", outcome: .done, time: Date()))
+        #expect(ChefTagContent.make(live, review: nil).log == ["✓ Edited Foo.swift"])
+        // Quiet for a while: thinking, with the time it has been quiet.
+        let quiet = ChefTagContent.make(live, review: nil, now: Date().addingTimeInterval(30))
+        #expect(quiet.phase == .thinking && quiet.line.hasPrefix("thinking · 3"))
         let resting = ChefTagContent.make(agent("a", .done, freshness: .lastKnown), review: nil)
-        #expect(resting.resting && resting.stale)
+        #expect(resting.resting && resting.stale && resting.progress == nil)
         // The checklist shows as progress for this turn only.
         func step(_ status: String, turn: String) -> SessionActivityRecord {
             SessionActivityRecord(id: UUID().uuidString, provider: "Claude", sessionID: "s", turnID: turn, nativeID: UUID().uuidString, kind: "step",
@@ -406,15 +475,33 @@ import simd
         var snapshot = SessionActivitySnapshot()
         snapshot.records = [step("completed", turn: "t2"), step("completed", turn: "t2"), step("inProgress", turn: "t2"), step("pending", turn: "t2")]
         working.value.plan = AgentPlan.reported(in: snapshot, provider: "Claude", sessionID: "s", currentTurn: "t2")
-        #expect(ChefTagContent.make(working, review: nil).progress == 0.5)
+        #expect(ChefTagContent.make(working, review: nil).progress == .steps(done: 2, total: 4))
         working.value.plan = AgentPlan.reported(in: snapshot, provider: "Claude", sessionID: "s", currentTurn: "t3")
-        #expect(ChefTagContent.make(working, review: nil).progress == nil)
+        #expect(ChefTagContent.make(working, review: nil).progress == .sweep)
         // After feedback (turn t3) the agent ticks a step off: the open steps are this turn's
         // list again, without the steps it finished before.
         snapshot.records[2].turnID = "t3"; snapshot.records[2].status = "completed"
         working.value.plan = AgentPlan.reported(in: snapshot, provider: "Claude", sessionID: "s", currentTurn: "t3")
-        #expect(ChefTagContent.make(working, review: nil).progress == 0.5)
+        #expect(ChefTagContent.make(working, review: nil).progress == .steps(done: 1, total: 2))
         #expect(working.value.planProgress == .steps(done: 1, total: 2))
+        // The bar shows the steps; the footer doesn't repeat them.
+        var finished = working; finished.value.status = .done
+        #expect(!ChefTagContent.make(working, review: nil).footer.contains("step") && ChefTagContent.make(finished, review: .awaiting).footer.isEmpty)
+        // The tab names the model; the terminal's first line is the task, the same title the agent panel shows.
+        let named = ChefTagContent.make(working, review: nil, model: "GPT-6-Astra", labels: labels)
+        #expect(named.model == "GPT-6-Astra" && named.text == labels.title(working))
+        let row = AgentSidebar.items([AgentSidebar.Input(session: Session(id: "c", provider: .claude, url: nil, sessionID: "s", title: "Can you also animate this new 3D model", project: "/", modified: Date(), bytes: 0, archived: false, parentID: nil),
+                                                          agents: [working], title: labels.title(working))], catalog: [], order: { $1 })
+        #expect(row.first?.title == named.text)
+        // Done counts the files the whole task changed (git, as the Changes panel does), not the last turn's edits.
+        #expect(ChefTagContent.make(finished, review: .awaiting, files: 36).line == "done · 36 files")
+        #expect(ChefTagContent.make(finished, review: .awaiting, files: 1).line == "done · 1 file")
+        #expect(ChefTagContent.make(finished, review: .awaiting).line == "done")
+        let workspace = ProjectWorkspace(id: "w", folder: "/nonexistent", branch: "b", baseCommit: "c", context: ProjectContext())
+        let counts = SessionChangeCounts()
+        let before = counts.revision
+        counts.record(workspace, ChangesSnapshot(files: (0..<36).map { ChangedFile(path: "f\($0)", status: "Modified") }, head: "h", branch: "b", dirty: true))
+        #expect(counts.count(workspace) == 36 && counts.revision == before + 1)
     }
 
     @Test func armedSkillsGoAsStructuredCodexSkillsOrAsNamesInTheText() {
@@ -428,7 +515,7 @@ import simd
         #expect(claude.structured.isEmpty && claude.text == "/diorama-release /figma:figma-use")
     }
 
-    @Test func selectingAChefRingsItFollowsItAndHidesOtherTags() throws {
+    @Test func selectingAChefRingsItFollowsItAndRecedesOtherTags() throws {
         let view = KitchenSceneView(frame: CGRect(x: 0, y: 0, width: 1000, height: 700))
         let cook = agent("a", .working, tool: "Edit", edits: true, conversation: "c1")
         let other = agent("b", .working, tool: "Read", conversation: "c2")
@@ -438,6 +525,14 @@ import simd
         let chef = try #require(view.chefs[cook.id])
         view.setSelection(cook.id)
         #expect(chef.root.childNode(withName: "selection ring", recursively: false) != nil)
+        // Before the camera moves: the others recede to name and symbol; one that needs you
+        // keeps its whole tag.
+        let mine = try #require(view.chefLabels[cook.id]), theirs = try #require(view.chefLabels[other.id])
+        #expect(!mine.isHidden && mine.mode == .full && mine.selected)
+        #expect(!theirs.isHidden && theirs.mode == .compact && theirs.alphaValue < 1)
+        let asking = agent("b", .waiting, attention: .approval, conversation: "c2")
+        view.apply(agents: [cook, asking], active: false, reducedMotion: false, now: 0.5)
+        #expect(theirs.mode == .full && theirs.alphaValue == 1)
         // The camera flies in and keeps the chef in view while it walks.
         var t = 0.0
         for _ in 0..<90 { t += 1 / 30; view.renderer(view, updateAtTime: t) }
@@ -445,9 +540,11 @@ import simd
         let pose = try #require(view.cameraPose)
         #expect(simd_distance(pose.look, follow.look) < 0.1 && simd_distance(pose.eye, follow.eye) < 0.2)
         view.apply(agents: [cook, other], active: false, reducedMotion: false, now: 1)
-        let shown = view.chefLabels.filter { !$0.value.isHidden }.map(\.key)
-        #expect(shown == [cook.id])
-        #expect(view.chefs[other.id]?.root.opacity ?? 1 < 1)
+        #expect(!mine.isHidden && view.chefs[other.id]?.root.opacity ?? 1 < 1)
+        // A chef out of frame takes its tag with it instead of pinning it to the edge.
+        if let head = view.projectWithoutLock(try #require(view.chefs[other.id]).root.simdPosition), !view.bounds.insetBy(dx: -24, dy: -24).contains(head) {
+            #expect(theirs.isHidden)
+        }
         // Letting go returns the camera to the whole kitchen and drops the ring.
         view.setSelection(nil, immediately: true)
         #expect(chef.root.childNode(withName: "selection ring", recursively: false) == nil)
@@ -605,7 +702,10 @@ import simd
         let fetching = agent("a", .working, tool: "mcp__linear__create_issue", edits: true).value
         #expect(KitchenLayout.work(for: fetching).area == "pantry")
         let slots = try #require(KitchenLayout.chefSlots["pantry"])
-        #expect(slots.count == 4 && slots.allSatisfy { KitchenLayout.chefNavigation.isFree($0.stand) })
+        #expect(slots.count == 3 && slots.allSatisfy { KitchenLayout.chefNavigation.isFree($0.stand) })
+        // The pantry leaves the floor in front of the elevator clear: a new chef steps out there.
+        #expect(KitchenLayout.chefNavigation.isFree(KitchenLayout.elevatorLanding.stand))
+        #expect(slots.allSatisfy { simd_distance($0.stand, KitchenLayout.elevatorLanding.stand) > 1.0 })
         var work = TurnWork(); work.started(tool: "Skill", detail: "diorama-release", call: "1")
         let feed = AgentActivityFeed.entries(from: [ActivityEvent(id: "1", provider: "Claude", sessionID: "s", kind: "toolStarted", source: "t", callID: "1", tool: "Skill", detail: "diorama-release")])
         #expect(feed.map(\.title) == ["Fetched diorama-release"])
@@ -623,6 +723,370 @@ import simd
         view.apply(agents: [], active: false, reducedMotion: false, now: 1)
         view.updateBoards()
         #expect(view.idleBoards.count == 6)
+    }
+
+    /// The modelled range stands in the stove's footprint, flat at the worktop on the chefs' side,
+    /// with a flame on each of its six burner crowns.
+    @Test func theRangeFitsItsStationAndCarriesTheFlames() throws {
+        let stove = try #require(KitchenStove.shared)
+        let area = try #require(KitchenLayout.areas.first { $0.id == "stove" })
+        let view = KitchenSceneView(frame: CGRect(x: 0, y: 0, width: 1000, height: 700))
+        let node = try #require(view.scene?.rootNode.childNode(withName: "stove", recursively: false))
+        let (low, high) = node.boundingBox
+        let origin = KitchenStove.origin
+        #expect(origin.x + Float(low.x) >= Float(area.footprint.minX) - 0.01 && origin.x + Float(high.x) <= Float(area.footprint.maxX) + 0.01)
+        #expect(origin.z + Float(low.z) >= Float(area.footprint.minY) - 0.01 && origin.z + Float(high.z) <= Float(area.footprint.maxY) + 0.01)
+        #expect(stove.burners.count == 6)
+        // Burners left to right, under the chefs' stove spots, just above the worktop.
+        let slots = try #require(KitchenLayout.chefSlots["stove"])
+        for (index, slot) in slots.enumerated() {
+            let burner = try #require(stove.burner(index))
+            #expect(abs(burner.x - slot.stand.x) < 0.05)
+            #expect(abs(burner.y - Float(KitchenLayout.worktopHeight)) < 0.08)
+            let flame = try #require(view.scene?.rootNode.childNodes.filter { $0.name == "burner flame" }.min { simd_distance($0.simdPosition, burner) < simd_distance($1.simdPosition, burner) })
+            #expect(simd_distance(flame.simdPosition, burner) < 0.02)
+        }
+        // Where a chef sets its pot down (0.5 chef units ahead of its spot), the top is at the worktop.
+        let hits = view.scene!.rootNode.hitTestWithSegment(from: SCNVector3(slots[0].stand.x - 0.4, 2, -0.002 + 0.5 * Float(KitchenLayout.chefScale)),
+                                                          to: SCNVector3(slots[0].stand.x - 0.4, 0, -0.002 + 0.5 * Float(KitchenLayout.chefScale)), options: [SCNHitTestOption.searchMode.rawValue: SCNHitTestSearchMode.closest.rawValue])
+        let top = try #require(hits.first { sequence(first: $0.node, next: \.parent).contains { $0.name == "stove" } })
+        #expect(abs(Float(top.worldCoordinates.y) - Float(KitchenLayout.worktopHeight)) < 0.03)
+        // Small enough to ship.
+        let url = try #require(WorkspaceCapybaraAsset.resourceBundle.url(forResource: "stove", withExtension: "glb", subdirectory: "KitchenStations"))
+        #expect(try Data(contentsOf: url).count < 1_500_000)
+    }
+
+    /// The modelled island keeps the six cutting boards where the old counter had them, on its
+    /// marble at the worktop, each showing its resting cleaver.
+    @Test func theIslandKeepsItsBoards() throws {
+        let island = try #require(KitchenIsland.shared)
+        let area = try #require(KitchenLayout.areas.first { $0.id == "cooking" })
+        let view = KitchenSceneView(frame: CGRect(x: 0, y: 0, width: 1000, height: 700))
+        let node = try #require(view.scene?.rootNode.childNode(withName: "cooking", recursively: false))
+        #expect(island.boards.count == 6)
+        let boards = node.childNodes.filter { $0.name == "cutting board" }.sorted { $0.simdWorldPosition.x < $1.simdWorldPosition.x }
+        #expect(boards.count == 6)
+        let slots = try #require(KitchenLayout.chefSlots["cooking"])
+        for (board, slot) in zip(boards, slots) {
+            let p = board.simdWorldPosition
+            #expect(abs(p.x - slot.stand.x) < 0.02)
+            // Where the old counter's boards were: 0.38 in from the chefs' edge.
+            #expect(abs(p.z - (Float(area.footprint.minY) + 0.38)) < 0.02)
+            #expect(abs(p.y - KitchenIsland.board.y / 2 - Float(KitchenLayout.worktopHeight)) < 0.01)
+        }
+        #expect(view.idleBoards.count == 6)
+        // Inside its footprint, and small enough to ship.
+        let (low, high) = node.boundingBox
+        #expect(Float(low.x) + Float(area.footprint.midX) >= Float(area.footprint.minX) - 0.01 && Float(high.x) + Float(area.footprint.midX) <= Float(area.footprint.maxX) + 0.01)
+        #expect(Float(low.z) + Float(area.footprint.midY) >= Float(area.footprint.minY) - 0.01 && Float(high.z) + Float(area.footprint.midY) <= Float(area.footprint.maxY) + 0.01)
+        let url = try #require(WorkspaceCapybaraAsset.resourceBundle.url(forResource: "island", withExtension: "glb", subdirectory: "KitchenStations"))
+        #expect(try Data(contentsOf: url).count < 1_500_000)
+    }
+
+    /// The floor's border edges the open floor along the furniture, never under it, except on
+    /// The break room is a salon: parquet over exactly its floor (inside its low walls), and the
+    /// rug lies under the lounge chairs and the standing circles, inside the room.
+    @Test func theBreakRoomHasParquetAndARug() throws {
+        let floor = KitchenFloor.make()
+        let parquet = try #require(floor.childNode(withName: "break room parquet", recursively: false))
+        let rug = try #require(floor.childNode(withName: "break room rug", recursively: false))
+        let room = KitchenFloor.breakRoom
+        #expect(abs(CGFloat(parquet.position.x) - room.midX) < 0.01 && abs(CGFloat(parquet.position.z) - room.midY) < 0.01)
+        for wall in KitchenLayout.breakRoomWalls { #expect(!room.insetBy(dx: 0.01, dy: 0.01).intersects(wall)) }
+        #expect(room.contains(KitchenFloor.rug) && rug.position.y > parquet.position.y)
+        for spot in BreakRoomLayout.spots where spot.kind == .chair || { if case .circle = spot.kind { return true }; return false }() {
+            #expect(KitchenFloor.rug.contains(CGPoint(x: CGFloat(spot.station.stand.x), y: CGFloat(spot.station.stand.y))), "\(spot.station)")
+        }
+    }
+
+    /// the pantry side, where it runs against the wall (and the pantry stands on it).
+    @Test func theFloorBorderEdgesTheFurniture() {
+        let (runs, corners) = KitchenFloor.borderLayout()
+        #expect(runs.count == 8 && corners.count == 7)
+        let squares = corners.map { CGRect(x: $0.x, y: $0.y, width: KitchenFloor.band, height: KitchenFloor.band) }
+        let furniture = KitchenLayout.areas.filter { ($0.wall != .front || $0.id == "serving") && $0.id != "pantry" }.map(\.footprint)
+            + KitchenLayout.connectors + KitchenLayout.breakRoomWalls
+        for piece in runs + squares {
+            #expect(KitchenLayout.floor.contains(piece))
+            for item in furniture { #expect(!piece.insetBy(dx: 0.01, dy: 0.01).intersects(item), "\(piece) under \(item)") }
+        }
+        // The pantry-side run lies against the left wall.
+        #expect(runs.contains { abs($0.minX - KitchenFloor.inner.minX) < 0.01 && $0.height > $0.width })
+    }
+
+    /// The French back stations stand in their footprints, and where each chef sets its idea or
+    /// plate down (0.5 chef units ahead of its spot) the marble is clear, at the worktop.
+    @Test func theBackStationsKeepTheirWorktopsClear() throws {
+        let view = KitchenSceneView(frame: CGRect(x: 0, y: 0, width: 1000, height: 700))
+        for id in ["order", "prep", "tasting", "pantry"] {
+            let area = try #require(KitchenLayout.areas.first { $0.id == id })
+            let node = try #require(view.scene?.rootNode.childNode(withName: id, recursively: false))
+            #expect(node.childNodes.first?.name == id, "\(id) uses its model")
+            #expect(area.footprint.insetBy(dx: -0.01, dy: -0.01).contains(worldBounds(node)), "\(id): \(worldBounds(node))")
+            for slot in try #require(KitchenLayout.chefSlots[id]) {
+                // Ahead of the chef (facing its station): where it sets things down, and the
+                // dish it tastes at tasting.
+                let ahead = id == "tasting" ? ChefAvatar.tastingSpot.z : 0.5
+                let x = slot.stand.x + sin(slot.facing) * ahead * Float(KitchenLayout.chefScale)
+                let z = slot.stand.y + cos(slot.facing) * ahead * Float(KitchenLayout.chefScale)
+                let hits = view.scene!.rootNode.hitTestWithSegment(from: SCNVector3(x, 3, z), to: SCNVector3(x, 0, z),
+                                                                  options: [SCNHitTestOption.searchMode.rawValue: SCNHitTestSearchMode.closest.rawValue])
+                let top = try #require(hits.first { sequence(first: $0.node, next: \.parent).contains { $0.name == id } }, "\(slot.id)")
+                #expect(abs(Float(top.worldCoordinates.y) - Float(KitchenLayout.worktopHeight)) < 0.03, "\(slot.id) at \(top.worldCoordinates.y)")
+            }
+            let url = try #require(WorkspaceCapybaraAsset.resourceBundle.url(forResource: id, withExtension: "glb", subdirectory: "KitchenStations"))
+            #expect(try Data(contentsOf: url).count < 1_500_000)
+        }
+    }
+
+    /// A node's footprint on the floor (x/z), from its geometry.
+    private func worldBounds(_ node: SCNNode) -> CGRect {
+        var lo = SIMD2<Float>(repeating: .infinity), hi = SIMD2<Float>(repeating: -.infinity)
+        node.enumerateHierarchy { n, _ in
+            guard let g = n.geometry else { return }
+            let (a, b) = g.boundingBox
+            for x in [a.x, b.x] { for y in [a.y, b.y] { for z in [a.z, b.z] {
+                let w = n.simdConvertPosition(SIMD3(Float(x), Float(y), Float(z)), to: nil)
+                lo = simd_min(lo, SIMD2(w.x, w.z)); hi = simd_max(hi, SIMD2(w.x, w.z))
+            } } }
+        }
+        return CGRect(x: CGFloat(lo.x), y: CGFloat(lo.y), width: CGFloat(hi.x - lo.x), height: CGFloat(hi.y - lo.y))
+    }
+
+    /// The Provençal pantry still opens the pantry when clicked, and its status lights glow.
+    @Test func thePantryStillOpensAndGlows() throws {
+        let view = KitchenSceneView(frame: CGRect(x: 0, y: 0, width: 1000, height: 700))
+        let pantry = try #require(view.scene?.rootNode.childNode(withName: "pantry", recursively: false))
+        var lights = 0
+        pantry.enumerateHierarchy { node, _ in
+            for m in node.geometry?.materials ?? [] where m.name == "status_light" { lights += 1; #expect(m.emission.contents != nil) }
+        }
+        #expect(lights > 0)
+        // What a click on it finds: any part of it leads up to the node named "pantry".
+        var parts = 0
+        pantry.enumerateHierarchy { node, _ in if node.geometry != nil { parts += 1; #expect(sequence(first: node, next: \.parent).contains { $0.name == "pantry" }) } }
+        #expect(parts > 10)
+    }
+
+    /// The modelled connecting cabinets fill exactly the gaps between the wall stations.
+    @Test func theConnectingCabinetsMatchTheirPlaces() throws {
+        let view = KitchenSceneView(frame: CGRect(x: 0, y: 0, width: 1000, height: 700))
+        let cabinets = try #require(view.scene?.rootNode.childNode(withName: "connecting cabinets", recursively: true))
+        let bounds = worldBounds(cabinets)
+        let expected = KitchenLayout.connectors.reduce(CGRect.null) { $0.union($1) }
+        #expect(abs(bounds.minX - expected.minX) < 0.05 && abs(bounds.maxX - expected.maxX) < 0.05, "\(bounds) vs \(expected)")
+        #expect(abs(bounds.minY - expected.minY) < 0.05 && abs(bounds.maxY - expected.maxY) < 0.05)
+        // Each connector's top is at the worktop.
+        for r in KitchenLayout.connectors {
+            let hits = view.scene!.rootNode.hitTestWithSegment(from: SCNVector3(Float(r.midX), 3, Float(r.midY)), to: SCNVector3(Float(r.midX), 0, Float(r.midY)),
+                                                              options: [SCNHitTestOption.searchMode.rawValue: SCNHitTestSearchMode.closest.rawValue])
+            let top = try #require(hits.first)
+            #expect(abs(Float(top.worldCoordinates.y) - Float(KitchenLayout.worktopHeight)) < 0.03, "\(r) hit \(top.node.name ?? "?") \(top.node.parent?.name ?? "?")")
+        }
+    }
+
+    /// Two stainless sinks are set into the right wall's long run: a basin (below the worktop)
+    /// at each, inside that run's footprint.
+    @Test func theRightWallHasTwoSinks() throws {
+        let view = KitchenSceneView(frame: CGRect(x: 0, y: 0, width: 1000, height: 700))
+        let cabinets = try #require(view.scene?.rootNode.childNode(withName: "connecting cabinets", recursively: true))
+        let run = KitchenLayout.connectors[4].insetBy(dx: -0.05, dy: -0.05)
+        for n in 0..<2 {
+            let spot = try #require(cabinets.childNode(withName: "sink_\(n)", recursively: true)).simdWorldPosition
+            #expect(run.contains(CGPoint(x: CGFloat(spot.x), y: CGFloat(spot.z))))
+            let hits = view.scene!.rootNode.hitTestWithSegment(from: SCNVector3(spot.x, 3, spot.z), to: SCNVector3(spot.x, 0, spot.z),
+                                                              options: [SCNHitTestOption.searchMode.rawValue: SCNHitTestSearchMode.closest.rawValue])
+            let basin = try #require(hits.first)
+            #expect(basin.node.geometry?.materials.contains { $0.name.map { $0.hasPrefix("stainless") } == true } == true)
+            #expect(Float(basin.worldCoordinates.y) < Float(KitchenLayout.worktopHeight) - 0.15, "sink \(n) floor at \(basin.worldCoordinates.y)")
+        }
+        let file = try #require(Bundle.module.url(forResource: "connectors", withExtension: "glb", subdirectory: "KitchenStations"))
+        #expect(try file.resourceValues(forKeys: [.fileSizeKey]).fileSize! < 1_000_000)
+    }
+
+    /// A chef that needs you strikes the gong on its way to wait (not when restored or under
+    /// reduced motion), holding the mallet only while it strikes.
+    @Test func chefsThatNeedYouStrikeTheGongFirst() throws {
+        let table = KitchenLayout.chefSlots, bell = try #require(table["bell"]?.first)
+        let d = try director()
+        d.place(SIMD2(0, 2.6), heading: 0)
+        d.setIntent(KitchenLayout.intent(for: agent("a", .waiting, attention: .approval).value, at: bell, pickup: nil, restored: false))
+        #expect(Array(d.stepNames.prefix(5)) == ["goto:gong", "face", "grab:mallet", "once:strike_gong", "release:mallet"])
+        #expect(d.stepNames.suffix(4) == ["goto:bell", "face", "once:request_input", "loop:wait_input"])
+        var struckHolding = false
+        for _ in 0..<(60 * 12) where d.gongStrikes == 0 { d.update(1 / 60); struckHolding = d.held.contains(.mallet) }
+        #expect(d.gongStrikes == 1 && struckHolding)
+        run(d, seconds: 6)
+        #expect(d.station == bell && !d.held.contains(.mallet) && d.clip.name == "wait_input")
+        let restored = try director()
+        restored.setIntent(KitchenLayout.intent(for: agent("b", .waiting, attention: .approval).value, at: bell, pickup: nil, restored: true))
+        #expect(!restored.stepNames.contains("once:strike_gong"))
+        let reduced = try director(); reduced.reducedMotion = true
+        reduced.setIntent(KitchenLayout.intent(for: agent("c", .failed).value, at: bell, pickup: nil, restored: false))
+        #expect(!reduced.stepNames.contains("once:strike_gong"))
+    }
+
+    /// At the strike's impact the mallet's felt head is on the gong's face, near its centre, and
+    /// everyone waiting stands behind or beside the gong (its face stays in view), on free floor.
+    @Test func theMalletLandsOnTheGong() throws {
+        let assets = try ChefAssets.shared.get()
+        let area = try #require(KitchenLayout.areas.first { $0.id == "bell" })
+        let gong = try #require(KitchenFixtures.make(area))
+        var boss: SCNNode?
+        gong.enumerateHierarchy { n, _ in if n.geometry?.materials.contains(where: { $0.name == "gong_boss" }) == true { boss = n } }
+        let face = try #require(boss), (lo, hi) = face.boundingBox
+        let center = face.simdConvertPosition(SIMD3(Float(lo.x + hi.x) / 2, Float(lo.y + hi.y) / 2, Float(hi.z)), to: nil)
+        let chef = ChefAvatar(id: "t", assets: assets, scale: KitchenLayout.chefScale, navigation: KitchenLayout.chefNavigation)
+        let strike = KitchenLayout.gongStrike, bell = try #require(KitchenLayout.chefSlots["bell"]?.first)
+        chef.director.place(strike.stand, heading: strike.facing)
+        chef.director.setIntent(KitchenLayout.intent(for: agent("a", .waiting, attention: .approval).value, at: bell, pickup: nil, restored: false))
+        for _ in 0..<(60 * 4) where chef.director.gongStrikes == 0 { chef.update(1 / 60) }
+        var mallet: SCNNode?
+        chef.root.enumerateHierarchy { n, _ in if n.name == "prop_gong_mallet" { mallet = n } }
+        let head = try #require(mallet).simdConvertPosition(SIMD3(0, 0, 0.46), to: nil)
+        #expect(abs(head.y - center.y) < 0.15 && abs(head.x - center.x) < 0.25, "head \(head) gong \(center)")
+        #expect(head.z > center.z - 0.05 && head.z < center.z + 0.2, "head \(head) gong \(center)")
+        let navigation = KitchenLayout.chefNavigation
+        #expect(navigation.isFree(strike.stand))
+        for slot in KitchenLayout.chefSlots["bell"] ?? [] {
+            #expect(navigation.isFree(slot.stand) && slot.stand.y < KitchenLayout.gongCenter.y + 0.4, "\(slot)")
+        }
+    }
+
+    @Test func theManagerVisitsWhoeverWaitedLongest() {
+        let waiting = [KitchenManager.Waiting(id: "b", since: 5), KitchenManager.Waiting(id: "a", since: 3)]
+        #expect(KitchenManager.next(current: nil, waiting: waiting) == "a")
+        #expect(KitchenManager.next(current: "b", waiting: waiting) == "b")      // stays until answered
+        #expect(KitchenManager.next(current: "c", waiting: waiting) == "a")
+        #expect(KitchenManager.next(current: "a", waiting: []) == nil)           // nobody waits: leaves
+    }
+
+    /// End to end: the chef strikes the gong (it shivers), waits behind it, the manager comes in
+    /// from the dining room and they talk; once you answer the manager walks back out.
+    @Test func theManagerComesWhenTheGongSounds() throws {
+        let view = KitchenSceneView(frame: CGRect(x: 0, y: 0, width: 1000, height: 700))
+        var clock = 100.0
+        func step(_ seconds: Double) {
+            for _ in 0..<Int(seconds * 30) {
+                clock += 1 / 30
+                for chef in view.chefs.values { chef.update(1 / 30) }
+                view.manager?.update(1 / 30)
+                view.pace(now: clock); view.updateManager(); view.updateGong()
+            }
+        }
+        view.apply(agents: [agent("a", .working, tool: "Edit", edits: true)], active: false, reducedMotion: false, now: clock)
+        step(0.5)
+        #expect(view.manager == nil)
+        view.apply(agents: [agent("a", .waiting, attention: .approval, edits: true)], active: false, reducedMotion: false, now: clock)
+        let chef = try #require(view.chefs.values.first)
+        for _ in 0..<200 where chef.director.gongStrikes == 0 { step(0.1) }
+        #expect(chef.director.gongStrikes == 1)
+        let pivot = try #require(view.scene?.rootNode.childNode(withName: KitchenFixtures.gongPivot, recursively: true))
+        #expect(pivot.hasActions)
+        for _ in 0..<300 where view.managerTalking == nil { step(0.1) }
+        let manager = try #require(view.manager)
+        #expect(view.managerTalking == chef.id)
+        step(1.5)
+        #expect(manager.director.clip.name == "manager_talk" && chef.director.clip.name == "talk_reply")
+        // They face each other.
+        let between = manager.director.position - chef.director.position
+        #expect(abs(ChefDirector.wrap(atan2(between.x, between.y) - chef.director.heading)) < 0.2)
+        #expect(abs(ChefDirector.wrap(atan2(-between.x, -between.y) - manager.director.heading)) < 0.2)
+        // You answer: the chef goes back to work and the manager leaves through the dining room.
+        view.apply(agents: [agent("a", .working, tool: "Edit", edits: true)], active: false, reducedMotion: false, now: clock)
+        for _ in 0..<300 where view.manager != nil { step(0.1) }
+        #expect(view.manager == nil && view.managerTalking == nil)
+    }
+
+    /// Resting chefs take the machines first, then the chairs, then the circles; a machine has one
+    /// user at a time, everyone gets a turn on one, and in a group mostly one talks at a time.
+    @Test func theBreakRoomTakesTurnsAndConversations() throws {
+        let durations = try ChefAssets.shared.get().manifest.clips.mapValues { Double($0.duration) }
+        var room = BreakRoom(durations: durations)
+        let ids = (0..<10).map { "c\($0)" }
+        _ = room.update(resting: ids, now: 0)
+        let kinds = ids.compactMap { room.kind(of: $0) }
+        #expect(kinds.filter { [.arcade, .vending, .espresso].contains($0) }.count == 5)
+        #expect(kinds.filter { $0 == .chair }.count == 2 && kinds.count == 10)
+        var machineUsers: Set<String> = [], bothTalking = 0, samples = 0
+        for t in stride(from: 0.0, through: 600, by: 0.5) {
+            _ = room.update(resting: ids, now: t)
+            let spots = room.members.values.map(\.spot)
+            #expect(Set(spots).count == spots.count) // one chef per spot, so one per machine
+            for (id, kind) in ids.compactMap({ id in room.kind(of: id).map { (id, $0) } }) where [.arcade, .vending, .espresso].contains(kind) { machineUsers.insert(id) }
+            for g in 0..<2 {
+                let group = room.members.values.filter { room.spots[$0.spot].kind == .circle(g) }
+                if group.count >= 2 { samples += 1; if group.filter({ BreakRoom.talking.contains($0.clip) }).count > 1 { bothTalking += 1 } }
+            }
+        }
+        #expect(machineUsers.count >= 8, "\(machineUsers.sorted())")
+        #expect(Double(bothTalking) < Double(samples) * 0.2)
+        // A chef that leaves frees its spot; the next one in takes it.
+        _ = room.update(resting: Array(ids.dropFirst()), now: 601)
+        #expect(room.members.count == 9)
+    }
+
+    /// The machines stand against the far wall (facing the camera) or the left wall (facing the
+    /// room), inside the room, sized from their models; every spot is free floor; each machine is
+    /// on screen and unhidden in the kitchen view, and its file is small.
+    @Test func theBreakRoomMachinesStandWhereTheyShow() throws {
+        let room = KitchenFloor.breakRoom.insetBy(dx: -0.01, dy: -0.01)
+        #expect(abs(0.43 * 1.4 - KitchenLayout.chefCounterFront * KitchenLayout.chefScale) < 0.001)
+        let models = KitchenFood.models(in: "BreakRoom")
+        for machine in BreakRoomLayout.machines {
+            #expect(room.contains(machine.rect), "\(machine.asset)")
+            if machine.facing == 0 { #expect(abs(Float(machine.rect.minY) - BreakRoomLayout.farWall) < 0.05) }
+            else { #expect(abs(Float(machine.facing) - .pi / 2) < 0.01 && Float(machine.rect.minX) < BreakRoomLayout.leftWall + 0.05 + (machine.onBar ? BreakRoomLayout.coffeeBarDepth : 0)) }
+            let model = try #require(models[machine.asset]), (lo, hi) = model.boundingBox
+            #expect(abs(Float(hi.x - lo.x) * machine.scale - machine.size.x) < 0.05 && abs(Float(hi.z - lo.z) * machine.scale - machine.size.y) < 0.05, "\(machine.asset)")
+            let file = try #require(WorkspaceCapybaraAsset.resourceBundle.url(forResource: machine.asset, withExtension: "glb", subdirectory: "BreakRoom"))
+            #expect(try file.resourceValues(forKeys: [.fileSizeKey]).fileSize! < 1_500_000)
+        }
+        let navigation = KitchenLayout.chefNavigation
+        for spot in BreakRoomLayout.spots { #expect(navigation.isFree(spot.station.stand), "\(spot.station)") }
+        let view = KitchenSceneView(frame: CGRect(x: 0, y: 0, width: 1000, height: 700))
+        view.layoutSubtreeIfNeeded(); view.fitFloor()
+        for machine in BreakRoomLayout.machines {
+            let node = try #require(view.scene?.rootNode.childNode(withName: "break machine:" + machine.asset, recursively: true))
+            let (lo, hi) = node.boundingBox
+            for corner in [SCNVector3(lo.x, lo.y, lo.z), SCNVector3(hi.x, hi.y, hi.z), SCNVector3(lo.x, hi.y, hi.z), SCNVector3(hi.x, lo.y, lo.z)] {
+                let p = view.projectPoint(node.convertPosition(corner, to: nil))
+                #expect(p.x >= 0 && p.x <= 1000 && p.y >= 0 && p.y <= 700, "\(machine.asset) \(p)")
+            }
+            // Looking at its middle from the camera, the first thing hit is the machine itself.
+            let mid = node.convertPosition(SCNVector3((lo.x + hi.x) / 2, (lo.y + hi.y) * 0.6, (lo.z + hi.z) / 2), to: nil)
+            let eye = try #require(view.pointOfView).position
+            let hit = view.scene!.rootNode.hitTestWithSegment(from: eye, to: mid, options: [SCNHitTestOption.searchMode.rawValue: SCNHitTestSearchMode.closest.rawValue]).first
+            #expect(hit.map { sequence(first: $0.node, next: \.parent).contains { $0 === node } } ?? true, "\(machine.asset) hidden by \(hit?.node.name ?? "?")")
+        }
+    }
+
+    /// End to end: ten resting chefs fill the machines, the chairs and a circle; turns move chefs
+    /// on and off the machines; talking and laughing put up emoji bubbles, at most four at once.
+    @Test func restingChefsPlayChatAndTakeTurns() throws {
+        let view = KitchenSceneView(frame: CGRect(x: 0, y: 0, width: 1400, height: 900))
+        var clock = 100.0, mostBubbles = 0, emoji = Set<String>()
+        func step(_ seconds: Double) {
+            for _ in 0..<Int(seconds * 10) {
+                clock += 0.1
+                for chef in view.chefs.values { chef.update(0.1) }
+                view.pace(now: clock); view.updateBreakRoom(now: clock); view.placeBubbles(now: clock)
+                mostBubbles = max(mostBubbles, view.bubbleEmoji.count); emoji.formUnion(view.bubbleEmoji.values)
+            }
+        }
+        let resting = (0..<10).map { agent("r\($0)", .done, freshness: .lastKnown, conversation: "rest\($0)") }
+        view.apply(agents: resting, active: false, reducedMotion: false, now: clock)
+        step(20)
+        let loops = view.chefs.values.compactMap { $0.director.intent?.loop }
+        #expect(loops.filter { $0 == "play_arcade" }.count == 3, "\(loops.sorted())")
+        #expect(loops.filter { $0 == "stand_sip" }.count == 2)
+        let atMachines = Set(view.chefs.compactMap { id, _ in [BreakRoomLayout.Kind.arcade, .vending, .espresso].contains(view.breakRoom.kind(of: id)) ? id : nil })
+        #expect(atMachines.count == 5)
+        #expect(view.chefs.values.filter { $0.director.station?.area == "break" }.count >= 9)
+        step(120)
+        let later = Set(view.chefs.compactMap { id, _ in [BreakRoomLayout.Kind.arcade, .vending, .espresso].contains(view.breakRoom.kind(of: id)) ? id : nil })
+        #expect(later != atMachines && later.count == 5)
+        #expect(mostBubbles > 0 && mostBubbles <= 4 && !emoji.isEmpty, "\(emoji)")
     }
 
     @Test func burnersIgniteOnlyWhereChefsCook() throws {
@@ -655,11 +1119,20 @@ import simd
         let newcomer = try #require(view.chefs[new.id])
         let door = try #require(KitchenLayout.chefSlots["elevator"]?.first)
         #expect(simd_distance(newcomer.director.position, door.stand) < 0.01)
-        #expect(newcomer.director.intent?.key.hasPrefix("arrival") == true)
-        #expect(newcomer.director.stepNames.first == "once:arrive_wave")
-        #expect(newcomer.director.intent?.loop == "read_ticket" && newcomer.director.intent?.hand == .ticket)
-        var clock = 1.0
-        for _ in 0..<(30 * 12) { clock += 1 / 30; newcomer.update(1 / 30); view.pace(now: clock) }
+        // First it steps out of the elevator and waves to the camera; the doors stand open.
+        #expect(newcomer.director.intent?.key == "arrival-exit" && newcomer.director.intent?.station == KitchenLayout.elevatorLanding)
+        #expect(newcomer.director.intent?.oneShot?.clip == "arrive_wave" && KitchenLayout.elevatorLanding.facing == 0)
+        #expect(view.elevatorOpen)
+        var clock = 1.0, waved = false, read = false
+        for _ in 0..<(30 * 6) {
+            clock += 1 / 30; newcomer.update(1 / 30); view.pace(now: clock)
+            waved = waved || newcomer.director.clip.name == "arrive_wave"
+            if newcomer.director.intent?.loop == "read_ticket" { read = true; break }
+        }
+        // Then on to the rail with its ticket.
+        #expect(waved && read && newcomer.director.intent?.hand == .ticket)
+        for _ in 0..<(30 * 12) { clock += 1 / 30; newcomer.update(1 / 30); view.pace(now: clock); view.frameStep(at: clock) }
+        #expect(!view.elevatorOpen)
         #expect(newcomer.director.intent?.station?.area == "prep")
         // A new conversation in the same project arrives too; another project's agents are history.
         let sibling = agent("sibling", .working, tool: "Read", conversation: "d")
@@ -689,10 +1162,25 @@ import simd
         for (i, a) in tags.enumerated() { for b in tags.dropFirst(i + 1) { #expect(!a.intersects(b)) } }
     }
 
+    @Test func crowdedTagsKeepTheOneThatNeedsYouOpen() throws {
+        let view = KitchenSceneView(frame: CGRect(x: 0, y: 0, width: 1000, height: 700))
+        view.layoutSubtreeIfNeeded(); view.fitFloor()
+        // Everyone waiting at the bell stands close together.
+        let cast = [agent("w", .waiting, attention: .input, conversation: "c1")] + (0..<4).map { agent("x\($0)", .working, tool: "Read", conversation: "d\($0)") }
+        view.apply(agents: cast, active: false, reducedMotion: true)
+        let waiting = try #require(view.chefLabels[cast[0].id])
+        #expect(waiting.mode == .full)
+        let frames = view.chefLabels.values.map(\.frame)
+        for (i, a) in frames.enumerated() { for b in frames.dropFirst(i + 1) { #expect(!a.intersects(b)) } }
+    }
+
     @Test func kitchenViewReconcilesChefsAndPlaysOnlyWhileActive() throws {
         let view = KitchenSceneView(frame: CGRect(x: 0, y: 0, width: 1000, height: 700))
         view.apply(agents: [], active: true, reducedMotion: false)
-        #expect(view.chefs.isEmpty && !view.isPlaying)
+        // No chefs, but the restaurant's guests keep it moving while it's on screen.
+        #expect(view.chefs.isEmpty && view.isPlaying)
+        view.apply(agents: [], active: false, reducedMotion: false)
+        #expect(!view.isPlaying)
         let agents = [agent("a", .working, tool: "Edit"), agent("b", .working, tool: "Read"), agent("c", .waiting, attention: .input)]
         view.apply(agents: agents, active: true, reducedMotion: false)
         #expect(view.chefs.count == 3)
@@ -704,6 +1192,133 @@ import simd
         let crowd = (0..<20).map { agent("x\($0)", .working, tool: "Edit") }
         view.apply(agents: crowd, active: false, reducedMotion: false)
         #expect(view.chefs.count == 20)
+    }
+
+    /// The scene as a PNG with its emoji bubbles drawn over it (`snapshot` renders the 3D view only).
+    private func composited(_ view: KitchenSceneView) throws -> Data {
+        let image = view.snapshot()
+        let canvas = NSImage(size: view.bounds.size)
+        canvas.lockFocus()
+        image.draw(in: view.bounds)
+        for placed in view.subviews.compactMap({ $0 as? ChefBubbleView }) where !placed.isHidden {
+            // Drawn from a stand-alone copy: inside the scene view, caching would start from the
+            // opaque scene view behind it (black offscreen), unlike the composited window.
+            let bubble = ChefBubbleView(frame: placed.frame); bubble.show(placed.emoji, now: 0, reducedMotion: true)
+            let rep = try #require(bubble.bitmapImageRepForCachingDisplay(in: bubble.bounds))
+            // The caching buffer starts uncleared: clear it so the bubble keeps its transparency.
+            NSGraphicsContext.saveGraphicsState(); NSGraphicsContext.current = NSGraphicsContext(bitmapImageRep: rep)
+            NSColor.clear.set(); bubble.bounds.fill(using: .copy); NSGraphicsContext.restoreGraphicsState()
+            bubble.cacheDisplay(in: bubble.bounds, to: rep)
+            let frame = view.isFlipped ? CGRect(x: placed.frame.minX, y: view.bounds.height - placed.frame.maxY, width: placed.frame.width, height: placed.frame.height) : placed.frame
+            rep.draw(in: frame, from: .zero, operation: .sourceOver, fraction: 1, respectFlipped: true, hints: nil)
+        }
+        canvas.unlockFocus()
+        let tiff = try #require(canvas.tiffRepresentation)
+        return try #require(NSBitmapImageRep(data: tiff)?.representation(using: .png, properties: [:]))
+    }
+
+    /// A ten-second demo of the break room (DIORAMA_KITCHEN_DEMO=1): the camera close over the room,
+    /// chefs at the machines, in the chairs and chatting with emoji bubbles, a machine changing
+    /// hands, and a chef who just finished tasting running in to rest. Frames go to
+    /// .local/demo/frames (1920 x 1080 at 30 fps); encode them with ffmpeg.
+    @Test func recordBreakRoomDemo() throws {
+        guard ProcessInfo.processInfo.environment["DIORAMA_KITCHEN_DEMO"] == "1" else { return }
+        let folder = URL(fileURLWithPath: #filePath).deletingLastPathComponent().appendingPathComponent("../../.local/demo/frames").standardized
+        try? FileManager.default.removeItem(at: folder)
+        try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
+        let view = KitchenSceneView(frame: CGRect(x: 0, y: 0, width: 960, height: 540))
+        var clock = 100.0
+        func step(_ dt: Double) {
+            clock += dt
+            for chef in view.chefs.values { chef.update(Float(dt)) }
+            view.pace(now: clock); view.updateBreakRoom(now: clock)
+        }
+        let resting = (0..<9).map { agent("r\($0)", .done, freshness: .lastKnown, conversation: "rest\($0)") }
+        // The newcomer works at the Tasting pass (it hands out nothing to carry) until it finishes.
+        let cook = agent("cook", .working, tool: "Bash", detail: "swift test", edits: true, conversation: "cooking")
+        view.apply(agents: resting + [cook], active: false, reducedMotion: false, now: clock)
+        view.layoutSubtreeIfNeeded(); view.fitFloor()
+        for _ in 0..<(20 * 30) { step(1 / 30) }            // everyone settles
+        // Start so the first machine hand-over lands about halfway through the clip.
+        let swap = view.breakRoom.members.values.compactMap(\.turnEnds).min() ?? clock
+        let finished = agent("cook", .done, freshness: .lastKnown, conversation: "cooking")
+        for _ in 0..<Int(max(0, swap - 9.5 - clock) * 30) { step(1 / 30) }
+        // It finishes and sets off across the kitchen, arriving on camera early in the clip.
+        view.apply(agents: resting + [finished], active: false, reducedMotion: false, now: clock)
+        for _ in 0..<(4 * 30) { step(1 / 30) }
+        let camera = try #require(view.pointOfView)
+        let center = SIMD3<Float>(-7.6, 0.9, 5.65), elevation: Float = 62 * .pi / 180
+        let frames = 300
+        for frame in 0..<frames {
+            step(1 / 30)
+            // A slow push in over the clip.
+            let distance = 8.6 - 0.9 * Float(frame) / Float(frames)
+            camera.simdPosition = center + SIMD3(0, distance * sin(elevation), distance * cos(elevation))
+            camera.simdLook(at: center)
+            view.placeBubbles(now: clock)
+            try composited(view).write(to: folder.appendingPathComponent(String(format: "f%04d.png", frame)))
+        }
+        #expect(view.chefs["cook"]?.director.intent?.station?.area == "break" || view.chefs.values.contains { $0.id.hasSuffix("cook") })
+    }
+
+    /// The break room with ten resting chefs at the machines, in the chairs and chatting, with
+    /// their emoji bubbles drawn over the scene (DIORAMA_KITCHEN_CAPTURE=1; /tmp/diorama-kitchen-lounge*.png).
+    @Test func captureBreakRoom() throws {
+        guard ProcessInfo.processInfo.environment["DIORAMA_KITCHEN_CAPTURE"] == "1" else { return }
+        let view = KitchenSceneView(frame: CGRect(x: 0, y: 0, width: 1400, height: 900))
+        var clock = 100.0
+        func step(_ seconds: Double) {
+            for _ in 0..<Int(seconds * 10) {
+                clock += 0.1
+                for chef in view.chefs.values { chef.update(0.1) }
+                view.pace(now: clock); view.updateBreakRoom(now: clock)
+            }
+        }
+        func shot(_ name: String) throws {
+            view.layoutSubtreeIfNeeded(); view.fitFloor(); view.placeBubbles(now: clock)
+            try composited(view).write(to: URL(fileURLWithPath: "/tmp/diorama-kitchen-\(name).png"))
+        }
+        view.apply(agents: (0..<10).map { agent("r\($0)", .done, freshness: .lastKnown, conversation: "rest\($0)") }, active: false, reducedMotion: false, now: clock)
+        step(24)
+        try shot("lounge")
+        step(9.3)
+        try shot("lounge-later")
+        for _ in 0..<300 where view.bubbleEmoji.count < 2 { step(0.1); view.placeBubbles(now: clock) }
+        try shot("lounge-bubbles")
+    }
+
+    /// The gong and the manager: a chef mid-strike, then the manager talking with it while a
+    /// second chef waits (DIORAMA_KITCHEN_CAPTURE=1; /tmp/diorama-kitchen-gong-*.png).
+    @Test func captureGongAndManager() throws {
+        guard ProcessInfo.processInfo.environment["DIORAMA_KITCHEN_CAPTURE"] == "1" else { return }
+        let view = KitchenSceneView(frame: CGRect(x: 0, y: 0, width: 1400, height: 900))
+        var clock = 100.0
+        func step(_ seconds: Double) {
+            for _ in 0..<Int(seconds * 30) {
+                clock += 1 / 30
+                for chef in view.chefs.values { chef.update(1 / 30) }
+                view.manager?.update(1 / 30)
+                view.pace(now: clock); view.updateManager(); view.updateGong()
+            }
+        }
+        func shot(_ name: String) throws {
+            view.layoutSubtreeIfNeeded(); view.fitFloor()
+            let tiff = try #require(view.snapshot().tiffRepresentation)
+            try #require(NSBitmapImageRep(data: tiff)?.representation(using: .png, properties: [:])).write(to: URL(fileURLWithPath: "/tmp/diorama-kitchen-gong-\(name).png"))
+        }
+        let cooks = [agent("a", .working, tool: "Edit", edits: true, conversation: "g1"), agent("b", .working, tool: "Read", conversation: "g2")]
+        view.apply(agents: cooks, active: false, reducedMotion: false, now: clock)
+        step(0.5)
+        view.apply(agents: [agent("a", .waiting, attention: .approval, edits: true, conversation: "g1"), cooks[1]], active: false, reducedMotion: false, now: clock)
+        let chef = try #require(view.chefs[cooks[0].id])
+        for _ in 0..<600 where chef.director.gongStrikes == 0 { step(1 / 30) }
+        try shot("strike")
+        view.apply(agents: [agent("a", .waiting, attention: .approval, edits: true, conversation: "g1"), agent("b", .failed, conversation: "g2")],
+                   active: false, reducedMotion: false, now: clock)
+        for _ in 0..<300 where view.managerTalking == nil { step(0.1) }
+        step(2.2)
+        view.manager?.root.removeAllActions(); view.manager?.root.opacity = 1 // actions only run while the view plays
+        try shot("talk")
     }
 
     @Test func captureKitchenWithChefs() throws {
@@ -750,7 +1365,7 @@ import simd
             view.apply(agents: cast, active: false, reducedMotion: true)
             for chef in view.chefs.values { for _ in 0..<30 { chef.update(1 / 30) } }
             for (id, emote) in zip(["e1", "e2", "e3", "e4", "e5"], [ChefEmote.note, .check, .thinking, .plus, .idea]) {
-                view.chefEmotes[cast.first { $0.value.id == id }!.id]?.react([emote])
+                view.chefLabels[cast.first { $0.value.id == id }!.id]?.react([emote])
             }
             view.layoutSubtreeIfNeeded(); view.fitFloor()
             view.apply(agents: cast, active: false, reducedMotion: true)
@@ -761,7 +1376,7 @@ import simd
                                                  space: CGColorSpace(name: CGColorSpace.sRGB)!, bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue))
             context.draw(scene, in: CGRect(x: 0, y: 0, width: scene.width, height: scene.height))
             context.interpolationQuality = .none
-            for overlay in view.subviews where !overlay.isHidden && (overlay is ChefTagView || overlay is ChefEmoteView) {
+            for overlay in view.subviews where !overlay.isHidden && overlay is ChefTagView {
                 guard let layer = overlay.layer else { continue }
                 context.saveGState()
                 let y = view.isFlipped ? view.bounds.height - overlay.frame.maxY : overlay.frame.minY
@@ -828,29 +1443,18 @@ extension ChefKitchenTests {
         #expect(!ChefMoment.silent(quiet, now: now))
     }
 
-    @Test func emotesQueueOneAtATimeAndReturnToTheLastingState() throws {
-        let view = ChefEmoteView(frame: .zero)
-        view.setLasting(.star)
-        #expect(view.showing == .star)
-        let now = Date()
-        view.react([.note, .alert, .check], now: now)
-        // Highest priority first; the others wait their turn.
-        #expect(view.showing == .alert)
-        // Repeats within a few seconds are dropped.
-        view.react([.alert], now: now.addingTimeInterval(1))
-        #expect(view.showing == .alert)
-        #expect(ChefEmote.image(ChefEmote.check.glyph, color: ChefEmote.check.color)?.width == 13)
-    }
-
-    @Test func emotesSitAboveTheirTagAndHideWithIt() throws {
+    @Test func momentsMoveTheTagOnlyWithMotionAllowed() throws {
         let view = KitchenSceneView(frame: CGRect(x: 0, y: 0, width: 1000, height: 700))
         let waiting = agent("w", .waiting, attention: .approval), cook = agent("c", .working, tool: "Edit", edits: true)
         view.apply(agents: [waiting, cook], active: false, reducedMotion: false)
-        let emote = try #require(view.chefEmotes[waiting.id]), tag = try #require(view.chefLabels[waiting.id])
-        #expect(emote.lasting == .alert && !emote.isHidden)
-        #expect(emote.frame.midX == tag.frame.midX)
-        #expect(view.isFlipped ? emote.frame.maxY <= tag.frame.minY : emote.frame.minY >= tag.frame.maxY)
-        #expect(view.chefEmotes[cook.id]?.lasting == nil)
+        let tag = try #require(view.chefLabels[waiting.id])
+        #expect(tag.content?.phase == .approval && tag.mode == .full && !tag.isHidden)
+        // Needing you pulses; Reduce Motion stills everything.
+        func animated(_ view: NSView) -> Bool { !(view.layer?.animationKeys() ?? []).isEmpty || view.subviews.contains(where: animated) }
+        #expect(animated(tag))
+        view.apply(agents: [waiting, cook], active: false, reducedMotion: true)
+        tag.react([.alert])
+        #expect(!animated(tag))
     }
 }
 
@@ -870,12 +1474,28 @@ extension ChefKitchenTests {
         #expect(TaskLabel.prompt(task, latest: "Add a moon").contains("Latest request: <latest>Add a moon</latest>"))
     }
 
-    @Test func theProgressBarSitsBetweenTheTagAndTheChefOnlyWithAList() throws {
+    @Test func choppingHappensOnTheChoppedBoard() throws {
+        let view = KitchenSceneView(frame: CGRect(x: 0, y: 0, width: 1000, height: 700))
+        let cook = agent("c", .working, tool: "Edit", edits: true)
+        view.apply(agents: [cook], active: false, reducedMotion: true, now: 0)
+        let chef = try #require(view.chefs[cook.id])
+        // Let it reach its board and start chopping.
+        var t = 0.0
+        for _ in 0..<600 where chef.director.clip.name != "working_chop" { t += 1 / 30; chef.update(1 / 30); view.renderer(view, updateAtTime: t) }
+        for _ in 0..<3 { chef.update(1 / 30) }
+        #expect(chef.director.station?.area == "cooking" && chef.director.clip.name == "working_chop")
+        #expect(chef.choppingOnBoard && chef.dishPlacement != "board")
+        view.updateBoards()
+        #expect(!view.idleBoards.contains(try #require(chef.director.station?.id)))
+    }
+
+    @Test func theProgressBarShowsOneBlockPerStepUnderThePill() throws {
         let view = KitchenSceneView(frame: CGRect(x: 0, y: 0, width: 1000, height: 700))
         var cook = agent("c", .working, tool: "Edit", edits: true)
         view.apply(agents: [cook], active: false, reducedMotion: false)
-        let bar = try #require(view.chefBars[cook.id]), tag = try #require(view.chefLabels[cook.id])
-        #expect(bar.isHidden && bar.fraction == nil)
+        let tag = try #require(view.chefLabels[cook.id]), bar = tag.bar
+        // Working without a list: a sweep, not a fraction.
+        #expect(!bar.isHidden && bar.progress == .sweep)
         func step(_ status: String) -> SessionActivityRecord {
             SessionActivityRecord(id: UUID().uuidString, provider: "Claude", sessionID: "s", turnID: "t", nativeID: UUID().uuidString, kind: "step",
                                   title: "Step", status: status, detail: "", source: "test", observedAt: Date(), data: .null)
@@ -884,12 +1504,12 @@ extension ChefKitchenTests {
         snapshot.records = [step("completed"), step("inProgress"), step("pending"), step("pending")]
         cook.value.plan = AgentPlan.reported(in: snapshot, provider: "Claude", sessionID: "s", currentTurn: "t")
         view.apply(agents: [cook], active: false, reducedMotion: false)
-        #expect(!bar.isHidden && bar.fraction == 0.25)
-        let emote = try #require(view.chefEmotes[cook.id])
-        // Emote above the tag, the bar below it (nearer the head), all centred.
-        #expect(bar.frame.midX == tag.frame.midX)
-        if view.isFlipped { #expect(bar.frame.minY >= tag.frame.maxY) } else { #expect(bar.frame.maxY <= tag.frame.minY) }
-        _ = emote
+        // One block per step, the done ones filled, right under the pill and as wide as it.
+        #expect(!bar.isHidden && bar.progress == .steps(done: 1, total: 4) && bar.blocks == 4 && bar.filled == 1)
+        #expect(bar.frame.minY == tag.pillFrame.maxY + ChefTagView.barGap && bar.frame.width == tag.pillFrame.width)
+        // Idle: the name and its latest task, no bar.
+        view.apply(agents: [agent("c", .ready)], active: false, reducedMotion: false)
+        #expect(tag.mode == .compact && bar.isHidden && tag.alphaValue == 1)
     }
 }
 
@@ -917,7 +1537,7 @@ extension ChefKitchenTests {
         #expect(detailedEntries == 3)
         // At the bell with a question emote.
         var waiting = agent("a", .done); waiting.value.status = .waiting; waiting.value.attentionReason = .input
-        #expect(KitchenLayout.work(for: waiting.value).area == "bell" && ChefEmote.lasting(waiting, review: nil) == .question)
+        #expect(KitchenLayout.work(for: waiting.value).area == "bell" && ChefTagContent.make(waiting, review: nil).phase == .waiting)
     }
 }
 
@@ -1173,11 +1793,18 @@ extension ChefKitchenTests {
             try image.tiffRepresentation.flatMap { NSBitmapImageRep(data: $0)?.representation(using: .png, properties: [:]) }?
                 .write(to: URL(fileURLWithPath: path + name + ".png"))
         }
+        // A few seconds in: the guests settle into what they're doing.
+        for step in 0..<(30 * 7) {
+            view.serveDiners(now: Double(step) / 30)
+            for diner in view.diners { diner.update(1 / 30) }
+        }
         try save("home")
         eye0: do {
             let eye = SCNNode(); eye.camera = view.pointOfView?.camera?.copy() as? SCNCamera
             view.scene?.rootNode.addChildNode(eye); renderer.pointOfView = eye
             eye.position = SCNVector3(9, 5, 17); eye.look(at: SCNVector3(8, 0.8, 11.5)); try save("diners")
+            // Close on the guests along the right-hand side.
+            eye.position = SCNVector3(8.5, 4.2, 3.5); eye.look(at: SCNVector3(13.6, 0.9, -0.5)); try save("guests")
             renderer.pointOfView = view.pointOfView
         }
         // Looking back from the terrace, and from the canal side.
@@ -1216,6 +1843,12 @@ extension ChefKitchenTests {
         #expect(chef.director.placedPlate != nil)
         view.serveDiners(now: 1)
         #expect(view.servedSeats["served"] == 0)
+        // The served dish takes the place of the food on that table; the guest cheers, then eats.
+        #expect(view.tablePlates[0]?.isHidden == true)
+        #expect(view.guests.seats[0].clip == RestaurantGuests.cheer)
+        #expect(view.diners[0].director.intent?.oneShot?.clip == RestaurantGuests.cheer)
+        view.serveDiners(now: 3)
+        #expect(view.guests.seats[0].clip == RestaurantGuests.eat)
         // Accepted: the chef leaves the pass; the diner finishes eating, then the table clears.
         view.reviews = ["served": .approved]
         view.apply(agents: [done], active: false, reducedMotion: false, now: 2)
@@ -1224,5 +1857,59 @@ extension ChefKitchenTests {
         #expect(view.servedSeats["served"] == 0)
         view.serveDiners(now: 3 + KitchenSceneView.dinerLinger + 1)
         #expect(view.servedSeats["served"] == nil)
+        #expect(view.tablePlates[0]?.isHidden == false)
+    }
+
+    @Test func theRestaurantSeatsEveryGuestWithFoodOnEveryTable() throws {
+        let view = KitchenSceneView(frame: CGRect(x: 0, y: 0, width: 1000, height: 700))
+        let assets = try ChefAssets.shared.get()
+        #expect(assets.guests.count == 10)
+        #expect(view.diners.count == KitchenSceneView.dinerCount)
+        let worn = view.diners.map(\.character)
+        #expect(Set(worn) == Set(assets.guests.map(\.id)), "every guest is seated at least once")
+        #expect(view.tablePlates.count == view.diners.count && view.tablePlates.allSatisfy { $0 != nil })
+        // The two repeats never share a table with their twin.
+        for (seat, partner) in view.guests.partners.enumerated() {
+            if let partner { #expect(worn[seat] != worn[partner]) }
+        }
+        // Guests are drawn but never picked as chefs.
+        for diner in view.diners { #expect(diner.root.categoryBitMask == KitchenSceneView.dinerCategory) }
+        // Each guest is the right character on the chef's skeleton.
+        for guest in assets.guests { #expect(assets.rig(for: guest.id).nodeNames == assets.rig.nodeNames) }
+    }
+
+    @Test func guestsChatOnTheirOwnClocksAndTakeTurns() throws {
+        let durations = try ChefAssets.shared.get().manifest.clips.mapValues { Double($0.duration) }
+        // Two tables of two.
+        let positions: [SIMD3<Float>] = [SIMD3(0, 1, 0), SIMD3(1, 1, 0), SIMD3(10, 1, 0), SIMD3(11, 1, 0)]
+        var guests = RestaurantGuests(positions: positions, durations: durations)
+        #expect(guests.partners == [1, 0, 3, 2])
+        var seen: [Set<String>] = Array(repeating: [], count: 4)
+        var changes: [[Double]] = Array(repeating: [], count: 4)
+        var bothTalking = 0, samples = 0
+        for step in 0..<(600 * 10) {
+            let now = Double(step) / 10
+            for seat in guests.update(now: now) { seen[seat].insert(guests.seats[seat].clip); changes[seat].append(now) }
+            for (a, b) in [(0, 1), (2, 3)] {
+                samples += 1
+                if RestaurantGuests.talking.contains(guests.seats[a].clip) && RestaurantGuests.talking.contains(guests.seats[b].clip) { bothTalking += 1 }
+            }
+        }
+        // Everyone does a bit of everything: talks, eats, laughs.
+        for clips in seen { #expect(clips.isSuperset(of: ["sit_talk", "sit_eat", "sit_laugh"])) }
+        // Not in lockstep: their changes don't line up.
+        #expect(Set(changes[0]) != Set(changes[1]) && Set(changes[0]) != Set(changes[2]))
+        // Partners rarely talk over each other.
+        #expect(Double(bothTalking) / Double(samples) < 0.2)
+    }
+
+    @Test func guestCastingRepeatsAsFarApartAsPossible() {
+        let seats = (0..<12).map { SIMD3<Float>(Float($0 / 2) * 4, 1, Float($0 % 2)) }
+        let cast = RestaurantGuests.cast((0..<10).map { "g\($0)" }, seats: seats)
+        #expect(cast.count == 12 && Set(cast).count == 10)
+        for guest in Set(cast) {
+            let at = cast.indices.filter { cast[$0] == guest }
+            if at.count == 2 { #expect(simd_distance(seats[at[0]], seats[at[1]]) > 4) }
+        }
     }
 }

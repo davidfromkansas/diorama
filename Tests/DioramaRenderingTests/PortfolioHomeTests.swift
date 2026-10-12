@@ -148,25 +148,8 @@ import Testing
         let larger = surface.project(u: 0.2, v: 0.8, width: 200, height: 200)
         #expect(larger.x == first.x * 2 && larger.y == first.y * 2)
         #expect(surface.contains(u: 0, v: 1) && !surface.contains(u: -0.1, v: 0))
-        #expect(PortfolioHomeView.columnCount(width: 1039) == 1)
-        #expect(PortfolioHomeView.columnCount(width: 1040) == 2)
     }
-    @Test func compactGridRendersLongNamesAndLargeRosters() throws {
-        let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
-        defer { try? FileManager.default.removeItem(at: root) }
-        let model = model(root)
-        let projects = (0..<100).map { SpatialProject(id: "p\($0)", name: $0 == 0 ? "A long project name that needs two lines of readable text" : "Project \($0)", teams: []) }
-        for width in [430, 800, 1100] {
-            let host = NSHostingView(rootView: PortfolioHomeView(library: model, projects: projects, active: false, select: { _ in }))
-            host.frame = NSRect(x: 0, y: 0, width: width, height: 720)
-            host.layoutSubtreeIfNeeded()
-            let bitmap = try #require(host.bitmapImageRepForCachingDisplay(in: host.bounds))
-            host.cacheDisplay(in: host.bounds, to: bitmap)
-            let png = try #require(bitmap.representation(using: .png, properties: [:]))
-            try png.write(to: URL(fileURLWithPath: "/tmp/diorama-portfolio-\(width).png"))
-        }
-    }
-    @Test func homeUsageShowsWeeklyLimitsAndSevenDayTokenFlow() async throws {
+    @Test func homeUsageShowsWeeklyLimitsAndDailyTokens() async throws {
         let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
         try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
         defer { try? FileManager.default.removeItem(at: root) }
@@ -185,6 +168,8 @@ import Testing
         #expect(Set(home.byPlan.map(\.name)) == ["ChatGPT Pro", "Claude"])
         #expect(home.weekly[.codex]?.leftPercent == 77)
         #expect(home.weekly[.claude] == nil)
+        // Home's cards draw each project's last seven days, ending today.
+        #expect(home.projectDays.values.first?.count == 7 && home.projectDays.values.first?.last == TokenSplit(input: 1400, output: 70))
         // Sessions outside every Diorama project still count, grouped by their folder.
         let elsewhere = root.appendingPathComponent("elsewhere")
         try FileManager.default.createDirectory(at: elsewhere, withIntermediateDirectories: true)
@@ -197,40 +182,5 @@ import Testing
         // With no projects at all, every recent session is grouped by its folder.
         #expect(Set(model.portfolio.home.byProject.map(\.name)) == [root.lastPathComponent, "elsewhere"])
         #expect(model.portfolio.home.tokens == TokenSplit(input: 2400, output: 120))
-        let view = NSHostingView(rootView: HomeUsagePanel(home: home).frame(height: 800))
-        view.frame = NSRect(x: 0, y: 0, width: 340, height: 800); view.layoutSubtreeIfNeeded()
-        #expect(view.fittingSize.width > 0)
-        let layout = SankeyLayout(input: 1400, output: 70, nodes: home.byPlan.map(\.tokens), size: CGSize(width: 300, height: 140))
-        #expect(layout.right.count == 2 && layout.ribbons.count == 4)
-        #expect(abs(layout.right.last!.maxY - 140) < 3)
-        #expect(StaminaRow.countdown(2 * 86_400 + 3 * 3600 + 60) == "2d 3h")
-        let crowded = SankeyLayout(input: 1000, output: 10, nodes: [TokenSplit(input: 960)] + Array(repeating: TokenSplit(input: 8, output: 2), count: 5), size: CGSize(width: 300, height: 168))
-        #expect(zip(crowded.labels, crowded.labels.dropFirst()).allSatisfy { $1 - $0 >= 14.9 })
-        #expect(crowded.labels.last! <= 168)
-    }
-    @Test func agentStatusCountsMainAgentsAcrossProjects() throws {
-        func agent(_ conversation: String, _ status: WorkspaceAgentStatus, id: String = "main", reason: WorkspaceAttentionReason = .other, project: String = "p1") -> SpatialAgent {
-            var value = WorkspaceAgent(id: id, name: id, provider: "Codex", task: "Task", action: "Act", status: status, reportedStatus: status.rawValue, freshness: .live)
-            value.attentionReason = reason; value.completionKey = conversation
-            return SpatialAgent(projectID: project, conversationID: conversation, value: value)
-        }
-        func team(_ agents: [SpatialAgent]) -> SpatialTeam {
-            let id = agents[0].conversationID
-            return SpatialTeam(projectID: agents[0].projectID, session: Session(id: id, provider: .codex, url: nil, sessionID: id, title: id, project: "/tmp", modified: Date(), bytes: 0, archived: false, parentID: nil), agents: agents)
-        }
-        let first = SpatialProject(id: "p1", name: "One", teams: [
-            team([agent("a", .working), agent("a", .working, id: "sub")]),
-            team([agent("b", .waiting, reason: .approval)]),
-            team([agent("c", .waiting, reason: .input)])])
-        let second = SpatialProject(id: "p2", name: "Two", teams: [
-            team([agent("d", .failed, project: "p2")]), team([agent("e", .done, project: "p2")])])
-        let unseen = AgentStatusCounts.make([first, second]) { _ in false }
-        #expect(unseen.running == 1 && unseen.waiting == 3 && unseen.unread == 1)
-        #expect(unseen.breakdown == "1 approval · 1 question · 1 failed")
-        let seen = AgentStatusCounts.make([first, second]) { _ in true }
-        #expect(seen.waiting == 2 && seen.unread == 0 && seen.failures == 0)
-        let view = NSHostingView(rootView: HomeUsagePanel(home: HomeUsage(), status: unseen).frame(height: 800))
-        view.frame = NSRect(x: 0, y: 0, width: 340, height: 800); view.layoutSubtreeIfNeeded()
-        #expect(view.fittingSize.width > 0)
     }
 }

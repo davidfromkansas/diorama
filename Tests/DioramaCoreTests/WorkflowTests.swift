@@ -291,7 +291,15 @@ private actor WorkflowStub: ExecutionTransport {
         #expect(restored.tasks["test"]?.workflow.queueUncertain == true)
         #expect(restored.tasks["test"]?.workflow.steeredQueueIDs == ["queued-uncertain"])
         #expect(restored.queueAutoStart.isEmpty)
+        // Restored idle and detached, with no warning: Send reconnects on its own.
+        #expect(restored.tasks["test"]?.phase == .disconnected && restored.tasks["test"]?.error == nil)
+        #expect(restored.tasks["test"]?.busy == false)
+        let earlier = ActivityEvent(id: "earlier", provider: "Codex", sessionID: "test", kind: "finished", source: "Transcript", recordedAt: Date(timeIntervalSince1970: 1_700_000_000), state: .finished)
+        restored.tasks["test"]?.activity = [earlier]
         try await restored.resumeImported(try #require(restored.tasks["test"]?.session))
+        // Reconnecting keeps what the conversation already reported.
+        #expect(restored.tasks["test"]?.activity.map(\.id) == ["earlier"])
+        #expect(restored.tasks["test"]?.attached == true && restored.tasks["test"]?.phase == .ready)
         #expect(restored.tasks["test"]?.workflow.queueUncertain == true)
         #expect(restored.tasks["test"]?.workflow.steeredQueueIDs == ["queued-uncertain"])
     }

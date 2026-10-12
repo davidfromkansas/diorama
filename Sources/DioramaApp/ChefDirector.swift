@@ -30,6 +30,8 @@ nonisolated struct ChefIntent: Equatable, Sendable {
     var urgent = false
     /// A gesture played where the chef stands before it sets off (arrival wave, celebration).
     var prelude: String? = nil
+    /// Strike the gong here on the way to `station` (a chef that needs you calls for you).
+    var strike: ChefStation? = nil
 }
 
 nonisolated struct ChefClipCommand: Equatable, Sendable {
@@ -52,6 +54,8 @@ nonisolated final class ChefDirector: @unchecked Sendable {
     static let turnRate: Float = 9, acceleration: Float = 6
     static let fade: Float = 0.22, urgentFade: Float = 0.12, locomotionFade: Float = 0.15
     static let locomotionClips: Set<String> = ["walk", "run", "carry_walk"]
+    /// Break-room gestures that end with something in hand (`ChefIntent.hand`), taken from the machine.
+    static let machineGestures: Set<String> = ["use_vending", "brew_espresso"]
 
     let clips: [String: ChefManifest.Clip]
     /// World units per chef unit: speeds and tolerances scale with the rendered chef.
@@ -74,11 +78,16 @@ nonisolated final class ChefDirector: @unchecked Sendable {
     var carriesJar = false
     /// The plate left on the pass after presenting; cleared when the chef moves on.
     private(set) var placedPlate: ChefStation?
+    /// Walks everywhere instead of running (the manager).
+    var strolls = false
+    /// Times its mallet has hit the gong; the kitchen sets the gong shivering on each.
+    private(set) var gongStrikes = 0
 
     private enum Step {
         case goto(ChefStation, carry: Bool)
         case face(Float, carry: Bool)
         case grab(ChefProp)
+        case release(ChefProp)
         case once(String, markers: [String: () -> Void], interrupted: (() -> Void)?)
         case loop(String)
     }
@@ -104,6 +113,7 @@ nonisolated final class ChefDirector: @unchecked Sendable {
             case let .goto(station, _): "goto:\(station.area)"
             case let .face(_, carry): carry ? "face:carry" : "face"
             case let .grab(prop): "grab:\(prop.rawValue)"
+            case let .release(prop): "release:\(prop.rawValue)"
             case let .once(clip, _, _): "once:\(clip)"
             case let .loop(clip): "loop:\(clip)"
             }
@@ -143,16 +153,25 @@ nonisolated final class ChefDirector: @unchecked Sendable {
         }
         if let target = next.station {
             let carry = next.pickup != nil || (held.contains(.plate) && next.oneShot?.clip == "present_review") || carriesJar
+            if let strike = next.strike, next.oneShot?.restored == false, !reducedMotion {
+                // Over to the gong, one good strike, the mallet back on its hook, then on to wait.
+                let hit = { [weak self] in self?.gongStrikes += 1; return }
+                plan += [.goto(strike, carry: false), .face(strike.facing, carry: false), .grab(.mallet),
+                         .once("strike_gong", markers: ["impact": hit], interrupted: nil), .release(.mallet)]
+            }
             if let pickup = next.pickup, !held.contains(.plate) {
                 plan += [.goto(pickup, carry: false), .face(pickup.facing, carry: false),
                          .once("pickup", markers: ["attach": { [weak self] in self?.held.insert(.plate) }], interrupted: nil)]
             }
             if station != target || simd_distance(position, target.stand) > 0.05 * unit { plan.append(.goto(target, carry: carry)) }
             plan.append(.face(target.facing, carry: carry))
-            if let hand = next.hand { plan.append(.grab(hand)) }
+            // What a machine hands out (a can, a coffee) is held once the gesture took it.
+            let fromMachine = next.oneShot.map { Self.machineGestures.contains($0.clip) && !$0.restored && !reducedMotion } ?? false
+            if let hand = next.hand, !fromMachine { plan.append(.grab(hand)) }
         }
         if let shot = next.oneShot, !shot.restored, !reducedMotion {
             plan.append(oneShotStep(shot.clip, at: next.station))
+            if Self.machineGestures.contains(shot.clip), let hand = next.hand { plan.append(.grab(hand)) }
         } else if next.oneShot != nil {
             applyOutcome(next) // jump to the end state without replaying the gesture
         }
@@ -216,7 +235,7 @@ nonisolated final class ChefDirector: @unchecked Sendable {
         case let .goto(_, carry), let .face(_, carry):
             // While turning in place keep a stationary loop; walking settles to idle.
             play(carry ? "carry_idle" : Self.locomotionClips.contains(clip.name) ? "idle_available" : clip.name, fade: fade)
-        case .grab: break
+        case .grab, .release: break
         }
     }
 
@@ -247,6 +266,9 @@ nonisolated final class ChefDirector: @unchecked Sendable {
                 advance()
             case let .grab(prop):
                 held.insert(prop)
+                advance()
+            case let .release(prop):
+                held.remove(prop)
                 advance()
             case let .once(name, markers, _):
                 let meta = clips[name]
@@ -283,7 +305,7 @@ nonisolated final class ChefDirector: @unchecked Sendable {
         // Chefs keep pace with their agents: they run anywhere they go (a plate is carried at a
         // brisk walk), easing into a walk only for the last step.
         _ = remaining
-        let run = !carry
+        let run = !carry && !strolls
         let top = (run ? Self.runSpeed : Self.walkSpeed * 1.3) * unit
         let wanted = min(top, final ? distance * 3 : top) * max(0, cos(error))
         speed += max(-Self.acceleration * unit * dt * 2, min(Self.acceleration * unit * dt, wanted - speed))

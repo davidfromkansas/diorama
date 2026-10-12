@@ -157,8 +157,9 @@ extension View {
 /// A color-scheme environment alone leaves AppKit's translucent popover material intact.
 private struct MessagesPopoverSurface: ViewModifier {
     @Environment(\.opaqueMessagesPopovers) private var opaque
+    @Environment(\.avatarMessages) private var avatarMessages
     func body(content: Content) -> some View {
-        if opaque {
+        if opaque || avatarMessages {
             content.background(Color.white)
                 .presentationBackground(Color.white)
                 .preferredColorScheme(.light)

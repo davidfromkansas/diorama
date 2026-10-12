@@ -5,11 +5,20 @@ build_path="${DIORAMA_BUILD_PATH:-$PWD/.build}"
 configuration="${DIORAMA_BUILD_CONFIGURATION:-release}"
 [[ "$configuration" == "debug" || "$configuration" == "release" ]] || { echo "Invalid build configuration" >&2; exit 1; }
 swift build -c "$configuration" --scratch-path "$build_path"
+# Local builds sign with a stable self-signed certificate when one exists ("Diorama Development",
+# or DIORAMA_DEV_SIGN_IDENTITY): macOS then sees every rebuild as the same app, so the GitHub login
+# Diorama keeps in the Keychain survives rebuilds. Without one they are signed ad hoc, as before
+# (each rebuild is a new app to the Keychain). Release packaging signs separately.
+sign_identity="${DIORAMA_DEV_SIGN_IDENTITY:-}"
+if [[ -z "$sign_identity" ]]; then
+  sign_identity=$(/usr/bin/security find-identity -p codesigning 2>/dev/null | /usr/bin/awk '/"Diorama Development"/ { print $2; exit }')
+fi
+sign_identity="${sign_identity:--}"
 app_path="${DIORAMA_APP_PATH:-$PWD/dist/Diorama.app}"
 mkdir -p "$app_path/Contents/MacOS"
 cp "$build_path/$configuration/Diorama" "$app_path/Contents/MacOS/Diorama"
 cp "$build_path/$configuration/DioramaReporter" "$app_path/Contents/MacOS/DioramaReporter"
-codesign --force --sign - "$app_path/Contents/MacOS/DioramaReporter"
+codesign --force --sign "$sign_identity" "$app_path/Contents/MacOS/DioramaReporter"
 mkdir -p "$app_path/Contents/Frameworks"
 sparkle="$build_path/artifacts/sparkle/Sparkle/Sparkle.xcframework/macos-arm64_x86_64/Sparkle.framework"
 /usr/bin/ditto "$sparkle" "$app_path/Contents/Frameworks/Sparkle.framework"
@@ -72,6 +81,6 @@ fi
 # Strip extended attributes from this build output before signing (never source files).
 chmod -R u+w "$app_path"
 xattr -cr "$app_path"
-codesign --force --sign - "$app_path"
+codesign --force --sign "$sign_identity" "$app_path"
 codesign --verify --deep --strict "$app_path"
 echo "$app_path"

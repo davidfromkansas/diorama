@@ -141,6 +141,21 @@ def build_props():
         ("sphere", (0.13, 0.13, 0.08), (0, 0, -0.07), steel),
         ("cyl", (0.022, 0.03, 10, 0.022), (0, 0, -0.005), steel),
     ])
+    # A soda can from the vending machine, held round its middle (origin).
+    can_red = _mat("prop_can", (0.85, 0.2, 0.18), 0.35, 0.3)
+    can_top = _mat("prop_can_top", (0.82, 0.83, 0.85), 0.3, 0.6)
+    out["prop_can"] = _obj("prop_can", [
+        ("cyl", (0.035, 0.12, 16, 0.035), (0, 0, 0.02), can_red),
+        ("cyl", (0.03, 0.01, 16, 0.03), (0, 0, 0.085), can_top),
+    ])
+    # A gong mallet held at its grip (origin): the handle runs forward (-Y) to a felt-wrapped head.
+    felt = _mat("prop_mallet_felt", (0.78, 0.66, 0.46), 0.95)
+    brass = _mat("prop_mallet_brass", (0.79, 0.62, 0.31), 0.35, 0.6)
+    out["prop_gong_mallet"] = _obj("prop_gong_mallet", [
+        ("cyl", (0.014, 0.46, 10, 0.012, ("X", math.pi / 2)), (0, -0.19, 0), darkwood),
+        ("cyl", (0.02, 0.03, 12, 0.02, ("X", math.pi / 2)), (0, -0.40, 0), brass),
+        ("sphere", (0.065, 0.065, 0.065), (0, -0.46, 0), felt),
+    ])
     return out
 
 
@@ -200,6 +215,11 @@ def _cloche(S):
     return _at(S.translation + Vector((0.0, -0.02, -0.02)), Quaternion())
 
 
+def _mallet(S):
+    # Handle straight ahead and level at impact, so the head meets the gong's face square on.
+    return _at(S.translation + Vector((0.0, -0.01, 0.0)), Quaternion())
+
+
 # (prop, socket, clip, time_s, desired_world_matrix_fn)
 ATTACH_FITS = [
     ("prop_recipe_card", "socket_hand.L", "planning_recipe", 1.0, _card),
@@ -210,6 +230,8 @@ ATTACH_FITS = [
     ("prop_ticket", "socket_hand.L", "read_ticket", 0.0, _ticket),
     ("prop_mug", "socket_hand.R", "sit_sip", 0.0, _mug),
     ("prop_cloche", "socket_hand.R", "cover_dish", 0.35, _cloche),
+    ("prop_gong_mallet", "socket_hand.R", "strike_gong", 0.75, _mallet),
+    ("prop_can", "socket_hand.R", "stand_sip", 0.0, _mug),
 ]
 
 

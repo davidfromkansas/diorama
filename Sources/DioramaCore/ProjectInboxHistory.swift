@@ -30,7 +30,7 @@ public enum ProjectInboxHistory {
             } else {
                 guard row["parent_tool_use_id"].string == nil, !row["isSidechain"].bool else { continue }
                 let type = row["type"].string
-                if type == "user", !row["isMeta"].bool,
+                if type == "user", !row["isMeta"].bool, !row["queueTranscriptOnly"].bool,
                    !row["message"]["content"].array.contains(where: { $0["type"].string == "tool_result" }) {
                     buffer.removeAll(keepingCapacity: true); lastAssistant = nil
                 }

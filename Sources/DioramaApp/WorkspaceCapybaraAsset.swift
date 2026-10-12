@@ -55,6 +55,8 @@ nonisolated final class WorkspaceCapybaraAsset: @unchecked Sendable {
         }
         return try WorkspaceCapybaraAsset(data: Data(contentsOf: url), spec: spec)
     }
+    /// The node names in file order; clips address nodes by this order.
+    var nodeNames: [String] { definitions.map { $0["name"] as? String ?? "" } }
     let spec: Spec
     private let glb: GLBDocument
     private let definitions: [[String: Any]]
@@ -67,7 +69,9 @@ nonisolated final class WorkspaceCapybaraAsset: @unchecked Sendable {
     private var inverseBinds: [NSValue] = []
     private var meshID = 0
 
-    init(data: Data, spec: Spec = .capybara) throws {
+    /// `clipsFrom`: a character fitted to another's skeleton (a chef character) has no clips of
+    /// its own and plays that one's. Its nodes must match name for name, in order.
+    init(data: Data, spec: Spec = .capybara, clipsFrom base: WorkspaceCapybaraAsset? = nil) throws {
         self.spec = spec
         glb = try GLBDocument(data: data)
         let json = glb.json
@@ -84,14 +88,21 @@ nonisolated final class WorkspaceCapybaraAsset: @unchecked Sendable {
               let meshNode = nodes.firstIndex(where: { $0["mesh"] as? Int == 0 }) else { throw AssetError.invalid("Unsupported \(spec.instanceName) mesh") }
         meshID = meshNode; jointIDs = joints
         let faces = try glb.accessor(element)
-        geometry = SCNGeometry(sources: [try glb.source(position,.vertex), try glb.source(normal,.normal), try glb.source(uv,.texcoord)],
+        // Tangents for the normal map, made here once. Left to SceneKit, it builds them on first
+        // draw, and kitchens drawing on separate threads that share this geometry race doing so.
+        let tangents = try Self.tangents(positions: glb.accessor(position), normals: glb.accessor(normal), uvs: glb.accessor(uv), faces: faces)
+        geometry = SCNGeometry(sources: [try glb.source(position,.vertex), try glb.source(normal,.normal), try glb.source(uv,.texcoord), tangents],
                                elements: [SCNGeometryElement(data: faces.data, primitiveType: .triangles, primitiveCount: faces.count / 3, bytesPerIndex: faces.bytes)])
         weights = try glb.source(weight,.boneWeights); indices = try glb.source(joint,.boneIndices)
         inverseBinds = try glb.floats(bind).map { v in
             NSValue(scnMatrix4: SCNMatrix4(simd_float4x4(columns: (SIMD4(v[0],v[1],v[2],v[3]),SIMD4(v[4],v[5],v[6],v[7]),SIMD4(v[8],v[9],v[10],v[11]),SIMD4(v[12],v[13],v[14],v[15])))))
         }
         geometry.materials = [try material()]
-        for animation in json["animations"] as? [[String: Any]] ?? [] {
+        if let base {
+            guard nodes.map({ $0["name"] as? String ?? "" }) == base.nodeNames else { throw AssetError.invalid("\(spec.instanceName) skeleton differs from the one its clips were made for") }
+            clips = base.clips
+        }
+        for animation in base == nil ? json["animations"] as? [[String: Any]] ?? [] : [] {
             guard let name = animation["name"] as? String, let samplers = animation["samplers"] as? [[String: Any]], let channels = animation["channels"] as? [[String: Any]] else { continue }
             var tracks: [Track] = []
             for channel in channels {
@@ -109,6 +120,50 @@ nonisolated final class WorkspaceCapybaraAsset: @unchecked Sendable {
         }
         guard spec.requiredClips.allSatisfy({ clips[$0] != nil }), jointIDs.count == spec.jointCount,
               nodes.contains(where: { $0["name"] as? String == spec.skeletonRoot }) else { throw AssetError.invalid("Missing motion foundation") }
+    }
+    /// Per-vertex tangents (xyz, w = handedness) for a triangle mesh, accumulated per triangle
+    /// from its UVs and orthogonalised against the vertex normal.
+    static func tangents(positions: GLBDocument.Accessor, normals: GLBDocument.Accessor, uvs: GLBDocument.Accessor, faces: GLBDocument.Accessor) -> SCNGeometrySource {
+        let p = positions.data.withUnsafeBytes { Array($0.bindMemory(to: Float.self)) }
+        let n = normals.data.withUnsafeBytes { Array($0.bindMemory(to: Float.self)) }
+        let t = uvs.data.withUnsafeBytes { Array($0.bindMemory(to: Float.self)) }
+        let indices: [Int] = faces.data.withUnsafeBytes { raw in
+            switch faces.bytes {
+            case 4: return raw.bindMemory(to: UInt32.self).map(Int.init)
+            case 2: return raw.bindMemory(to: UInt16.self).map(Int.init)
+            default: return raw.bindMemory(to: UInt8.self).map(Int.init)
+            }
+        }
+        let count = positions.count
+        var tan = [SIMD3<Float>](repeating: .zero, count: count), bit = [SIMD3<Float>](repeating: .zero, count: count)
+        func v3(_ a: [Float], _ i: Int) -> SIMD3<Float> { SIMD3(a[i * 3], a[i * 3 + 1], a[i * 3 + 2]) }
+        func v2(_ i: Int) -> SIMD2<Float> { SIMD2(t[i * 2], t[i * 2 + 1]) }
+        for k in stride(from: 0, to: indices.count - 2, by: 3) {
+            let a = indices[k], b = indices[k + 1], c = indices[k + 2]
+            guard a < count, b < count, c < count else { continue }
+            let e1 = v3(p, b) - v3(p, a), e2 = v3(p, c) - v3(p, a)
+            let d1 = v2(b) - v2(a), d2 = v2(c) - v2(a)
+            let det = d1.x * d2.y - d2.x * d1.y
+            guard abs(det) > 1e-12 else { continue }
+            let r = 1 / det
+            let s = (e1 * d2.y - e2 * d1.y) * r, u = (e2 * d1.x - e1 * d2.x) * r
+            for i in [a, b, c] { tan[i] += s; bit[i] += u }
+        }
+        var out = [Float](); out.reserveCapacity(count * 4)
+        for i in 0..<count {
+            let normal = v3(n, i)
+            var tangent = tan[i] - normal * simd_dot(normal, tan[i])
+            if simd_length(tangent) < 1e-8 {
+                // No usable UVs here: any direction across the normal.
+                tangent = simd_cross(normal, abs(normal.y) < 0.9 ? SIMD3(0, 1, 0) : SIMD3(1, 0, 0))
+            }
+            tangent = simd_normalize(tangent)
+            let w: Float = simd_dot(simd_cross(normal, tangent), bit[i]) < 0 ? -1 : 1
+            out += [tangent.x, tangent.y, tangent.z, w]
+        }
+        let data = out.withUnsafeBufferPointer { Data(buffer: $0) }
+        return SCNGeometrySource(data: data, semantic: .tangent, vectorCount: count, usesFloatComponents: true,
+                                 componentsPerVector: 4, bytesPerComponent: 4, dataOffset: 0, dataStride: 16)
     }
     func makeInstance() -> Instance {
         let nodes = definitions.map { definition in let n = SCNNode(); n.name = definition["name"] as? String; return n }

@@ -208,9 +208,11 @@ def _closest_param(p, pts):
     return best[1]
 
 
-def compute_weights(p_shifted):
+def compute_weights(p_shifted, arm_member=None):
     """Positional skin weights. Pure function of vertex position, so UV-seam duplicates
-    (the mesh has 1,567 seam-split islands) receive identical weights and never crack."""
+    (the mesh has 1,567 seam-split islands) receive identical weights and never crack.
+    `arm_member` (0..1) replaces the chef's width test for "is this the arm" on characters
+    whose arms hang close to the body (build_variant.py finds their arms by connectivity)."""
     p = p_shifted - FLOOR_SHIFT  # measurements were taken in source space
     x, y, z = p.x, p.y, p.z
     ax = abs(x)
@@ -229,6 +231,10 @@ def compute_weights(p_shifted):
     width = 0.30 if z > -0.30 else 0.30 + (-0.30 - z) * 0.16
     low = smoothstep(width, width + 0.035, ax) if z > -0.50 else 0.0
     shoulder = smoothstep(0.17, 0.29, ax) * smoothstep(0.07, -0.05, z) * smoothstep(-0.28, -0.10, z)
+    if arm_member is not None:
+        # Only the shoulder cap above the armpit blends by position; the rest is the arm itself.
+        low = arm_member
+        shoulder *= smoothstep(-0.16, -0.08, z)
     A = max(low, shoulder)
     if z > 0.05:
         A = 0.0

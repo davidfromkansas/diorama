@@ -5,6 +5,12 @@ import DioramaCore
 struct NewAgentModal: View {
     @Bindable var library: LibraryModel
     @State var projectID: String
+    /// The new conversation, once the task has started.
+    var created: ((String) -> Void)? = nil
+    /// Starting the task failed after the modal closed (it closes as soon as you click Create).
+    var failed: ((String, String) -> Void)? = nil
+    /// The error from such a failure, shown when the modal reopens with the draft.
+    var initialError: String? = nil
     @Environment(\.dismiss) private var dismiss
     @State private var selectingProject = false
     @State private var search = ""
@@ -15,11 +21,16 @@ struct NewAgentModal: View {
     var body: some View {
         VStack(spacing: 0) {
             if let project, project.isGitBacked {
-                ProjectDraftView(projectID: projectID, projects: library.projects, library: library, compact: true, creationProjectPicker: AnyView(projectPicker), creationClose: AnyView(closeButton)) { id, conversation in
-                    library.navigate(.project(id, conversation))
-                    library.spatial.conversationPanelVisible = true
-                    dismiss()
-                }.id(projectID)
+                // Closes as soon as the task is on its way; reopens with the draft if starting it fails.
+                ProjectDraftView(projectID: projectID, projects: library.projects, library: library, compact: true, creationProjectPicker: AnyView(projectPicker), creationClose: AnyView(closeButton),
+                                 created: { id, conversation in
+                                     library.navigate(.project(id, conversation))
+                                     library.spatial.conversationPanelVisible = true
+                                     created?(conversation)
+                                 },
+                                 started: { dismiss() },
+                                 failed: { [projectID] message in failed?(projectID, message) },
+                                 initialError: initialError).id(projectID)
             } else {
                 HStack { projectPicker; Spacer(); closeButton }.padding(20)
                 ContentUnavailableView("Choose a Git project", systemImage: "folder", description: Text("Starting an agent requires a Git repository with at least one commit."))
