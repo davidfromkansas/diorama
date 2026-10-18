@@ -140,9 +140,8 @@ import SceneKit
             for i in 0..<5 { box("drainer groove", 0.025, 0.012, 0.7, 0.8 + CGFloat(i) * 0.1, 1.01, 0, brass) }
             for i in 0..<3 { cylinder("tasting spoon cup", 0.08, 0.16, width / 2 - 0.4 - CGFloat(i) * 0.3, 1.08, -0.3, ceramic) }
         case "serving":
-            // The pass: an open counter between two posts, with nothing overhead so the
-            // camera can see the dishes waiting for review.
-            for x in [-width / 2 + 0.08, width / 2 - 0.08] { box("window post", 0.12, 1.9, 0.12, x, 1.95, 0, green) }
+            // The pass: an open counter with nothing overhead so the camera can see the dishes
+            // waiting for review.
             let platters = max(2, Int(width / 1.5))
             for i in 0..<platters {
                 let x = -width / 2 + (CGFloat(i) + 0.5) * width / CGFloat(platters)
@@ -155,7 +154,7 @@ import SceneKit
     }
 
     /// Elevator car opening onto the kitchen; doors are named so arrivals can slide them open.
-    private static func elevator(_ area: KitchenArea) -> SCNNode {
+    static func elevator(_ area: KitchenArea) -> SCNNode {
         let root = SCNNode(); root.name = area.id
         root.position = SCNVector3(area.footprint.midX, KitchenLayout.floorTop, area.footprint.midY)
         let w = area.footprint.width, d = area.footprint.height, h: CGFloat = 2.9
@@ -195,12 +194,12 @@ import SceneKit
     }
 
     /// The break room (`BreakRoomLayout`): arcade cabinets against the far wall, the vending
-    /// machine and the espresso machine on its coffee bar against the left wall, and two Eames
+    /// machine against the left wall, and two Eames
     /// lounge chairs (the bundled Herman Miller Classic model) across a round walnut side table.
     static let loungeChairScale: CGFloat = 1.45
     /// How far a seated chef's root sits in front of its chair's centre.
     static let loungeChairSetback: Float = 0.12
-    private static func breakTable(_ area: KitchenArea) -> SCNNode {
+    static func breakTable(_ area: KitchenArea) -> SCNNode {
         let root = SCNNode(); root.name = area.id
         root.position = SCNVector3(area.footprint.midX, KitchenLayout.floorTop, area.footprint.midY)
         let center = SIMD2(Float(area.footprint.midX), Float(area.footprint.midY))
@@ -222,13 +221,8 @@ import SceneKit
             node.position = SCNVector3(CGFloat(point.x - center.x), node.position.y, CGFloat(point.y - center.y))
             root.addChildNode(node)
         }
-        // The coffee bar, and the machines (the espresso machine on the bar's top).
-        var barTop: SCNNode?
-        if let bar = (try? GLBStaticMeshes.load("coffee_bar", subdirectory: "KitchenStations"))?["coffee_bar"] {
-            let node = bar.clone(); node.name = "coffee bar"
-            place(node, at: BreakRoomLayout.coffeeBar.center, facing: BreakRoomLayout.coffeeBar.facing)
-            barTop = node.childNode(withName: "machine", recursively: true)
-        }
+        // The machines (a machine marked `onBar` would sit on a coffee bar; none does now).
+        let barTop: SCNNode? = nil
         let models = KitchenFood.models(in: "BreakRoom")
         for machine in BreakRoomLayout.machines {
             guard let template = models[machine.asset] else { continue }
@@ -246,7 +240,7 @@ import SceneKit
                 place(node, at: machine.center, facing: machine.facing)
             }
         }
-        if let chair = OfficeLoungeAssets.template("EamesLounge") {
+        if let chair = LoungeChairAsset.template() {
             for seat in BreakRoomLayout.chairs {
                 let forward = SIMD2(sin(seat.facing), cos(seat.facing))
                 let spot = seat.stand - forward * loungeChairSetback - center

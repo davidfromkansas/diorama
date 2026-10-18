@@ -26,7 +26,10 @@ struct KitchenCameraController: Equatable {
     /// Home: the overview that frames the whole kitchen.
     var homeCenter = SIMD2<Float>(0, 0)
     var homeDistance: Float = 30
-    var elevation: Float = 62 * .pi / 180
+    var elevation: Float = Self.elevationDegrees * .pi / 180
+    /// How steeply every kitchen camera looks down at the floor: low enough to see the chefs' faces,
+    /// high enough to read the whole kitchen (it was 62°, then 50°).
+    nonisolated static let elevationDegrees: Float = 40
     var lookHeight: Float = 0.65
     /// Where the zoomed-in center may go: the kitchen floor and the restaurant's terrace and
     /// walkways around it (`KitchenRestaurant`). There's no zooming out past home.

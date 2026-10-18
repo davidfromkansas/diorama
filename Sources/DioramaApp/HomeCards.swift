@@ -179,9 +179,11 @@ struct HomeLiveDot: View {
     }
 }
 
-/// New task, Open kitchen and the card's main action.
+/// New task, Open kitchen (or office) and the card's main action.
 struct HomeCardFooter: View {
     let project: String
+    @Environment(ProjectScenes.self) private var scenes: ProjectScenes?
+    private var place: String { SceneThemes.vocabulary(scenes?.kind(for: project) ?? .kitchen).place }
     /// For VoiceOver: "New task in kitchen-check", not three identical "New task" buttons.
     var name = ""
     let actions: HomeCardActions
@@ -195,10 +197,10 @@ struct HomeCardFooter: View {
                     .padding(.horizontal, 14).frame(height: 34).background(HomeStyle.blue, in: RoundedRectangle(cornerRadius: 8))
             }.buttonStyle(.plain).pointingHand().accessibilityLabel(name.isEmpty ? "New task" : "New task in \(name)")
             Button { actions.openKitchen(project) } label: {
-                Text("Open kitchen").font(.system(size: 13.5, weight: .semibold)).foregroundStyle(HomeStyle.ink)
+                Text("Open \(place)").font(.system(size: 13.5, weight: .semibold)).foregroundStyle(HomeStyle.ink)
                     .padding(.horizontal, 14).frame(height: 34).background(.white, in: RoundedRectangle(cornerRadius: 8))
                     .overlay(RoundedRectangle(cornerRadius: 8).strokeBorder(Color(red: 0.85, green: 0.83, blue: 0.80)))
-            }.buttonStyle(.plain).pointingHand().accessibilityLabel(name.isEmpty ? "Open kitchen" : "Open \(name)'s kitchen")
+            }.buttonStyle(.plain).pointingHand().accessibilityLabel(name.isEmpty ? "Open \(place)" : "Open \(name)'s \(place)")
             settings
             Spacer()
             if let urgent {

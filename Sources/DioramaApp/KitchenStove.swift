@@ -11,14 +11,14 @@ import simd
     let burners: [SIMD3<Float>]
 
     init(roots: [String: SCNNode]) throws {
-        guard let root = roots["stove"] else { throw WorkspaceCapybaraAsset.AssetError.invalid("Stove model has no root") }
+        guard let root = roots["stove"] else { throw SkinnedGLBAsset.AssetError.invalid("Stove model has no root") }
         template = root
         var anchors: [Int: SIMD3<Float>] = [:]
         root.enumerateChildNodes { node, _ in
             if let name = node.name, name.hasPrefix("burner_"), let index = Int(name.dropFirst(7)) { anchors[index] = node.simdPosition }
         }
         burners = anchors.keys.sorted().compactMap { anchors[$0] }
-        guard burners.count == 6 else { throw WorkspaceCapybaraAsset.AssetError.invalid("Stove model needs six burner anchors") }
+        guard burners.count == 6 else { throw SkinnedGLBAsset.AssetError.invalid("Stove model needs six burner anchors") }
     }
     convenience init() throws {
         try self.init(roots: GLBStaticMeshes.load("stove", subdirectory: "KitchenStations"))

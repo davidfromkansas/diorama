@@ -48,7 +48,7 @@ extension DemoDirector {
             library.spatial.conversationPanelVisible = false
         }
         func openList(_ projectID: String) { library.spatial.roster(for: projectID).collapsed = false }
-        func kitchen() -> KitchenSceneView? { kitchenView(in: window) }
+        func kitchen() -> DioramaSceneView? { kitchenView(in: window) }
         func clickChef(_ name: String, panel: Bool) async throws {
             if let point = chefPoint(id(name), in: window) {
                 try await glide(to: point, in: window, duration: 0.4)

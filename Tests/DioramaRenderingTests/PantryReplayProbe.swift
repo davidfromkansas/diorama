@@ -22,7 +22,7 @@ import Testing
             var seen = Set<String>(), pantry = false, carried: PantryCarry.Item?
             // The stations in order, with what's carried away from prep and the pantry.
             var sequence: [String] = [], leaving: String?
-            // Brief work still owes its station (KitchenSceneSurface's pacing): the pantry for each
+            // Brief work still owes its station (SceneSurface's pacing): the pantry for each
             // fetch, cooking for new edits (before tasting), tasting/stove for each test run.
             var filesSeen = 0, testsSeen = 0, fetchedSeen = 0
             func visit(_ area: String, carry: String?) {

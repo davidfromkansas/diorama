@@ -5,9 +5,10 @@ import DioramaCore
 /// The kitchen demo (`--demo-scene kitchen`), about 16 s: a new cook steps out of the elevator and
 /// waves; the camera pulls back on a full kitchen; a cook strikes the gong and you answer it, so
 /// it changes course; you review a finished dish and send its cook to the break room; and you
-/// drop an idle cook in the trash.
+/// drop an idle cook in the trash. `--demo-scene office` plays the same day in the office (the
+/// desk bell instead of the gong, a deliverable instead of a dish, the lounge).
 extension DemoDirector {
-    func kitchen(window: NSWindow, library: LibraryModel, fixture: DemoFixture) async throws {
+    func kitchen(window: NSWindow, library: LibraryModel, fixture: DemoFixture, scene: SceneKind = .kitchen) async throws {
         let project = fixture.target.project
         let sam = "demo-atlas-api-1", jade = "demo-atlas-api-7", ben = "demo-atlas-api-12", pixel = "demo-atlas-api-new"
         func identity(_ conversation: String) -> String {
@@ -34,8 +35,9 @@ extension DemoDirector {
         KitchenAudio.shared.muted = true
         library.selectProjectTab("demo-checkout-v2")
         try await pause(1)
+        library.setScene(scene, project: project)
         library.selectProjectTab(project)
-        library.spatial.sceneKind = .kitchen
+        library.spatial.sceneKind = scene
         deselect()
         try await pause(10)
         KitchenAudio.shared.muted = false
@@ -135,6 +137,45 @@ extension DemoDirector {
         mark("stopped")
     }
 
+    /// A short clip (`--demo-scene gong`): the camera close on the gong, a cook that needs an
+    /// answer runs over, strikes it and waits in front of it, and the head chef comes in to talk.
+    func gong(window: NSWindow, library: LibraryModel, fixture: DemoFixture) async throws {
+        let project = fixture.target.project, sam = "demo-atlas-api-1"
+        KitchenAudio.shared.muted = true
+        library.setScene(.kitchen, project: project)
+        library.selectProjectTab(project)
+        library.spatial.sceneKind = .kitchen
+        library.spatial.focus = .project(project); library.spatial.conversationPanelVisible = false
+        try await pause(10)
+        kitchenView(in: window)?.focusCamera(on: SIMD2(0.8, 5.4), zoom: 2.2)
+        try await pause(2)
+        KitchenAudio.shared.muted = false
+        guard #available(macOS 15.0, *) else { throw CocoaError(.featureUnsupported) }
+        var capture: DemoCapture?
+        do { capture = try await DemoCapture.start(window: window, to: DemoMode.output.appendingPathComponent("raw.mov")) }
+        catch { log.write("Not recording: \(error.localizedDescription)") }
+        let started = Date()
+        func mark(_ what: String) { log.write(String(format: "%.2f %@", Date().timeIntervalSince(started), what)) }
+        try await pause(1.5)
+        guard var value = library.demo?.agents[sam]?.first else { log.write("No cook"); return }
+        value.status = .waiting; value.attentionReason = .input; value.reportedStatus = "waitingForInput"
+        value.completionKey = sam + ".ask"; value.meaningfulUpdatedAt = Date(); value.latestTool = ""; value.latestToolDetail = ""
+        library.demo?.agents[sam] = [value]
+        library.demo?.questions[sam] = "Retry failed webhooks for 24 hours or 72 hours?"
+        library.demoRevision += 1
+        mark("asks")
+        // Until the head chef has talked with it for a while.
+        var talkingSince: Date?
+        while Date().timeIntervalSince(started) < 30 {
+            try await pause(0.1)
+            let talking = kitchenView(in: window)?.managerTalking != nil
+            if talking, talkingSince == nil { talkingSince = Date(); mark("talking") }
+            if let since = talkingSince, Date().timeIntervalSince(since) > 3 { break }
+        }
+        try await capture?.stop()
+        mark("stopped")
+    }
+
     // MARK: Pointer and input
 
     /// A chef's position in window points from the top left.
@@ -145,9 +186,9 @@ extension DemoDirector {
         else { return nil }
         return CGPoint(x: point.x, y: (window.contentView?.bounds.height ?? 0) - point.y)
     }
-    func kitchenView(in window: NSWindow) -> KitchenSceneView? {
-        func find(_ view: NSView) -> KitchenSceneView? {
-            if let kitchen = view as? KitchenSceneView, kitchen.window != nil, !kitchen.isHiddenOrHasHiddenAncestor { return kitchen }
+    func kitchenView(in window: NSWindow) -> DioramaSceneView? {
+        func find(_ view: NSView) -> DioramaSceneView? {
+            if let kitchen = view as? DioramaSceneView, kitchen.window != nil, !kitchen.isHiddenOrHasHiddenAncestor { return kitchen }
             for child in view.subviews { if let found = find(child) { return found } }
             return nil
         }
@@ -232,7 +273,7 @@ extension DemoDirector {
         return window.contentView.flatMap(find)
     }
     /// Picks a chef up, carries it along with the pointer and lets go.
-    func carry(_ id: String, from: CGPoint, to: CGPoint, kitchen: KitchenSceneView, window: NSWindow, duration: Double) async throws {
+    func carry(_ id: String, from: CGPoint, to: CGPoint, kitchen: DioramaSceneView, window: NSWindow, duration: Double) async throws {
         let height = window.contentView?.bounds.height ?? 0
         func flipped(_ point: CGPoint) -> CGPoint { CGPoint(x: point.x, y: height - point.y) }
         withAnimation(.easeOut(duration: 0.08)) { pressed = true }

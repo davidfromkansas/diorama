@@ -14,14 +14,14 @@ import simd
     static let board = SIMD3<Float>(0.9, 0.035, 0.55)
 
     init(roots: [String: SCNNode]) throws {
-        guard let root = roots["island"] else { throw WorkspaceCapybaraAsset.AssetError.invalid("Island model has no root") }
+        guard let root = roots["island"] else { throw SkinnedGLBAsset.AssetError.invalid("Island model has no root") }
         template = root
         var anchors: [Int: SIMD3<Float>] = [:]
         root.enumerateChildNodes { node, _ in
             if let name = node.name, name.hasPrefix("board_"), let index = Int(name.dropFirst(6)) { anchors[index] = node.simdPosition }
         }
         boards = anchors.keys.sorted().compactMap { anchors[$0] }
-        guard boards.count == 6 else { throw WorkspaceCapybaraAsset.AssetError.invalid("Island model needs six board anchors") }
+        guard boards.count == 6 else { throw SkinnedGLBAsset.AssetError.invalid("Island model needs six board anchors") }
     }
     convenience init() throws {
         try self.init(roots: GLBStaticMeshes.load("island", subdirectory: "KitchenStations"))

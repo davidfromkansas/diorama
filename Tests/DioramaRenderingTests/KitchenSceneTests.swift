@@ -5,7 +5,7 @@ import Testing
 
 @MainActor struct KitchenSceneTests {
     @Test func kitchenFitsWithoutCameraInteraction() {
-        let view = KitchenSceneView()
+        let view = DioramaSceneView()
         for size in [CGSize(width: 1000, height: 700), CGSize(width: 300, height: 700), CGSize(width: 1000, height: 250)] {
             view.frame = CGRect(origin: .zero, size: size)
             view.layoutSubtreeIfNeeded(); view.fitFloor()
@@ -25,8 +25,10 @@ import Testing
         let occupiedHeight = min(650, projected.map(\.y).max()!) - max(0, projected.map(\.y).min()!)
         // The 24×16 lifecycle room is wider than tall, so a square view is width-limited; low,
         // chef-height worktops add little projected height; the break room's machines against the
-        // left wall stay fully in view, which costs about a percent. Allow one pixel for rounding.
-        #expect(occupiedHeight >= 650 * 0.59 - 1)
+        // left wall stay fully in view, which costs about a percent. The camera looks down at 40°
+        // (low enough to see the chefs' faces), which foreshortens the floor more than a steeper
+        // view would. Allow one pixel for rounding.
+        #expect(occupiedHeight >= 650 * 0.45 - 1)
         for fixture in KitchenLayout.connectors + KitchenLayout.breakRoomWalls + KitchenLayout.elevatorWalls {
             #expect(KitchenLayout.floor.contains(fixture))
         }
@@ -40,7 +42,7 @@ import Testing
     }
     @Test func captureKitchenViewportSizes() throws {
         guard ProcessInfo.processInfo.environment["DIORAMA_KITCHEN_CAPTURE"] == "1" else { return }
-        let view = KitchenSceneView(frame: CGRect(x: 0, y: 0, width: 1000, height: 700))
+        let view = DioramaSceneView(frame: CGRect(x: 0, y: 0, width: 1000, height: 700))
         for size in [CGSize(width: 1000, height: 700), CGSize(width: 650, height: 650), CGSize(width: 420, height: 700)] {
             view.frame.size = size; view.fitFloor()
             let tiff = try #require(view.snapshot().tiffRepresentation)

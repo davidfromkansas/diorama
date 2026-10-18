@@ -49,10 +49,10 @@ struct ProjectPresentationSnapshot: Codable, Equatable {
     var viewMode = "Workspace"
     var showArchived = false
     var page = 0
-    var panels: OfficePanelBookmark?
+    var panels: ProjectPanelBookmark?
     var conversationWidth: Double?
 }
-struct OfficePanelBookmark: Codable, Equatable {
+struct ProjectPanelBookmark: Codable, Equatable {
     var inboxExpanded = false
     var serversExpanded = false
     var selectedInbox: String?
@@ -78,7 +78,6 @@ private struct DesktopTabPersistence: Codable {
     var home = DesktopHomeState()
     var lastOpened: [String: Date] = [:]
     var workspaces: [String: ProjectPresentationSnapshot] = [:]
-    var cameras: [String: SpatialCameraPose] = [:]
     var historyAnchors: [String: String] = [:]
     var inboxBookmarks: [String: InboxViewBookmark]?
     var conversationBookmarks: [String: ConversationViewBookmark]?
@@ -89,7 +88,6 @@ private struct DesktopTabPersistence: Codable {
     var home = DesktopHomeState() { didSet { changed?() } }
     private(set) var lastOpened: [String: Date] = [:]
     var workspaces: [String: ProjectPresentationSnapshot] = [:] { didSet { changed?() } }
-    @ObservationIgnored var cameras: [String: SpatialCameraPose] = [:] { didSet { changed?() } }
     var historyAnchors: [String: String] = [:] { didSet { changed?() } }
     var inboxBookmarks: [String: InboxViewBookmark] = [:] { didSet { changed?() } }
     var conversationBookmarks: [String: ConversationViewBookmark] = [:] { didSet { changed?() } }
@@ -101,7 +99,7 @@ private struct DesktopTabPersistence: Codable {
             var seen = Set<String>()
             projects = saved.projects.filter { !$0.isEmpty && seen.insert($0).inserted }
             selected = saved.selected; home = saved.home; lastOpened = saved.lastOpened
-            workspaces = saved.workspaces; cameras = saved.cameras; historyAnchors = saved.historyAnchors; inboxBookmarks = saved.inboxBookmarks ?? [:]; conversationBookmarks = saved.conversationBookmarks ?? [:]
+            workspaces = saved.workspaces; historyAnchors = saved.historyAnchors; inboxBookmarks = saved.inboxBookmarks ?? [:]; conversationBookmarks = saved.conversationBookmarks ?? [:]
             if case .project(let id) = selected, !projects.contains(id) { selected = .home }
         } else {
             switch migration {
@@ -121,7 +119,7 @@ private struct DesktopTabPersistence: Codable {
     }
     func encoded() -> Data? {
         try? JSONEncoder().encode(DesktopTabPersistence(projects: projects, selected: selected, home: home,
-            lastOpened: lastOpened, workspaces: workspaces, cameras: cameras, historyAnchors: historyAnchors, inboxBookmarks: inboxBookmarks, conversationBookmarks: conversationBookmarks))
+            lastOpened: lastOpened, workspaces: workspaces, historyAnchors: historyAnchors, inboxBookmarks: inboxBookmarks, conversationBookmarks: conversationBookmarks))
     }
     func select(_ tab: DesktopTab, openedAt: Date? = nil) {
         if case .project(let id) = tab {
@@ -165,7 +163,7 @@ extension LibraryModel {
             sidebarVisible: layout.sidebarVisible, sidebarWidth: layout.sidebarWidth,
             inspectorVisible: layout.inspectorVisible, inspectorWidth: layout.inspectorWidth,
             viewMode: viewMode.rawValue, showArchived: spatial.showArchived, page: spatial.page,
-            panels: OfficePanelBookmark(inboxExpanded: spatial.inboxExpanded, serversExpanded: spatial.serversExpanded, selectedInbox: spatial.inboxSelection?.id,
+            panels: ProjectPanelBookmark(inboxExpanded: spatial.inboxExpanded, serversExpanded: spatial.serversExpanded, selectedInbox: spatial.inboxSelection?.id,
                 rosterCollapsed: spatial.roster(for: id).collapsed, rosterRecentExpanded: spatial.roster(for: id).recentExpanded),
             conversationWidth: spatial.conversationWidth)
         navigation.projectTabs.historyAnchors = scrollPositions
@@ -192,6 +190,7 @@ extension LibraryModel {
         spatial.inboxExpanded = false; spatial.serversExpanded = false; spatial.inboxSelection = nil
         switch tab {
         case .home:
+            spatial.sceneKind = .kitchen
             projects.selectedID = nil; selectedID = nil; spatial.focus = .portfolio
             spatial.conversationPanelVisible = false; viewMode = .workspace
             if navigation.projectTabs.home.section == .imported {
@@ -201,6 +200,7 @@ extension LibraryModel {
             navigation.visit(.home)
         case .project(let id):
             projects.selectedID = id
+            spatial.sceneKind = projectScenes.kind(for: id)
             if let saved = navigation.projectTabs.workspaces[id] {
                 if let selection = saved.selection { projects.presentation[id] = selection }
                 spatial.focus = saved.focus

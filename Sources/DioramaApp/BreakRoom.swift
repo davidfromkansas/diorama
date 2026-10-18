@@ -2,8 +2,8 @@ import CoreGraphics
 import simd
 
 /// The break room's layout, in kitchen x/z: three arcade cabinets against the far wall, the red
-/// vending machine and a coffee bar with the espresso machine against the left wall, two lounge
-/// chairs across a side table by the short wall, and two standing circles on the rug.
+/// vending machine against the left wall, two lounge chairs across a side table by the short wall,
+/// and two standing circles on the rug.
 /// Machines face the camera (far wall) or the room (left wall) so they read from the kitchen view.
 nonisolated enum BreakRoomLayout {
     enum Kind: Equatable, Sendable { case arcade, vending, espresso, chair, circle(Int) }
@@ -42,8 +42,8 @@ nonisolated enum BreakRoomLayout {
     static let coffeeBarDepth: Float = 0.72, coffeeBarLength: Float = 1.6
     static let coffeeBar = (center: SIMD2<Float>(leftWall + 0.02 + coffeeBarDepth / 2, 5.6), facing: Float.pi / 2)
 
-    /// Arcade cabinets about 2 m tall (control panels at the chef's hands), the vending machine
-    /// 2.1 m, the espresso machine 0.95 m wide on the bar. Sizes are the normalized models' times scale.
+    /// Arcade cabinets about 2 m tall (control panels at the chef's hands) and the vending machine,
+    /// 2.1 m, where the coffee bar used to stand. Sizes are the normalized models' times scale.
     static let machines: [Machine] = {
         func far(_ asset: String, x: Float, width: Float, depth: Float, height: Float) -> Machine {
             let scale = 2.0 / height
@@ -55,10 +55,8 @@ nonisolated enum BreakRoomLayout {
             far("arcade_cosmic", x: -8.9, width: 0.866, depth: 1.0, height: 2.05),
             far("arcade_jungle", x: -7.5, width: 1.0, depth: 0.95, height: 1.879),
             far("arcade_blue", x: -6.1, width: 1.0, depth: 0.938, height: 1.937),
-            Machine(asset: "vending", kind: .vending, center: SIMD2(leftWall + 0.02 + 0.76 * vendingScale / 2, farWall + 0.04 + 0.5 * vendingScale), facing: .pi / 2,
+            Machine(asset: "vending", kind: .vending, center: SIMD2(leftWall + 0.02 + 0.76 * vendingScale / 2, coffeeBar.center.y), facing: .pi / 2,
                     size: SIMD2(1.0, 0.76) * vendingScale, scale: vendingScale),
-            Machine(asset: "espresso", kind: .espresso, center: SIMD2(coffeeBar.center.x, coffeeBar.center.y + 0.12), facing: .pi / 2,
-                    size: SIMD2(1.0, 0.664) * 0.95, scale: 0.95, onBar: true),
         ]
     }()
 
@@ -96,12 +94,8 @@ nonisolated enum BreakRoomLayout {
             + chairs.map { Spot(station: $0, kind: .chair) }
             + circles.enumerated().flatMap { g, group in group.map { Spot(station: $0, kind: .circle(g)) } }
     }
-    /// What chefs walk around: the machines on the floor, the coffee bar and the side table.
-    static var obstacles: [CGRect] {
-        let bar = CGRect(x: CGFloat(coffeeBar.center.x - coffeeBarDepth / 2), y: CGFloat(coffeeBar.center.y - coffeeBarLength / 2),
-                         width: CGFloat(coffeeBarDepth), height: CGFloat(coffeeBarLength))
-        return machines.filter { !$0.onBar }.map(\.rect) + [bar, sideTable]
-    }
+    /// What chefs walk around: the machines on the floor and the side table.
+    static var obstacles: [CGRect] { machines.filter { !$0.onBar }.map(\.rect) + [sideTable] }
 }
 
 /// Who does what in the break room. Resting chefs take a free machine first, then a chair, then a

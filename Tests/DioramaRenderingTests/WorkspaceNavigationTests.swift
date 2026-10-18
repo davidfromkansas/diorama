@@ -281,3 +281,96 @@ extension WorkspaceNavigationTests {
         #expect(Date().timeIntervalSince(started) < 25, "Conversation layout must yield to the main run loop")
     }
 }
+
+extension WorkspaceNavigationTests {
+    /// The conversation panel beside the scene follows a working agent's new messages while
+    /// nobody scrolls it.
+    @Test(arguments: [false, true]) func sidePanelFollowsAWorkingAgent(observed: Bool) async throws {
+        let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: root) }
+        let controller = ExecutionController(transport: WorkspaceFixtureTransport())
+        var task = ExecutedTask(id: "side-panel-follow", title: "Following", folder: root.path, turnID: "turn", attached: true)
+        task.phase = .working
+        // More than a page (50 rows), so each new message slides the oldest row out of the page.
+        let template = String(repeating: "Checking the importer and keeping existing content. ", count: 6)
+        task.transcript.entries = (0..<80).map { index in Entry(id: "row-\(index)", kind: "Assistant", text: template, timestamp: nil) }
+        // A conversation Diorama runs, or one it only observes (started in another app).
+        let session = observed ? Session(id: "Claude:observed", provider: .claude, url: nil, sessionID: "observed", title: "Following", project: root.path,
+                                         modified: Date(), bytes: 0, archived: false, parentID: nil) : task.session
+        if !observed { controller.tasks[task.id] = task }
+        let model = LibraryModel(execution: controller, projects: ProjectModel(storageURL: root.appendingPathComponent("projects.json")), navigation: WorkspaceNavigation(defaults: defaults()))
+        model.sessions = [session]; model.selectedID = session.id
+        model.transcriptSessionID = session.id; model.viewMode = .conversation; model.paused = true
+        if observed { model.transcript = task.transcript }
+        func append(_ entry: Entry) { if observed { model.transcript.entries.append(entry) } else { controller.tasks[task.id]?.transcript.entries.append(entry) } }
+        func grow(_ text: String) {
+            if observed { model.transcript.entries[model.transcript.entries.count - 1].text += text }
+            else { let last = (controller.tasks[task.id]?.transcript.entries.count ?? 1) - 1; controller.tasks[task.id]?.transcript.entries[last].text += text }
+        }
+        let storage = defaults()
+        var project = DioramaProject(name: "Follow fixture", folder: root.path, commonDirectory: root.path, base: "main", remote: nil)
+        project.selectedSession = session.id
+        model.projects.projects = [project]; model.projects.selectedID = project.id
+        model.navigation.projectTabs.select(.project(project.id))
+        model.projectNavigation = true
+        let agent = try #require(model.spatialWorld(showArchived: false).projects.first?.teams.first?.agents.first)
+        model.spatial.focus = .agent(project: project.id, conversation: session.id, agent: agent.id, expanded: true)
+        model.spatial.conversationPanelVisible = true
+        model.captureProjectPresentation()
+        let host = NSHostingView(rootView: WorkspaceShell(library: model) { Text("Open project") }.defaultAppStorage(storage))
+        host.frame = NSRect(x: 0, y: 0, width: 1300, height: 800)
+        let window = NSWindow(contentRect: host.frame, styleMask: [.borderless], backing: .buffered, defer: false)
+        window.contentView = host
+        window.makeKeyAndOrderFront(nil)
+        defer { window.contentView = nil; window.orderOut(nil) }
+        func settle() async throws {
+            for _ in 0..<6 { try await Task.sleep(for: .milliseconds(80)); host.layoutSubtreeIfNeeded() }
+        }
+        func scrolls(_ view: NSView) -> [NSScrollView] { (view as? NSScrollView).map { [$0] } ?? view.subviews.flatMap(scrolls) }
+        func conversation() throws -> NSScrollView {
+            // The conversation's list (the agents panel and small strips are narrower).
+            try #require(scrolls(host).filter { !$0.isHiddenOrHasHiddenAncestor && $0.frame.width > 320 }.max { ($0.documentView?.bounds.height ?? 0) < ($1.documentView?.bounds.height ?? 0) })
+        }
+        func remaining() throws -> CGFloat {
+            let scroll = try conversation()
+            return (scroll.documentView?.bounds.maxY ?? 0) - scroll.contentView.bounds.maxY
+        }
+        try await Task.sleep(for: .milliseconds(250))
+        try await settle()
+        let opened = try remaining()
+        #expect(opened < 65, "Opens at the latest message: \(opened) short")
+        for step in 0..<9 {
+            switch step % 3 {
+            case 0: append(Entry(id: "live-\(step)", kind: "Assistant", text: template, timestamp: nil)) // same height as the row it pushes out
+            case 1: append(Entry(id: "live-\(step)", kind: "Assistant", text: "New message \(step)", timestamp: nil))
+            default: grow(String(repeating: "\n\nStreamed paragraph.", count: 10))
+            }
+            try await settle()
+            let gap = try remaining()
+            #expect(gap < 65, "Step \(step): the newest message is \(gap) points below the panel")
+        }
+        // Reading back up holds the place while messages arrive; scrolling back down to near the
+        // bottom follows again, even when a new message landed during the scroll.
+        let scroll = try conversation()
+        func userScroll(by delta: CGFloat) {
+            NotificationCenter.default.post(name: NSScrollView.willStartLiveScrollNotification, object: scroll)
+            scroll.contentView.scroll(to: NSPoint(x: 0, y: max(0, scroll.contentView.bounds.minY + delta)))
+            scroll.reflectScrolledClipView(scroll.contentView)
+            NotificationCenter.default.post(name: NSScrollView.didLiveScrollNotification, object: scroll)
+            NotificationCenter.default.post(name: NSScrollView.didEndLiveScrollNotification, object: scroll)
+        }
+        userScroll(by: -900)
+        try await settle()
+        let reading = scroll.contentView.bounds.minY
+        append(Entry(id: "while-reading", kind: "Assistant", text: template, timestamp: nil))
+        try await settle()
+        #expect(abs(scroll.contentView.bounds.minY - reading) < 5, "A reader's place holds while messages arrive")
+        let short = try remaining()
+        append(Entry(id: "during-scroll", kind: "Assistant", text: template, timestamp: nil))
+        userScroll(by: short - 10)
+        try await settle(); try await settle()
+        let back = try remaining()
+        #expect(back < 5, "Scrolling back down near the bottom follows again: \(back) short")
+    }
+}

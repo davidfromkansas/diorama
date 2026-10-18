@@ -1,12 +1,12 @@
 import Foundation
 
 /// The manager's rounds: whom the head chef talks with. A chef that struck the gong and is
-/// waiting behind it gets a visit; the manager stays until that chef stops waiting (you answered),
+/// waiting in front of it gets a visit; the manager stays until that chef stops waiting (you answered),
 /// then moves on to whoever has waited longest, and leaves when nobody is waiting.
 nonisolated enum KitchenManager {
     struct Waiting: Equatable {
         let id: String
-        /// When it got to its spot behind the gong.
+        /// When it got to its spot in front of the gong.
         let since: Double
     }
     /// Whom to be with next: the current chef while it still waits, else the longest waiting;

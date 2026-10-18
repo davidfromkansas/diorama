@@ -11,7 +11,7 @@ struct AgentRosterRow: Identifiable, Equatable {
     var taskTitle: String { TaskTitle.compact(agent.value.task) }
     var sidebarStatus: AgentSidebarStatus = .unknown
     var recent: Bool { [.done, .stopped, .failed].contains(agent.value.status) }
-    var destination: SpatialFocus { OfficeOccupant(agent: agent, assignment: agent.value.task).destination }
+    var destination: SpatialFocus { RosterOccupant(agent: agent, assignment: agent.value.task).destination }
 }
 
 struct AgentRosterRecency: Codable, Equatable {

@@ -92,9 +92,17 @@ private struct WorkspaceLayoutSnapshot: Codable, Equatable {
         layout.inspectorWidth = min(560, max(280, layout.inspectorWidth))
         if let data = (defaults.data(forKey: key("workspaceTabs.v1")) ?? (namespace == "window.1" ? defaults.data(forKey: "workspaceTabs.v1") : nil)), let saved = try? JSONDecoder().decode([String: WorkspaceTab].self, from: data) { tabs = saved }
         if let data = (defaults.data(forKey: key("workspaceDocuments.v1")) ?? (namespace == "window.1" ? defaults.data(forKey: "workspaceDocuments.v1") : nil)), let saved = try? JSONDecoder().decode([String: [WorkspaceDocument]].self, from: data) { documents = saved }
+        Self.forgetRetiredOffice(defaults)
         isRestoring = false
         projectTabs.changed = { [weak self] in self?.schedulePersistence() }
         layout.changed = { [weak self] in self?.schedulePersistence() }
+    }
+    /// The retired shared-office scene's desk placements and layout drafts.
+    private static func forgetRetiredOffice(_ defaults: UserDefaults) {
+        for key in defaults.dictionaryRepresentation().keys
+        where key.hasPrefix("officePlacement.v1.") || key.hasPrefix("officeLayoutDraft.") {
+            defaults.removeObject(forKey: key)
+        }
     }
     private func schedulePersistence() {
         guard !isRestoring else { return }

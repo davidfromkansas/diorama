@@ -31,8 +31,8 @@ nonisolated struct ChefManifest: Decodable, Sendable {
     let stations: Stations
 
     @MainActor static func load() throws -> ChefManifest {
-        guard let url = WorkspaceCapybaraAsset.resourceBundle.url(forResource: "chef-manifest", withExtension: "json", subdirectory: "Chef") else {
-            throw WorkspaceCapybaraAsset.AssetError.invalid("Bundled chef manifest is missing")
+        guard let url = SkinnedGLBAsset.resourceBundle.url(forResource: "chef-manifest", withExtension: "json", subdirectory: "Chef") else {
+            throw SkinnedGLBAsset.AssetError.invalid("Bundled chef manifest is missing")
         }
         return try JSONDecoder().decode(ChefManifest.self, from: Data(contentsOf: url))
     }

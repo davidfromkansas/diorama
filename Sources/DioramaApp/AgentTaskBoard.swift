@@ -17,6 +17,7 @@ struct AgentBoardGlyph: Shape {
 /// (Needs you → In progress → Done → Idle) and one card per task. Same items, actions and
 /// selection as the side panel; the columns follow each task's real state, so cards don't drag.
 struct AgentTaskBoard: View {
+    @Environment(\.sceneVocabulary) private var vocabulary
     let items: [AgentSidebarItem]
     let selectedConversation: String?
     let select: (AgentSidebarItem) -> Void
@@ -58,7 +59,7 @@ struct AgentTaskBoard: View {
                 Text("·")
                 Text("Esc or Side panel returns to the panel")
                 Spacer(minLength: 8)
-                Text("The kitchen keeps running behind the board")
+                Text("The \(vocabulary.place) keeps running behind the board")
             }
             .font(.system(size: 11.5)).foregroundStyle(SidebarStyle.secondary).lineLimit(1)
             .padding(.horizontal, 16).padding(.vertical, 9)

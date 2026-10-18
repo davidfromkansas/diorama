@@ -6,7 +6,7 @@ import Testing
     @Test func everySoundVariantIsBundled() throws {
         for sound in KitchenSound.allCases {
             for variant in 0..<sound.variants {
-                let url = try #require(WorkspaceCapybaraAsset.resourceBundle.url(forResource: "\(sound.rawValue)-\(variant)", withExtension: "caf", subdirectory: "KitchenSounds"))
+                let url = try #require(SkinnedGLBAsset.resourceBundle.url(forResource: "\(sound.rawValue)-\(variant)", withExtension: "caf", subdirectory: "KitchenSounds"))
                 #expect(try AVAudioFile(forReading: url).length > 0)
             }
         }

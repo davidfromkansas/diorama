@@ -56,6 +56,8 @@ final class LibraryModel {
     @ObservationIgnored let workspaceProjectionCache = WorkspaceProjectionCache()
     @ObservationIgnored let agentNames: AgentDisplayNameModel
     @ObservationIgnored let planDiscovery: AgentPlanDiscovery
+    /// Which scene each project shows (shared by every window).
+    let projectScenes: ProjectScenes
     var portfolio: PortfolioStore
     var activityPanels: [String: ActivityPanelState] = [:]
     /// Per conversation: the model and effort chosen for its next message.
@@ -182,9 +184,10 @@ final class LibraryModel {
     @ObservationIgnored var demoCreate: ((String, String) -> String)?
     let execution: ExecutionController
     let observationHookDirectory: URL?
-    init(execution: ExecutionController? = nil, projects: ProjectModel? = nil, conversations: DioramaConversationModel? = nil, navigation: WorkspaceNavigation? = nil, observationHookDirectory: URL? = HookStore.directory, sharedOwner: LibraryModel? = nil, draftDefaults: UserDefaults = .standard) {
+    init(execution: ExecutionController? = nil, projects: ProjectModel? = nil, conversations: DioramaConversationModel? = nil, navigation: WorkspaceNavigation? = nil, observationHookDirectory: URL? = HookStore.directory, sharedOwner: LibraryModel? = nil, draftDefaults: UserDefaults = .standard, sceneDefaults: UserDefaults? = .standard) {
         _ = AgentCompletionViews.shared
         self.sharedOwner = sharedOwner
+        self.projectScenes = sharedOwner?.projectScenes ?? ProjectScenes(defaults: DemoMode.active ? nil : sceneDefaults)
         self.draftPersistence = sharedOwner?.draftPersistence ?? ConversationDraftPersistence(defaults: draftDefaults)
         self.ownedDrafts = sharedOwner == nil ? draftPersistence.load() : [:]
         self.library = sharedOwner?.library ?? ImportedSessionLibrary(titleCacheURL: ProjectStorage.directory.appendingPathComponent("provider-task-titles.json"))
@@ -591,13 +594,6 @@ struct DioramaApp: App {
         WindowGroup("Diorama") {
             if DemoMode.active {
                 DemoRecorderView(library: model)
-            } else if CommandLine.arguments.contains("--inbox-benchmark") {
-                SceneBenchmarkView(withInbox: true)
-            } else if CommandLine.arguments.contains("--scene-benchmark") || Bundle.main.object(forInfoDictionaryKey: "DioramaSceneBenchmark") as? Bool == true {
-                SceneBenchmarkView()
-            } else if CommandLine.arguments.contains("--capybara-lab") || Bundle.main.object(forInfoDictionaryKey: "DioramaMovementLab") as? Bool == true {
-                WorkspaceSceneView(startInMovementLab: true)
-                    .frame(minWidth: 760, minHeight: 600).preferredColorScheme(.dark)
             } else {
             DesktopWindow(services: model, updates: updates, started: $started)
                 .onAppear {
@@ -636,9 +632,6 @@ struct DioramaApp: App {
                 if let reload = model.developmentReload {
                     Toggle("Automatically reload source changes", isOn: Binding(get: { reload.enabled }, set: { reload.setEnabled($0) })).pointingHand()
                     Text(reload.status)
-                    Button("Benchmark live agent roster") { AgentRosterBenchmarkWindow.open() }.pointingHand()
-                    Button("Benchmark standing office") { StandingOfficeBenchmarkWindow.open() }.pointingHand()
-                    Button("Benchmark fixed office") { FixedOfficeBenchmarkWindow.open() }.pointingHand()
                 }
             }
         }
@@ -1212,14 +1205,10 @@ struct SessionView: View {
                         .environment(\.avatarConversationTools, AnyView(avatarTools))
                         .frame(maxWidth: 800).frame(maxWidth: .infinity)
                 }
+                // In Workspace mode the project's scene covers this pane (WorkspaceShell).
                 .opacity(effectiveMode == .workspace ? 0 : 1)
                 .allowsHitTesting(effectiveMode != .workspace)
                 .accessibilityHidden(effectiveMode == .workspace)
-                if effectiveMode == .workspace {
-                    WorkspaceSessionScene(library: model, session: session,
-                        openConversation: { model.viewMode = .conversation },
-                        openActivity: { model.viewMode = .activity }).id(session.id)
-                }
             }
         }
         .environment(\.conversationImageBaseURL, URL(fileURLWithPath: session.project, isDirectory: true))

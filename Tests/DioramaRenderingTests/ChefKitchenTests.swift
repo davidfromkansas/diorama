@@ -39,8 +39,6 @@ import simd
         #expect(assets.manifest.stations.counterTop == KitchenLayout.chefCounterTop)
         #expect(assets.manifest.stations.counterFrontFromRoot == KitchenLayout.chefCounterFront)
         #expect(assets.manifest.height == KitchenLayout.chefHeight)
-        // The generalized reader still accepts the capybara.
-        #expect(try WorkspaceCapybaraAsset.shared.get().makeInstance().nodes.contains { $0.skinner?.bones.count == 25 })
     }
 
     /// The characters chefs wear: each loads, has the chef's skeleton node for node, and plays
@@ -66,14 +64,14 @@ import simd
     @Test func aCharacterLoadsQuickly() throws {
         let assets = try ChefAssets.shared.get()
         let entry = try #require(assets.characters.last)
-        let data = try Data(contentsOf: try #require(WorkspaceCapybaraAsset.resourceBundle.url(forResource: (entry.asset as NSString).deletingPathExtension, withExtension: "glb", subdirectory: "Chef")))
+        let data = try Data(contentsOf: try #require(SkinnedGLBAsset.resourceBundle.url(forResource: (entry.asset as NSString).deletingPathExtension, withExtension: "glb", subdirectory: "Chef")))
         let start = Date()
-        _ = try WorkspaceCapybaraAsset(data: data, spec: ChefAssets.spec, clipsFrom: assets.rig)
+        _ = try SkinnedGLBAsset(data: data, spec: ChefAssets.spec, clipsFrom: assets.rig)
         #expect(Date().timeIntervalSince(start) < 1)
     }
 
     @Test func aKitchenWearsTenDifferentCharactersBeforeAnyRepeats() throws {
-        let view = KitchenSceneView(frame: CGRect(x: 0, y: 0, width: 1000, height: 700))
+        let view = DioramaSceneView(frame: CGRect(x: 0, y: 0, width: 1000, height: 700))
         view.characters = ChefCharacterModel(url: nil)
         let crowd = (0..<12).map { agent("x\($0)", .working, tool: "Edit") }
         view.apply(agents: Array(crowd.prefix(10)), active: false, reducedMotion: true)
@@ -90,9 +88,9 @@ import simd
     }
 
     @Test func chefLoadsQuicklyEnoughForTheMainThread() throws {
-        let data = try Data(contentsOf: try #require(WorkspaceCapybaraAsset.resourceBundle.url(forResource: "chef-animated", withExtension: "glb", subdirectory: "Chef")))
+        let data = try Data(contentsOf: try #require(SkinnedGLBAsset.resourceBundle.url(forResource: "chef-animated", withExtension: "glb", subdirectory: "Chef")))
         let start = Date()
-        _ = try WorkspaceCapybaraAsset(data: data, spec: ChefAssets.spec)
+        _ = try SkinnedGLBAsset(data: data, spec: ChefAssets.spec)
         let seconds = Date().timeIntervalSince(start)
         print("chef rig load: \(Int(seconds * 1000)) ms")
         // Was ~6 s (quadratic JSON casting) in release builds; generous bound for debug test builds.
@@ -350,7 +348,7 @@ import simd
     }
 
     @Test func chefsStayAtLeastThreeSecondsButNeedsYouIsImmediate() throws {
-        let view = KitchenSceneView(frame: CGRect(x: 0, y: 0, width: 1000, height: 700))
+        let view = DioramaSceneView(frame: CGRect(x: 0, y: 0, width: 1000, height: 700))
         var clock = 100.0
         func step(_ seconds: Double) {
             for _ in 0..<Int(seconds * 30) { clock += 1 / 30; for chef in view.chefs.values { chef.update(1 / 30) }; view.pace(now: clock) }
@@ -380,7 +378,7 @@ import simd
     }
 
     @Test func everyChefOwnsItsSpotAndQueuedChefsStepInWhenOneFrees() throws {
-        let view = KitchenSceneView(frame: CGRect(x: 0, y: 0, width: 1000, height: 700))
+        let view = DioramaSceneView(frame: CGRect(x: 0, y: 0, width: 1000, height: 700))
         var clock = 100.0
         func step(_ seconds: Double) {
             for _ in 0..<Int(seconds * 30) { clock += 1 / 30; for chef in view.chefs.values { chef.update(1 / 30) }; view.pace(now: clock) }
@@ -516,7 +514,7 @@ import simd
     }
 
     @Test func selectingAChefRingsItFollowsItAndRecedesOtherTags() throws {
-        let view = KitchenSceneView(frame: CGRect(x: 0, y: 0, width: 1000, height: 700))
+        let view = DioramaSceneView(frame: CGRect(x: 0, y: 0, width: 1000, height: 700))
         let cook = agent("a", .working, tool: "Edit", edits: true, conversation: "c1")
         let other = agent("b", .working, tool: "Read", conversation: "c2")
         view.apply(agents: [cook, other], active: false, reducedMotion: false, now: 0)
@@ -536,7 +534,7 @@ import simd
         // The camera flies in and keeps the chef in view while it walks.
         var t = 0.0
         for _ in 0..<90 { t += 1 / 30; view.renderer(view, updateAtTime: t) }
-        let follow = KitchenSceneView.followPose(for: chef.root.simdPosition)
+        let follow = DioramaSceneView.followPose(for: chef.root.simdPosition)
         let pose = try #require(view.cameraPose)
         #expect(simd_distance(pose.look, follow.look) < 0.1 && simd_distance(pose.eye, follow.eye) < 0.2)
         view.apply(agents: [cook, other], active: false, reducedMotion: false, now: 1)
@@ -553,7 +551,7 @@ import simd
     }
 
     @Test func switchingChefsGlidesAcrossInsteadOfPullingBack() throws {
-        let view = KitchenSceneView(frame: CGRect(x: 0, y: 0, width: 1000, height: 700))
+        let view = DioramaSceneView(frame: CGRect(x: 0, y: 0, width: 1000, height: 700))
         let a = agent("a", .working, tool: "Edit", edits: true, conversation: "c1"), b = agent("b", .working, tool: "Read", conversation: "c2")
         view.apply(agents: [a, b], active: false, reducedMotion: false, now: 0)
         view.fitFloor()
@@ -570,7 +568,7 @@ import simd
     }
 
     @Test func aSkillFetchedInPassingStillGetsAPantryVisit() throws {
-        let view = KitchenSceneView(frame: CGRect(x: 0, y: 0, width: 1000, height: 700))
+        let view = DioramaSceneView(frame: CGRect(x: 0, y: 0, width: 1000, height: 700))
         var cook = agent("a", .working, tool: "Edit", edits: true)
         view.apply(agents: [cook], active: false, reducedMotion: false, now: 0)
         let chef = try #require(view.chefs[cook.id])
@@ -585,7 +583,7 @@ import simd
     }
 
     @Test func historyLoadingAfterARelaunchOwesNoVisits() throws {
-        let view = KitchenSceneView(frame: CGRect(x: 0, y: 0, width: 1000, height: 700))
+        let view = DioramaSceneView(frame: CGRect(x: 0, y: 0, width: 1000, height: 700))
         var done = agent("a", .done)
         view.apply(agents: [done], active: false, reducedMotion: false, now: 0)
         let chef = try #require(view.chefs[done.id])
@@ -601,7 +599,7 @@ import simd
     }
 
     @Test func everyTestRunGetsTastedEvenWhenTheAgentMovesOnAtOnce() throws {
-        let view = KitchenSceneView(frame: CGRect(x: 0, y: 0, width: 1000, height: 700))
+        let view = DioramaSceneView(frame: CGRect(x: 0, y: 0, width: 1000, height: 700))
         var cook = agent("a", .working, tool: "Edit", edits: true)
         view.apply(agents: [cook], active: false, reducedMotion: false, now: 0)
         let chef = try #require(view.chefs[cook.id])
@@ -623,7 +621,7 @@ import simd
     }
 
     @Test func aQuickTurnStillCooksBeforeItServes() throws {
-        let view = KitchenSceneView(frame: CGRect(x: 0, y: 0, width: 1000, height: 700))
+        let view = DioramaSceneView(frame: CGRect(x: 0, y: 0, width: 1000, height: 700))
         var cook = agent("a", .working, tool: "Read", detail: "math.js")
         view.apply(agents: [cook], active: false, reducedMotion: false, now: 0)
         let chef = try #require(view.chefs[cook.id])
@@ -650,7 +648,7 @@ import simd
     }
 
     @Test func eachProjectKeepsItsKitchenWhileYouLookElsewhere() throws {
-        let stage = KitchenStage(frame: CGRect(x: 0, y: 0, width: 800, height: 600))
+        let stage = SceneStage(frame: CGRect(x: 0, y: 0, width: 800, height: 600))
         let a = stage.show("A")
         let cook = agent("a1", .working, tool: "Edit", edits: true, project: "A")
         a.apply(agents: [cook], scope: "A", active: true, reducedMotion: false)
@@ -660,11 +658,11 @@ import simd
         // Coming back shows the same kitchen and the same chef, not a rebuilt room.
         #expect(stage.show("A") === a && a.chefs[cook.id] === chef && b.isHidden)
         for scope in ["C", "D", "E", "F", "G"] { stage.show(scope) }
-        #expect(stage.kitchens.count == KitchenStage.maxKitchens && stage.kitchens["B"] == nil && stage.kitchens["A"] != nil)
+        #expect(stage.kitchens.count == SceneStage.maxKitchens && stage.kitchens["B"] == nil && stage.kitchens["A"] != nil)
     }
 
     @Test func catchingUpPutsChefsWhereTheirAgentsAreWithoutReplaying() throws {
-        let view = KitchenSceneView(frame: CGRect(x: 0, y: 0, width: 1000, height: 700))
+        let view = DioramaSceneView(frame: CGRect(x: 0, y: 0, width: 1000, height: 700))
         var cook = agent("a", .working, tool: "Edit", edits: true)
         view.apply(agents: [cook], active: false, reducedMotion: false, now: 0)
         let chef = try #require(view.chefs[cook.id])
@@ -681,7 +679,7 @@ import simd
     }
 
     @Test func dishesWaitingForReviewQueueWithPlatesInsteadOfDisappearing() throws {
-        let view = KitchenSceneView(frame: CGRect(x: 0, y: 0, width: 1000, height: 700))
+        let view = DioramaSceneView(frame: CGRect(x: 0, y: 0, width: 1000, height: 700))
         let resting = (0..<6).map { agent("r\($0)", .done, freshness: .lastKnown, conversation: "rest\($0)") }
         let waiting = (0..<8).map { agent("w\($0)", .done, conversation: "dish\($0)") }
         view.apply(agents: resting + waiting, active: false, reducedMotion: false, now: 0)
@@ -712,7 +710,7 @@ import simd
     }
 
     @Test func emptyCuttingBoardsShowTheRestingCleaver() throws {
-        let view = KitchenSceneView(frame: CGRect(x: 0, y: 0, width: 1000, height: 700))
+        let view = DioramaSceneView(frame: CGRect(x: 0, y: 0, width: 1000, height: 700))
         view.updateBoards()
         #expect(view.idleBoards.count == 6)
         view.apply(agents: [agent("a", .working, tool: "Edit", edits: true)], active: false, reducedMotion: false, now: 0)
@@ -730,7 +728,7 @@ import simd
     @Test func theRangeFitsItsStationAndCarriesTheFlames() throws {
         let stove = try #require(KitchenStove.shared)
         let area = try #require(KitchenLayout.areas.first { $0.id == "stove" })
-        let view = KitchenSceneView(frame: CGRect(x: 0, y: 0, width: 1000, height: 700))
+        let view = DioramaSceneView(frame: CGRect(x: 0, y: 0, width: 1000, height: 700))
         let node = try #require(view.scene?.rootNode.childNode(withName: "stove", recursively: false))
         let (low, high) = node.boundingBox
         let origin = KitchenStove.origin
@@ -752,7 +750,7 @@ import simd
         let top = try #require(hits.first { sequence(first: $0.node, next: \.parent).contains { $0.name == "stove" } })
         #expect(abs(Float(top.worldCoordinates.y) - Float(KitchenLayout.worktopHeight)) < 0.03)
         // Small enough to ship.
-        let url = try #require(WorkspaceCapybaraAsset.resourceBundle.url(forResource: "stove", withExtension: "glb", subdirectory: "KitchenStations"))
+        let url = try #require(SkinnedGLBAsset.resourceBundle.url(forResource: "stove", withExtension: "glb", subdirectory: "KitchenStations"))
         #expect(try Data(contentsOf: url).count < 1_500_000)
     }
 
@@ -761,7 +759,7 @@ import simd
     @Test func theIslandKeepsItsBoards() throws {
         let island = try #require(KitchenIsland.shared)
         let area = try #require(KitchenLayout.areas.first { $0.id == "cooking" })
-        let view = KitchenSceneView(frame: CGRect(x: 0, y: 0, width: 1000, height: 700))
+        let view = DioramaSceneView(frame: CGRect(x: 0, y: 0, width: 1000, height: 700))
         let node = try #require(view.scene?.rootNode.childNode(withName: "cooking", recursively: false))
         #expect(island.boards.count == 6)
         let boards = node.childNodes.filter { $0.name == "cutting board" }.sorted { $0.simdWorldPosition.x < $1.simdWorldPosition.x }
@@ -779,7 +777,7 @@ import simd
         let (low, high) = node.boundingBox
         #expect(Float(low.x) + Float(area.footprint.midX) >= Float(area.footprint.minX) - 0.01 && Float(high.x) + Float(area.footprint.midX) <= Float(area.footprint.maxX) + 0.01)
         #expect(Float(low.z) + Float(area.footprint.midY) >= Float(area.footprint.minY) - 0.01 && Float(high.z) + Float(area.footprint.midY) <= Float(area.footprint.maxY) + 0.01)
-        let url = try #require(WorkspaceCapybaraAsset.resourceBundle.url(forResource: "island", withExtension: "glb", subdirectory: "KitchenStations"))
+        let url = try #require(SkinnedGLBAsset.resourceBundle.url(forResource: "island", withExtension: "glb", subdirectory: "KitchenStations"))
         #expect(try Data(contentsOf: url).count < 1_500_000)
     }
 
@@ -817,7 +815,7 @@ import simd
     /// The French back stations stand in their footprints, and where each chef sets its idea or
     /// plate down (0.5 chef units ahead of its spot) the marble is clear, at the worktop.
     @Test func theBackStationsKeepTheirWorktopsClear() throws {
-        let view = KitchenSceneView(frame: CGRect(x: 0, y: 0, width: 1000, height: 700))
+        let view = DioramaSceneView(frame: CGRect(x: 0, y: 0, width: 1000, height: 700))
         for id in ["order", "prep", "tasting", "pantry"] {
             let area = try #require(KitchenLayout.areas.first { $0.id == id })
             let node = try #require(view.scene?.rootNode.childNode(withName: id, recursively: false))
@@ -834,7 +832,7 @@ import simd
                 let top = try #require(hits.first { sequence(first: $0.node, next: \.parent).contains { $0.name == id } }, "\(slot.id)")
                 #expect(abs(Float(top.worldCoordinates.y) - Float(KitchenLayout.worktopHeight)) < 0.03, "\(slot.id) at \(top.worldCoordinates.y)")
             }
-            let url = try #require(WorkspaceCapybaraAsset.resourceBundle.url(forResource: id, withExtension: "glb", subdirectory: "KitchenStations"))
+            let url = try #require(SkinnedGLBAsset.resourceBundle.url(forResource: id, withExtension: "glb", subdirectory: "KitchenStations"))
             #expect(try Data(contentsOf: url).count < 1_500_000)
         }
     }
@@ -855,7 +853,7 @@ import simd
 
     /// The Provençal pantry still opens the pantry when clicked, and its status lights glow.
     @Test func thePantryStillOpensAndGlows() throws {
-        let view = KitchenSceneView(frame: CGRect(x: 0, y: 0, width: 1000, height: 700))
+        let view = DioramaSceneView(frame: CGRect(x: 0, y: 0, width: 1000, height: 700))
         let pantry = try #require(view.scene?.rootNode.childNode(withName: "pantry", recursively: false))
         var lights = 0
         pantry.enumerateHierarchy { node, _ in
@@ -870,7 +868,7 @@ import simd
 
     /// The modelled connecting cabinets fill exactly the gaps between the wall stations.
     @Test func theConnectingCabinetsMatchTheirPlaces() throws {
-        let view = KitchenSceneView(frame: CGRect(x: 0, y: 0, width: 1000, height: 700))
+        let view = DioramaSceneView(frame: CGRect(x: 0, y: 0, width: 1000, height: 700))
         let cabinets = try #require(view.scene?.rootNode.childNode(withName: "connecting cabinets", recursively: true))
         let bounds = worldBounds(cabinets)
         let expected = KitchenLayout.connectors.reduce(CGRect.null) { $0.union($1) }
@@ -888,7 +886,7 @@ import simd
     /// Two stainless sinks are set into the right wall's long run: a basin (below the worktop)
     /// at each, inside that run's footprint.
     @Test func theRightWallHasTwoSinks() throws {
-        let view = KitchenSceneView(frame: CGRect(x: 0, y: 0, width: 1000, height: 700))
+        let view = DioramaSceneView(frame: CGRect(x: 0, y: 0, width: 1000, height: 700))
         let cabinets = try #require(view.scene?.rootNode.childNode(withName: "connecting cabinets", recursively: true))
         let run = KitchenLayout.connectors[4].insetBy(dx: -0.05, dy: -0.05)
         for n in 0..<2 {
@@ -949,7 +947,10 @@ import simd
         let navigation = KitchenLayout.chefNavigation
         #expect(navigation.isFree(strike.stand))
         for slot in KitchenLayout.chefSlots["bell"] ?? [] {
-            #expect(navigation.isFree(slot.stand) && slot.stand.y < KitchenLayout.gongCenter.y + 0.4, "\(slot)")
+            // In front of the gong (the camera's side), facing it.
+            let toward = KitchenLayout.gongCenter - slot.stand
+            #expect(navigation.isFree(slot.stand) && slot.stand.y > KitchenLayout.gongCenter.y - 0.4, "\(slot)")
+            #expect(abs(atan2(toward.x, toward.y) - slot.facing) < 0.01, "\(slot) faces the gong")
         }
     }
 
@@ -961,10 +962,10 @@ import simd
         #expect(KitchenManager.next(current: "a", waiting: []) == nil)           // nobody waits: leaves
     }
 
-    /// End to end: the chef strikes the gong (it shivers), waits behind it, the manager comes in
+    /// End to end: the chef strikes the gong (it shivers), waits in front of it, the manager comes in
     /// from the dining room and they talk; once you answer the manager walks back out.
     @Test func theManagerComesWhenTheGongSounds() throws {
-        let view = KitchenSceneView(frame: CGRect(x: 0, y: 0, width: 1000, height: 700))
+        let view = DioramaSceneView(frame: CGRect(x: 0, y: 0, width: 1000, height: 700))
         var clock = 100.0
         func step(_ seconds: Double) {
             for _ in 0..<Int(seconds * 30) {
@@ -1006,7 +1007,7 @@ import simd
         let ids = (0..<10).map { "c\($0)" }
         _ = room.update(resting: ids, now: 0)
         let kinds = ids.compactMap { room.kind(of: $0) }
-        #expect(kinds.filter { [.arcade, .vending, .espresso].contains($0) }.count == 5)
+        #expect(kinds.filter { [.arcade, .vending].contains($0) }.count == 4)
         #expect(kinds.filter { $0 == .chair }.count == 2 && kinds.count == 10)
         var machineUsers: Set<String> = [], bothTalking = 0, samples = 0
         for t in stride(from: 0.0, through: 600, by: 0.5) {
@@ -1039,12 +1040,12 @@ import simd
             else { #expect(abs(Float(machine.facing) - .pi / 2) < 0.01 && Float(machine.rect.minX) < BreakRoomLayout.leftWall + 0.05 + (machine.onBar ? BreakRoomLayout.coffeeBarDepth : 0)) }
             let model = try #require(models[machine.asset]), (lo, hi) = model.boundingBox
             #expect(abs(Float(hi.x - lo.x) * machine.scale - machine.size.x) < 0.05 && abs(Float(hi.z - lo.z) * machine.scale - machine.size.y) < 0.05, "\(machine.asset)")
-            let file = try #require(WorkspaceCapybaraAsset.resourceBundle.url(forResource: machine.asset, withExtension: "glb", subdirectory: "BreakRoom"))
+            let file = try #require(SkinnedGLBAsset.resourceBundle.url(forResource: machine.asset, withExtension: "glb", subdirectory: "BreakRoom"))
             #expect(try file.resourceValues(forKeys: [.fileSizeKey]).fileSize! < 1_500_000)
         }
         let navigation = KitchenLayout.chefNavigation
         for spot in BreakRoomLayout.spots { #expect(navigation.isFree(spot.station.stand), "\(spot.station)") }
-        let view = KitchenSceneView(frame: CGRect(x: 0, y: 0, width: 1000, height: 700))
+        let view = DioramaSceneView(frame: CGRect(x: 0, y: 0, width: 1000, height: 700))
         view.layoutSubtreeIfNeeded(); view.fitFloor()
         for machine in BreakRoomLayout.machines {
             let node = try #require(view.scene?.rootNode.childNode(withName: "break machine:" + machine.asset, recursively: true))
@@ -1061,10 +1062,10 @@ import simd
         }
     }
 
-    /// End to end: ten resting chefs fill the machines, the chairs and a circle; turns move chefs
-    /// on and off the machines; talking and laughing put up emoji bubbles, at most four at once.
+    /// End to end: ten resting chefs, of whom the six most recent stay; they fill the four machines
+    /// and the two chairs; talking and laughing put up emoji bubbles, at most four at once.
     @Test func restingChefsPlayChatAndTakeTurns() throws {
-        let view = KitchenSceneView(frame: CGRect(x: 0, y: 0, width: 1400, height: 900))
+        let view = DioramaSceneView(frame: CGRect(x: 0, y: 0, width: 1400, height: 900))
         var clock = 100.0, mostBubbles = 0, emoji = Set<String>()
         func step(_ seconds: Double) {
             for _ in 0..<Int(seconds * 10) {
@@ -1079,18 +1080,18 @@ import simd
         step(20)
         let loops = view.chefs.values.compactMap { $0.director.intent?.loop }
         #expect(loops.filter { $0 == "play_arcade" }.count == 3, "\(loops.sorted())")
-        #expect(loops.filter { $0 == "stand_sip" }.count == 2)
-        let atMachines = Set(view.chefs.compactMap { id, _ in [BreakRoomLayout.Kind.arcade, .vending, .espresso].contains(view.breakRoom.kind(of: id)) ? id : nil })
-        #expect(atMachines.count == 5)
-        #expect(view.chefs.values.filter { $0.director.station?.area == "break" }.count >= 9)
+        #expect(loops.filter { $0 == "stand_sip" }.count == 1)
+        let atMachines = Set(view.chefs.compactMap { id, _ in [BreakRoomLayout.Kind.arcade, .vending].contains(view.breakRoom.kind(of: id)) ? id : nil })
+        #expect(atMachines.count == 4)
+        #expect(view.chefs.count == DioramaSceneView.maxResting && view.chefs.values.filter { $0.director.station?.area == "break" }.count == 6)
         step(120)
-        let later = Set(view.chefs.compactMap { id, _ in [BreakRoomLayout.Kind.arcade, .vending, .espresso].contains(view.breakRoom.kind(of: id)) ? id : nil })
-        #expect(later != atMachines && later.count == 5)
+        let later = Set(view.chefs.compactMap { id, _ in [BreakRoomLayout.Kind.arcade, .vending].contains(view.breakRoom.kind(of: id)) ? id : nil })
+        #expect(later.count == 4)
         #expect(mostBubbles > 0 && mostBubbles <= 4 && !emoji.isEmpty, "\(emoji)")
     }
 
     @Test func burnersIgniteOnlyWhereChefsCook() throws {
-        let view = KitchenSceneView(frame: CGRect(x: 0, y: 0, width: 1000, height: 700))
+        let view = DioramaSceneView(frame: CGRect(x: 0, y: 0, width: 1000, height: 700))
         let cooks = [agent("a", .working, tool: "Bash", detail: "make", edits: true), agent("b", .working, tool: "Bash", detail: "npm run build", edits: true),
                      agent("c", .working, tool: "Edit", edits: true)]
         view.apply(agents: cooks, active: false, reducedMotion: false, now: 0)
@@ -1103,7 +1104,7 @@ import simd
     }
 
     @Test func firstAgentInAnOpenEmptyProjectArrivesByElevator() throws {
-        let view = KitchenSceneView(frame: CGRect(x: 0, y: 0, width: 1000, height: 700))
+        let view = DioramaSceneView(frame: CGRect(x: 0, y: 0, width: 1000, height: 700))
         view.apply(agents: [], scope: "p", active: false, reducedMotion: false, now: 0)
         let first = agent("first", .working, tool: "Read")
         view.apply(agents: [first], scope: "p", active: false, reducedMotion: false, now: 1)
@@ -1111,7 +1112,7 @@ import simd
     }
 
     @Test func onlyNewAgentsArriveByElevator() throws {
-        let view = KitchenSceneView(frame: CGRect(x: 0, y: 0, width: 1000, height: 700))
+        let view = DioramaSceneView(frame: CGRect(x: 0, y: 0, width: 1000, height: 700))
         let old = agent("old", .working, tool: "Edit", edits: true), new = agent("new", .working, tool: "Read")
         view.apply(agents: [old], active: false, reducedMotion: false, now: 0)
         #expect(view.chefs[old.id]?.director.intent?.station?.area == "cooking")
@@ -1144,7 +1145,7 @@ import simd
     }
 
     @Test func lockFreeProjectionMatchesSceneKit() throws {
-        let view = KitchenSceneView(frame: CGRect(x: 0, y: 0, width: 1000, height: 700))
+        let view = DioramaSceneView(frame: CGRect(x: 0, y: 0, width: 1000, height: 700))
         view.layoutSubtreeIfNeeded(); view.fitFloor()
         for point in [SIMD3<Float>(0, 0, 0), SIMD3(-9, 2.8, -6), SIMD3(8, 1, 6), SIMD3(3, 3.5, -2)] {
             let mine = try #require(view.projectWithoutLock(point))
@@ -1154,7 +1155,7 @@ import simd
     }
 
     @Test func neighbouringNameTagsNeverOverlap() throws {
-        let view = KitchenSceneView(frame: CGRect(x: 0, y: 0, width: 1000, height: 700))
+        let view = DioramaSceneView(frame: CGRect(x: 0, y: 0, width: 1000, height: 700))
         view.layoutSubtreeIfNeeded(); view.fitFloor()
         view.apply(agents: (0..<10).map { agent("r\($0)", .working, tool: "Read", conversation: "c\($0)") }, active: false, reducedMotion: false)
         let tags = view.chefLabels.values.map(\.frame)
@@ -1163,7 +1164,7 @@ import simd
     }
 
     @Test func crowdedTagsKeepTheOneThatNeedsYouOpen() throws {
-        let view = KitchenSceneView(frame: CGRect(x: 0, y: 0, width: 1000, height: 700))
+        let view = DioramaSceneView(frame: CGRect(x: 0, y: 0, width: 1000, height: 700))
         view.layoutSubtreeIfNeeded(); view.fitFloor()
         // Everyone waiting at the bell stands close together.
         let cast = [agent("w", .waiting, attention: .input, conversation: "c1")] + (0..<4).map { agent("x\($0)", .working, tool: "Read", conversation: "d\($0)") }
@@ -1175,7 +1176,7 @@ import simd
     }
 
     @Test func kitchenViewReconcilesChefsAndPlaysOnlyWhileActive() throws {
-        let view = KitchenSceneView(frame: CGRect(x: 0, y: 0, width: 1000, height: 700))
+        let view = DioramaSceneView(frame: CGRect(x: 0, y: 0, width: 1000, height: 700))
         view.apply(agents: [], active: true, reducedMotion: false)
         // No chefs, but the restaurant's guests keep it moving while it's on screen.
         #expect(view.chefs.isEmpty && view.isPlaying)
@@ -1195,7 +1196,7 @@ import simd
     }
 
     /// The scene as a PNG with its emoji bubbles drawn over it (`snapshot` renders the 3D view only).
-    private func composited(_ view: KitchenSceneView) throws -> Data {
+    private func composited(_ view: DioramaSceneView) throws -> Data {
         let image = view.snapshot()
         let canvas = NSImage(size: view.bounds.size)
         canvas.lockFocus()
@@ -1217,6 +1218,67 @@ import simd
         return try #require(NSBitmapImageRep(data: tiff)?.representation(using: .png, properties: [:]))
     }
 
+    /// A clip of a chef that needs you (DIORAMA_GONG_DEMO=1): it leaves the stove, strikes the
+    /// gong, waits in front of it, and the head chef walks in from the dining room to talk. Frames go
+    /// to .local/demo/gong-frames (30 fps); encode them with ffmpeg.
+    @Test func recordGongDemo() throws {
+        guard ProcessInfo.processInfo.environment["DIORAMA_GONG_DEMO"] == "1" else { return }
+        let lead = Double(ProcessInfo.processInfo.environment["DIORAMA_GONG_LEAD"] ?? "") ?? 4
+        let folder = URL(fileURLWithPath: #filePath).deletingLastPathComponent().appendingPathComponent("../../.local/demo/gong-frames").standardized
+        try? FileManager.default.removeItem(at: folder)
+        try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
+        let view = DioramaSceneView(frame: CGRect(x: 0, y: 0, width: 1280, height: 720))
+        view.characters = ChefCharacterModel(url: nil)
+        var clock = 100.0
+        func step(_ dt: Double) {
+            clock += dt
+            for chef in view.chefs.values { chef.update(Float(dt)) }
+            view.manager?.update(Float(dt))
+            view.pace(now: clock); view.updateBreakRoom(now: clock); view.updateManager(); view.updateGong(); view.updateEffects()
+            // SceneKit actions (the manager's fade-in) don't run offscreen; the app shows him as he walks in.
+            if let manager = view.manager, manager.root.opacity < 1 { manager.root.removeAllActions(); manager.root.opacity = 1 }
+        }
+        let crew = [agent("edit", .working, tool: "Edit", edits: true, conversation: "crew-edit"),
+                    agent("plan", .working, tool: "TaskCreate", conversation: "crew-plan"),
+                    agent("test", .working, tool: "Bash", detail: "swift test", edits: true, conversation: "crew-test")]
+            + (0..<3).map { agent("r\($0)", .done, freshness: .lastKnown, conversation: "rest\($0)") }
+        let busy = agent("you", .working, tool: "Bash", detail: "make", edits: true, conversation: "needs-you")
+        view.apply(agents: crew + [busy], active: false, reducedMotion: false, now: clock)
+        view.layoutSubtreeIfNeeded(); view.fitFloor()
+        for _ in 0..<(15 * 30) { step(1 / 30) }          // everyone settles at their stations
+        // The agent asks for approval: its chef heads for the gong (the clip starts as it nears it).
+        let asking = agent("you", .waiting, attention: .approval, edits: true, conversation: "needs-you")
+        view.apply(agents: crew + [asking], active: false, reducedMotion: false, now: clock)
+        for _ in 0..<Int(lead * 30) { step(1 / 30) }
+        let camera = try #require(view.pointOfView)
+        let center = SIMD3<Float>(0.8, 0.9, 5.4), elevation: Float = KitchenCameraController.elevationDegrees * .pi / 180
+        let frames = 285
+        // The sounds the app would play, frame by frame (as `playSounds` pans and mutes them).
+        var soundLog: [String] = []
+        for chef in Array(view.chefs.values) + (view.manager.map { [$0] } ?? []) { chef.heard = [] }
+        for frame in 0..<frames {
+            step(1 / 30)
+            for chef in Array(view.chefs.values) + (view.manager.map { [$0] } ?? []) where !chef.heard.isEmpty {
+                let sounds = chef.heard; chef.heard = []
+                let spot = chef.director.position
+                if chef.director.station?.area == "break" || view.quietArea.contains(CGPoint(x: CGFloat(spot.x), y: CGFloat(spot.y))) { continue }
+                let point = view.projectWithoutLock(chef.root.simdWorldPosition)
+                let x = point.map { Float($0.x / view.bounds.width) } ?? 0.5
+                let level: Float = x >= 0 && x <= 1 ? 1 : 0.35
+                for sound in sounds { soundLog.append(String(format: "%.4f %@ %d %.3f %.3f", Double(frame) / 30, sound.rawValue, sound.variants, (x * 2 - 1) * 0.7, sound.volume * level)) }
+            }
+            let distance = 13.5 - 2 * Float(frame) / Float(frames)   // a slow push in
+            camera.simdPosition = center + SIMD3(0, distance * sin(elevation), distance * cos(elevation))
+            camera.simdLook(at: center)
+            try composited(view).write(to: folder.appendingPathComponent(String(format: "f%04d.png", frame)))
+            if frame == frames - 1 { try soundLog.joined(separator: "\n").write(to: folder.appendingPathComponent("sounds.txt"), atomically: true, encoding: .utf8) }
+            if frame % 15 == 0 {
+                let chef = view.chefs.first { $0.key.hasSuffix(":you") }?.value
+                print("GONG t=\(Double(frame) / 30)s chef=\(chef?.director.clip.name ?? "-") at=\(chef?.director.station?.id ?? "-") strikes=\(chef?.director.gongStrikes ?? 0) manager=\(view.manager.map { $0.director.station?.id ?? "walking" } ?? "-") talking=\(view.managerTalking != nil)")
+            }
+        }
+    }
+
     /// A ten-second demo of the break room (DIORAMA_KITCHEN_DEMO=1): the camera close over the room,
     /// chefs at the machines, in the chairs and chatting with emoji bubbles, a machine changing
     /// hands, and a chef who just finished tasting running in to rest. Frames go to
@@ -1226,7 +1288,7 @@ import simd
         let folder = URL(fileURLWithPath: #filePath).deletingLastPathComponent().appendingPathComponent("../../.local/demo/frames").standardized
         try? FileManager.default.removeItem(at: folder)
         try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
-        let view = KitchenSceneView(frame: CGRect(x: 0, y: 0, width: 960, height: 540))
+        let view = DioramaSceneView(frame: CGRect(x: 0, y: 0, width: 960, height: 540))
         var clock = 100.0
         func step(_ dt: Double) {
             clock += dt
@@ -1247,7 +1309,7 @@ import simd
         view.apply(agents: resting + [finished], active: false, reducedMotion: false, now: clock)
         for _ in 0..<(4 * 30) { step(1 / 30) }
         let camera = try #require(view.pointOfView)
-        let center = SIMD3<Float>(-7.6, 0.9, 5.65), elevation: Float = 62 * .pi / 180
+        let center = SIMD3<Float>(-7.6, 0.9, 5.65), elevation: Float = KitchenCameraController.elevationDegrees * .pi / 180
         let frames = 300
         for frame in 0..<frames {
             step(1 / 30)
@@ -1265,7 +1327,7 @@ import simd
     /// their emoji bubbles drawn over the scene (DIORAMA_KITCHEN_CAPTURE=1; /tmp/diorama-kitchen-lounge*.png).
     @Test func captureBreakRoom() throws {
         guard ProcessInfo.processInfo.environment["DIORAMA_KITCHEN_CAPTURE"] == "1" else { return }
-        let view = KitchenSceneView(frame: CGRect(x: 0, y: 0, width: 1400, height: 900))
+        let view = DioramaSceneView(frame: CGRect(x: 0, y: 0, width: 1400, height: 900))
         var clock = 100.0
         func step(_ seconds: Double) {
             for _ in 0..<Int(seconds * 10) {
@@ -1291,7 +1353,7 @@ import simd
     /// second chef waits (DIORAMA_KITCHEN_CAPTURE=1; /tmp/diorama-kitchen-gong-*.png).
     @Test func captureGongAndManager() throws {
         guard ProcessInfo.processInfo.environment["DIORAMA_KITCHEN_CAPTURE"] == "1" else { return }
-        let view = KitchenSceneView(frame: CGRect(x: 0, y: 0, width: 1400, height: 900))
+        let view = DioramaSceneView(frame: CGRect(x: 0, y: 0, width: 1400, height: 900))
         var clock = 100.0
         func step(_ seconds: Double) {
             for _ in 0..<Int(seconds * 30) {
@@ -1324,7 +1386,7 @@ import simd
     @Test func captureKitchenWithChefs() throws {
         guard ProcessInfo.processInfo.environment["DIORAMA_KITCHEN_CAPTURE"] == "1" else { return }
         func capture(_ agents: [SpatialAgent], _ name: String) throws {
-            let view = KitchenSceneView(frame: CGRect(x: 0, y: 0, width: 1400, height: 900))
+            let view = DioramaSceneView(frame: CGRect(x: 0, y: 0, width: 1400, height: 900))
             view.apply(agents: agents, active: false, reducedMotion: false)
             for chef in view.chefs.values { for _ in 0..<30 { chef.update(1 / 30) } }
             view.updateFlames()
@@ -1339,7 +1401,7 @@ import simd
                      agent("new", .ready, freshness: .ready)], "diorama-kitchen-stages")
         try capture((0..<8).map { task(agent("w\($0)", .done, conversation: "dish\($0)"), "codex:w\($0):turn") }, "diorama-kitchen-serving-line")
         do {
-            let view = KitchenSceneView(frame: CGRect(x: 0, y: 0, width: 1400, height: 900))
+            let view = DioramaSceneView(frame: CGRect(x: 0, y: 0, width: 1400, height: 900))
             let cooks = [agent("sel", .working, tool: "Edit", edits: true, conversation: "s1"), agent("x", .working, tool: "Read", conversation: "s2"),
                          agent("y", .working, tool: "Bash", detail: "npm test", conversation: "s3")]
             view.apply(agents: cooks, active: false, reducedMotion: false)
@@ -1358,7 +1420,7 @@ import simd
         }
         do {
             // Emotes: lasting (needs you, a dish ready) and brief reactions.
-            let view = KitchenSceneView(frame: CGRect(x: 0, y: 0, width: 1400, height: 900))
+            let view = DioramaSceneView(frame: CGRect(x: 0, y: 0, width: 1400, height: 900))
             let cast = [agent("ask", .waiting, attention: .approval), agent("q", .waiting, attention: .input), agent("done", .done),
                         agent("e1", .working, tool: "Edit", edits: true), agent("e2", .working, tool: "Bash", detail: "npm test"),
                         agent("e3", .working, tool: "Read"), agent("e4", .working, tool: "Skill"), agent("e5", .working, tool: "Edit", edits: true)]
@@ -1444,7 +1506,7 @@ extension ChefKitchenTests {
     }
 
     @Test func momentsMoveTheTagOnlyWithMotionAllowed() throws {
-        let view = KitchenSceneView(frame: CGRect(x: 0, y: 0, width: 1000, height: 700))
+        let view = DioramaSceneView(frame: CGRect(x: 0, y: 0, width: 1000, height: 700))
         let waiting = agent("w", .waiting, attention: .approval), cook = agent("c", .working, tool: "Edit", edits: true)
         view.apply(agents: [waiting, cook], active: false, reducedMotion: false)
         let tag = try #require(view.chefLabels[waiting.id])
@@ -1475,7 +1537,7 @@ extension ChefKitchenTests {
     }
 
     @Test func choppingHappensOnTheChoppedBoard() throws {
-        let view = KitchenSceneView(frame: CGRect(x: 0, y: 0, width: 1000, height: 700))
+        let view = DioramaSceneView(frame: CGRect(x: 0, y: 0, width: 1000, height: 700))
         let cook = agent("c", .working, tool: "Edit", edits: true)
         view.apply(agents: [cook], active: false, reducedMotion: true, now: 0)
         let chef = try #require(view.chefs[cook.id])
@@ -1490,7 +1552,7 @@ extension ChefKitchenTests {
     }
 
     @Test func theProgressBarShowsOneBlockPerStepUnderThePill() throws {
-        let view = KitchenSceneView(frame: CGRect(x: 0, y: 0, width: 1000, height: 700))
+        let view = DioramaSceneView(frame: CGRect(x: 0, y: 0, width: 1000, height: 700))
         var cook = agent("c", .working, tool: "Edit", edits: true)
         view.apply(agents: [cook], active: false, reducedMotion: false)
         let tag = try #require(view.chefLabels[cook.id]), bar = tag.bar
@@ -1548,7 +1610,7 @@ extension ChefKitchenTests {
         #expect(KitchenActivity.stations(command: "node - <<'NODE'\nconsole.log(1)\nNODE\nnpm test\nnpm run build") == [.commands, .testing, .commands])
         #expect(KitchenActivity.stations(command: "git status; cat math.js") == [])
         // Eli's last step: tests and a build in one command, just before finishing.
-        let view = KitchenSceneView(frame: CGRect(x: 0, y: 0, width: 1000, height: 700))
+        let view = DioramaSceneView(frame: CGRect(x: 0, y: 0, width: 1000, height: 700))
         var cook = agent("e", .working, tool: "Edit", edits: true)
         view.apply(agents: [cook], active: false, reducedMotion: false, now: 0)
         let chef = try #require(view.chefs[cook.id])
@@ -1597,7 +1659,7 @@ extension ChefKitchenTests {
     }
 
     @Test func aChefWithHistoryNeverArrivesByElevator() throws {
-        let view = KitchenSceneView(frame: CGRect(x: 0, y: 0, width: 1000, height: 700))
+        let view = DioramaSceneView(frame: CGRect(x: 0, y: 0, width: 1000, height: 700))
         view.apply(agents: [], scope: "p", active: false, reducedMotion: false, now: 0)
         let cook = agent("a", .working, tool: "Read")
         view.apply(agents: [cook], scope: "p", active: false, reducedMotion: false, now: 1)
@@ -1617,7 +1679,7 @@ extension ChefKitchenTests {
     }
 
     @Test func acceptedWorkWalksToTheBreakRoomEvenWhenItIsFull() throws {
-        let view = KitchenSceneView(frame: CGRect(x: 0, y: 0, width: 1000, height: 700))
+        let view = DioramaSceneView(frame: CGRect(x: 0, y: 0, width: 1000, height: 700))
         // The break room is full of chefs who rested more recently than this one finished.
         let resters = (0..<view.maxResting).map { index -> SpatialAgent in
             var rester = agent("r\(index)", .done, freshness: .lastKnown, conversation: "r\(index)")
@@ -1633,7 +1695,7 @@ extension ChefKitchenTests {
         let chef = try #require(view.chefs[served.id])
         #expect(chef.director.intent?.station?.area == "break" && chef.director.intent?.prelude == "celebrate_done")
         // Once it has had time to sit down, only the most recent resters keep the seats.
-        view.apply(agents: resters + [served], active: false, reducedMotion: false, now: 1 + KitchenSceneView.walkOff + 1)
+        view.apply(agents: resters + [served], active: false, reducedMotion: false, now: 1 + DioramaSceneView.walkOff + 1)
         #expect(view.chefs[served.id] == nil && view.chefs.count == view.maxResting)
         // Feedback counts as work: a reworking chef is always in the kitchen.
         view.reviews = ["c": .reworking]
@@ -1642,7 +1704,7 @@ extension ChefKitchenTests {
     }
 
     @Test func everyoneWithWorkIsShownAndTheBreakRoomKeepsTheMostRecent() {
-        let view = KitchenSceneView(frame: CGRect(x: 0, y: 0, width: 1000, height: 700))
+        let view = DioramaSceneView(frame: CGRect(x: 0, y: 0, width: 1000, height: 700))
         let working = (0..<16).map { agent("w\($0)", .working, tool: "Edit", edits: true, conversation: "w\($0)") }
         let idle = (0..<(view.maxResting + 4)).map { index -> SpatialAgent in
             var rester = agent("i\(index)", .done, freshness: .lastKnown, conversation: "i\(index)")
@@ -1658,7 +1720,7 @@ extension ChefKitchenTests {
 
 extension ChefKitchenTests {
     @Test func aHeldChefDanglesSquirmsAndWalksBackWhenPutDown() throws {
-        let view = KitchenSceneView(frame: CGRect(x: 0, y: 0, width: 1000, height: 700))
+        let view = DioramaSceneView(frame: CGRect(x: 0, y: 0, width: 1000, height: 700))
         let cook = agent("a", .working, tool: "Edit", edits: true)
         view.apply(agents: [cook], active: false, reducedMotion: false, now: 0)
         let chef = try #require(view.chefs[cook.id])
@@ -1687,7 +1749,7 @@ extension ChefKitchenTests {
     }
 
     @Test func pointerRaysMeetTheFloorWhereTheSceneProjects() throws {
-        let view = KitchenSceneView(frame: CGRect(x: 0, y: 0, width: 1000, height: 700))
+        let view = DioramaSceneView(frame: CGRect(x: 0, y: 0, width: 1000, height: 700))
         view.layoutSubtreeIfNeeded(); view.fitFloor()
         for point in [SIMD3<Float>(0, 0, 0), SIMD3(-6, 0, -3), SIMD3(5, 2.6, 4), SIMD3(3, 2.6, -2)] {
             let screen = try #require(view.projectWithoutLock(point))
@@ -1744,7 +1806,7 @@ extension ChefKitchenTests {
 
 extension ChefKitchenTests {
     @Test func aHeldChefFollowsThePointerPastTheWallsToTheTrash() throws {
-        let view = KitchenSceneView(frame: CGRect(x: 0, y: 0, width: 1000, height: 700))
+        let view = DioramaSceneView(frame: CGRect(x: 0, y: 0, width: 1000, height: 700))
         view.layoutSubtreeIfNeeded(); view.fitFloor()
         // Up in the top-right corner, where the trash sits, outside the kitchen's walls.
         let corner = CGPoint(x: 960, y: 660)
@@ -1776,7 +1838,7 @@ extension ChefKitchenTests {
         }
         // The right-hand side, next to the serving pass, fills first.
         #expect(restaurant.seats.prefix(6).allSatisfy { $0.stand.x > 0 })
-        let view = KitchenSceneView(frame: CGRect(x: 0, y: 0, width: 1600, height: 900))
+        let view = DioramaSceneView(frame: CGRect(x: 0, y: 0, width: 1600, height: 900))
         view.layoutSubtreeIfNeeded(); view.fitFloor()
         #expect(view.scene?.rootNode.childNode(withName: "restaurant", recursively: false) != nil)
         // In a wide window every diner's table is in the home view.
@@ -1827,11 +1889,11 @@ extension ChefKitchenTests {
 
 extension ChefKitchenTests {
     @Test func aServedDishGoesToADinerUntilTheWorkIsAccepted() throws {
-        let view = KitchenSceneView(frame: CGRect(x: 0, y: 0, width: 1000, height: 700))
+        let view = DioramaSceneView(frame: CGRect(x: 0, y: 0, width: 1000, height: 700))
         let restaurant = try #require(KitchenRestaurant.shared)
         // Diners sit at the tables nearest the pass, hatless, facing their tables.
         let diners = try #require(view.scene?.rootNode.childNodes.filter { $0.name?.hasPrefix("diner:") == true })
-        #expect(diners.count == KitchenSceneView.dinerCount)
+        #expect(diners.count == DioramaSceneView.dinerCount)
         let first = try #require(diners.first { $0.name == "diner:" + restaurant.seats[0].id })
         #expect(simd_distance(SIMD2(first.simdPosition.x, first.simdPosition.z), restaurant.seats[0].stand) < 0.05)
         // A finished task: its chef carries the dish to the pass and sets it down.
@@ -1855,16 +1917,16 @@ extension ChefKitchenTests {
         for _ in 0..<30 { chef.update(1 / 30) }
         view.serveDiners(now: 3)
         #expect(view.servedSeats["served"] == 0)
-        view.serveDiners(now: 3 + KitchenSceneView.dinerLinger + 1)
+        view.serveDiners(now: 3 + DioramaSceneView.dinerLinger + 1)
         #expect(view.servedSeats["served"] == nil)
         #expect(view.tablePlates[0]?.isHidden == false)
     }
 
     @Test func theRestaurantSeatsEveryGuestWithFoodOnEveryTable() throws {
-        let view = KitchenSceneView(frame: CGRect(x: 0, y: 0, width: 1000, height: 700))
+        let view = DioramaSceneView(frame: CGRect(x: 0, y: 0, width: 1000, height: 700))
         let assets = try ChefAssets.shared.get()
         #expect(assets.guests.count == 10)
-        #expect(view.diners.count == KitchenSceneView.dinerCount)
+        #expect(view.diners.count == DioramaSceneView.dinerCount)
         let worn = view.diners.map(\.character)
         #expect(Set(worn) == Set(assets.guests.map(\.id)), "every guest is seated at least once")
         #expect(view.tablePlates.count == view.diners.count && view.tablePlates.allSatisfy { $0 != nil })
@@ -1873,7 +1935,7 @@ extension ChefKitchenTests {
             if let partner { #expect(worn[seat] != worn[partner]) }
         }
         // Guests are drawn but never picked as chefs.
-        for diner in view.diners { #expect(diner.root.categoryBitMask == KitchenSceneView.dinerCategory) }
+        for diner in view.diners { #expect(diner.root.categoryBitMask == DioramaSceneView.dinerCategory) }
         // Each guest is the right character on the chef's skeleton.
         for guest in assets.guests { #expect(assets.rig(for: guest.id).nodeNames == assets.rig.nodeNames) }
     }

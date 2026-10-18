@@ -27,10 +27,9 @@ import Testing
         store.select(.project("b")); store.move("b", before: "a")
         #expect(store.projects == ["b", "a"])
         store.home.query = "needle"; store.home.list = true; store.home.scrollID = "a"
-        store.cameras["a"] = SpatialCameraPose(x: 14, scale: 15)
         let restored = ProjectTabStore(data: store.encoded())
         #expect(restored.projects == store.projects); #expect(restored.selected == store.selected)
-        #expect(restored.home == store.home); #expect(restored.cameras == store.cameras)
+        #expect(restored.home == store.home)
         store.close("b"); #expect(store.selected == .home)
     }
     @Test func homeLayoutRestoresAndToleratesOlderSavedState() throws {
@@ -106,13 +105,12 @@ import Testing
         #expect(second.selectedID == "two")
         #expect(first.drafts["one"]?.text == "Keep this")
     }
-    @Test func restoringWorkspaceDoesNotLoseDocumentsCameraOrConversation() {
+    @Test func restoringWorkspaceDoesNotLoseDocumentsOrConversation() {
         let library = model()
         library.navigate(.project("p0", "thread"))
         library.spatial.focus = .agent(project: "p0", conversation: "thread", agent: "avatar", expanded: false)
         library.spatial.conversationPanelVisible = true
         library.navigation.layout.inspectorWidth = 420
-        library.navigation.projectTabs.cameras["p0"] = SpatialCameraPose(x: 8, z: 9, scale: 16)
         let document = WorkspaceDocument(folder: "/fixture/0", path: "README.md")
         library.navigation.open(document, key: "p0:thread")
         library.selectProjectTab("p1"); library.selectProjectTab("p0")
@@ -123,7 +121,6 @@ import Testing
         #expect(library.navigation.tabs["p0:thread"] == .document(document))
         library.closeProjectTab("p0"); library.selectProjectTab("p0")
         #expect(library.spatial.focus.agentID == "avatar")
-        #expect(library.navigation.projectTabs.cameras["p0"]?.x == 8)
     }
     @Test func removingAProjectClosesItsTabAndDropsItFromTheList() {
         let library = model()
@@ -169,78 +166,6 @@ import Testing
 }
 
 @MainActor struct DesktopShellRenderingTests {
-    @Test func homeThemesAndOneRendererDuringTwentyTabSwitches() async throws {
-        let root = FileManager.default.temporaryDirectory.appendingPathComponent("desktop-render-" + UUID().uuidString)
-        try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
-        defer { try? FileManager.default.removeItem(at: root) }
-        let projects = ProjectModel(storageURL: root.appendingPathComponent("projects.json"))
-        projects.projects = (0..<20).map { index in
-            var project = DioramaProject(name: index == 0 ? "Diorama" : "Project \(index)", folder: root.path, commonDirectory: "", base: "", remote: nil)
-            project.id = "native-\(index)"; return project
-        }
-        let nav = WorkspaceNavigation(defaults: UserDefaults(suiteName: UUID().uuidString)!)
-        let model = LibraryModel(execution: ExecutionController(transport: DesktopFixtureTransport()), projects: projects, navigation: nav)
-        model.paused = true
-        for n in 0..<20 {
-            var task = ExecutedTask(id: "fixture-\(n)", title: "Task \(n)", folder: root.path, turnID: "turn", attached: true)
-            task.transcript.entries = (0..<1000).map { Entry(id: "\(n)-\($0)", kind: $0 % 2 == 0 ? "You" : "Assistant", text: String(repeating: "History fixture. ", count: 20), timestamp: nil) }
-            model.execution.tasks[task.id] = task
-            // Deliberately keep the office fixture empty: large histories must remain unhydrated.
-            nav.projectTabs.select(.project("native-\(n)"))
-        }
-        nav.projectTabs.select(.home)
-        let host = NSHostingView(rootView: WorkspaceShell(library: model) { Text("Connect project folder…") })
-        host.frame = NSRect(x: 0, y: 0, width: 1320, height: 850)
-        let window = NSWindow(contentRect: host.frame, styleMask: [.titled, .closable, .resizable], backing: .buffered, defer: false)
-        window.contentView = host
-        func scenes(_ view: NSView) -> [SpatialSceneView] { (view as? SpatialSceneView).map { [$0] } ?? view.subviews.flatMap(scenes) }
-        try await Task.sleep(for: .milliseconds(350))
-        host.layoutSubtreeIfNeeded()
-        let renderer = try #require(scenes(host).first)
-        #expect(!renderer.isPlaying)
-        for (name, appearance) in [("light", NSAppearance.Name.aqua), ("dark", NSAppearance.Name.darkAqua)] {
-            host.appearance = NSAppearance(named: appearance)
-            try await Task.sleep(for: .milliseconds(80)); host.layoutSubtreeIfNeeded()
-            let bitmap = try #require(host.bitmapImageRepForCachingDisplay(in: host.bounds))
-            host.cacheDisplay(in: host.bounds, to: bitmap)
-            try #require(bitmap.representation(using: .png, properties: [:])).write(to: root.appendingPathComponent("home-\(name).png"))
-            try #require(bitmap.representation(using: .png, properties: [:])).write(to: URL(fileURLWithPath: "/tmp/diorama-desktop-home-\(name).png"))
-        }
-        var intervals: [Double] = []
-        var warmIntervals: [Double] = []
-        for round in 0..<2 {
-            for index in 0..<20 {
-                let start = ContinuousClock.now
-                model.selectDesktopTab(.project("native-\(index)"))
-                try await Task.sleep(for: .milliseconds(20))
-                host.layoutSubtreeIfNeeded()
-                let elapsed = start.duration(to: .now).components
-                let seconds = Double(elapsed.seconds) + Double(elapsed.attoseconds) / 1e18
-                intervals.append(seconds)
-                if round == 1 { warmIntervals.append(seconds) }
-                if seconds > 0.05 { print("Desktop slow switch: round \(round), project \(index), \(seconds)s") }
-                #expect(scenes(host).count == 1)
-                #expect(scenes(host).first === renderer)
-                #expect(model.transcript.entries.isEmpty)
-            }
-            print("Desktop native switch round \(round): 20 tabs; resident bytes \(desktopResidentBytes())")
-        }
-        let officePose = renderer.pose
-        let homeStart = ContinuousClock.now
-        model.selectDesktopTab(.home)
-        host.layoutSubtreeIfNeeded()
-        let homeElapsed = homeStart.duration(to: .now).components
-        print("Desktop warm Home synchronous switch/layout: \(Double(homeElapsed.seconds) + Double(homeElapsed.attoseconds) / 1e18)s")
-        try await Task.sleep(for: .milliseconds(100))
-        #expect(!renderer.isPlaying)
-        #expect(renderer.pose == officePose, "Home must not reframe the hidden office camera")
-        let warm = warmIntervals.sorted()
-        print("Desktop return-to-open-project: p50=\(warm[warm.count/2])s p95=\(warm[Int(Double(warm.count)*0.95)])s max=\(warm.last!)s (includes 20ms scheduling wait)")
-        let sorted = intervals.sorted()
-        print("Desktop native switch-to-layout (includes 20ms scheduler wait), 20 tabs / 20000 stored messages, p50=\(sorted[sorted.count / 2])s, p95=\(sorted[Int(Double(sorted.count) * 0.95)])s, max=\(sorted.last!)s; backingScale=\(window.backingScaleFactor)")
-        #expect(model.execution.tasks.count == 20)
-        window.orderOut(nil)
-    }
 }
 
 private actor DesktopFixtureTransport: ExecutionTransport {
@@ -328,55 +253,7 @@ extension DesktopShellRenderingTests {
 
 
 extension DesktopShellRenderingTests {
-    @Test func assetPreparationKeepsOnlyTheLatestProjectRequest() async throws {
-        let scene = SpatialSceneView()
-        let world = SpatialWorld(projects: [SpatialProject(id: "a", name: "A", teams: []), SpatialProject(id: "b", name: "B", teams: [])])
-        scene.applyWhenPrepared(world: world, focus: .project("a"), active: false, reducedMotion: true, reset: 0, page: 0)
-        scene.applyWhenPrepared(world: world, focus: .project("b"), active: false, reducedMotion: true, reset: 0, page: 0)
-        await OfficeAssetPreparation.ready.value
-        try await Task.sleep(for: .milliseconds(50))
-        #expect(scene.officeLayouts["a"] == nil)
-        #expect(scene.officeLayouts["b"] != nil)
-        scene.tearDown()
-    }
 }
 
 extension DesktopShellRenderingTests {
-    @Test func populatedProjectSwitchTiming() async throws {
-        await OfficeAssetPreparation.ready.value
-        let scene = SpatialSceneView()
-        scene.frame = NSRect(x: 0, y: 0, width: 1320, height: 850)
-        defer { scene.tearDown() }
-        let now = Date()
-        let projects = (0..<2).map { p in
-            let id = "populated-\(p)"
-            let session = Session(id: id, provider: .codex, url: nil, sessionID: id, title: "Populated office", project: "/fixture/\(id)", modified: now, bytes: 0, archived: false, parentID: nil, classification: .conversation)
-            let agents = (0..<34).map { n in
-                SpatialAgent(projectID: id, conversationID: id, value: WorkspaceAgent(id: "\(id)-\(n)", name: "Agent \(n)", provider: "Codex", task: "Build offline support", action: "Editing", status: n < 16 ? .working : .done, reportedStatus: n < 16 ? "working" : "done", freshness: .live, observedAt: now))
-            }
-            return SpatialProject(id: id, name: id, teams: [SpatialTeam(projectID: id, session: session, agents: agents)])
-        }
-        let world = SpatialWorld(projects: projects)
-        var durations: [Double] = []
-        var originalNodes: Set<ObjectIdentifier>?
-        for n in 0..<12 {
-            let start = ContinuousClock.now
-            scene.apply(world: world, focus: .project(projects[n % 2].id), active: false, reducedMotion: true, reset: 0)
-            let duration = start.duration(to: .now).components
-            let seconds = Double(duration.seconds) + Double(duration.attoseconds) / 1e18
-            print("Populated project switch \(n): \(seconds)s; avatars \(scene.officeWorkstations.count)")
-            if n >= 2 { durations.append(seconds) }
-            #expect(scene.officeWorkstations.count == 34)
-            let nodes = Set(scene.officeWorkstations.values.map(ObjectIdentifier.init))
-            if let originalNodes { #expect(nodes == originalNodes, "Project switching must reuse the bounded avatar pool") }
-            else { originalNodes = nodes }
-            for (id, station) in scene.officeWorkstations {
-                #expect(station.person.name == "agent:" + id)
-                #expect(station.monitor.name == "screen:" + id)
-            }
-            try await Task.sleep(for: .milliseconds(20))
-        }
-        let values = durations.sorted()
-        print("Populated 34-avatar warm reconciliation: p50=\(values[values.count/2])s max=\(values.last!)s")
-    }
 }

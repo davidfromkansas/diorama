@@ -33,7 +33,7 @@ enum SpatialFocus: Codable, Equatable, Hashable {
         }
     }
     /// A work screen opened from the shared project office returns directly to that office.
-    var officeReturn: SpatialFocus {
+    var panelReturn: SpatialFocus {
         if expanded, let projectID { return .project(projectID) }
         return parent
     }
@@ -116,7 +116,7 @@ struct SpatialWorld: Equatable {
 }
 
 @Observable final class SpatialWorkspaceState {
-    var sceneKind: WorkspaceSceneKind = .kitchen
+    var sceneKind: SceneKind = .kitchen
     var focus: SpatialFocus = .portfolio {
         didSet { if focus.expanded { conversationPanelVisible = true } }
     }
