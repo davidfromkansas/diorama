@@ -47,7 +47,7 @@ nonisolated struct ChefClipCommand: Equatable, Sendable {
 /// hand-offs and interruption reconciliation. Ported from the avatar prototype
 /// (`app/src/avatar/director.ts`); routes now avoid kitchen fixtures. ChefAvatar renders
 /// whatever this decides; tests drive it directly.
-/// Stepped on SceneKit's render thread and steered from the main thread; KitchenSceneView
+/// Stepped on SceneKit's render thread and steered from the main thread; DioramaSceneView
 /// serialises both with its chef lock.
 nonisolated final class ChefDirector: @unchecked Sendable {
     static let walkSpeed: Float = 0.75, runSpeed: Float = 1.55, runDistance: Float = 2.6
@@ -60,7 +60,7 @@ nonisolated final class ChefDirector: @unchecked Sendable {
     let clips: [String: ChefManifest.Clip]
     /// World units per chef unit: speeds and tolerances scale with the rendered chef.
     let unit: Float
-    var navigation: WorkspaceCapybaraNavigation
+    var navigation: FloorNavigation
     var reducedMotion = false
     /// Markers crossed in looping clips (e.g. each knife impact in `working_chop`).
     var onEvent: ((_ marker: String, _ clip: String) -> Void)?
@@ -98,7 +98,7 @@ nonisolated final class ChefDirector: @unchecked Sendable {
     private var played: Set<String> = []
     private var token = 0
 
-    init(clips: [String: ChefManifest.Clip], unit: Float, navigation: WorkspaceCapybaraNavigation) {
+    init(clips: [String: ChefManifest.Clip], unit: Float, navigation: FloorNavigation) {
         self.clips = clips; self.unit = unit; self.navigation = navigation
     }
 

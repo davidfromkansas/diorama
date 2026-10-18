@@ -2,7 +2,7 @@ import AppKit
 
 /// A small speech bubble over a chef in the break room: one emoji (💬 😂 ☕ 🎮 …) in a white
 /// rounded bubble with a tail. It pops in, holds, then fades; the kitchen places it over the
-/// chef's head each frame (`KitchenSceneView.placeBubbles`).
+/// chef's head each frame (`DioramaSceneView.placeBubbles`).
 final class ChefBubbleView: NSView {
     static let size = NSSize(width: 38, height: 36)
     static let hold: Double = 2.6

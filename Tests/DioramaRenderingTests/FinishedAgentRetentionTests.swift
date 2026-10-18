@@ -26,7 +26,7 @@ import Testing
         let session = Session(id: "c", provider: .codex, url: nil, sessionID: "c", title: "Task", project: "/tmp/p",
                               modified: Date(), bytes: 0, archived: false, parentID: nil, classification: .conversation)
         let agent = SpatialAgent(projectID: "p", conversationID: "c", value: .init(id: "child", name: "Child", provider: "Codex", task: "Task", action: "", status: .done, reportedStatus: "done", freshness: .lastKnown))
-        #expect(OfficeRoster(teams: [.init(projectID: "p", session: session, agents: [agent])], now: .distantFuture).occupants.count == 1)
-        #expect(OfficeRoster(teams: [], now: .distantFuture).occupants.isEmpty)
+        #expect(ProjectRoster(teams: [.init(projectID: "p", session: session, agents: [agent])], now: .distantFuture).occupants.count == 1)
+        #expect(ProjectRoster(teams: [], now: .distantFuture).occupants.isEmpty)
     }
 }

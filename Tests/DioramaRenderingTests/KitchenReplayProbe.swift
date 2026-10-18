@@ -21,7 +21,7 @@ import Testing
         print("PROBE turn: files", work.files.map { ($0 as NSString).lastPathComponent }, "commands", work.commands, "failed", work.failedCommands, "tests", work.tests.map { "\($0.command)=\($0.outcome)" }, "fetched", work.resources)
         for entry in AgentActivityFeed.entries(from: events) { print("PROBE feed", entry.title, entry.outcome.map { "· \($0)" } ?? "") }
         guard let start = events.first(where: { $0.kind == "started" })?.time, let end = events.last(where: { $0.kind == "finished" })?.time else { print("PROBE no turn"); return }
-        let view = KitchenSceneView(frame: CGRect(x: 0, y: 0, width: 1200, height: 800))
+        let view = DioramaSceneView(frame: CGRect(x: 0, y: 0, width: 1200, height: 800))
         view.apply(agents: [], scope: "p", active: false, reducedMotion: false, now: 0)
         func state(at t: Date) -> SpatialAgent {
             let seen = events.filter { $0.time <= t }

@@ -30,7 +30,7 @@ import Testing
         let id = try #require(model.projects.projects.first?.id)
         #expect(model.portfolio.usage(id).tokens == 100)
         #expect(model.spatialWorld(showArchived: false).projects.first?.summary.working == 1)
-        let roster = OfficeRoster(teams: model.spatialWorld(showArchived: false).projects[0].teams, now: Date())
+        let roster = ProjectRoster(teams: model.spatialWorld(showArchived: false).projects[0].teams, now: Date())
         #expect(roster.occupants.count == 1 && roster.occupants[0].agent.value.isWorking)
         let watcher = DirectoryWatcher(paths: [root.path]) { Task { await model.portfolio.refresh(model) } }
         let file = try FileHandle(forWritingTo: url); try file.seekToEnd()
@@ -82,7 +82,7 @@ import Testing
         await model.portfolio.refresh(model)
         #expect(model.portfolio.usage(project.id).tokens == 70)
         let spatial = try #require(model.spatialWorld(showArchived: false).projects.first)
-        let roster = OfficeRoster(teams: spatial.teams, now: Date())
+        let roster = ProjectRoster(teams: spatial.teams, now: Date())
         #expect(roster.occupants.count == 1)
         #expect(roster.occupants[0].agent.needsAttention)
         #expect(roster.occupants[0].destination.expanded)

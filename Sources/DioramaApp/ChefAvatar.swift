@@ -3,7 +3,7 @@ import simd
 
 /// Shared chef resources, loaded once: skinned rig, prop templates and manifest.
 @MainActor final class ChefAssets {
-    static let spec = WorkspaceCapybaraAsset.Spec(
+    static let spec = SkinnedGLBAsset.Spec(
         skeletonRoot: "chef_rig", jointCount: 26,
         requiredClips: ["idle_available", "walk", "run", "carry_idle", "carry_walk", "planning_recipe", "researching_book",
                         "working_chop", "waiting_tool", "testing_dish", "request_input", "wait_input", "blocked_wait",
@@ -14,27 +14,27 @@ import simd
                         "play_arcade", "use_vending", "brew_espresso", "stand_sip", "stand_listen", "stand_laugh"],
         instanceName: "chef")
     static let shared: Result<ChefAssets, Error> = Result { try ChefAssets() }
-    let rig: WorkspaceCapybaraAsset
+    let rig: SkinnedGLBAsset
     let props: [String: SCNNode]
     let manifest: ChefManifest
     /// Every character a chef can wear: the original chef first, then the characters fitted to
     /// its skeleton (`chef-variants.json`, built by assets/chef/build_variants.sh).
     let characters: [ChefCharacter]
     static let classic = "classic"
-    private var loaded: [String: WorkspaceCapybaraAsset] = [:]
+    private var loaded: [String: SkinnedGLBAsset] = [:]
     private var preloading = false
     init() throws {
         manifest = try ChefManifest.load()
-        rig = try WorkspaceCapybaraAsset.load("chef-animated", subdirectory: "Chef", spec: Self.spec)
+        rig = try SkinnedGLBAsset.load("chef-animated", subdirectory: "Chef", spec: Self.spec)
         props = try GLBStaticMeshes.load("chef-props", subdirectory: "Chef")
-        guard Set(manifest.clips.keys).isSubset(of: Set(rig.clips.keys)) else { throw WorkspaceCapybaraAsset.AssetError.invalid("Chef manifest names clips the GLB lacks") }
-        let fitted = WorkspaceCapybaraAsset.resourceBundle.url(forResource: "chef-variants", withExtension: "json", subdirectory: "Chef")
+        guard Set(manifest.clips.keys).isSubset(of: Set(rig.clips.keys)) else { throw SkinnedGLBAsset.AssetError.invalid("Chef manifest names clips the GLB lacks") }
+        let fitted = SkinnedGLBAsset.resourceBundle.url(forResource: "chef-variants", withExtension: "json", subdirectory: "Chef")
             .flatMap { try? JSONDecoder().decode(ChefCharacterList.self, from: Data(contentsOf: $0)).characters } ?? []
         characters = [ChefCharacter(id: Self.classic, name: "Chef", asset: "chef-animated.glb")] + fitted
-        guests = WorkspaceCapybaraAsset.resourceBundle.url(forResource: "guest-list", withExtension: "json", subdirectory: "Restaurant")
+        guests = SkinnedGLBAsset.resourceBundle.url(forResource: "guest-list", withExtension: "json", subdirectory: "Restaurant")
             .flatMap { try? JSONDecoder().decode(ChefCharacterList.self, from: Data(contentsOf: $0)).characters }?
             .map { ChefCharacter(id: Self.guestPrefix + $0.id, name: $0.name, asset: $0.asset, folder: "Restaurant") } ?? []
-        staff = WorkspaceCapybaraAsset.resourceBundle.url(forResource: "staff-list", withExtension: "json", subdirectory: "Chef")
+        staff = SkinnedGLBAsset.resourceBundle.url(forResource: "staff-list", withExtension: "json", subdirectory: "Chef")
             .flatMap { try? JSONDecoder().decode(ChefCharacterList.self, from: Data(contentsOf: $0)).characters }?
             .map { ChefCharacter(id: Self.staffPrefix + $0.id, name: $0.name, asset: $0.asset) } ?? []
     }
@@ -50,11 +50,11 @@ import simd
     /// A character's rig: its own mesh and textures, the chef's skeleton and clips. Loaded the
     /// first time a chef wears it (`preload` warms them all off the main thread); the original
     /// chef stands in for one that can't load.
-    func rig(for character: String) -> WorkspaceCapybaraAsset {
+    func rig(for character: String) -> SkinnedGLBAsset {
         if character == Self.classic { return rig }
         if let asset = loaded[character] { return asset }
         guard let entry = (characters + guests + staff).first(where: { $0.id == character }), let url = url(entry),
-              let asset = try? WorkspaceCapybaraAsset(data: Data(contentsOf: url), spec: Self.spec, clipsFrom: rig) else { return rig }
+              let asset = try? SkinnedGLBAsset(data: Data(contentsOf: url), spec: Self.spec, clipsFrom: rig) else { return rig }
         loaded[character] = asset
         return asset
     }
@@ -68,13 +68,13 @@ import simd
         Task.detached(priority: .utility) { [weak self] in
             for (id, url) in pending {
                 guard let data = try? Data(contentsOf: url),
-                      let asset = try? WorkspaceCapybaraAsset(data: data, spec: spec, clipsFrom: base) else { continue }
+                      let asset = try? SkinnedGLBAsset(data: data, spec: spec, clipsFrom: base) else { continue }
                 await MainActor.run { if self?.loaded[id] == nil { self?.loaded[id] = asset } }
             }
         }
     }
     private func url(_ character: ChefCharacter) -> URL? {
-        WorkspaceCapybaraAsset.resourceBundle.url(forResource: (character.asset as NSString).deletingPathExtension, withExtension: "glb", subdirectory: character.folder)
+        SkinnedGLBAsset.resourceBundle.url(forResource: (character.asset as NSString).deletingPathExtension, withExtension: "glb", subdirectory: character.folder)
     }
 }
 
@@ -95,18 +95,34 @@ private nonisolated struct ChefCharacterList: Decodable { let characters: [ChefC
 /// One rendered chef. Navigation (position, heading) applies to `root`, which is never scaled;
 /// `visual` scales the skinned model so props and attach offsets scale with it. Each chef owns its
 /// skeleton and props; geometry, textures and clips are shared.
-/// Updated on SceneKit's render thread (see KitchenSceneView's renderer delegate) and created
+/// Updated on SceneKit's render thread (see DioramaSceneView's renderer delegate) and created
 /// and steered on the main thread, always under the kitchen's chef lock.
 nonisolated final class ChefAvatar: @unchecked Sendable {
     let id: String
     let root = SCNNode()
     let visual = SCNNode()
-    let rig: WorkspaceCapybaraAsset.Instance
+    let rig: SkinnedGLBAsset.Instance
     let director: ChefDirector
-    private let asset: WorkspaceCapybaraAsset
+    private let asset: SkinnedGLBAsset
     private let templates: [String: SCNNode]
     private let manifest: ChefManifest
     private let dishTemplates: [String: SCNNode]
+    private let kit: Kit
+    /// What a scene's chefs carry and serve (`SceneTheme.avatarKit`).
+    struct Kit: @unchecked Sendable {
+        /// Finished work by id: the kitchen's dishes, the office's deliverables.
+        var deliverables: [String: SCNNode]
+        /// What chefs carry out of stations, by kind (`PantryCarry`).
+        var carryModels: [PantryCarry.Kind: SCNNode]
+        /// What a station always hands out (the order rail's lightbulb, the stove's pot).
+        var stationItem: @Sendable (String) -> PantryCarry.Item?
+        /// The deliverable shows on the worktop while it is being made (on the board, at tasting).
+        var workInProgress: Bool
+        @MainActor static var kitchen: Kit {
+            Kit(deliverables: KitchenFood.templates, carryModels: PantryCarry.models,
+                stationItem: { PantryCarry.stationItem(area: $0) }, workInProgress: true)
+        }
+    }
     /// What it fetched from the pantry, carried to the next station (see `PantryCarry`).
     let pantryCarry: PantryCarrier
     /// What its agent is fetching; set under the kitchen's chef lock.
@@ -157,11 +173,11 @@ nonisolated final class ChefAvatar: @unchecked Sendable {
     /// The character this chef wears (`ChefAssets.characters`).
     let character: String
 
-    @MainActor init(id: String, assets: ChefAssets, scale: Float, navigation: WorkspaceCapybaraNavigation, character: String = ChefAssets.classic) {
-        self.id = id; self.character = character
+    @MainActor init(id: String, assets: ChefAssets, scale: Float, navigation: FloorNavigation, character: String = ChefAssets.classic, kit: Kit = .kitchen) {
+        self.id = id; self.character = character; self.kit = kit
         asset = assets.rig(for: character); templates = assets.props; manifest = assets.manifest
-        dishTemplates = KitchenFood.templates
-        pantryCarry = PantryCarrier(models: PantryCarry.models)
+        dishTemplates = kit.deliverables
+        pantryCarry = PantryCarrier(models: kit.carryModels)
         rig = asset.makeInstance()
         director = ChefDirector(clips: assets.manifest.clips, unit: scale, navigation: navigation)
         baseScale = scale
@@ -208,7 +224,7 @@ nonisolated final class ChefAvatar: @unchecked Sendable {
         // What there is to pick up where: the pantry's resource, prep's plate, and each station's own
         // item (order rail, cooking island, stove).
         var wanted = ["pantry": pantryItem, "prep": prepItem].compactMapValues { $0 }
-        for area in ["order", "cooking", "stove"] { wanted[area] = PantryCarry.stationItem(area: area) }
+        for area in ["order", "cooking", "stove"] { wanted[area] = kit.stationItem(area) }
         let delivering = director.held.contains(.plate) || director.intent?.pickup != nil
         pantryCarry.sync(wanted: wanted, area: director.station?.area, reducedMotion: director.reducedMotion, delta: delta,
                          carrySocket: rig.bone(ChefProp.plate.socket), fit: fit.map { ($0.simdPosition, $0.simdQuaternion) },
@@ -354,9 +370,9 @@ nonisolated final class ChefAvatar: @unchecked Sendable {
             parent = socket; position = fit?.simdPosition ?? .zero; orientation = fit?.simdQuaternion ?? orientation; spot = "carry"
         } else if director.placedPlate != nil {
             position = Self.passSpot; spot = "pass"
-        } else if station == "cooking", clip == "working_chop", !choppingOnBoard {
+        } else if kit.workInProgress, station == "cooking", clip == "working_chop", !choppingOnBoard {
             position = Self.boardSpot; spot = "board"
-        } else if station == "tasting", clip == "testing_dish" {
+        } else if kit.workInProgress, station == "tasting", clip == "testing_dish" {
             position = Self.tastingSpot; spot = "tasting"
         } else {
             parent = nil; spot = "hidden"

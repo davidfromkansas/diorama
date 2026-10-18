@@ -61,7 +61,7 @@ import DioramaCore
 }
 
 /// Observation is contained here so refreshing servers does not rebuild the office scene.
-struct ProjectOfficeInbox: View {
+struct ProjectInboxDock: View {
     let library: LibraryModel
     let project: String
     let height: CGFloat

@@ -26,7 +26,7 @@ open dist/Diorama.app
 
 Use **File → Automatically reload source changes** to pause or resume. Logs are in `.local/development/build.log` and `.local/development/reload.log`. Watching runs while the app is open; startup also checks for newer source files. Ordinary release builds omit the watcher configuration.
 
-To try the scene, open a project or conversation and select **Workspace**. Click a robot or use **Agents** for details. Send a task from **Conversation** to see its status change; reported subagents appear at additional desks. Drag to orbit, scroll to zoom, and use **Reset View** to fit the team.
+To try the scene, open a project and select **Workspace**: its agents work as chefs in the kitchen. The gear in the scene's corner switches the project to the office (see [the office scene](docs/OFFICE_SCENE.md)). Click a chef or use **Agents** for details. Scroll to zoom, use the arrow keys and Q/W to move and turn, and **Reset View** (R) to see the whole room.
 
 **Open project** also accepts existing folders without Git. These show **No Git detected** and support external conversations, agent viewing, and local file browsing. Git-dependent actions are unavailable; opening a folder does not initialize Git or change its files. Automatic detection of Git added later is not included.
 

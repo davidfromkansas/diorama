@@ -27,6 +27,7 @@ extension View {
 /// The pantry: everything agents can fetch, as jars (skills), crates (plugins and apps) and
 /// appliances (MCP servers). With a chef selected, skills can be armed for its next message.
 struct PantryCard: View {
+    @Environment(\.sceneVocabulary) private var vocabulary
     enum Shelf: String, CaseIterable, Identifiable {
         case skills = "Jars", plugins = "Crates", servers = "Appliances"
         var id: String { rawValue }
@@ -66,13 +67,13 @@ struct PantryCard: View {
         VStack(alignment: .leading, spacing: 8) {
             HStack(spacing: 8) {
                 Image(systemName: "cabinet").foregroundStyle(Color(red: 0.85, green: 0.66, blue: 0.33))
-                Text("Pantry").font(.headline)
+                Text(vocabulary.supplies).font(.headline)
                 Spacer()
                 Picker("Provider", selection: $provider) {
                     Text("Codex").tag(Provider.codex); Text("Claude").tag(Provider.claude)
                 }.pickerStyle(.segmented).labelsHidden().controlSize(.mini).frame(width: 110)
                 Button(action: close) { Image(systemName: "minus").font(.system(size: 11, weight: .bold)).frame(width: 22, height: 22).contentShape(Rectangle()) }
-                    .buttonStyle(.plain).foregroundStyle(.secondary).pointingHand().help("Close pantry").accessibilityLabel("Close pantry")
+                    .buttonStyle(.plain).foregroundStyle(.secondary).pointingHand().help("Close " + vocabulary.supplies.lowercased()).accessibilityLabel("Close " + vocabulary.supplies.lowercased())
             }
             HStack(spacing: 4) {
                 ForEach(Shelf.allCases) { value in
@@ -85,7 +86,7 @@ struct PantryCard: View {
                     .buttonStyle(.plain).pointingHand().help(value.detail)
                 }
             }
-            TextField("Search the pantry", text: $search).textFieldStyle(.roundedBorder).controlSize(.small)
+            TextField("Search the " + vocabulary.supplies.lowercased(), text: $search).textFieldStyle(.roundedBorder).controlSize(.small)
             if items.isEmpty {
                 VStack(spacing: 4) {
                     Text(model.loading ? "Stocking the shelves…" : "Nothing on this shelf.").font(.caption)

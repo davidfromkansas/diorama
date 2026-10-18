@@ -94,7 +94,8 @@ nonisolated final class KitchenAudio: @unchecked Sendable {
     private let queue = DispatchQueue(label: "diorama.kitchen-audio", qos: .userInitiated)
     private let engine = AVAudioEngine()
     private var players: [(node: AVAudioPlayerNode, pitch: AVAudioUnitVarispeed, busy: Bool)] = []
-    private var buffers: [KitchenSound: [AVAudioPCMBuffer]] = [:]
+    /// Variants per scene's sound folder and sound.
+    private var buffers: [String: [AVAudioPCMBuffer]] = [:]
     private var lastPlayed: [KitchenSound: Double] = [:]
     private var lastVariant: [KitchenSound: Int] = [:]
     private var idleCheck: DispatchWorkItem?
@@ -102,7 +103,7 @@ nonisolated final class KitchenAudio: @unchecked Sendable {
     private var bundle: Bundle?
 
     /// Where the sounds live; kitchens set it on the main thread before any chef can cue one.
-    @MainActor func prepare(bundle: Bundle = WorkspaceCapybaraAsset.resourceBundle) {
+    @MainActor func prepare(bundle: Bundle = SkinnedGLBAsset.resourceBundle) {
         queue.async { [self] in if self.bundle == nil { self.bundle = bundle } }
     }
 
@@ -110,14 +111,16 @@ nonisolated final class KitchenAudio: @unchecked Sendable {
     /// Silences the kitchen for a while without changing the setting (the demo recording's warm-up).
     var muted = false
 
-    /// `pan` runs -1 (left) … 1 (right); `level` scales the sound's own volume (0…1).
-    func play(_ sound: KitchenSound, pan: Float, level: Float = 1) {
+    static let kitchenFolder = "KitchenSounds"
+    /// `pan` runs -1 (left) … 1 (right); `level` scales the sound's own volume (0…1). `folder` is the
+    /// scene's sound set (`SceneTheme.soundFolder`); a sound it doesn't have plays the kitchen's.
+    func play(_ sound: KitchenSound, pan: Float, level: Float = 1, folder: String = KitchenAudio.kitchenFolder) {
         guard Self.available, !muted else { return }
         queue.async { [self] in
             guard enabled else { return }
             let now = CACurrentMediaTime()
             guard now - (lastPlayed[sound] ?? 0) >= sound.spacing else { return }
-            guard let buffer = buffer(for: sound), prepare(), let index = players.firstIndex(where: { !$0.busy }) else { return }
+            guard let buffer = buffer(for: sound, folder: folder), prepare(), let index = players.firstIndex(where: { !$0.busy }) else { return }
             lastPlayed[sound] = now
             let voice = players[index]
             players[index].busy = true
@@ -132,17 +135,20 @@ nonisolated final class KitchenAudio: @unchecked Sendable {
     }
 
     /// A random variant, never the same one twice in a row.
-    private func buffer(for sound: KitchenSound) -> AVAudioPCMBuffer? {
-        if buffers[sound] == nil {
-            buffers[sound] = (0..<sound.variants).compactMap { variant in
-                guard let url = bundle?.url(forResource: "\(sound.rawValue)-\(variant)", withExtension: "caf", subdirectory: "KitchenSounds"),
+    private func buffer(for sound: KitchenSound, folder: String) -> AVAudioPCMBuffer? {
+        let key = folder + "/" + sound.rawValue
+        if buffers[key] == nil {
+            buffers[key] = (0..<sound.variants).compactMap { variant in
+                guard let url = bundle?.url(forResource: "\(sound.rawValue)-\(variant)", withExtension: "caf", subdirectory: folder),
                       let file = try? AVAudioFile(forReading: url),
                       let buffer = AVAudioPCMBuffer(pcmFormat: file.processingFormat, frameCapacity: AVAudioFrameCount(file.length)),
                       (try? file.read(into: buffer)) != nil else { return nil }
                 return buffer
             }
         }
-        guard let options = buffers[sound], !options.isEmpty else { return nil }
+        guard let options = buffers[key], !options.isEmpty else {
+            return folder == Self.kitchenFolder ? nil : buffer(for: sound, folder: Self.kitchenFolder)
+        }
         var pick = Int.random(in: 0..<options.count)
         if options.count > 1, pick == lastVariant[sound] { pick = (pick + 1) % options.count }
         lastVariant[sound] = pick

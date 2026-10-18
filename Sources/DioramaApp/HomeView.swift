@@ -13,7 +13,8 @@ struct HomeView: View {
     private var store: ProjectTabStore { library.navigation.projectTabs }
 
     var body: some View {
-        if store.home.section == .imported && visible { imported } else { page }
+        Group { if store.home.section == .imported && visible { imported } else { page } }
+            .environment(library.projectScenes)
     }
 
     /// Ranks the projects only when what they show changes: moving between sections and cards
@@ -92,7 +93,7 @@ struct HomeView: View {
     static func selectLabel(_ section: HomeSectionKind) -> String {
         switch section {
         case .needsYou: "Answer"
-        case .active: "Open kitchen"
+        case .active: "Open"
         case .needsReview: "Review"
         case .recent: "Open"
         }
@@ -262,8 +263,7 @@ private struct HomeSections: View {
             library.spatial.pendingCreation = project
         }, openKitchen: { project in
             library.navigate(.project(project, nil))
-            library.spatial.sceneKind = .kitchen
-            // Just the kitchen: no conversation panel left open from the last visit.
+            // Just the scene: no conversation panel left open from the last visit.
             library.spatial.conversationPanelVisible = false
         }, removeProject: { id, name in removing = (id, name) })
     }

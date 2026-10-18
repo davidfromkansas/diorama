@@ -33,21 +33,37 @@ struct ConversationScrollTracking: NSViewRepresentable {
         /// Where an animated pin is gliding to, so repeated pins don't restart it.
         private var glideTarget: CGFloat?
         private(set) var userIsScrolling = false
+        /// Where the reader's scroll started, to tell scrolling back down from reading upward, and
+        /// how far from the bottom their last movement left them (before rows that arrived since).
+        private var scrollStartOffset: CGFloat?
+        private var reachedRemaining: CGFloat?
+        private func noteReach() {
+            guard let scroll = conversationScrollView, let document = scroll.documentView else { return }
+            reachedRemaining = max(0, document.bounds.maxY - scroll.contentView.bounds.maxY)
+        }
         private weak var observedScroll: NSScrollView?
         private var conversationScrollView: NSScrollView? {
             if let enclosingScrollView { return enclosingScrollView }
-            if let observedScroll, observedScroll.window === window { return observedScroll }
-            // List installs its native scroll view beside the background probe.
-            func find(_ view: NSView) -> NSScrollView? {
-                if let scroll = view as? NSScrollView { return scroll }
-                return view.subviews.lazy.compactMap { find($0) }.first
+            if let observedScroll, observedScroll.window === window, overlap(observedScroll) > 0 { return observedScroll }
+            // List installs its native scroll view beside the background probe, so the probe covers
+            // the list. Other scroll views nearby (a header's chip strip, the composer) must not be
+            // taken for it: the nearest ancestor's scroll view that overlaps the probe most wins.
+            func scrolls(_ view: NSView) -> [NSScrollView] {
+                (view as? NSScrollView).map { [$0] } ?? view.subviews.flatMap(scrolls)
             }
             var ancestor = superview
             while let view = ancestor {
-                if let scroll = find(view) { return scroll }
+                let candidates = scrolls(view).filter { overlap($0) > 0 }
+                if let best = candidates.max(by: { overlap($0) < overlap($1) }) { return best }
                 ancestor = view.superview
             }
             return nil
+        }
+        /// How much of a scroll view lies under the probe, in window points squared.
+        private func overlap(_ scroll: NSScrollView) -> CGFloat {
+            guard scroll.window === window, !scroll.isHiddenOrHasHiddenAncestor else { return 0 }
+            let shared = convert(bounds, to: nil).intersection(scroll.convert(scroll.bounds, to: nil))
+            return shared.isNull ? 0 : shared.width * shared.height
         }
         private var pinScheduled = false
         private var wheelMonitor: Any?
@@ -153,7 +169,7 @@ struct ConversationScrollTracking: NSViewRepresentable {
         private func beginUserScroll() {
             scrollEnd?.cancel()
             let began = !userIsScrolling
-            if began { requestedOlderInRegion = false }
+            if began { requestedOlderInRegion = false; scrollStartOffset = conversationScrollView?.contentView.bounds.minY }
             let detached = followsLatest
             // Stop native pinning immediately, but never publish SwiftUI state from
             // an AppKit scroll/layout notification. A callback can itself lay out rows.
@@ -177,6 +193,7 @@ struct ConversationScrollTracking: NSViewRepresentable {
         @objc private func scrollBoundsChanged(_ notification: Notification) {
             guard userIsScrolling, let scroll = conversationScrollView,
                   notification.object as? NSClipView === scroll.contentView else { return }
+            noteReach()
             scheduleOlderCheck()
         }
         private func scheduleOlderCheck() {
@@ -203,7 +220,13 @@ struct ConversationScrollTracking: NSViewRepresentable {
                 guard let self, self.lifecycle == token, self.window != nil, let scroll = self.conversationScrollView, let document = scroll.documentView else { return }
                 self.userIsScrolling = false
                 let remaining = max(0, document.bounds.maxY - scroll.contentView.bounds.maxY)
-                self.followsLatest = remaining <= 4
+                // Back at the bottom follows again. So does scrolling down to near it while the agent
+                // keeps writing (new rows can land before the scroll settles); a nudge upward stays put.
+                let movedDown = self.scrollStartOffset.map { scroll.contentView.bounds.minY > $0 + 1 } ?? false
+                let reached = min(remaining, self.reachedRemaining ?? remaining)
+                self.scrollStartOffset = nil; self.reachedRemaining = nil
+                self.followsLatest = remaining <= 4 || (movedDown && reached <= scroll.contentView.bounds.height / 3)
+                if self.followsLatest && remaining > 0.5 { self.schedulePin() }
                 self.onUserScroll(self.followsLatest)
 
             }
@@ -213,6 +236,7 @@ struct ConversationScrollTracking: NSViewRepresentable {
         @objc private func didScroll(_ notification: Notification) {
             guard let scroll = notification.object as? NSScrollView, conversationScrollView === scroll else { return }
             beginUserScroll()
+            if notification.name == NSScrollView.didLiveScrollNotification { noteReach() }
             scheduleOlderCheck()
             if notification.name == NSScrollView.didLiveScrollNotification { scheduleEndOfScroll() }
         }

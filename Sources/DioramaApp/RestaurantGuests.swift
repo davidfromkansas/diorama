@@ -8,10 +8,10 @@ import simd
 /// and the same kitchen behaves the same way each time.
 nonisolated struct RestaurantGuests {
     /// Talking to the table; a partner meanwhile listens.
-    static let talking: Set<String> = ["sit_talk", "sit_gesture"]
-    static let cheer = "sit_cheer", eat = "sit_eat"
-    private static let chatting: [(String, Double)] = [("sit_talk", 4), ("sit_eat", 3), ("sit_gesture", 1.5), ("sit_sip", 1.5), ("sit_laugh", 1), ("sit_idle", 1)]
-    private static let listening: [(String, Double)] = [("sit_idle", 2), ("sit_laugh", 2), ("sit_eat", 3), ("sit_sip", 1)]
+    static let talking = GuestScript.restaurant.talking
+    static let cheer = GuestScript.restaurant.cheer, eat = GuestScript.restaurant.enjoy
+    /// What these guests do (the restaurant's diners, the office's clients).
+    let script: GuestScript
 
     struct Seat {
         var clip: String
@@ -26,15 +26,15 @@ nonisolated struct RestaurantGuests {
 
     /// `positions`: each seat's dish on its table (tables seat two; a seat's partner is the one
     /// whose dish is nearest). `durations`: clip lengths in seconds.
-    init(positions: [SIMD3<Float>], durations: [String: Double], seed: UInt64 = 0x5EA7) {
-        self.durations = durations
+    init(positions: [SIMD3<Float>], durations: [String: Double], seed: UInt64 = 0x5EA7, script: GuestScript = .restaurant) {
+        self.durations = durations; self.script = script
         partners = positions.indices.map { i in
             positions.indices.filter { $0 != i }.min { simd_distance(positions[$0], positions[i]) < simd_distance(positions[$1], positions[i]) }
                 .flatMap { simd_distance(positions[$0], positions[i]) < 1.5 ? $0 : nil }
         }
         seats = positions.indices.map { i in
             var random = SplitMix(seed: seed &+ UInt64(i) &* 0x9E3779B97F4A7C15)
-            let clip = Self.pick(Self.chatting, &random)
+            let clip = Self.pick(script.chatting, &random)
             return Seat(clip: clip, until: random.next(in: 0.5...4.5), random: random)
         }
     }
@@ -44,7 +44,7 @@ nonisolated struct RestaurantGuests {
         var changed: [Int] = []
         for i in seats.indices where now >= seats[i].until {
             if let feast = seats[i].feastUntil {
-                if now < feast { seats[i].clip = Self.eat; seats[i].until = feast }
+                if now < feast { seats[i].clip = script.enjoy; seats[i].until = feast }
                 else { seats[i].feastUntil = nil; choose(i, now: now) }
             } else {
                 choose(i, now: now)
@@ -57,15 +57,15 @@ nonisolated struct RestaurantGuests {
     /// A served dish arrives: a cheer, then eating for `minutes` of scene time.
     mutating func serve(_ seat: Int, now: Double, eating seconds: Double = 12) {
         guard seats.indices.contains(seat) else { return }
-        let cheer = durations[Self.cheer] ?? 1.6
-        seats[seat].clip = Self.cheer
+        let cheer = durations[script.cheer] ?? 1.6
+        seats[seat].clip = script.cheer
         seats[seat].until = now + cheer
         seats[seat].feastUntil = now + cheer + seconds
     }
 
     private mutating func choose(_ i: Int, now: Double) {
-        let partnerTalking = partners[i].map { Self.talking.contains(seats[$0].clip) } ?? false
-        var options = partnerTalking ? Self.listening : Self.chatting
+        let partnerTalking = partners[i].map { script.talking.contains(seats[$0].clip) } ?? false
+        var options = partnerTalking ? script.listening : script.chatting
         // Not the same thing twice running, so a table always changes.
         options = options.map { $0.0 == seats[i].clip ? ($0.0, $0.1 * 0.25) : $0 }
         let clip = Self.pick(options, &seats[i].random)

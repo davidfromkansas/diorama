@@ -5,22 +5,15 @@ import simd
 /// a checkered dining terrace in front of the serving window, walkways, a terracotta roof
 /// behind the back wall, and a canal with lily pads. Loaded once; each kitchen clones it.
 /// Diners sit at its `seat_NN` anchors and are served at the matching `dish_NN`.
-@MainActor final class KitchenRestaurant {
-    struct Seat: Equatable {
-        let id: String
-        /// Where a seated diner's root stands, and the plate spot on the table in front of it.
-        let stand: SIMD2<Float>
-        let dish: SIMD3<Float>
-        /// Facing the table (yaw, `x += sin`, `z += cos`, as chefs use).
-        var facing: Float { atan2(dish.x - stand.x, dish.z - stand.y) }
-    }
+@MainActor final class KitchenRestaurant: SceneSurroundings {
+    typealias Seat = SceneSeat
     static let shared: KitchenRestaurant? = try? KitchenRestaurant()
     let template: SCNNode
     /// Nearest the serving pass first.
     let seats: [Seat]
 
     init(roots: [String: SCNNode]) throws {
-        guard let root = roots["restaurant"] else { throw WorkspaceCapybaraAsset.AssetError.invalid("Restaurant model has no root") }
+        guard let root = roots["restaurant"] else { throw SkinnedGLBAsset.AssetError.invalid("Restaurant model has no root") }
         template = root
         var stands: [String: SIMD3<Float>] = [:], dishes: [String: SIMD3<Float>] = [:]
         root.enumerateChildNodes { node, _ in

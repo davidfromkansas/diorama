@@ -86,9 +86,6 @@ struct ProjectWorkbench: View {
                             .font(.caption).foregroundStyle(.orange).padding(10)
                     }
                     switch tab {
-                    case .workspace:
-                        WorkspaceSessionScene(library: library, session: session,
-                            openConversation: { select(.conversation) }, openActivity: { select(.activity) }).id(key)
                     case .context: ProjectContextView(projectID: projectID, projects: library.projects)
                     case .pullRequests:
                         if project.isGitBacked { LinkedProjectPRView(projectID: projectID, library: library) }

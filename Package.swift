@@ -13,7 +13,7 @@ let package = Package(
         .target(name: "DioramaCore"),
         .executableTarget(name: "DioramaReporter", dependencies: ["DioramaCore"]),
         .executableTarget(name: "DioramaApp", dependencies: ["DioramaCore", .product(name: "MarkdownUI", package: "swift-markdown-ui"), .product(name: "Sparkle", package: "Sparkle")],
-                          resources: [.copy("Resources/Library"), .copy("Resources/KitchenSounds"), .copy("Resources/Restaurant"), .copy("Resources/ConnectorBrand"), .copy("Resources/AgentStatus"), .copy("Resources/Capybara"), .copy("Resources/OfficeFurniture"), .copy("Resources/Chef"), .copy("Resources/Food"), .copy("Resources/KitchenProps"), .copy("Resources/KitchenStations"), .copy("Resources/BreakRoom")],
+                          resources: [.copy("Resources/Library"), .copy("Resources/KitchenSounds"), .copy("Resources/Restaurant"), .copy("Resources/ConnectorBrand"), .copy("Resources/AgentStatus"), .copy("Resources/Chef"), .copy("Resources/Food"), .copy("Resources/KitchenProps"), .copy("Resources/KitchenStations"), .copy("Resources/BreakRoom"), .copy("Resources/OfficeSounds"), .copy("Resources/OfficeStations"), .copy("Resources/OfficeLobby"), .copy("Resources/OfficeProps")],
                           swiftSettings: [.defaultIsolation(MainActor.self)],
                           linkerSettings: [.unsafeFlags(["-Xlinker", "-rpath", "-Xlinker", "@executable_path/../Frameworks"])]),
         .testTarget(name: "DioramaCoreTests", dependencies: ["DioramaCore"]),

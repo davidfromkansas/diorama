@@ -323,6 +323,7 @@ private struct LiveToolIcon: View {
 /// (appliances, crates), plugins with what they bring, and skills (jars). Enter on a skill arms
 /// it for the selected chef.
 struct AllResourcesPalette: View {
+    @Environment(\.sceneVocabulary) private var vocabulary
     @Bindable var library: LibraryModel
     let folder: String
     let sessions: [Provider: String]
@@ -417,7 +418,7 @@ struct AllResourcesPalette: View {
                 Text(armFor.map { "Click a skill to arm it for \($0.name)" } ?? "Select a chef to arm skills for it")
                 Text("Plugins open to show what they bring")
                 Spacer(minLength: 8)
-                Text("Built-in tools (shell, edits, search) are the kitchen's stations")
+                Text("Built-in tools (shell, edits, search) are the \(vocabulary.place)'s stations")
             }
             .font(.system(size: 11.5)).foregroundStyle(SidebarStyle.secondary).lineLimit(1)
             .padding(.horizontal, 14).padding(.vertical, 9)
@@ -472,7 +473,7 @@ struct AllResourcesPalette: View {
             Text("\(count)").font(.system(size: 12, weight: .bold)).monospacedDigit().foregroundStyle(tint.text)
                 .padding(.horizontal, 8).frame(minHeight: 20).background(Capsule().fill(tint.dot.opacity(0.18)))
             Spacer(minLength: 6)
-            Text("pantry " + shelf.lowercased()).font(.system(size: 11.5)).foregroundStyle(SidebarStyle.secondary).lineLimit(1)
+            Text(vocabulary.supplies.lowercased() + " " + shelf.lowercased()).font(.system(size: 11.5)).foregroundStyle(SidebarStyle.secondary).lineLimit(1)
         }
         .padding(.horizontal, 12).frame(height: 42)
         .background(RoundedRectangle(cornerRadius: 10, style: .continuous).fill(tint.band))
@@ -692,9 +693,9 @@ private struct SparkPath: ViewModifier, Animatable {
         }
         return nil
     }
-    private static func find(_ root: NSView?, _ agentID: String) -> KitchenSceneView? {
+    private static func find(_ root: NSView?, _ agentID: String) -> DioramaSceneView? {
         guard let root, !root.isHidden else { return nil }
-        if let kitchen = root as? KitchenSceneView {
+        if let kitchen = root as? DioramaSceneView {
             kitchen.chefLock.lock(); defer { kitchen.chefLock.unlock() }
             return kitchen.chefs[agentID] != nil ? kitchen : nil
         }

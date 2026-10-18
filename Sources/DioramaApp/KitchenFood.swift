@@ -26,7 +26,7 @@ import SceneKit
 
     /// Every static `.glb` in a bundled resource folder, keyed by file name.
     static func models(in name: String) -> [String: SCNNode] {
-        let bundle = WorkspaceCapybaraAsset.resourceBundle
+        let bundle = SkinnedGLBAsset.resourceBundle
         guard let folder = bundle.resourceURL?.appendingPathComponent(name),
               let files = try? FileManager.default.contentsOfDirectory(at: folder, includingPropertiesForKeys: nil) else { return [:] }
         var result: [String: SCNNode] = [:]

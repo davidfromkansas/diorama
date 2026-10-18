@@ -110,7 +110,7 @@ import SceneKit
     private static var images: [String: NSImage] = [:]
     private static func image(_ name: String) -> NSImage? {
         if let cached = images[name] { return cached }
-        let found = WorkspaceCapybaraAsset.resourceBundle.url(forResource: name, withExtension: "jpg", subdirectory: "KitchenStations").flatMap(NSImage.init(contentsOf:))
+        let found = SkinnedGLBAsset.resourceBundle.url(forResource: name, withExtension: "jpg", subdirectory: "KitchenStations").flatMap(NSImage.init(contentsOf:))
         images[name] = found
         return found
     }

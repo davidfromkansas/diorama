@@ -10,51 +10,6 @@ import Testing
         let names = ["Design studio", "Research", "Write Swift", "Figma", "Documents", "Animation", "Spreadsheets", "Image workshop"]
         return .init(id: "book-\(n)", name: names[n % names.count], description: "A little book of practical knowledge. Explore tools and techniques for thoughtful work.", kind: n % 4 == 0 ? .plugin : .skill, provider: .codex, source: "Workspace", availability: n % 3 == 0 ? .unverified : .available)
     }
-    @Test func blenderAssetsLoadAndSceneHitTargetsStaySeparate() throws {
-        _ = NSApplication.shared
-        for name in ["ChibiLibrary", "ClosedBook", "OpenBook"] {
-            let root = try #require(WorkspaceLibraryArtwork.asset(name))
-            #expect(!root.childNodes.isEmpty)
-            #expect(root.boundingBox.max.y > root.boundingBox.min.y)
-        }
-        let view = WorkspaceSceneNSView(); view.frame = NSRect(x: 0, y: 0, width: 1100, height: 700)
-        view.apply(agents: [.ready], selectedID: nil, reduceMotion: true, active: true)
-        let root = try #require(view.scene?.rootNode.childNode(withName: "library", recursively: false))
-        #expect(root.boundingBox.max.y < 5)
-        #expect(root.boundingBox.max.x - root.boundingBox.min.x > 5)
-        view.updateLibrary(item(0), open: true, reduceMotion: true, active: true)
-        #expect(root.childNode(withName: "selectedLibraryBook", recursively: false) != nil)
-        #expect(!view.rendersContinuously)
-        // Commit model transforms before SceneKit hit testing a newly constructed view.
-        _ = view.snapshot()
-        let points = stride(from: 0, to: 1100, by: 10).flatMap { x in
-            stride(from: 0, to: 700, by: 10).map { y in NSPoint(x: x, y: y) }
-        }
-        let hit = try #require(points.first { view.target(at: $0) == .library })
-        #expect(view.agentID(at: hit) == nil)
-        view.updateLibrary(item(1), open: true, reduceMotion: false, active: true)
-        view.updateLibrary(item(2), open: true, reduceMotion: true, active: false)
-        view.stopRendering(); #expect(!view.rendersContinuously)
-        #expect(root.childNodes.filter { $0.name == "selectedLibraryBook" }.count == 1)
-        let book = try #require(root.childNode(withName: "selectedLibraryBook", recursively: false))
-        var coloredMeshes = 0
-        book.enumerateChildNodes { node, _ in
-            if let color = node.geometry?.firstMaterial?.diffuse.contents as? NSColor,
-               color == WorkspaceLibraryArtwork.colors[item(2).coverIndex] { coloredMeshes += 1 }
-        }
-        #expect(coloredMeshes >= 3)
-        try save(view.snapshot(), "workspace-library.png")
-        let agents = [WorkspaceAgent.ready] + (0..<9).map { index in
-            var agent = WorkspaceAgent.ready; agent = WorkspaceAgent(id: "child-\(index)", name: "Agent \(index + 1)", provider: "Codex", task: "Working", action: "Reading", status: .working, reportedStatus: "working", freshness: .live)
-            return agent
-        }
-        view.apply(agents: agents, selectedID: nil, reduceMotion: true, active: false)
-        view.resetCamera()
-        try save(view.snapshot(), "workspace-many-agents.png")
-        let closeup = SCNView(frame: NSRect(x: 0, y: 0, width: 900, height: 620))
-        closeup.scene = WorkspaceLibraryArtwork.previewScene(); closeup.antialiasingMode = .multisampling4X
-        try save(closeup.snapshot(), "library-alcove.png")
-    }
     @Test func cacheAndLateContextResponses() async {
         let model = CapabilityLibraryModel()
         let a = CapabilityLibraryContext(provider: .codex, folder: "/a")

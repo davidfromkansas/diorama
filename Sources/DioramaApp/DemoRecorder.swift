@@ -14,7 +14,8 @@ enum DemoMode {
     static let interactive = CommandLine.arguments.contains("--demo-interactive")
     /// The scratch home; the demo refuses to run against your real one.
     static var home: String? { ProcessInfo.processInfo.environment["CFFIXED_USER_HOME"] }
-    /// "home" (Home, then into a kitchen) or "kitchen" (a day in one kitchen): `--demo-scene kitchen`.
+    /// "home" (Home, then into a kitchen), "kitchen" (a day in one kitchen: `--demo-scene kitchen`)
+    /// or "office" (the same day in the office).
     static var scene: String {
         let arguments = CommandLine.arguments
         return arguments.firstIndex(of: "--demo-scene").flatMap { arguments.indices.contains($0 + 1) ? arguments[$0 + 1] : nil } ?? "home"
@@ -33,7 +34,7 @@ enum DemoMode {
         let library = LibraryModel(navigation: WorkspaceNavigation(defaults: defaults, namespace: "demo"))
         TaskLabels.shared.generator = nil
         let root = URL(fileURLWithPath: home).appendingPathComponent("Projects")
-        let fixture = scene == "kitchen" && !interactive ? DemoFixture.kitchen(root: root)
+        let fixture = ["kitchen", "office", "gong"].contains(scene) && !interactive ? DemoFixture.kitchen(root: root)
             : scene == "reel" || interactive ? DemoFixture.reel(root: URL(fileURLWithPath: home).appendingPathComponent("Projects-reel")) : DemoFixture.make(root: root)
         for id in fixture.agents.keys { KitchenReviews.shared.clear(id) }
         library.demo = fixture
@@ -134,7 +135,11 @@ private struct DemoPointer: View {
         window.setContentSize(NSSize(width: 1392, height: 783))
         window.center()
         NSApp.activate()
+        // Launched from a shell, the app may not become active; order the window in over the
+        // current Space (a full-screen app's included) anyway, or the capture records nothing.
+        NSApp.activate(ignoringOtherApps: true)
         window.makeKeyAndOrderFront(nil)
+        window.orderFrontRegardless()
         let pointerWindow = NSPanel(contentRect: window.frame, styleMask: [.borderless, .nonactivatingPanel], backing: .buffered, defer: false)
         pointerWindow.isOpaque = false; pointerWindow.backgroundColor = .clear; pointerWindow.hasShadow = false
         pointerWindow.ignoresMouseEvents = true
@@ -143,6 +148,8 @@ private struct DemoPointer: View {
         pointerWindow.contentView = NSHostingView(rootView: DemoPointer(director: self))
         pointerWindow.orderFront(nil)
         if DemoMode.scene == "kitchen" { try await kitchen(window: window, library: library, fixture: fixture); return }
+        if DemoMode.scene == "office" { try await kitchen(window: window, library: library, fixture: fixture, scene: .office); return }
+        if DemoMode.scene == "gong" { try await gong(window: window, library: library, fixture: fixture); return }
         if DemoMode.scene == "reel" { try await reel(window: window, library: library); return }
 
         // Warm up: open two projects so their tabs show and the target's kitchen is built and

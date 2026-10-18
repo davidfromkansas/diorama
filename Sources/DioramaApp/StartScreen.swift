@@ -178,7 +178,7 @@ private struct StartChefView: NSViewRepresentable {
 
 /// Built on the main thread; afterwards updated only on SceneKit's render thread under `lock`.
 nonisolated final class StartChefAnimator: NSObject, SCNSceneRendererDelegate, @unchecked Sendable {
-    static let spec = WorkspaceCapybaraAsset.Spec(skeletonRoot: "chef_rig", jointCount: 26, requiredClips: sequence.map(\.0), instanceName: "chef")
+    static let spec = SkinnedGLBAsset.Spec(skeletonRoot: "chef_rig", jointCount: 26, requiredClips: sequence.map(\.0), instanceName: "chef")
     /// Clip and seconds to hold it, matching the start-screen prototype.
     static let sequence: [(String, Float)] = [
         ("idle_available", 2.4), ("request_input", 1.2), ("wait_input", 2.4),
@@ -191,7 +191,7 @@ nonisolated final class StartChefAnimator: NSObject, SCNSceneRendererDelegate, @
     let scene = SCNScene()
     let camera = SCNNode()
     private let lock = NSLock()
-    private var rig: WorkspaceCapybaraAsset.Instance?
+    private var rig: SkinnedGLBAsset.Instance?
     private var reducedMotion = false
     private var index = 0, clipTime: Float = 0
     private var previous: (name: String, time: Float)?
@@ -219,9 +219,9 @@ nonisolated final class StartChefAnimator: NSObject, SCNSceneRendererDelegate, @
 
     /// Parses the bundled chef off the main thread, then adds it to the scene.
     @MainActor func load() {
-        guard let url = WorkspaceCapybaraAsset.resourceBundle.url(forResource: "chef-animated", withExtension: "glb", subdirectory: "Chef") else { return }
+        guard let url = SkinnedGLBAsset.resourceBundle.url(forResource: "chef-animated", withExtension: "glb", subdirectory: "Chef") else { return }
         Task.detached(priority: .userInitiated) { [self] in
-            guard let data = try? Data(contentsOf: url), let asset = try? WorkspaceCapybaraAsset(data: data, spec: Self.spec) else { return }
+            guard let data = try? Data(contentsOf: url), let asset = try? SkinnedGLBAsset(data: data, spec: Self.spec) else { return }
             await MainActor.run {
                 let instance = asset.makeInstance()
                 instance.root.enumerateHierarchy { node, _ in if node.geometry != nil { node.castsShadow = false } }
