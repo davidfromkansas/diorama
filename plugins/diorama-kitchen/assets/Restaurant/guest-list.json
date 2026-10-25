@@ -1,0 +1,535 @@
+{
+  "base": "../Chef/chef-animated.glb",
+  "characters": [
+    {
+      "id": "sweater",
+      "asset": "guest-sweater.glb",
+      "source": {
+        "file": "Meshy_AI_Cozy_Character_Turnar_1009135958_texture.glb",
+        "sha256": "e89ff7e1347a069bd33d53c643009bf06efd4989fe79ba4f1eef3f7bb0f852b6"
+      },
+      "source_triangles": 613084,
+      "triangles": 3000,
+      "vertices": 1502,
+      "floor_shift_blender": [
+        0.00067,
+        -0.02014,
+        0.95059
+      ],
+      "arms": {
+        "membership": "bone heat",
+        "L": {
+          "hand": [
+            0.5745,
+            -0.0542,
+            0.5548
+          ],
+          "tip": [
+            0.6086,
+            -0.0526,
+            0.5906
+          ],
+          "swing_deg": 3.3,
+          "stretch": 1.1065,
+          "arm_vertices": 128
+        },
+        "R": {
+          "hand": [
+            -0.5665,
+            -0.1027,
+            0.5307
+          ],
+          "tip": [
+            -0.612,
+            -0.1059,
+            0.5272
+          ],
+          "swing_deg": 8.8,
+          "stretch": 1.0636,
+          "arm_vertices": 121
+        },
+        "bridges_removed": 0
+      },
+      "tail": null,
+      "tail_vertices": 0,
+      "name": "Sweater"
+    },
+    {
+      "id": "cardigan",
+      "asset": "guest-cardigan.glb",
+      "source": {
+        "file": "Meshy_AI_Cozy_Character_Turnar_1009140036_texture.glb",
+        "sha256": "c0a7c948fb604310b669d0350e89bf1ee48268a2d02ddfd9b2e2495fbc357b2c"
+      },
+      "source_triangles": 660816,
+      "triangles": 3000,
+      "vertices": 1500,
+      "floor_shift_blender": [
+        0.00033,
+        0.02867,
+        0.95069
+      ],
+      "arms": {
+        "membership": "bone heat",
+        "L": {
+          "hand": [
+            0.6615,
+            -0.0205,
+            0.6
+          ],
+          "tip": [
+            0.6792,
+            -0.0174,
+            0.6122
+          ],
+          "swing_deg": 11.27,
+          "stretch": 1.0211,
+          "arm_vertices": 103
+        },
+        "R": {
+          "hand": [
+            -0.664,
+            -0.0547,
+            0.5999
+          ],
+          "tip": [
+            -0.6778,
+            -0.0436,
+            0.6298
+          ],
+          "swing_deg": 11.3,
+          "stretch": 1.0145,
+          "arm_vertices": 109
+        },
+        "bridges_removed": 0
+      },
+      "tail": null,
+      "tail_vertices": 0,
+      "name": "Cardigan"
+    },
+    {
+      "id": "gentleman",
+      "asset": "guest-gentleman.glb",
+      "source": {
+        "file": "Meshy_AI_Dapper_Gentleman_Char_1009135921_texture.glb",
+        "sha256": "54e439c0a8f0b26102cc190132e59c77a8733839e697598a2f5f4a770c501fb6"
+      },
+      "source_triangles": 607378,
+      "triangles": 3000,
+      "vertices": 1498,
+      "floor_shift_blender": [
+        0.00079,
+        -0.01315,
+        0.95069
+      ],
+      "arms": {
+        "membership": "bone heat",
+        "L": {
+          "hand": [
+            0.5599,
+            -0.1048,
+            0.531
+          ],
+          "tip": [
+            0.5956,
+            -0.0955,
+            0.5426
+          ],
+          "swing_deg": 9.86,
+          "stretch": 1.068,
+          "arm_vertices": 169
+        },
+        "R": {
+          "hand": [
+            -0.5603,
+            -0.1296,
+            0.5057
+          ],
+          "tip": [
+            -0.5969,
+            -0.1276,
+            0.5288
+          ],
+          "swing_deg": 12.24,
+          "stretch": 1.0185,
+          "arm_vertices": 152
+        },
+        "bridges_removed": 0
+      },
+      "tail": null,
+      "tail_vertices": 0,
+      "name": "Gentleman"
+    },
+    {
+      "id": "emerald",
+      "asset": "guest-emerald.glb",
+      "source": {
+        "file": "Meshy_AI_Emerald_Rose_Doll_Tur_1009135927_texture.glb",
+        "sha256": "9837148cdf06a0233d3a2c95666cc955aaa40a7e009547c5be104b0902af591c"
+      },
+      "source_triangles": 532714,
+      "triangles": 2999,
+      "vertices": 1485,
+      "floor_shift_blender": [
+        0.0016,
+        -0.01162,
+        0.95065
+      ],
+      "arms": {
+        "membership": "surface distance",
+        "L": {
+          "hand": [
+            0.5404,
+            -0.0923,
+            0.5833
+          ],
+          "tip": [
+            0.572,
+            -0.0952,
+            0.601
+          ],
+          "swing_deg": 9.39,
+          "stretch": 1.2033,
+          "arm_vertices": 81
+        },
+        "R": {
+          "hand": [
+            -0.5208,
+            -0.0646,
+            0.5804
+          ],
+          "tip": [
+            -0.5712,
+            -0.061,
+            0.6017
+          ],
+          "swing_deg": 5.92,
+          "stretch": 1.2625,
+          "arm_vertices": 90
+        },
+        "bridges_removed": 34
+      },
+      "tail": null,
+      "tail_vertices": 0,
+      "name": "Emerald"
+    },
+    {
+      "id": "festive",
+      "asset": "guest-festive.glb",
+      "source": {
+        "file": "Meshy_AI_Festive_Character_Tur_1009135950_texture.glb",
+        "sha256": "147a91532eba8be2abc3f97949abeb359cb420e17f7ecd075789d90934d54d03"
+      },
+      "source_triangles": 966808,
+      "triangles": 3000,
+      "vertices": 1500,
+      "floor_shift_blender": [
+        0.00021,
+        -0.00526,
+        0.95066
+      ],
+      "arms": {
+        "membership": "bone heat",
+        "L": {
+          "hand": [
+            0.5307,
+            -0.0343,
+            0.5384
+          ],
+          "tip": [
+            0.5464,
+            -0.0366,
+            0.5822
+          ],
+          "swing_deg": 5.45,
+          "stretch": 1.1605,
+          "arm_vertices": 117
+        },
+        "R": {
+          "hand": [
+            -0.5231,
+            -0.024,
+            0.535
+          ],
+          "tip": [
+            -0.5491,
+            -0.0408,
+            0.5666
+          ],
+          "swing_deg": 6.68,
+          "stretch": 1.1747,
+          "arm_vertices": 131
+        },
+        "bridges_removed": 0
+      },
+      "tail": null,
+      "tail_vertices": 0,
+      "name": "Festive"
+    },
+    {
+      "id": "golden",
+      "asset": "guest-golden.glb",
+      "source": {
+        "file": "Meshy_AI_Golden_Festival_Doll_1009135940_texture.glb",
+        "sha256": "bc6393a870168b6c71fc0f48eea2c204561bbb2b7df743b1fbe8dae6ecbdf271"
+      },
+      "source_triangles": 1149924,
+      "triangles": 3000,
+      "vertices": 1498,
+      "floor_shift_blender": [
+        0.00017,
+        0.03923,
+        0.95071
+      ],
+      "arms": {
+        "membership": "surface distance",
+        "L": {
+          "hand": [
+            0.5166,
+            -0.059,
+            0.5573
+          ],
+          "tip": [
+            0.5542,
+            -0.0499,
+            0.5572
+          ],
+          "swing_deg": 6.98,
+          "stretch": 1.2169,
+          "arm_vertices": 66
+        },
+        "R": {
+          "hand": [
+            -0.5303,
+            -0.0631,
+            0.5679
+          ],
+          "tip": [
+            -0.5513,
+            -0.0601,
+            0.6251
+          ],
+          "swing_deg": 5.51,
+          "stretch": 1.2162,
+          "arm_vertices": 67
+        },
+        "bridges_removed": 0
+      },
+      "tail": null,
+      "tail_vertices": 0,
+      "name": "Golden"
+    },
+    {
+      "id": "rosie",
+      "asset": "guest-rosie.glb",
+      "source": {
+        "file": "Meshy_AI_Rosie_Turnaround_1009140023_texture.glb",
+        "sha256": "de074cd8b379f9231023bd831a7437f23719d033ee46dd10e3549008545b059e"
+      },
+      "source_triangles": 605092,
+      "triangles": 2999,
+      "vertices": 1497,
+      "floor_shift_blender": [
+        0.00054,
+        0.04335,
+        0.9507
+      ],
+      "arms": {
+        "membership": "surface distance",
+        "L": {
+          "hand": [
+            0.576,
+            -0.0091,
+            0.5677
+          ],
+          "tip": [
+            0.6017,
+            -0.0223,
+            0.6158
+          ],
+          "swing_deg": 2.91,
+          "stretch": 1.1365,
+          "arm_vertices": 55
+        },
+        "R": {
+          "hand": [
+            -0.5638,
+            -0.0387,
+            0.5408
+          ],
+          "tip": [
+            -0.6064,
+            -0.0302,
+            0.5659
+          ],
+          "swing_deg": 2.27,
+          "stretch": 1.1112,
+          "arm_vertices": 63
+        },
+        "bridges_removed": 20
+      },
+      "tail": null,
+      "tail_vertices": 0,
+      "name": "Rosie"
+    },
+    {
+      "id": "explorer",
+      "asset": "guest-explorer.glb",
+      "source": {
+        "file": "Meshy_AI_Sunny_Day_Explorer_1008202325_texture.glb",
+        "sha256": "c47a661171ec1c3ea6e5c8e5d9ebd497034dc7173147843a30e9c690dfb76714"
+      },
+      "source_triangles": 1160212,
+      "triangles": 2999,
+      "vertices": 1435,
+      "floor_shift_blender": [
+        0.00026,
+        0.01439,
+        0.95064
+      ],
+      "arms": {
+        "membership": "surface distance",
+        "L": {
+          "hand": [
+            0.5349,
+            -0.0296,
+            0.6913
+          ],
+          "tip": [
+            0.5568,
+            -0.0353,
+            0.699
+          ],
+          "swing_deg": 12.94,
+          "stretch": 1.4935,
+          "arm_vertices": 14
+        },
+        "R": {
+          "hand": [
+            -0.5187,
+            -0.0149,
+            0.6187
+          ],
+          "tip": [
+            -0.5573,
+            -0.0116,
+            0.6332
+          ],
+          "swing_deg": 2.09,
+          "stretch": 1.382,
+          "arm_vertices": 28
+        },
+        "bridges_removed": 20
+      },
+      "tail": null,
+      "tail_vertices": 0,
+      "name": "Explorer"
+    },
+    {
+      "id": "traveler",
+      "asset": "guest-traveler.glb",
+      "source": {
+        "file": "Meshy_AI_Tiny_Traveler_1008202045_texture.glb",
+        "sha256": "e9766ba51f5fa9ea015ea1bdeeefb3ed6f520e7f9770bf3a563ee3ed0eeef039"
+      },
+      "source_triangles": 1212644,
+      "triangles": 2999,
+      "vertices": 1439,
+      "floor_shift_blender": [
+        0.00026,
+        -0.00548,
+        0.95069
+      ],
+      "arms": {
+        "membership": "surface distance",
+        "L": {
+          "hand": [
+            0.5467,
+            -0.0468,
+            0.5845
+          ],
+          "tip": [
+            0.5851,
+            -0.0507,
+            0.6117
+          ],
+          "swing_deg": 3.13,
+          "stretch": 1.2181,
+          "arm_vertices": 26
+        },
+        "R": {
+          "hand": [
+            -0.5455,
+            -0.0426,
+            0.5523
+          ],
+          "tip": [
+            -0.5901,
+            -0.0503,
+            0.571
+          ],
+          "swing_deg": 3.2,
+          "stretch": 1.1641,
+          "arm_vertices": 33
+        },
+        "bridges_removed": 17
+      },
+      "tail": null,
+      "tail_vertices": 0,
+      "name": "Traveler"
+    },
+    {
+      "id": "urban",
+      "asset": "guest-urban.glb",
+      "source": {
+        "file": "Meshy_AI_Urban_Groove_Characte_1009140009_texture.glb",
+        "sha256": "1923bd8c375708e8fefed94babf179cc5f3051b503c40e47174cc983e92ebc0e"
+      },
+      "source_triangles": 968610,
+      "triangles": 2999,
+      "vertices": 1469,
+      "floor_shift_blender": [
+        0.00049,
+        -0.00712,
+        0.95044
+      ],
+      "arms": {
+        "membership": "surface distance",
+        "L": {
+          "hand": [
+            0.6641,
+            0.0077,
+            0.5447
+          ],
+          "tip": [
+            0.6836,
+            0.0175,
+            0.5731
+          ],
+          "swing_deg": 7.77,
+          "stretch": 0.9568,
+          "arm_vertices": 52
+        },
+        "R": {
+          "hand": [
+            -0.6775,
+            -0.0275,
+            0.5321
+          ],
+          "tip": [
+            -0.6878,
+            -0.0307,
+            0.5818
+          ],
+          "swing_deg": 6.01,
+          "stretch": 0.9264,
+          "arm_vertices": 54
+        },
+        "bridges_removed": 43
+      },
+      "tail": null,
+      "tail_vertices": 0,
+      "name": "Urban"
+    }
+  ]
+}

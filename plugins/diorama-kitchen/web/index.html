@@ -1,0 +1,27 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Kitchen</title>
+<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🍳</text></svg>">
+<link rel="stylesheet" href="/css/kitchen.css">
+<script type="importmap">
+{ "imports": { "three": "/js/vendor/three.module.min.js", "three/addons/": "/js/vendor/addons/" } }
+</script>
+</head>
+<body>
+<div id="stage"></div>
+<div id="overlay"></div>
+<div id="hud" class="card"></div>
+<div id="controls"></div>
+<div id="panel" class="card hidden"></div>
+<div id="keys" class="card hidden">
+  <div><b>Scroll</b> zoom</div><div><b>Arrows</b> move (zoomed in)</div><div><b>Q / W</b> turn</div><div><b>R</b> reset view</div>
+  <div><b>A</b> hide name tags</div><div><b>Click</b> a chef to follow it</div><div><b>Hold</b> a chef to pick it up</div>
+</div>
+<div id="announcer" class="visually-hidden" aria-live="polite"></div>
+<div id="loading"><div class="spinner"></div><div>Setting up the kitchen…</div></div>
+<script type="module" src="/js/main.js"></script>
+</body>
+</html>

@@ -1,0 +1,502 @@
+{
+  "base": "chef-animated.glb",
+  "characters": [
+    {
+      "id": "capybara",
+      "asset": "chef-capybara.glb",
+      "source": {
+        "file": "Meshy_AI_Capybara_Chef_Model_S_1009072419_texture.glb",
+        "sha256": "587f618ff26b815b8fec38e55a7ff9effbad1642e031a2de7069508a3b4fa89c"
+      },
+      "source_triangles": 565018,
+      "triangles": 5000,
+      "vertices": 2482,
+      "floor_shift_blender": [
+        0.00059,
+        -0.03844,
+        0.95064
+      ],
+      "arms": {
+        "membership": "bone heat",
+        "L": {
+          "hand": [
+            0.5727,
+            -0.0771,
+            0.5272
+          ],
+          "tip": [
+            0.6,
+            -0.0724,
+            0.545
+          ],
+          "swing_deg": 6.19,
+          "stretch": 1.0558,
+          "arm_vertices": 170
+        },
+        "R": {
+          "hand": [
+            -0.5721,
+            -0.0669,
+            0.5202
+          ],
+          "tip": [
+            -0.5992,
+            -0.0682,
+            0.5391
+          ],
+          "swing_deg": 4.97,
+          "stretch": 1.0545,
+          "arm_vertices": 178
+        },
+        "bridges_removed": 11
+      },
+      "tail": null,
+      "tail_vertices": 0,
+      "name": "Capybara"
+    },
+    {
+      "id": "cat",
+      "asset": "chef-cat.glb",
+      "source": {
+        "file": "Meshy_AI_Chef_Whiskerpaws_1009072411_texture.glb",
+        "sha256": "b1655b7e7fc1d823227ef9adaa11b570c6251a13662f79992eb5f2a71c67fa32"
+      },
+      "source_triangles": 518660,
+      "triangles": 5000,
+      "vertices": 2492,
+      "floor_shift_blender": [
+        -0.05577,
+        -0.1127,
+        0.95034
+      ],
+      "arms": {
+        "membership": "bone heat",
+        "L": {
+          "hand": [
+            0.4983,
+            -0.1796,
+            0.5077
+          ],
+          "tip": [
+            0.5191,
+            -0.1748,
+            0.5354
+          ],
+          "swing_deg": 21.76,
+          "stretch": 1.0577,
+          "arm_vertices": 139
+        },
+        "R": {
+          "hand": [
+            -0.6038,
+            -0.1955,
+            0.4989
+          ],
+          "tip": [
+            -0.6341,
+            -0.1946,
+            0.5256
+          ],
+          "swing_deg": 16.76,
+          "stretch": 0.9169,
+          "arm_vertices": 170
+        },
+        "bridges_removed": 11
+      },
+      "tail": {
+        "behind": 0.18,
+        "low": 0.0,
+        "high": 0.5
+      },
+      "tail_vertices": 40,
+      "name": "Cat"
+    },
+    {
+      "id": "pig",
+      "asset": "chef-pig.glb",
+      "source": {
+        "file": "Meshy_AI_Chef_Pig_1009072400_texture.glb",
+        "sha256": "7455ae55b93b1d1cce78b7b96eea5cf61fb1b416a79bd188c3d7d6594572797e"
+      },
+      "source_triangles": 540426,
+      "triangles": 5000,
+      "vertices": 2478,
+      "floor_shift_blender": [
+        0.00025,
+        -0.00627,
+        0.94876
+      ],
+      "arms": {
+        "membership": "bone heat",
+        "L": {
+          "hand": [
+            0.4936,
+            -0.1059,
+            0.5528
+          ],
+          "tip": [
+            0.5296,
+            -0.0878,
+            0.5797
+          ],
+          "swing_deg": 14.01,
+          "stretch": 1.2182,
+          "arm_vertices": 118
+        },
+        "R": {
+          "hand": [
+            -0.4901,
+            -0.1136,
+            0.5509
+          ],
+          "tip": [
+            -0.5318,
+            -0.1025,
+            0.5686
+          ],
+          "swing_deg": 14.81,
+          "stretch": 1.219,
+          "arm_vertices": 126
+        },
+        "bridges_removed": 0
+      },
+      "tail": {
+        "behind": 0.31,
+        "low": 0.3,
+        "high": 0.65
+      },
+      "tail_vertices": 8,
+      "name": "Pig"
+    },
+    {
+      "id": "monkey",
+      "asset": "chef-monkey.glb",
+      "source": {
+        "file": "Meshy_AI_Chef_Monkey_1009072348_texture.glb",
+        "sha256": "60811404f3a8630afb8f38b9c23738c2d64995eefcc0d6472d5f68b8ece100fa"
+      },
+      "source_triangles": 456264,
+      "triangles": 5000,
+      "vertices": 2500,
+      "floor_shift_blender": [
+        0.00083,
+        0.00891,
+        0.95069
+      ],
+      "arms": {
+        "membership": "bone heat",
+        "L": {
+          "hand": [
+            0.4721,
+            -0.0515,
+            0.4816
+          ],
+          "tip": [
+            0.4936,
+            -0.058,
+            0.5073
+          ],
+          "swing_deg": 16.27,
+          "stretch": 1.1241,
+          "arm_vertices": 147
+        },
+        "R": {
+          "hand": [
+            -0.4656,
+            -0.0354,
+            0.477
+          ],
+          "tip": [
+            -0.4942,
+            -0.0282,
+            0.4939
+          ],
+          "swing_deg": 17.22,
+          "stretch": 1.1323,
+          "arm_vertices": 149
+        },
+        "bridges_removed": 47
+      },
+      "tail": null,
+      "tail_vertices": 0,
+      "name": "Monkey"
+    },
+    {
+      "id": "tiger",
+      "asset": "chef-tiger.glb",
+      "source": {
+        "file": "Meshy_AI_Tiger_Chef_Mascot_1009072340_texture.glb",
+        "sha256": "bfd6a0a5ccb75b1125001635ffa6e7fdf681bb384f5d89c789396ed9af60f3ce"
+      },
+      "source_triangles": 689708,
+      "triangles": 5000,
+      "vertices": 2476,
+      "floor_shift_blender": [
+        0.00036,
+        0.14484,
+        0.94978
+      ],
+      "arms": {
+        "membership": "bone heat",
+        "L": {
+          "hand": [
+            0.4492,
+            -0.1004,
+            0.44
+          ],
+          "tip": [
+            0.4797,
+            -0.0944,
+            0.458
+          ],
+          "swing_deg": 22.48,
+          "stretch": 1.0424,
+          "arm_vertices": 170
+        },
+        "R": {
+          "hand": [
+            -0.4589,
+            -0.0892,
+            0.4837
+          ],
+          "tip": [
+            -0.4785,
+            -0.0785,
+            0.4972
+          ],
+          "swing_deg": 18.93,
+          "stretch": 1.1329,
+          "arm_vertices": 180
+        },
+        "bridges_removed": 71
+      },
+      "tail": {
+        "behind": 0.16,
+        "low": 0.0,
+        "high": 0.62
+      },
+      "tail_vertices": 186,
+      "name": "Tiger"
+    },
+    {
+      "id": "bunny",
+      "asset": "chef-bunny.glb",
+      "source": {
+        "file": "Meshy_AI_Chef_Bunny_1009072333_texture.glb",
+        "sha256": "2aed62276552459234bfe6fec265bd63fd4495667f56c43fe7d9b673faf947b6"
+      },
+      "source_triangles": 588166,
+      "triangles": 5000,
+      "vertices": 2472,
+      "floor_shift_blender": [
+        0.00067,
+        -0.01339,
+        0.95063
+      ],
+      "arms": {
+        "membership": "bone heat",
+        "L": {
+          "hand": [
+            0.4817,
+            -0.1368,
+            0.5409
+          ],
+          "tip": [
+            0.5167,
+            -0.1261,
+            0.5653
+          ],
+          "swing_deg": 18.57,
+          "stretch": 1.1836,
+          "arm_vertices": 124
+        },
+        "R": {
+          "hand": [
+            -0.4836,
+            -0.1191,
+            0.5361
+          ],
+          "tip": [
+            -0.5132,
+            -0.1054,
+            0.5614
+          ],
+          "swing_deg": 16.34,
+          "stretch": 1.1921,
+          "arm_vertices": 123
+        },
+        "bridges_removed": 22
+      },
+      "tail": {
+        "behind": 0.31,
+        "low": 0.3,
+        "high": 0.7
+      },
+      "tail_vertices": 12,
+      "name": "Bunny"
+    },
+    {
+      "id": "mouse",
+      "asset": "chef-mouse.glb",
+      "source": {
+        "file": "Meshy_AI_Chef_Whiskers_1009072321_texture.glb",
+        "sha256": "f6b5458ef775688b02ef39512127be906554e2b516046b56a2515cbf18143981"
+      },
+      "source_triangles": 546784,
+      "triangles": 5000,
+      "vertices": 2500,
+      "floor_shift_blender": [
+        0.00064,
+        -0.03915,
+        0.95071
+      ],
+      "arms": {
+        "membership": "bone heat",
+        "L": {
+          "hand": [
+            0.4399,
+            -0.1021,
+            0.5288
+          ],
+          "tip": [
+            0.474,
+            -0.0833,
+            0.5357
+          ],
+          "swing_deg": 19.96,
+          "stretch": 1.2517,
+          "arm_vertices": 143
+        },
+        "R": {
+          "hand": [
+            -0.435,
+            -0.1141,
+            0.5248
+          ],
+          "tip": [
+            -0.473,
+            -0.0971,
+            0.526
+          ],
+          "swing_deg": 21.37,
+          "stretch": 1.2431,
+          "arm_vertices": 136
+        },
+        "bridges_removed": 25
+      },
+      "tail": null,
+      "tail_vertices": 0,
+      "name": "Mouse"
+    },
+    {
+      "id": "little",
+      "asset": "chef-little.glb",
+      "source": {
+        "file": "Meshy_AI_Little_Chef_Character_1009072309_texture.glb",
+        "sha256": "9096a7b64c4fda733aed7f6c4611cddef31b468d0fd429a4003aee6884a1c087"
+      },
+      "source_triangles": 488826,
+      "triangles": 5000,
+      "vertices": 2502,
+      "floor_shift_blender": [
+        0.00052,
+        0.06321,
+        0.95045
+      ],
+      "arms": {
+        "membership": "bone heat",
+        "L": {
+          "hand": [
+            0.5544,
+            -0.0485,
+            0.4867
+          ],
+          "tip": [
+            0.5904,
+            -0.0502,
+            0.5136
+          ],
+          "swing_deg": 7.53,
+          "stretch": 1.0265,
+          "arm_vertices": 135
+        },
+        "R": {
+          "hand": [
+            -0.5495,
+            -0.0453,
+            0.4862
+          ],
+          "tip": [
+            -0.5893,
+            -0.0443,
+            0.4952
+          ],
+          "swing_deg": 8.01,
+          "stretch": 1.0376,
+          "arm_vertices": 139
+        },
+        "bridges_removed": 0
+      },
+      "tail": null,
+      "tail_vertices": 0,
+      "name": "Little Chef"
+    },
+    {
+      "id": "puppy",
+      "asset": "chef-puppy.glb",
+      "source": {
+        "file": "Meshy_AI_Puppy_Chef_Character__1009072300_texture.glb",
+        "sha256": "daa596b1aad8dcbb760f0ee18137c7cbfb7d7da99e6092a83568972f99ebabec"
+      },
+      "source_triangles": 502410,
+      "triangles": 5000,
+      "vertices": 2500,
+      "floor_shift_blender": [
+        0.00054,
+        0.02357,
+        0.94371
+      ],
+      "arms": {
+        "membership": "bone heat",
+        "L": {
+          "hand": [
+            0.5499,
+            -0.0618,
+            0.5013
+          ],
+          "tip": [
+            0.5787,
+            -0.0507,
+            0.5228
+          ],
+          "swing_deg": 7.58,
+          "stretch": 1.0529,
+          "arm_vertices": 153
+        },
+        "R": {
+          "hand": [
+            -0.5501,
+            -0.0653,
+            0.5084
+          ],
+          "tip": [
+            -0.5799,
+            -0.0655,
+            0.5351
+          ],
+          "swing_deg": 7.19,
+          "stretch": 1.0683,
+          "arm_vertices": 152
+        },
+        "bridges_removed": 0
+      },
+      "tail": {
+        "behind": 0.3,
+        "low": 0.2,
+        "high": 0.75
+      },
+      "tail_vertices": 73,
+      "name": "Puppy"
+    }
+  ]
+}
