@@ -1,0 +1,12 @@
+{
+  "name": "diorama",
+  "owner": { "name": "David", "url": "https://github.com/davidfromkansas" },
+  "metadata": { "description": "Diorama's plugins for Claude Code." },
+  "plugins": [
+    {
+      "name": "diorama-kitchen",
+      "source": "./plugins/diorama-kitchen",
+      "description": "Watch this session's agents work in Diorama's 3D kitchen, live in your browser. Run /kitchen."
+    }
+  ]
+}
