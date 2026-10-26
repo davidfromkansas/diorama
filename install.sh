@@ -1,10 +1,12 @@
 #!/usr/bin/env bash
-# Installs Diorama Kitchen: a live 3D kitchen of your Claude Code or Codex agents, in your browser.
+# Installs Diorama Kitchen: a live 3D kitchen of your Claude Code, Codex or Hermes agents.
 #
 #   curl -fsSL https://raw.githubusercontent.com/davidfromkansas/diorama/main/install.sh | bash
 #
 # Puts the kitchen in ~/.diorama-kitchen, adds a `diorama-kitchen` command to ~/.local/bin and,
-# when Claude Code is installed, adds its plugin too (for /kitchen and live approvals).
+# when Claude Code is installed, adds its plugin too (for /kitchen and live approvals). When
+# Hermes is installed, links the kitchen into its plugins and turns it on (for /kitchen and the
+# Kitchen tab in Hermes Desktop).
 set -euo pipefail
 
 repo="${DIORAMA_KITCHEN_REPO:-https://github.com/davidfromkansas/diorama.git}"
@@ -39,6 +41,8 @@ cat > "$bin_dir/diorama-kitchen" <<EOF
 exec node "$kitchen" "\$@"
 EOF
 chmod +x "$bin_dir/diorama-kitchen"
+# Apps started from the Dock don't get your shell's PATH: note which Node to use.
+command -v node > "$home_dir/node-path"
 
 if command -v claude >/dev/null; then
   say "Adding the Claude Code plugin…"
@@ -51,11 +55,31 @@ if command -v claude >/dev/null; then
   claude plugin update diorama-kitchen@diorama >/dev/null 2>&1 || true
 fi
 
+hermes_home="${HERMES_HOME:-$HOME/.hermes}"
+hermes_bin="$(command -v hermes || true)"
+if [ -n "$hermes_bin" ] || [ -d "$hermes_home" ]; then
+  say "Adding the Hermes plugin…"
+  mkdir -p "$hermes_home/plugins"
+  link="$hermes_home/plugins/diorama-kitchen"
+  if [ -L "$link" ] || [ ! -e "$link" ]; then
+    ln -sfn "$checkout/plugins/diorama-kitchen" "$link"
+  else
+    say "  ($link already exists and is not ours; left it alone.)"
+  fi
+  if [ -n "$hermes_bin" ]; then
+    "$hermes_bin" plugins enable diorama-kitchen >/dev/null 2>&1 || say "  (Turn on Diorama Kitchen in Hermes: Settings → Plugins.)"
+  fi
+fi
+
 say ""
 say "Diorama Kitchen is installed."
 say "  In your project folder, run:  diorama-kitchen"
 say "  It opens the newest Claude Code or Codex session there (add --claude or --codex to choose)."
 command -v claude >/dev/null && say "  In Claude Code you can also type /kitchen."
+if [ -n "$hermes_bin" ] || [ -d "$hermes_home" ]; then
+  say "  In Hermes, restart it, then type /kitchen in a chat. In Hermes Desktop, also turn on"
+  say "  Diorama Kitchen under Capabilities → Plugins for the Kitchen tab."
+fi
 case ":$PATH:" in
   *":$bin_dir:"*) ;;
   *) say ""; say "Add $bin_dir to your PATH to use it, for example:"

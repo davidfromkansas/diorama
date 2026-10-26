@@ -236,7 +236,7 @@ export class SessionModel {
     }
     return {
       session: {
-        id: this.sessionId, title: this.aiTitle ?? (fallbackLabel(main.firstPrompt) || (this.provider === 'codex' ? 'Codex' : 'Claude Code')), provider: this.provider, task: main.firstPrompt ?? '',
+        id: this.sessionId, title: this.aiTitle ?? (fallbackLabel(main.firstPrompt) || ({ codex: 'Codex', hermes: 'Hermes' }[this.provider] ?? 'Claude Code')), provider: this.provider, task: main.firstPrompt ?? '',
         project: this.cwd ? this.cwd.split(/[\\/]/).filter(Boolean).pop() : '', cwd: this.cwd, model: main.model, ended: this.ended,
       },
       agents,
