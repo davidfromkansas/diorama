@@ -42,8 +42,10 @@ class AgentLog {
   add(event) {
     if (this.events.has(event.id)) {
       const known = this.events.get(event.id)
-      // A hook and the transcript saw the same call: keep the first time, fill in what's missing.
+      // A hook and the transcript saw the same call: fill in what's missing. Hooks run a moment late,
+      // so the transcript's time wins (a call denied at once can otherwise seem to end before it began).
       for (const key of ['tool', 'detail', 'input', 'state']) if (known[key] == null && event[key] != null) known[key] = event[key]
+      if (known.hook && !event.hook) { known.time = event.time; known.hook = false; known.source = event.source; this.sorted = null }
       return
     }
     this.events.set(event.id, event)
@@ -67,7 +69,7 @@ class AgentLog {
 }
 
 let sequence = 0
-const event = (fields) => ({ seq: sequence++, ...fields })
+const event = (fields) => ({ seq: sequence++, ...fields, callID: fields.call })
 
 export class SessionModel {
   constructor(sessionId) {
@@ -241,6 +243,9 @@ export class SessionModel {
 
   view(log, now, main = null) {
     const events = log.list()
+    // A hook can arrive after the transcript already shows the call's outcome (a prompt answered or denied).
+    const ended = new Set(events.filter((e) => e.call && (e.kind === 'toolFinished' || e.kind === 'toolFailed')).map((e) => e.call))
+    const open = new Set()
     let status = 'ready', reason = null, turn = 0, pending = null, lastText = '', lastEvent = null, stopped = null
     let latestTool = '', latestDetail = '', lastToolAt = null, lastCommentaryAt = null, turnStartIndex = 0, turnStartedAt = null
     events.forEach((e, index) => {
@@ -253,6 +258,7 @@ export class SessionModel {
           if (status === 'ready') { status = 'working'; turn = Math.max(turn, 1) }
           break
         case 'toolStarted':
+          if (e.call && !ended.has(e.call)) open.add(e.call)
           if (status !== 'working' && status !== 'waiting') { status = 'working'; turn = Math.max(turn, 1) }
           if (pending && pending.call !== e.call) pending = null
           latestTool = e.tool ?? ''; latestDetail = e.detail ?? ''; lastToolAt = e.time
@@ -260,6 +266,7 @@ export class SessionModel {
           if (!pending && status === 'waiting') status = 'working'
           break
         case 'toolFinished': case 'toolFailed':
+          open.delete(e.call)
           lastToolAt = e.time
           if (pending && (!pending.call || pending.call === e.call)) pending = null
           if (!pending && status === 'waiting') status = 'working'
@@ -271,6 +278,7 @@ export class SessionModel {
         case 'approval': case 'input':
           // Claude follows its question UI with a generic permission notification: keep the question.
           if (e.kind === 'approval' && !e.call && pending?.reason === 'input') break
+          if (e.call ? ended.has(e.call) : !open.size) break
           pending = { call: e.call ?? pending?.call ?? null, reason: e.kind }
           if (e.tool) latestTool = e.tool
           if (status !== 'working' && status !== 'waiting') status = 'working'
