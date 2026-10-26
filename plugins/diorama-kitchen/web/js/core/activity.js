@@ -596,7 +596,7 @@ export function modelName(model) {
     if (/^\d+$/.test(part) && i + 1 < parts.length && /^\d{1,2}$/.test(parts[i + 1])) { words.push(part + '.' + parts[i + 1]); i++; continue }
     words.push(part.toLowerCase() === 'gpt' ? 'GPT' : part[0].toUpperCase() + part.slice(1))
   }
-  if (words[0] !== 'Claude') words.unshift('Claude')
+  if (words[0] !== 'Claude' && !/^(GPT|O\d|Codex)/i.test(words[0])) words.unshift('Claude')
   return words.join(' ')
 }
 

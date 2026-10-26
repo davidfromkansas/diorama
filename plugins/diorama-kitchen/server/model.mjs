@@ -72,14 +72,16 @@ let sequence = 0
 const event = (fields) => ({ seq: sequence++, ...fields, callID: fields.call })
 
 export class SessionModel {
-  constructor(sessionId) {
-    this.sessionId = sessionId
+  constructor(sessionId, provider = 'claude') {
+    this.sessionId = sessionId; this.provider = provider
     this.agents = new Map([['main', new AgentLog('main', true)]])
     this.agents.get('main').name = bank[0]
     this.aiTitle = null; this.cwd = null; this.ended = false; this.version = 0
     this.launches = []   // { description, prompt, subagentType, time } from the main agent's Agent calls
     this.taskIDs = 0
   }
+
+  event(fields) { return event(fields) }
 
   agent(id) {
     if (!id) return this.agents.get('main')
@@ -234,7 +236,7 @@ export class SessionModel {
     }
     return {
       session: {
-        id: this.sessionId, title: this.aiTitle ?? fallbackLabel(main.firstPrompt) ?? 'Claude Code', task: main.firstPrompt ?? '',
+        id: this.sessionId, title: this.aiTitle ?? (fallbackLabel(main.firstPrompt) || (this.provider === 'codex' ? 'Codex' : 'Claude Code')), provider: this.provider, task: main.firstPrompt ?? '',
         project: this.cwd ? this.cwd.split(/[\\/]/).filter(Boolean).pop() : '', cwd: this.cwd, model: main.model, ended: this.ended,
       },
       agents,
@@ -322,7 +324,7 @@ export class SessionModel {
       status, attentionReason: status === 'waiting' ? (reason === 'approval' ? 'approval' : reason === 'input' ? 'input' : 'other') : null, freshness,
       latestTool, latestToolDetail: latestDetail, turnHasEdits, turnWork: TurnWork.from(events).toJSON(), feed,
       lastToolAt, lastCommentaryAt, turnStartedAt, plan, planProgress,
-      completionKey: `claude:${this.sessionId}:${turn}` + (log.isMain ? '' : `:agent:${log.id}`),
+      completionKey: `${this.provider}:${this.sessionId}:${turn}` + (log.isMain ? '' : `:agent:${log.id}`),
       meaningfulEventID: lastEvent?.id ?? null, meaningfulUpdatedAt: lastEvent?.time ?? null, observedAt: now, startedAt: log.startedAt,
       latestRequest: log.isMain && log.prompts > 1 ? log.latestPrompt : null,
       task, title, model, modelLabel: model ? modelName(model).replace(/^Claude /, '') : '',
@@ -337,6 +339,9 @@ export class SessionModel {
       if (e.kind !== 'toolStarted' || !e.input) continue
       if (e.tool === 'TodoWrite' && Array.isArray(e.input.todos)) {
         todo = e.input.todos.map((t) => ({ title: String(t.content ?? t.activeForm ?? ''), status: String(t.status ?? 'pending') }))
+        todoTurn = Math.max(turn, 1)
+      } else if (e.tool === 'update_plan' && Array.isArray(e.input.plan)) {
+        todo = e.input.plan.map((t) => ({ title: String(t.step ?? ''), status: String(t.status ?? 'pending') }))
         todoTurn = Math.max(turn, 1)
       } else if (e.tool === 'TaskCreate') {
         tasks ??= new Map()

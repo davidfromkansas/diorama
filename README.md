@@ -28,7 +28,7 @@ Use **File → Automatically reload source changes** to pause or resume. Logs ar
 
 To try the scene, open a project and select **Workspace**: its agents work as chefs in the kitchen. The gear in the scene's corner switches the project to the office (see [the office scene](docs/OFFICE_SCENE.md)). Click a chef or use **Agents** for details. Scroll to zoom, use the arrow keys and Q/W to move and turn, and **Reset View** (R) to see the whole room.
 
-**In the browser:** the [Diorama Kitchen plugin](plugins/diorama-kitchen/README.md) for Claude Code shows any session's agents in the same kitchen, live. Install it from a terminal with `claude plugin marketplace add davidfromkansas/diorama --sparse .claude-plugin plugins && claude plugin install diorama-kitchen@diorama`, then run `/kitchen`.
+**In the browser:** [Diorama Kitchen](plugins/diorama-kitchen/README.md) shows any Claude Code or Codex session's agents in the same kitchen, live. Install it with `curl -fsSL https://raw.githubusercontent.com/davidfromkansas/diorama/main/install.sh | bash`, then run `diorama-kitchen` in your project folder.
 
 **Open project** also accepts existing folders without Git. These show **No Git detected** and support external conversations, agent viewing, and local file browsing. Git-dependent actions are unavailable; opening a folder does not initialize Git or change its files. Automatic detection of Git added later is not included.
 

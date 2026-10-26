@@ -1,7 +1,7 @@
 {
   "name": "diorama-kitchen",
-  "version": "0.1.1",
-  "description": "Watch this session's agents work in Diorama's 3D kitchen, live in your browser. Run /kitchen.",
+  "version": "0.2.0",
+  "description": "Watch your Claude Code or Codex agents work in Diorama's 3D kitchen, live in your browser. Run /kitchen.",
   "author": { "name": "David", "url": "https://github.com/davidfromkansas" },
   "homepage": "https://github.com/davidfromkansas/diorama/tree/main/plugins/diorama-kitchen",
   "repository": "https://github.com/davidfromkansas/diorama",

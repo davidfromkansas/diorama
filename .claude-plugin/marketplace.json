@@ -6,7 +6,7 @@
     {
       "name": "diorama-kitchen",
       "source": "./plugins/diorama-kitchen",
-      "description": "Watch this session's agents work in Diorama's 3D kitchen, live in your browser. Run /kitchen."
+      "description": "Watch your Claude Code or Codex agents work in Diorama's 3D kitchen, live in your browser. Run /kitchen."
     }
   ]
 }
