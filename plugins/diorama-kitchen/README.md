@@ -10,7 +10,7 @@ In a terminal:
 curl -fsSL https://raw.githubusercontent.com/davidfromkansas/diorama/main/install.sh | bash
 ```
 
-This downloads only the kitchen (about 40 MB) to `~/.diorama-kitchen`, adds a `diorama-kitchen` command to `~/.local/bin` and, if Claude Code is installed, adds its plugin too. Run it again to update. Needs Node.js 18 or later and git.
+This downloads only the kitchen (about 70 MB) to `~/.diorama-kitchen`, adds a `diorama-kitchen` command to `~/.local/bin` and, if Claude Code is installed, adds its plugin too. Run it again to update. Needs Node.js 18 or later and git.
 
 ## Use
 

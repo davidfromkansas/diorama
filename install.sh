@@ -18,7 +18,7 @@ command -v git >/dev/null || fail "git is required. Install it, then run this ag
 command -v node >/dev/null || fail "Node.js 18 or later is required (https://nodejs.org). Install it, then run this again."
 node -e 'process.exit(Number(process.versions.node.split(".")[0]) >= 18 ? 0 : 1)' || fail "Node.js 18 or later is required; you have $(node --version)."
 
-# Only the kitchen's folder is downloaded (about 40 MB), not the whole Diorama app.
+# Only the kitchen's folder is downloaded (about 70 MB), not the whole Diorama app.
 checkout="$home_dir/source"
 if [ -d "$checkout/.git" ]; then
   say "Updating Diorama Kitchen…"
