@@ -36,6 +36,14 @@ const children = new Map()
 const aliases = new Map()
 /** Events from a subagent that arrived before its subagent_start (kept briefly). */
 const early = new Map()
+/** Aliases learned since the server last asked (a page may already be following the old id). */
+let learned = []
+export const takeAliases = () => { const list = learned; learned = []; return list }
+const alias = (from, to) => {
+  if (!from || !to || from === to || aliases.has(from) || hermesOwner(to).session === from) return
+  aliases.set(from, to)
+  learned.push([from, to])
+}
 
 /** The kitchen session an id belongs to (following compactions/resets) and the agent in it. */
 export function hermesOwner(id) {
@@ -47,14 +55,21 @@ export function hermesOwner(id) {
 
 /**
  * Reads one event into the kitchen. `model(id)` returns the SessionModel for a kitchen session id
- * (creating it). Returns the kitchen session ids it changed.
+ * (creating it); `adopt(id)` may name an open, still-empty kitchen a new session should fill.
+ * Returns the kitchen session ids it changed.
  */
-export function hermesEvent(r, model) {
+export function hermesEvent(r, model, adopt = () => null) {
   if (!r || typeof r !== 'object' || !r.event) return []
   const changed = new Set()
   const time = Number(r.time) || Date.now()
-  if (r.event === 'post_compaction' && r.old_session_id && r.session_id && r.old_session_id !== r.session_id) { aliases.set(String(r.session_id), String(r.old_session_id)); return [] }
-  if (r.event === 'on_session_reset' && r.old_session_id && r.new_session_id) { aliases.set(String(r.new_session_id), String(r.old_session_id)); return [] }
+  if (r.event === 'post_compaction' && r.old_session_id && r.session_id) { alias(String(r.session_id), String(r.old_session_id)); return [] }
+  if (r.event === 'on_session_reset' && r.old_session_id && r.new_session_id) { alias(String(r.new_session_id), String(r.old_session_id)); return [] }
+  // A chat's kitchen is named by its session key (what /kitchen sees before the first message, and
+  // steady across compactions); the agent's session id joins it on the chat's first turn.
+  if ((r.event === 'pre_llm_call' || r.event === 'on_session_start') && !r.parent_session_id && r.session_id && !aliases.has(String(r.session_id))) {
+    const id = String(r.session_id)
+    alias(id, r.session_key ? String(r.session_key) : adopt(id))
+  }
   if (r.event === 'subagent_start' && r.child_session_id) {
     const parent = hermesOwner(r.session_id)
     const id = String(r.child_session_id)

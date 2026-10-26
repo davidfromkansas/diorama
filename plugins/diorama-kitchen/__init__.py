@@ -15,8 +15,19 @@ import sys
 
 from . import hermes_bridge as bridge
 
+
+
 def _session(kwargs):
     return kwargs.get("session_id") or kwargs.get("task_id") or ""
+
+
+def _chat_key():
+    """The chat this turn belongs to (its session key), which is what /kitchen sees too."""
+    try:
+        from gateway.session_context import get_session_env
+        return get_session_env("HERMES_SESSION_KEY") or None
+    except Exception:
+        return os.environ.get("HERMES_SESSION_KEY") or None
 
 
 def _exit_code(result):
@@ -32,11 +43,11 @@ def _exit_code(result):
 
 
 def on_session_start(**kwargs):
-    bridge.send("on_session_start", _session(kwargs), model=kwargs.get("model"), platform=kwargs.get("platform"))
+    bridge.send("on_session_start", _session(kwargs), session_key=_chat_key(), model=kwargs.get("model"), platform=kwargs.get("platform"))
 
 
 def pre_llm_call(**kwargs):
-    bridge.send("pre_llm_call", _session(kwargs), turn_id=kwargs.get("turn_id"), user_message=bridge.text_of(kwargs.get("user_message")),
+    bridge.send("pre_llm_call", _session(kwargs), session_key=_chat_key(), turn_id=kwargs.get("turn_id"), user_message=bridge.text_of(kwargs.get("user_message")),
                 model=kwargs.get("model"), parent_session_id=kwargs.get("parent_session_id") or None, platform=kwargs.get("platform"))
 
 
@@ -107,14 +118,14 @@ def _open_browser(url):
 
 def kitchen_command(raw_args="", session_id=None, **kwargs):
     """/kitchen: opens the kitchen for this session (in Hermes Desktop, as a tab in the app)."""
-    session = session_id or kwargs.get("session_key") or bridge.latest_session()
+    session = kwargs.get("session_key") or session_id or bridge.latest_session()
     if not session:
         return "Send a message first, then type /kitchen to watch this session in the kitchen."
     try:
         url = bridge.open_kitchen(session)
     except Exception as error:
         return str(error)
-    if os.environ.get("HERMES_DESKTOP") == "1":
+    if os.environ.get("HERMES_DESKTOP") == "1" or kwargs.get("platform") == "desktop":
         try:
             from hermes_cli.plugin_events import broadcast_plugin_event
             broadcast_plugin_event("diorama-kitchen", "open", {"session": str(session)})
@@ -124,7 +135,17 @@ def kitchen_command(raw_args="", session_id=None, **kwargs):
     return f"Kitchen {'opened' if _open_browser(url) else 'ready'}: {url}"
 
 
+def _with_note(handler):
+    """/kitchen takes nothing after it: say so, since Hermes swallows the rest of the message."""
+    def run(raw_args="", session_id=None, **kwargs):
+        reply = handler(raw_args, session_id=session_id, **kwargs)
+        if str(raw_args or "").strip():
+            reply += "\n(Only /kitchen ran. Send your request as its own message and the kitchen will show it.)"
+        return reply
+    return run
+
+
 def register(ctx):
     for hook in HOOKS:
         ctx.register_hook(hook.__name__, hook)
-    ctx.register_command("kitchen", kitchen_command, description="Watch this session's agents work in Diorama's 3D kitchen")
+    ctx.register_command("kitchen", _with_note(kitchen_command), description="Watch this session's agents work in Diorama's 3D kitchen")

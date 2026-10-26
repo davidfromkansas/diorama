@@ -12,7 +12,7 @@ import crypto from 'node:crypto'
 import { fileURLToPath } from 'node:url'
 import { SessionModel } from './model.mjs'
 import { codexRecord, findRollout, recentRollouts, rolloutMeta } from './codex.mjs'
-import { hermesEvent, hermesOwner } from './hermes.mjs'
+import { hermesEvent, hermesOwner, takeAliases } from './hermes.mjs'
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..')
 const configDir = process.env.CLAUDE_CONFIG_DIR || path.join(os.homedir(), '.claude')
@@ -47,6 +47,13 @@ function session(id, provider = 'claude') {
   const entry = sessions.get(id)
   entry.touched = Date.now()
   return entry
+}
+
+/** The one Hermes kitchen open and still empty (opened with /kitchen before the chat's first message):
+ *  a new Hermes session fills it when Hermes didn't say which chat the session belongs to. */
+function adoptHermes() {
+  const empty = [...sessions.values()].filter((s) => s.provider === 'hermes' && s.clients.size && s.model.agents.size === 1 && !s.model.agents.get('main').events.size)
+  return empty.length === 1 ? empty[0].model.sessionId : null
 }
 
 /** Finds a session's transcript under the projects folder. */
@@ -212,7 +219,16 @@ const server = http.createServer(async (req, res) => {
       const input = await body(req, 16 * 1024 * 1024)
       const changed = new Set()
       for (const event of Array.isArray(input.events) ? input.events : [input]) {
-        for (const id of hermesEvent(event, (id) => session(id, 'hermes').model)) changed.add(id)
+        for (const id of hermesEvent(event, (id) => session(id, 'hermes').model, adoptHermes)) changed.add(id)
+        // A page already following an id that turned out to be another name for a session moves over.
+        for (const [from, to] of takeAliases()) {
+          const old = sessions.get(from)
+          if (!old || old.provider !== 'hermes') continue
+          const entry = session(hermesOwner(to).session, 'hermes')
+          for (const client of old.clients) { entry.clients.add(client); send(entry, client) }
+          old.clients.clear()
+          if (!old.model.agents.get('main').events.size) sessions.delete(from)
+        }
       }
       for (const id of changed) if (sessions.has(id)) push(sessions.get(id))
       return json(res, 200, { ok: true })
@@ -251,7 +267,7 @@ const server = http.createServer(async (req, res) => {
       entry.clients.add(res)
       send(entry, res)
       const ping = setInterval(() => res.write(': ping\n\n'), 20000)
-      req.on('close', () => { clearInterval(ping); entry.clients.delete(res); lastClient = Date.now() })
+      req.on('close', () => { clearInterval(ping); for (const s of sessions.values()) s.clients.delete(res); lastClient = Date.now() })   // it may have moved to another session
       return
     }
     if (route.startsWith('/assets/')) {
