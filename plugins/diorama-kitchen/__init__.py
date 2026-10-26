@@ -95,6 +95,13 @@ def on_human_input_request(**kwargs):
                 prompt=bridge.clip(kwargs.get("prompt"), 300))
 
 
+def api_request_error(**kwargs):
+    # A request that can't be retried ends the turn without on_session_end, so this is the kitchen's only word of it.
+    bridge.send("api_request_error", _session(kwargs), turn_id=kwargs.get("turn_id"), status_code=kwargs.get("status_code"),
+                error_type=kwargs.get("error_type"), error_message=bridge.clip(kwargs.get("error_message"), 300),
+                retryable=kwargs.get("retryable"), retry_count=kwargs.get("retry_count"), max_retries=kwargs.get("max_retries"))
+
+
 def post_compaction(**kwargs):
     bridge.send("post_compaction", _session(kwargs), old_session_id=kwargs.get("old_session_id"))
 
@@ -104,7 +111,7 @@ def on_session_reset(**kwargs):
 
 
 HOOKS = (on_session_start, pre_llm_call, on_interim_message, pre_tool_call, post_tool_call, post_llm_call, on_session_end,
-         subagent_start, subagent_stop, on_human_input_request, post_compaction, on_session_reset)
+         subagent_start, subagent_stop, on_human_input_request, api_request_error, post_compaction, on_session_reset)
 
 
 def _open_browser(url):

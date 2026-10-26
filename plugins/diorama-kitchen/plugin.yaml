@@ -1,5 +1,5 @@
 name: diorama-kitchen
-version: 0.3.1
+version: 0.3.2
 description: "Watch your Hermes session's agents work as chefs in Diorama's live 3D kitchen. Type /kitchen."
 author: "David (https://github.com/davidfromkansas)"
 provides_hooks:
@@ -13,5 +13,6 @@ provides_hooks:
   - subagent_start
   - subagent_stop
   - on_human_input_request
+  - api_request_error
   - post_compaction
   - on_session_reset

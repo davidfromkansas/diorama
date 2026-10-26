@@ -151,6 +151,11 @@ export function hermesEvent(r, model, adopt = () => null) {
       else if (r.completed === false) add({ id: `hermes:${r.turn_id || r.id}:failed`, kind: 'failed', detail: clip(r.turn_exit_reason ?? 'The turn did not finish') })
       else if (r.completed == null && r.failed == null && r.interrupted == null && r.reason) { m.ended = true; add({ kind: 'sessionEnded' }) }
       break
+    case 'api_request_error': {
+      const final = r.retryable === false || (r.retry_count != null && r.max_retries != null && Number(r.retry_count) >= Number(r.max_retries))
+      if (final) add({ id: `hermes:${r.turn_id || r.id}:failed`, kind: 'failed', detail: clip(r.error_message ?? (r.status_code ? `Request failed (${r.status_code})` : 'Request failed')) })
+      break
+    }
     case 'on_human_input_request':
       add({ id: `hermes:input:${r.request_id || r.id}`, kind: r.kind === 'approval' ? 'approval' : 'input', detail: clip(r.prompt) })
       break
