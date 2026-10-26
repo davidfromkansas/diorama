@@ -5,6 +5,9 @@
 import { route } from '../scene/layout.js'
 import { phrase, fullTitle } from '../core/activity.js'
 
+/** Codex's tool names, as a person would say them. */
+const approvalNames = { exec_command: 'command', shell: 'command', local_shell: 'command', apply_patch: 'edit' }
+
 export const Palette = {
   run: 'rgb(120,191,255)', ok: 'rgb(97,212,148)', wait: 'rgb(245,176,64)', ask: 'rgb(181,140,255)', fail: 'rgb(255,122,107)',
   idle: 'rgb(153,161,166)', star: 'rgb(242,201,77)', ink: 'rgba(18,20,23,0.9)', strip: 'rgb(20,23,26)', paper: 'rgba(255,255,255,0.93)',
@@ -67,7 +70,7 @@ export function tagContent(agent, now = Date.now()) {
       break
     }
     case 'waiting': line = 'waiting for you'; break
-    case 'approval': line = agent.latestTool ? `allow ${agent.latestTool}?` : 'needs approval'; break
+    case 'approval': line = agent.latestTool ? `allow ${approvalNames[agent.latestTool] ?? agent.latestTool}?` : 'needs approval'; break
     case 'failed': line = [...steps].reverse().find((s) => s.outcome === 'failed')?.title ?? 'turn failed'; break
     case 'stopped': line = 'stopped'; break
     case 'done': {

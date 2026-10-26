@@ -224,7 +224,7 @@ if (params.has('demo') || !session) {
   tick = demoAgents(show, params.get('demo'), seconds)
 } else {
   const connect = () => {
-    const source = new EventSource(`/api/stream?session=${encodeURIComponent(session)}`)
+    const source = new EventSource(`/api/stream?session=${encodeURIComponent(session)}` + (params.get('provider') ? `&provider=${encodeURIComponent(params.get('provider'))}` : ''))
     source.onopen = () => { connection = 'live'; drawHUD() }
     source.onmessage = (event) => {
       const data = JSON.parse(event.data)

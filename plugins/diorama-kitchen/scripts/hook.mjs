@@ -7,9 +7,9 @@ import path from 'node:path'
 import os from 'node:os'
 import http from 'node:http'
 
-const configDir = process.env.CLAUDE_CONFIG_DIR || path.join(os.homedir(), '.claude')
+const stateDir = process.env.DIORAMA_KITCHEN_HOME || path.join(os.homedir(), '.diorama-kitchen')
 let port
-try { port = JSON.parse(fs.readFileSync(path.join(configDir, 'diorama-kitchen', 'server.json'), 'utf8')).port } catch { process.exit(0) }
+try { port = JSON.parse(fs.readFileSync(path.join(stateDir, 'server.json'), 'utf8')).port } catch { process.exit(0) }
 
 let input = ''
 process.stdin.setEncoding('utf8')

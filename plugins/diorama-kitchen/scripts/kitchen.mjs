@@ -1,9 +1,12 @@
 #!/usr/bin/env node
-// `/kitchen`: starts the kitchen's local server if it isn't running, points it at this session
-// and opens the page in your browser. Prints the address either way.
+// Opens the kitchen for a Claude Code or Codex session: starts the local server if it isn't
+// running, points it at the session and opens the page in your browser. Prints the address.
 //
-//   node kitchen.mjs open <session-id>    (the command passes the session it was run in)
-//   node kitchen.mjs stop
+//   diorama-kitchen                      the newest Claude Code or Codex session in this folder
+//   diorama-kitchen --claude | --codex   the newest session of that tool in this folder
+//   diorama-kitchen stop                 stops the kitchen's server
+//   kitchen.mjs open <session-id>        a Claude Code session (what /kitchen runs)
+//   kitchen.mjs open --codex <id>        a Codex session
 
 import fs from 'node:fs'
 import path from 'node:path'
@@ -11,11 +14,15 @@ import os from 'node:os'
 import http from 'node:http'
 import { spawn } from 'node:child_process'
 import { fileURLToPath } from 'node:url'
+import { recentRollouts, rolloutMeta, findRollout } from '../server/codex.mjs'
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..')
 const configDir = process.env.CLAUDE_CONFIG_DIR || path.join(os.homedir(), '.claude')
-const portFile = path.join(configDir, 'diorama-kitchen', 'server.json')
-const [command = 'open', session] = process.argv.slice(2)
+const portFile = path.join(process.env.DIORAMA_KITCHEN_HOME || path.join(os.homedir(), '.diorama-kitchen'), 'server.json')
+const args = process.argv.slice(2)
+const flag = (name) => { const i = args.indexOf(name); if (i >= 0) args.splice(i, 1); return i >= 0 }
+const codex = flag('--codex'), claude = flag('--claude')
+const [command = 'latest', given] = args
 
 function request(port, method, route, body) {
   return new Promise((resolve) => {
@@ -49,6 +56,8 @@ async function start() {
   return null
 }
 
+const mtime = (file) => { try { return fs.statSync(file).mtimeMs } catch { return 0 } }
+
 function findTranscript(id) {
   try {
     const projects = path.join(configDir, 'projects')
@@ -57,6 +66,28 @@ function findTranscript(id) {
       if (fs.existsSync(file)) return file
     }
   } catch {}
+  return null
+}
+
+/** The newest Claude Code session started in `cwd` (Claude Code names its folder after the path). */
+function latestClaude(cwd) {
+  const folder = path.join(configDir, 'projects', cwd.replace(/[^a-zA-Z0-9]/g, '-'))
+  let best = null
+  try {
+    for (const name of fs.readdirSync(folder)) {
+      if (!name.endsWith('.jsonl')) continue
+      const file = path.join(folder, name), time = mtime(file)
+      if (!best || time > best.time) best = { provider: 'claude', id: name.slice(0, -6), file, time }
+    }
+  } catch {}
+  return best
+}
+/** The newest Codex session (not a subagent's) whose folder is `cwd`. */
+function latestCodex(cwd) {
+  for (const file of recentRollouts(14)) {
+    const meta = rolloutMeta(file)
+    if (meta?.id && !meta.subagent && !meta.review && path.resolve(meta.cwd || '/') === cwd) return { provider: 'codex', id: meta.id, file, time: mtime(file) }
+  }
   return null
 }
 
@@ -76,18 +107,37 @@ if (command === 'stop') {
   if (state) { try { process.kill(state.pid) } catch {} ; console.log('Kitchen server stopped.') } else console.log('The kitchen server is not running.')
   process.exit(0)
 }
-
-if (!session || session.includes('$')) {
-  console.log('Could not tell which session this is. Update Claude Code and run /kitchen again.')
+if (['help', '-h', '--help'].includes(command)) {
+  console.log('Usage: diorama-kitchen [--claude | --codex]   open the newest session in this folder\n       diorama-kitchen stop                   stop the kitchen server')
   process.exit(0)
 }
+
+let target
+if (command === 'open') {
+  if (!given || given.includes('$')) {
+    console.log('Could not tell which session this is. Update Claude Code and run /kitchen again, or run diorama-kitchen in your project folder.')
+    process.exit(0)
+  }
+  target = codex ? { provider: 'codex', id: given, file: findRollout(given) } : { provider: 'claude', id: given, file: findTranscript(given) }
+} else {
+  const cwd = path.resolve(process.cwd())
+  const found = [!codex && latestClaude(cwd), !claude && latestCodex(cwd)].filter(Boolean).sort((a, b) => b.time - a.time)
+  target = found[0]
+  if (!target) {
+    const tools = codex ? 'Codex' : claude ? 'Claude Code' : 'Claude Code or Codex'
+    console.log(`No ${tools} session found for ${cwd}. Start one in this folder, then run diorama-kitchen here again.`)
+    process.exit(1)
+  }
+}
+
 let state = await running()
 // A newer copy of the plugin replaces an older server.
 const version = JSON.parse(fs.readFileSync(path.join(root, '.claude-plugin', 'plugin.json'), 'utf8')).version
 if (state && state.version !== version) { try { process.kill(state.pid) } catch {} ; await sleep(300); state = null }
 state ??= await start()
-if (!state) { console.log('The kitchen server could not start. Try: node "' + path.join(root, 'server', 'server.mjs') + '"'); process.exit(0) }
-const watched = await request(state.port, 'POST', '/api/watch', { session, transcript: findTranscript(session) })
-const url = watched?.body?.url ?? `http://127.0.0.1:${state.port}/?session=${encodeURIComponent(session)}`
+if (!state) { console.log('The kitchen server could not start. Try: node "' + path.join(root, 'server', 'server.mjs') + '"'); process.exit(1) }
+const watched = await request(state.port, 'POST', '/api/watch', { session: target.id, provider: target.provider, transcript: target.file })
+const url = watched?.body?.url ?? `http://127.0.0.1:${state.port}/?session=${encodeURIComponent(target.id)}` + (target.provider === 'codex' ? '&provider=codex' : '')
 const opened = openBrowser(url)
-console.log(`Kitchen ${opened ? 'opened' : 'ready'}: ${url}`)
+const label = command === 'open' ? '' : ` (${target.provider === 'codex' ? 'Codex' : 'Claude Code'} session ${target.id.slice(0, 8)})`
+console.log(`Kitchen ${opened ? 'opened' : 'ready'}${label}: ${url}`)

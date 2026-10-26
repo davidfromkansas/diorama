@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 // The kitchen's local server: serves the page and its models on 127.0.0.1, follows the sessions
-// you open with /kitchen (their transcripts, their subagents' transcripts and the plugin's hook
-// events) and streams each session's agents to its page. It stops by itself once no page has
+// you open with /kitchen or `diorama-kitchen` (Claude Code transcripts and hook events, or Codex
+// rollouts, with their subagents') and streams each session's agents to its page. It stops by itself once no page has
 // been open for a while.
 
 import http from 'node:http'
@@ -10,10 +10,11 @@ import path from 'node:path'
 import os from 'node:os'
 import { fileURLToPath } from 'node:url'
 import { SessionModel } from './model.mjs'
+import { codexRecord, findRollout, recentRollouts, rolloutMeta } from './codex.mjs'
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..')
 const configDir = process.env.CLAUDE_CONFIG_DIR || path.join(os.homedir(), '.claude')
-const stateDir = path.join(configDir, 'diorama-kitchen')
+const stateDir = process.env.DIORAMA_KITCHEN_HOME || path.join(os.homedir(), '.diorama-kitchen')
 const portFile = path.join(stateDir, 'server.json')
 const preferredPort = Number(process.env.KITCHEN_PORT) || 47811
 const idleLimit = (Number(process.env.KITCHEN_IDLE_MINUTES) || 10) * 60 * 1000
@@ -27,13 +28,14 @@ const types = { '.html': 'text/html; charset=utf-8', '.js': 'text/javascript; ch
 const sessions = new Map()
 const maxSessions = 24
 
-function session(id) {
+function session(id, provider = 'claude') {
   if (!sessions.has(id)) {
     if (sessions.size >= maxSessions) {
       const oldest = [...sessions.values()].filter((s) => !s.clients.size).sort((a, b) => a.touched - b.touched)[0]
       if (oldest) { clearInterval(oldest.timer); sessions.delete(oldest.model.sessionId) }
     }
-    sessions.set(id, { model: new SessionModel(id), clients: new Set(), files: new Map(), transcript: null, timer: null, touched: Date.now(), sent: -1, pending: null })
+    sessions.set(id, { provider, model: new SessionModel(id, provider), clients: new Set(), files: new Map(), transcript: null, timer: null, touched: Date.now(), sent: -1, pending: null,
+      children: new Map(), checked: new Set(), scanned: 0 })
   }
   const entry = sessions.get(id)
   entry.touched = Date.now()
@@ -52,9 +54,10 @@ function findTranscript(id) {
   return null
 }
 
+const locate = (entry) => entry.provider === 'codex' ? findRollout(entry.model.sessionId) : findTranscript(entry.model.sessionId)
+
 function watch(entry, transcript) {
-  const id = entry.model.sessionId
-  entry.transcript = transcript && fs.existsSync(transcript) ? transcript : entry.transcript ?? findTranscript(id)
+  entry.transcript = transcript && fs.existsSync(transcript) ? transcript : entry.transcript ?? locate(entry)
   if (entry.timer) return
   poll(entry, true)
   entry.timer = setInterval(() => poll(entry, false), 400)
@@ -62,8 +65,9 @@ function watch(entry, transcript) {
 
 /** Reads what each transcript gained since the last look: the main one, then any subagent's. */
 function poll(entry, first) {
-  if (!entry.transcript) entry.transcript = findTranscript(entry.model.sessionId)
+  if (!entry.transcript) entry.transcript = locate(entry)
   if (!entry.transcript) return
+  if (entry.provider === 'codex') return pollCodex(entry, first)
   const files = [[entry.transcript, null]]
   const folder = path.join(entry.transcript.replace(/\.jsonl$/, ''), 'subagents')
   for (const file of listAgents(folder)) files.push([file, path.basename(file, '.jsonl').replace(/^agent-/, '')])
@@ -75,6 +79,28 @@ function poll(entry, first) {
     }
     tail(entry, file, agent)
   }
+  push(entry)
+}
+/** A Codex session's rollout, then its subagents' (rollouts whose session_meta names a parent we follow). */
+function pollCodex(entry, first) {
+  if (first || Date.now() - entry.scanned > 2000) {
+    entry.scanned = Date.now()
+    const ids = new Set([entry.model.sessionId, ...entry.children.values()])
+    let found = true
+    // Repeat so a subagent's own subagents (listed before it) are found in the same pass.
+    while (found) {
+      found = false
+      for (const file of recentRollouts(1)) {
+        if (file === entry.transcript || entry.children.has(file) || entry.checked.has(file)) continue
+        const meta = rolloutMeta(file)
+        if (!meta) continue
+        if (meta.parent && ids.has(meta.parent) && !meta.review) { entry.children.set(file, meta.id); ids.add(meta.id); found = true }
+        else if (meta.id) entry.checked.add(file)
+      }
+    }
+  }
+  const files = [[entry.transcript, null], ...[...entry.children].sort((a, b) => birth(a[0]) - birth(b[0]))]
+  for (const [file, agent] of files) tail(entry, file, agent)
   push(entry)
 }
 function birth(file) { try { const s = fs.statSync(file); return s.birthtimeMs || s.ctimeMs } catch { return 0 } }
@@ -109,7 +135,8 @@ function tail(entry, file, agent) {
       if (!line.trim()) continue
       let record
       try { record = JSON.parse(line) } catch { continue }
-      entry.model.record(record, agent ?? record.agentId ?? null)
+      if (entry.provider === 'codex') codexRecord(entry.model, record, agent)
+      else entry.model.record(record, agent ?? record.agentId ?? null)
     }
   } finally { fs.closeSync(fd) }
 }
@@ -173,9 +200,11 @@ const server = http.createServer(async (req, res) => {
     if (route === '/api/watch' && req.method === 'POST') {
       const input = await body(req)
       if (!input.session) return json(res, 400, { error: 'session required' })
-      const entry = session(String(input.session))
+      const provider = input.provider === 'codex' ? 'codex' : 'claude'
+      const entry = session(String(input.session), provider)
       watch(entry, input.transcript)
-      return json(res, 200, { ok: true, url: `http://127.0.0.1:${server.address().port}/?session=${encodeURIComponent(input.session)}`, transcript: entry.transcript })
+      const query = `?session=${encodeURIComponent(input.session)}` + (provider === 'codex' ? '&provider=codex' : '')
+      return json(res, 200, { ok: true, url: `http://127.0.0.1:${server.address().port}/${query}`, transcript: entry.transcript })
     }
     if (route === '/api/state') {
       const id = url.searchParams.get('session')
@@ -185,7 +214,7 @@ const server = http.createServer(async (req, res) => {
     if (route === '/api/stream') {
       const id = url.searchParams.get('session')
       if (!id) { res.writeHead(400); res.end(); return }
-      const entry = session(id)
+      const entry = session(id, url.searchParams.get('provider') === 'codex' ? 'codex' : 'claude')
       watch(entry, null)
       res.writeHead(200, { 'content-type': 'text/event-stream', 'cache-control': 'no-cache', connection: 'keep-alive' })
       res.write('retry: 1500\n\n')
