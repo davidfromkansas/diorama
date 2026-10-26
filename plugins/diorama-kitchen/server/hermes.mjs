@@ -148,6 +148,7 @@ export function hermesEvent(r, model, adopt = () => null) {
       if (r.interrupted) add({ id: `hermes:${r.turn_id || r.id}:interrupted`, kind: 'interrupted' })
       else if (r.failed) add({ id: `hermes:${r.turn_id || r.id}:failed`, kind: 'failed', detail: clip(r.turn_exit_reason) })
       else if (r.completed) add({ id: `hermes:${r.turn_id || r.id}:finished`, kind: 'finished' })
+      else if (r.completed === false) add({ id: `hermes:${r.turn_id || r.id}:failed`, kind: 'failed', detail: clip(r.turn_exit_reason ?? 'The turn did not finish') })
       else if (r.completed == null && r.failed == null && r.interrupted == null && r.reason) { m.ended = true; add({ kind: 'sessionEnded' }) }
       break
     case 'on_human_input_request':
