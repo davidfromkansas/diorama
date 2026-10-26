@@ -1,12 +1,13 @@
 #!/usr/bin/env node
-// Opens the kitchen for a Claude Code or Codex session: starts the local server if it isn't
-// running, points it at the session and opens the page in your browser. Prints the address.
+// Opens the kitchen for a Claude Code, Codex or Hermes session: starts the local server if it
+// isn't running, points it at the session and opens the page in your browser. Prints the address.
 //
 //   diorama-kitchen                      the newest Claude Code or Codex session in this folder
 //   diorama-kitchen --claude | --codex   the newest session of that tool in this folder
+//   diorama-kitchen --hermes             the Hermes session that last started a turn
 //   diorama-kitchen stop                 stops the kitchen's server
 //   kitchen.mjs open <session-id>        a Claude Code session (what /kitchen runs)
-//   kitchen.mjs open --codex <id>        a Codex session
+//   kitchen.mjs open --codex <id>        a Codex session (or --hermes for a Hermes one)
 
 import fs from 'node:fs'
 import path from 'node:path'
@@ -18,10 +19,11 @@ import { recentRollouts, rolloutMeta, findRollout } from '../server/codex.mjs'
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..')
 const configDir = process.env.CLAUDE_CONFIG_DIR || path.join(os.homedir(), '.claude')
-const portFile = path.join(process.env.DIORAMA_KITCHEN_HOME || path.join(os.homedir(), '.diorama-kitchen'), 'server.json')
+const stateDir = process.env.DIORAMA_KITCHEN_HOME || path.join(os.homedir(), '.diorama-kitchen')
+const portFile = path.join(stateDir, 'server.json')
 const args = process.argv.slice(2)
 const flag = (name) => { const i = args.indexOf(name); if (i >= 0) args.splice(i, 1); return i >= 0 }
-const codex = flag('--codex'), claude = flag('--claude')
+const codex = flag('--codex'), claude = flag('--claude'), hermes = flag('--hermes')
 const [command = 'latest', given] = args
 
 function request(port, method, route, body) {
@@ -90,6 +92,13 @@ function latestCodex(cwd) {
   }
   return null
 }
+/** The Hermes session that last started a turn (the Hermes plugin notes it; Hermes doesn't say which folder). */
+function latestHermes() {
+  try {
+    const { session, time } = JSON.parse(fs.readFileSync(path.join(stateDir, 'hermes-latest.json'), 'utf8'))
+    return session ? { provider: 'hermes', id: String(session), file: null, time: Number(time) || 0 } : null
+  } catch { return null }
+}
 
 function openBrowser(url) {
   if (process.env.KITCHEN_NO_OPEN) return false
@@ -108,7 +117,7 @@ if (command === 'stop') {
   process.exit(0)
 }
 if (['help', '-h', '--help'].includes(command)) {
-  console.log('Usage: diorama-kitchen [--claude | --codex]   open the newest session in this folder\n       diorama-kitchen stop                   stop the kitchen server')
+  console.log('Usage: diorama-kitchen [--claude | --codex]   open the newest session in this folder\n       diorama-kitchen --hermes               open the latest Hermes session\n       diorama-kitchen stop                   stop the kitchen server')
   process.exit(0)
 }
 
@@ -118,14 +127,17 @@ if (command === 'open') {
     console.log('Could not tell which session this is. Update Claude Code and run /kitchen again, or run diorama-kitchen in your project folder.')
     process.exit(0)
   }
-  target = codex ? { provider: 'codex', id: given, file: findRollout(given) } : { provider: 'claude', id: given, file: findTranscript(given) }
+  target = codex ? { provider: 'codex', id: given, file: findRollout(given) } : hermes ? { provider: 'hermes', id: given, file: null }
+    : { provider: 'claude', id: given, file: findTranscript(given) }
 } else {
   const cwd = path.resolve(process.cwd())
-  const found = [!codex && latestClaude(cwd), !claude && latestCodex(cwd)].filter(Boolean).sort((a, b) => b.time - a.time)
-  target = found[0]
+  const found = hermes ? [] : [!codex && latestClaude(cwd), !claude && latestCodex(cwd)].filter(Boolean).sort((a, b) => b.time - a.time)
+  // Hermes sessions have no folder to match: used when asked for, or when this folder has no other session.
+  target = found[0] ?? (hermes || (!codex && !claude) ? latestHermes() : null)
   if (!target) {
-    const tools = codex ? 'Codex' : claude ? 'Claude Code' : 'Claude Code or Codex'
-    console.log(`No ${tools} session found for ${cwd}. Start one in this folder, then run diorama-kitchen here again.`)
+    const tools = hermes ? 'Hermes' : codex ? 'Codex' : claude ? 'Claude Code' : 'Claude Code, Codex or Hermes'
+    console.log(hermes ? 'No Hermes session yet. Send a message in Hermes (with the Diorama Kitchen plugin on), then run diorama-kitchen --hermes again.'
+      : `No ${tools} session found for ${cwd}. Start one in this folder, then run diorama-kitchen here again.`)
     process.exit(1)
   }
 }
@@ -137,7 +149,7 @@ if (state && state.version !== version) { try { process.kill(state.pid) } catch 
 state ??= await start()
 if (!state) { console.log('The kitchen server could not start. Try: node "' + path.join(root, 'server', 'server.mjs') + '"'); process.exit(1) }
 const watched = await request(state.port, 'POST', '/api/watch', { session: target.id, provider: target.provider, transcript: target.file })
-const url = watched?.body?.url ?? `http://127.0.0.1:${state.port}/?session=${encodeURIComponent(target.id)}` + (target.provider === 'codex' ? '&provider=codex' : '')
+const url = watched?.body?.url ?? `http://127.0.0.1:${state.port}/?session=${encodeURIComponent(target.id)}` + (target.provider === 'claude' ? '' : `&provider=${target.provider}`)
 const opened = openBrowser(url)
-const label = command === 'open' ? '' : ` (${target.provider === 'codex' ? 'Codex' : 'Claude Code'} session ${target.id.slice(0, 8)})`
+const label = command === 'open' ? '' : ` (${{ codex: 'Codex', hermes: 'Hermes' }[target.provider] ?? 'Claude Code'} session ${target.id.slice(0, 8)})`
 console.log(`Kitchen ${opened ? 'opened' : 'ready'}${label}: ${url}`)

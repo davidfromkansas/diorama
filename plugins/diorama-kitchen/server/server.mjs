@@ -1,16 +1,18 @@
 #!/usr/bin/env node
 // The kitchen's local server: serves the page and its models on 127.0.0.1, follows the sessions
-// you open with /kitchen or `diorama-kitchen` (Claude Code transcripts and hook events, or Codex
-// rollouts, with their subagents') and streams each session's agents to its page. It stops by itself once no page has
-// been open for a while.
+// you open with /kitchen or `diorama-kitchen` (Claude Code transcripts and hook events, Codex
+// rollouts with their subagents', or the Hermes plugin's events) and streams each session's agents
+// to its page. It stops by itself once no page has been open for a while.
 
 import http from 'node:http'
 import fs from 'node:fs'
 import path from 'node:path'
 import os from 'node:os'
+import crypto from 'node:crypto'
 import { fileURLToPath } from 'node:url'
 import { SessionModel } from './model.mjs'
 import { codexRecord, findRollout, recentRollouts, rolloutMeta } from './codex.mjs'
+import { hermesEvent, hermesOwner, takeAliases } from './hermes.mjs'
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..')
 const configDir = process.env.CLAUDE_CONFIG_DIR || path.join(os.homedir(), '.claude')
@@ -21,6 +23,11 @@ const idleLimit = (Number(process.env.KITCHEN_IDLE_MINUTES) || 10) * 60 * 1000
 const version = JSON.parse(fs.readFileSync(path.join(root, '.claude-plugin', 'plugin.json'), 'utf8')).version
 const types = { '.html': 'text/html; charset=utf-8', '.js': 'text/javascript; charset=utf-8', '.mjs': 'text/javascript; charset=utf-8', '.css': 'text/css; charset=utf-8',
   '.json': 'application/json', '.glb': 'model/gltf-binary', '.jpg': 'image/jpeg', '.png': 'image/png', '.mp3': 'audio/mpeg', '.obj': 'text/plain', '.mtl': 'text/plain', '.svg': 'image/svg+xml' }
+const providers = new Set(['claude', 'codex', 'hermes'])
+const providerOf = (value) => (providers.has(value) ? value : 'claude')
+/** Lets a page in a sandboxed frame (Hermes Desktop's kitchen tab, which has no origin of its own) read
+ *  a session: it gets this key in its address. Other sites can't read the kitchen without it. */
+const embedKey = crypto.randomBytes(16).toString('hex')
 
 // MARK: Sessions
 
@@ -42,6 +49,13 @@ function session(id, provider = 'claude') {
   return entry
 }
 
+/** The one Hermes kitchen open and still empty (opened with /kitchen before the chat's first message):
+ *  a new Hermes session fills it when Hermes didn't say which chat the session belongs to. */
+function adoptHermes() {
+  const empty = [...sessions.values()].filter((s) => s.provider === 'hermes' && s.clients.size && s.model.agents.size === 1 && !s.model.agents.get('main').events.size)
+  return empty.length === 1 ? empty[0].model.sessionId : null
+}
+
 /** Finds a session's transcript under the projects folder. */
 function findTranscript(id) {
   const projects = path.join(configDir, 'projects')
@@ -57,6 +71,7 @@ function findTranscript(id) {
 const locate = (entry) => entry.provider === 'codex' ? findRollout(entry.model.sessionId) : findTranscript(entry.model.sessionId)
 
 function watch(entry, transcript) {
+  if (entry.provider === 'hermes') return   // Hermes sends its events; there is no file to follow.
   entry.transcript = transcript && fs.existsSync(transcript) ? transcript : entry.transcript ?? locate(entry)
   if (entry.timer) return
   poll(entry, true)
@@ -179,7 +194,9 @@ function json(res, status, value) { res.writeHead(status, { 'content-type': 'app
 function serveFile(res, file) {
   fs.stat(file, (error, stat) => {
     if (error || !stat.isFile()) { res.writeHead(404); res.end('Not found'); return }
-    res.writeHead(200, { 'content-type': types[path.extname(file)] ?? 'application/octet-stream', 'content-length': stat.size, 'cache-control': 'no-cache' })
+    // The page and its models are the plugin's own public files: a sandboxed frame may load them.
+    res.writeHead(200, { 'content-type': types[path.extname(file)] ?? 'application/octet-stream', 'content-length': stat.size, 'cache-control': 'no-cache',
+      'access-control-allow-origin': '*' })
     fs.createReadStream(file).pipe(res)
   })
 }
@@ -197,31 +214,60 @@ const server = http.createServer(async (req, res) => {
       if (input.session_id) { const entry = session(String(input.session_id)); entry.model.hook(input); if (input.transcript_path && !entry.transcript) entry.transcript = input.transcript_path; push(entry) }
       return json(res, 200, { ok: true })
     }
+    if (route === '/api/hermes' && req.method === 'POST') {
+      if (!String(req.headers['content-type'] ?? '').startsWith('application/json')) return json(res, 415, { error: 'json required' })
+      const input = await body(req, 16 * 1024 * 1024)
+      const changed = new Set()
+      for (const event of Array.isArray(input.events) ? input.events : [input]) {
+        for (const id of hermesEvent(event, (id) => session(id, 'hermes').model, adoptHermes)) changed.add(id)
+        // A page already following an id that turned out to be another name for a session moves over.
+        for (const [from, to] of takeAliases()) {
+          const old = sessions.get(from)
+          if (!old || old.provider !== 'hermes') continue
+          const entry = session(hermesOwner(to).session, 'hermes')
+          for (const client of old.clients) { entry.clients.add(client); send(entry, client) }
+          old.clients.clear()
+          if (!old.model.agents.get('main').events.size) sessions.delete(from)
+        }
+      }
+      for (const id of changed) if (sessions.has(id)) push(sessions.get(id))
+      return json(res, 200, { ok: true })
+    }
     if (route === '/api/watch' && req.method === 'POST') {
       const input = await body(req)
       if (!input.session) return json(res, 400, { error: 'session required' })
-      const provider = input.provider === 'codex' ? 'codex' : 'claude'
-      const entry = session(String(input.session), provider)
+      const provider = providerOf(input.provider)
+      const id = provider === 'hermes' ? hermesOwner(input.session).session : String(input.session)
+      const entry = session(id, provider)
       watch(entry, input.transcript)
-      const query = `?session=${encodeURIComponent(input.session)}` + (provider === 'codex' ? '&provider=codex' : '')
-      return json(res, 200, { ok: true, url: `http://127.0.0.1:${server.address().port}/${query}`, transcript: entry.transcript })
+      const page = `http://127.0.0.1:${server.address().port}/?session=${encodeURIComponent(id)}` + (provider === 'claude' ? '' : `&provider=${provider}`)
+      return json(res, 200, { ok: true, url: page, embed: `${page}&key=${embedKey}`, transcript: entry.transcript })
+    }
+    // A session's agents: for this machine's pages, or a sandboxed frame that has the key.
+    const keyed = url.searchParams.get('key') === embedKey
+    const allow = keyed ? { 'access-control-allow-origin': '*' } : {}
+    const requested = () => {
+      const provider = providerOf(url.searchParams.get('provider'))
+      const id = url.searchParams.get('session')
+      return { provider, id: id && provider === 'hermes' ? hermesOwner(id).session : id }
     }
     if (route === '/api/state') {
-      const id = url.searchParams.get('session')
+      const { id } = requested()
       if (!id || !sessions.has(id)) return json(res, 404, { error: 'unknown session' })
-      return json(res, 200, sessions.get(id).model.snapshot())
+      res.writeHead(200, { 'content-type': 'application/json', ...allow }); res.end(JSON.stringify(sessions.get(id).model.snapshot()))
+      return
     }
     if (route === '/api/stream') {
-      const id = url.searchParams.get('session')
+      const { provider, id } = requested()
       if (!id) { res.writeHead(400); res.end(); return }
-      const entry = session(id, url.searchParams.get('provider') === 'codex' ? 'codex' : 'claude')
+      const entry = session(id, provider)
       watch(entry, null)
-      res.writeHead(200, { 'content-type': 'text/event-stream', 'cache-control': 'no-cache', connection: 'keep-alive' })
+      res.writeHead(200, { 'content-type': 'text/event-stream', 'cache-control': 'no-cache', connection: 'keep-alive', ...allow })
       res.write('retry: 1500\n\n')
       entry.clients.add(res)
       send(entry, res)
       const ping = setInterval(() => res.write(': ping\n\n'), 20000)
-      req.on('close', () => { clearInterval(ping); entry.clients.delete(res); lastClient = Date.now() })
+      req.on('close', () => { clearInterval(ping); for (const s of sessions.values()) s.clients.delete(res); lastClient = Date.now() })   // it may have moved to another session
       return
     }
     if (route.startsWith('/assets/')) {

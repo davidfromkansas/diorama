@@ -585,7 +585,9 @@ export function phrase(agent) {
 export function modelName(model) {
   let id = String(model ?? '').trim()
   if (!id || id === '<synthetic>') return 'Claude'
-  if (id.startsWith('claude/')) id = id.slice(7)
+  // Hermes names models by provider ("anthropic/claude-sonnet-4.6", "nousresearch/hermes-4-70b").
+  const claude = /claude|opus|sonnet|haiku|fable/i.test(id) || !id.includes('/')
+  id = id.slice(id.lastIndexOf('/') + 1).replace(/(\d)\.(\d)/g, '$1-$2')
   id = id.replace(/\[.*\]$/, '')
   const parts = id.split('-').filter(Boolean)
   if (parts.length && /^\d{8}$/.test(parts[parts.length - 1])) parts.pop()
@@ -596,7 +598,7 @@ export function modelName(model) {
     if (/^\d+$/.test(part) && i + 1 < parts.length && /^\d{1,2}$/.test(parts[i + 1])) { words.push(part + '.' + parts[i + 1]); i++; continue }
     words.push(part.toLowerCase() === 'gpt' ? 'GPT' : part[0].toUpperCase() + part.slice(1))
   }
-  if (words[0] !== 'Claude' && !/^(GPT|O\d|Codex)/i.test(words[0])) words.unshift('Claude')
+  if (claude && words[0] !== 'Claude' && !/^(GPT|O\d|Codex)/i.test(words[0])) words.unshift('Claude')
   return words.join(' ')
 }
 

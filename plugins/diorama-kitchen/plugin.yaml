@@ -1,0 +1,18 @@
+name: diorama-kitchen
+version: 0.3.2
+description: "Watch your Hermes session's agents work as chefs in Diorama's live 3D kitchen. Type /kitchen."
+author: "David (https://github.com/davidfromkansas)"
+provides_hooks:
+  - on_session_start
+  - pre_llm_call
+  - on_interim_message
+  - pre_tool_call
+  - post_tool_call
+  - post_llm_call
+  - on_session_end
+  - subagent_start
+  - subagent_stop
+  - on_human_input_request
+  - api_request_error
+  - post_compaction
+  - on_session_reset

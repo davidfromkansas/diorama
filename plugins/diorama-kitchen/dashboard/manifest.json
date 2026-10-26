@@ -1,0 +1,7 @@
+{
+  "name": "diorama-kitchen",
+  "label": "Diorama Kitchen",
+  "description": "Opens the kitchen tab in Hermes Desktop.",
+  "tab": { "hidden": true },
+  "api": "plugin_api.py"
+}
