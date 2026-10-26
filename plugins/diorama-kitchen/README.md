@@ -4,10 +4,13 @@ Watch a Claude Code session's agents work as chefs in Diorama's kitchen, live in
 
 ## Install
 
+In a terminal:
+
 ```
-/plugin marketplace add davidfromkansas/diorama
-/plugin install diorama-kitchen@diorama
+claude plugin marketplace add davidfromkansas/diorama --sparse .claude-plugin plugins && claude plugin install diorama-kitchen@diorama
 ```
+
+`--sparse` downloads only the plugin (about 100 MB) instead of the whole Diorama repo (about 900 MB).
 
 Needs Node.js 18 or later on your PATH.
 
