@@ -490,7 +490,8 @@ export class Kitchen {
     }
     if (w / h >= 1.5) for (const seat of this.built.seats) points.push(seat.dish)
     points.push(...(this.built.framePoints ?? []))
-    this.freeCamera.setHome([0, 0], fitDistance(points, w, h))
+    const center = this.built.homeCenter ?? [0, 0]
+    this.freeCamera.setHome(center, fitDistance(points.map(([x, y, z]) => [x - center[0], y, z - center[1]]), w, h))
     this.overviewPose = { eye: this.freeCamera.eye, look: this.freeCamera.look }
     const following = this.followID || this.cameraMoving || !this.freeCamera.isHome
     if (!following) { this.cameraPose = this.overviewPose; this.applyPose(this.cameraPose) }

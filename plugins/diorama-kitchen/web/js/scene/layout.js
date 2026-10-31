@@ -246,7 +246,7 @@ const chefSlots = (() => {
     }
     else if (a.id === 'bell') {
       slots = [0, -38, 38, -76, 76, -100].map((degrees) => {
-        const angle = degrees * Math.PI / 180
+        const angle = (degrees + (a.ringBase ?? 0)) * Math.PI / 180
         const stand = [gongCenter[0] + Math.sin(angle) * 1.7, gongCenter[1] + Math.cos(angle) * 1.7]
         return { area: a.id, stand, facing: Math.atan2(gongCenter[0] - stand[0], gongCenter[1] - stand[1]) }
       })

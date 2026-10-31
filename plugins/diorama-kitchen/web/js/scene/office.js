@@ -214,7 +214,7 @@ function buildRoom() {
   picture(root, -0.3, floorTop + 1.75, back + 0.13, 0, 0.75, 0.9, 'circle')
   picture(root, 0.65, floorTop + 1.75, back + 0.13, 0, 0.75, 0.9, 'arch')
   picture(root, 1.6, floorTop + 1.75, back + 0.13, 0, 0.75, 0.9, 'square')
-  picture(root, right - 0.13, floorTop + 1.7, 3.6, -Math.PI / 2, 0.75, 1.0, 'arch')
+  picture(root, right - 0.13, floorTop + 1.7, -1.3, -Math.PI / 2, 0.6, 0.8, 'arch')
   for (const [x, z] of Plan.plants) plant(root, x, z, 1)
   // The library shelves not used as a station (behind the lounge).
   for (const shelf of Plan.shelves.filter((s) => !s.station)) root.add(placeShelf(shelf.rect))
@@ -559,7 +559,8 @@ export async function buildOffice(scene) {
   return {
     stations, seats: [], lights, workInProgress: false,
     // The home view frames the whole diorama, plinth corners included.
-    framePoints: [[-12.25, 0, -8.25], [12.25, 0, -8.25], [-12.25, 0, 8.25], [12.25, 0, 8.25], [-12, 3, -8], [12, 3, -8], [12, 3, 8]],
+    homeCenter: [0, -2],
+    framePoints: [[-12.25, 0, -8.25], [12.25, 0, -8.25], [-12.25, 0, 4.25], [12.25, 0, 4.25], [-12, 3, -8], [12, 3, -8], [12, 3, 4]],
     food: Object.fromEntries(deliverableIDs.map((id, i) => [id, deliverables[i]])),
     props: {
       ...Object.fromEntries(kitchenProps.map((id, i) => [id, borrowed[i]])),

@@ -6,7 +6,8 @@ import { isOffice } from './theme.js'
 
 export const elevationDegrees = 40
 /** The home view's angle: the kitchen is seen square on; the office from its front-left corner, like a diorama. */
-export const homeView = isOffice ? { yaw: -38 * Math.PI / 180, elevation: 33 } : { yaw: 0, elevation: elevationDegrees }
+/** The office uses a narrow lens too, so it reads almost isometric. */
+export const homeView = isOffice ? { yaw: -38 * Math.PI / 180, elevation: 33, fov: 22 } : { yaw: 0, elevation: elevationDegrees, fov: 38 }
 const maxZoom = 3, zoomSensitivity = 0.012, maxZoomStep = 0.25, moveSpeed = 8, turnSpeed = Math.PI / 4, maxStep = 0.05
 export const cameraEase = 0.35
 
@@ -76,7 +77,7 @@ export class CameraController {
 
 /** The follow camera keeps the overview's angle, closer in, aimed at the chef's chest. */
 export function followPose(position) {
-  const e = homeView.elevation * Math.PI / 180, d = 8.5, y = homeView.yaw
+  const e = homeView.elevation * Math.PI / 180, d = 8.5 * Math.tan(19 * Math.PI / 180) / Math.tan(homeView.fov / 2 * Math.PI / 180), y = homeView.yaw
   const look = [position.x, position.y + 1.2, position.z]
   return { eye: [look[0] + Math.sin(y) * d * Math.cos(e), look[1] + d * Math.sin(e), look[2] + Math.cos(y) * d * Math.cos(e)], look }
 }
@@ -84,7 +85,7 @@ export function followPose(position) {
 /** The home distance that fits every point (world [x, y, z]) in a `width`×`height` view. */
 export function fitDistance(points, width, height) {
   const e = homeView.elevation * Math.PI / 180, yaw = homeView.yaw
-  const tangentY = Math.tan(19 * Math.PI / 180), tangentX = tangentY * width / height
+  const tangentY = Math.tan(homeView.fov / 2 * Math.PI / 180), tangentX = tangentY * width / height
   const availableX = Math.max(0.1, 1 - 20 / width), availableY = Math.max(0.1, 1 - 56 / height)
   return points.reduce((distance, [wx, py, wz]) => {
     // Into the home view's frame: x across the screen, z toward the camera.

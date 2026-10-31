@@ -12,6 +12,7 @@ import { phrase, fullTitle, modelName } from './core/activity.js'
 import { audio } from './audio.js'
 import { demoAgents } from './demo.js'
 import { vocabulary as V, isOffice, switchScene } from './scene/theme.js'
+import { homeView } from './scene/camera.js'
 
 const params = new URLSearchParams(location.search)
 const session = params.get('session') ?? ''
@@ -29,7 +30,7 @@ renderer.shadowMap.enabled = !params.has('noshadow'); renderer.shadowMap.type = 
 renderer.outputColorSpace = THREE.SRGBColorSpace
 stage.appendChild(renderer.domElement)
 const scene = new THREE.Scene()
-const camera = new THREE.PerspectiveCamera(38, 1, 0.1, 200)
+const camera = new THREE.PerspectiveCamera(homeView.fov, 1, 0.1, 400)
 const clock = { value: 0 }
 
 const [built, assets] = await Promise.all([buildKitchen(scene, clock), ChefAssets.load()])
