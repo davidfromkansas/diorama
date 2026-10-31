@@ -11,12 +11,18 @@ import { tagContent, Palette } from './ui/tags.js'
 import { phrase, fullTitle, modelName } from './core/activity.js'
 import { audio } from './audio.js'
 import { demoAgents } from './demo.js'
+import { vocabulary as V, isOffice, switchScene } from './scene/theme.js'
+import { homeView } from './scene/camera.js'
 
 const params = new URLSearchParams(location.search)
 const session = params.get('session') ?? ''
 const stage = document.getElementById('stage')
 const overlay = document.getElementById('overlay')
 const loading = document.getElementById('loading')
+document.title = V.Place
+document.getElementById('loading-text').textContent = `Setting up the ${V.place}…`
+for (const who of document.querySelectorAll('#keys .who')) who.textContent = V.person
+document.querySelector('link[rel=icon]').href = `data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>${V.icon}</text></svg>`
 
 const renderer = new THREE.WebGLRenderer({ antialias: true, powerPreference: 'high-performance' })
 renderer.setPixelRatio(Math.min(2, devicePixelRatio))
@@ -24,7 +30,7 @@ renderer.shadowMap.enabled = !params.has('noshadow'); renderer.shadowMap.type = 
 renderer.outputColorSpace = THREE.SRGBColorSpace
 stage.appendChild(renderer.domElement)
 const scene = new THREE.Scene()
-const camera = new THREE.PerspectiveCamera(38, 1, 0.1, 200)
+const camera = new THREE.PerspectiveCamera(homeView.fov, 1, 0.1, 400)
 const clock = { value: 0 }
 
 const [built, assets] = await Promise.all([buildKitchen(scene, clock), ChefAssets.load()])
@@ -76,9 +82,9 @@ const el = (tag, className, parent, text) => {
 }
 const hud = document.getElementById('hud')
 const header = el('div', 'hud-header', hud)
-el('div', 'brand', header, '🍳')
+el('div', 'brand', header, V.icon)
 const heading = el('div', 'hud-heading', header)
-const title = el('div', 'hud-title', heading, 'Kitchen')
+const title = el('div', 'hud-title', heading, V.Place)
 const subtitle = el('div', 'hud-subtitle', heading, '')
 const live = el('div', 'live', header)
 const toggle = el('button', 'roster-toggle', header)
@@ -87,23 +93,26 @@ const summary = el('div', 'summary card', document.body)
 let expanded = (() => { try { return localStorage.getItem('kitchenRoster') === 'open' } catch { return false } })()
 const showRoster = () => {
   roster.classList.toggle('hidden', !expanded)
-  toggle.textContent = `${agents.length} chef${agents.length === 1 ? '' : 's'} ${expanded ? '▴' : '▾'}`
-  toggle.title = expanded ? 'Hide the chefs list' : 'Show the chefs list'
+  toggle.textContent = `${agents.length} ${agents.length === 1 ? V.person : V.people} ${expanded ? '▴' : '▾'}`
+  toggle.title = expanded ? `Hide the ${V.people} list` : `Show the ${V.people} list`
 }
 toggle.onclick = () => { expanded = !expanded; try { localStorage.setItem('kitchenRoster', expanded ? 'open' : 'closed') } catch {}; showRoster() }
 
 const controls = document.getElementById('controls')
 const resetButton = el('button', 'control hidden', controls, 'Reset view')
-resetButton.title = 'Go back to the whole kitchen (R)'
+resetButton.title = `Go back to the whole ${V.place} (R)`
 resetButton.onclick = () => kitchen.resetCamera()
 kitchen.onCameraMoved = (away) => resetButton.classList.toggle('hidden', !away)
+const sceneButton = el('button', 'control', controls, isOffice ? '🍳' : '🏢')
+sceneButton.title = isOffice ? 'Switch to the kitchen' : 'Switch to the office'
+sceneButton.onclick = () => switchScene(isOffice ? 'kitchen' : 'office')
 const soundButton = el('button', 'control', controls)
-const showSound = () => { soundButton.textContent = audio.enabled ? '🔊' : '🔈'; soundButton.title = audio.enabled ? 'Mute kitchen sounds' : 'Play kitchen sounds' }
+const showSound = () => { soundButton.textContent = audio.enabled ? '🔊' : '🔈'; soundButton.title = audio.enabled ? `Mute ${V.place} sounds` : `Play ${V.place} sounds` }
 soundButton.onclick = () => { audio.unlock(); audio.setEnabled(!audio.enabled); showSound() }
 showSound()
 const helpButton = el('button', 'control', controls, '?')
-helpButton.title = 'Scroll to zoom · Arrow keys to move · Q/W rotate · R reset · A hide tags · Click a chef to follow it'
-const hint = el('div', 'hint', document.body, 'Click anywhere to turn on kitchen sounds')
+helpButton.title = `Scroll to zoom · Arrow keys to move · Q/W rotate · R reset · A hide tags · Click a ${V.person} to follow it`
+const hint = el('div', 'hint', document.body, `Click anywhere to turn on ${V.place} sounds`)
 addEventListener('pointerdown', () => { audio.unlock(); hint.remove() }, { once: true })
 addEventListener('keydown', () => { audio.unlock(); hint.remove() }, { once: true })
 helpButton.onclick = () => {
@@ -127,7 +136,7 @@ function statusDot(agent) {
 }
 
 function drawHUD() {
-  title.textContent = fullTitle(sessionInfo.title) || 'Kitchen'
+  title.textContent = fullTitle(sessionInfo.title) || V.Place
   title.title = fullTitle(sessionInfo.task ?? sessionInfo.title ?? '')
   subtitle.textContent = [sessionInfo.project, sessionInfo.model ? modelName(sessionInfo.model) : null].filter(Boolean).join(' · ')
   live.className = 'live ' + connection
@@ -220,7 +229,7 @@ function show(next) {
 
 if (params.has('demo') || !session) {
   connection = 'demo'
-  sessionInfo = { title: 'Demo kitchen', project: 'No session: showing a demo' }
+  sessionInfo = { title: V.demo, project: 'No session: showing a demo' }
   tick = demoAgents(show, params.get('demo'), seconds)
 } else {
   const connect = () => {

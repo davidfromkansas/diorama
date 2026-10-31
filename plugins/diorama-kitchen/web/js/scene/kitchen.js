@@ -9,7 +9,8 @@ import { ChefAvatar, ownCopy, setOpacity, dishSize, liftHeight } from './avatar.
 import { BreakRoom, RestaurantGuests, nextVisit, laughing, talking } from './crowd.js'
 import { CameraController, followPose, fitDistance, cameraEase } from './camera.js'
 import { BurnerFlames, IdleBoards } from './effects.js'
-import { strikeGong, swingGong, dishFor, foodIDs } from './room.js'
+import { strikeGong, swingGong, dishFor } from './room.js'
+import { ringBell, hopBell } from './office.js'
 import { KitchenActivity, pantryItem, planItem } from '../core/activity.js'
 import { ChefTag, tagContent, detectMoments, needsYou, phasePriority, fresh } from '../ui/tags.js'
 import { ChefBubble, bubbleSize } from '../ui/bubbles.js'
@@ -31,7 +32,7 @@ export class Kitchen {
     this.navigation = SceneLayout.navigation
     this.slotTable = SceneLayout.chefSlots
     this.kit = {
-      food: built.food, particles,
+      food: built.food, particles, workInProgress: built.workInProgress !== false,
       carry: { skill: built.props.salsa_jar, plugin: built.props.plugin_crate, connector: built.props.connector_object, plan: built.props.plan_plate,
         idea: built.props.lightbulb, board: built.props.chopped_board, pot: built.props.stove_pot },
     }
@@ -56,7 +57,9 @@ export class Kitchen {
     this.freeCamera = new CameraController()
     this.followID = null; this.cameraMoving = false; this.snapCamera = false; this.overviewPose = null; this.cameraPose = null
     this.onSelect = null; this.onCameraMoved = null; this.reportedAway = false
-    this.effects = [new BurnerFlames(scene, built.stations.stove, particles), new IdleBoards(built.stations.cooking, built.props.cleaver_board)]
+    this.foodIDs = Object.keys(built.food).sort()
+    this.effects = built.makeEffects?.() ?? [new BurnerFlames(scene, built.stations.stove, particles), new IdleBoards(built.stations.cooking, built.props.cleaver_board)]
+    this.bell = built.bell ?? null; this.atBell = new Set()
     this.gong = built.stations.bell?.userData.gong ?? null
     this.doors = built.stations.elevator?.userData.doors ?? []
     this.makeSigns()
@@ -220,7 +223,7 @@ export class Kitchen {
       const counts = { testsSeen: agent.turnWork?.tests?.length ?? 0, resourcesSeen: agent.turnWork?.resources?.length ?? 0, filesSeen: agent.turnWork?.files?.length ?? 0 }
       if (!this.chefs.has(agent.id)) {
         const chef = this.makeChef(agent.id, this.character(agent.id))
-        chef.dish = dishFor(agent.completionKey ?? agent.id, foodIDs)
+        chef.dish = dishFor(agent.completionKey ?? agent.id, this.foodIDs)
         chef.pantryItem = pantryItem(agent); chef.prepItem = planItem(agent)
         this.chefs.set(agent.id, chef)
         // Only agents that start while someone watches ride the elevator in.
@@ -267,7 +270,7 @@ export class Kitchen {
           if (moments.length) this.tags.get(agent.id)?.react(moments)
         }
         chef.director.reducedMotion = this.reduced
-        chef.dish = dishFor(agent.completionKey ?? agent.id, foodIDs)
+        chef.dish = dishFor(agent.completionKey ?? agent.id, this.foodIDs)
         chef.pantryItem = pantryItem(agent); chef.prepItem = planItem(agent)
         state.agent = agent
         // Brief work still gets its station: tasting for each new test run, the pantry for each
@@ -486,7 +489,9 @@ export class Kitchen {
       }
     }
     if (w / h >= 1.5) for (const seat of this.built.seats) points.push(seat.dish)
-    this.freeCamera.setHome([0, 0], fitDistance(points, w, h))
+    points.push(...(this.built.framePoints ?? []))
+    const center = this.built.homeCenter ?? [0, 0]
+    this.freeCamera.setHome(center, fitDistance(points.map(([x, y, z]) => [x - center[0], y, z - center[1]]), w, h))
     this.overviewPose = { eye: this.freeCamera.eye, look: this.freeCamera.look }
     const following = this.followID || this.cameraMoving || !this.freeCamera.isHome
     if (!following) { this.cameraPose = this.overviewPose; this.applyPose(this.cameraPose) }
@@ -948,6 +953,17 @@ export class Kitchen {
     if (strikes > this.gongStrikesSeen && !this.reduced && this.gong) strikeGong(this.gong, now)
     this.gongStrikesSeen = strikes
     if (this.gong) swingGong(this.gong, now)
+    if (!this.bell) return
+    // The office's desk bell rings as each teammate who needs you reaches it.
+    const here = new Set([...this.chefs].filter(([, c]) => c.director.station?.area === 'bell').map(([id]) => id))
+    const arrived = [...here].some((id) => !this.atBell.has(id))
+    this.atBell = here
+    if (arrived && !this.catchingUp) {
+      if (!this.reduced) ringBell(this.bell, now)
+      const point = this.project(this.bell.getWorldPosition(new THREE.Vector3()))
+      if (point && this.observedSince != null) audio.play('gong', point.x / Math.max(1, this.canvas.clientWidth) * 2 - 1, 0.8)
+    }
+    hopBell(this.bell, now)
   }
 
   // MARK: Break room

@@ -2,7 +2,7 @@
 // `/kitchen`: starts the kitchen's local server if it isn't running, points it at this session
 // and opens the page in your browser. Prints the address either way.
 //
-//   node kitchen.mjs open <session-id>    (the command passes the session it was run in)
+//   node kitchen.mjs open <session-id> [office]    (the command passes the session it was run in; /office adds `office`)
 //   node kitchen.mjs stop
 
 import fs from 'node:fs'
@@ -15,7 +15,8 @@ import { fileURLToPath } from 'node:url'
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..')
 const configDir = process.env.CLAUDE_CONFIG_DIR || path.join(os.homedir(), '.claude')
 const portFile = path.join(configDir, 'diorama-kitchen', 'server.json')
-const [command = 'open', session] = process.argv.slice(2)
+const [command = 'open', session, scene] = process.argv.slice(2)
+const place = scene === 'office' ? 'Office' : 'Kitchen'
 
 function request(port, method, route, body) {
   return new Promise((resolve) => {
@@ -78,7 +79,7 @@ if (command === 'stop') {
 }
 
 if (!session || session.includes('$')) {
-  console.log('Could not tell which session this is. Update Claude Code and run /kitchen again.')
+  console.log(`Could not tell which session this is. Update Claude Code and run /${place.toLowerCase()} again.`)
   process.exit(0)
 }
 let state = await running()
@@ -88,6 +89,7 @@ if (state && state.version !== version) { try { process.kill(state.pid) } catch 
 state ??= await start()
 if (!state) { console.log('The kitchen server could not start. Try: node "' + path.join(root, 'server', 'server.mjs') + '"'); process.exit(0) }
 const watched = await request(state.port, 'POST', '/api/watch', { session, transcript: findTranscript(session) })
-const url = watched?.body?.url ?? `http://127.0.0.1:${state.port}/?session=${encodeURIComponent(session)}`
+let url = watched?.body?.url ?? `http://127.0.0.1:${state.port}/?session=${encodeURIComponent(session)}`
+url += `&scene=${scene === 'office' ? 'office' : 'kitchen'}`
 const opened = openBrowser(url)
-console.log(`Kitchen ${opened ? 'opened' : 'ready'}: ${url}`)
+console.log(`${place} ${opened ? 'opened' : 'ready'}: ${url}`)

@@ -2,20 +2,26 @@
 // view fitted to the stations, scroll to zoom up to 3×, arrow keys to move while zoomed in, Q/W
 // to turn, R to go home, and a follow pose for the selected chef.
 
+import { isOffice } from './theme.js'
+
 export const elevationDegrees = 40
+/** The home view's angle: the kitchen is seen square on; the office from its front-left corner, like a diorama. */
+/** The office uses a narrow lens too, so it reads almost isometric. */
+export const homeView = isOffice ? { yaw: -38 * Math.PI / 180, elevation: 33, fov: 22 } : { yaw: 0, elevation: elevationDegrees, fov: 38 }
 const maxZoom = 3, zoomSensitivity = 0.012, maxZoomStep = 0.25, moveSpeed = 8, turnSpeed = Math.PI / 4, maxStep = 0.05
 export const cameraEase = 0.35
 
 export class CameraController {
   constructor() {
     this.homeCenter = [0, 0]; this.homeDistance = 30
-    this.elevation = elevationDegrees * Math.PI / 180
+    this.elevation = homeView.elevation * Math.PI / 180
+    this.homeYaw = homeView.yaw
     this.lookHeight = 0.65
     this.bounds = { minX: -20, maxX: 20, minZ: -9, maxZ: 15.5 }
-    this.pose = { center: [0, 0], zoom: 1, yaw: 0 }
+    this.pose = { center: [0, 0], zoom: 1, yaw: this.homeYaw }
     this.held = new Set()
   }
-  get isHome() { return this.pose.zoom <= 1.0001 && this.pose.yaw === 0 && this.pose.center[0] === this.homeCenter[0] && this.pose.center[1] === this.homeCenter[1] }
+  get isHome() { return this.pose.zoom <= 1.0001 && this.pose.yaw === this.homeYaw && this.pose.center[0] === this.homeCenter[0] && this.pose.center[1] === this.homeCenter[1] }
   get isZoomedIn() { return this.pose.zoom > 1.0001 }
   get look() { return [this.pose.center[0], this.lookHeight, this.pose.center[1]] }
   get eye() {
@@ -59,7 +65,7 @@ export class CameraController {
     }
     this.validate()
   }
-  reset() { this.pose = { center: [...this.homeCenter], zoom: 1, yaw: 0 }; this.held.clear() }
+  reset() { this.pose = { center: [...this.homeCenter], zoom: 1, yaw: this.homeYaw }; this.held.clear() }
   validate() {
     const values = [this.pose.center[0], this.pose.center[1], this.pose.zoom, this.pose.yaw, this.homeDistance]
     if (values.some((v) => !Number.isFinite(v)) || this.homeDistance <= 0) {
@@ -71,17 +77,19 @@ export class CameraController {
 
 /** The follow camera keeps the overview's angle, closer in, aimed at the chef's chest. */
 export function followPose(position) {
-  const e = elevationDegrees * Math.PI / 180, d = 8.5
+  const e = homeView.elevation * Math.PI / 180, d = 8.5 * Math.tan(19 * Math.PI / 180) / Math.tan(homeView.fov / 2 * Math.PI / 180), y = homeView.yaw
   const look = [position.x, position.y + 1.2, position.z]
-  return { eye: [look[0], look[1] + d * Math.sin(e), look[2] + d * Math.cos(e)], look }
+  return { eye: [look[0] + Math.sin(y) * d * Math.cos(e), look[1] + d * Math.sin(e), look[2] + Math.cos(y) * d * Math.cos(e)], look }
 }
 
 /** The home distance that fits every point (world [x, y, z]) in a `width`×`height` view. */
 export function fitDistance(points, width, height) {
-  const e = elevationDegrees * Math.PI / 180
-  const tangentY = Math.tan(19 * Math.PI / 180), tangentX = tangentY * width / height
+  const e = homeView.elevation * Math.PI / 180, yaw = homeView.yaw
+  const tangentY = Math.tan(homeView.fov / 2 * Math.PI / 180), tangentX = tangentY * width / height
   const availableX = Math.max(0.1, 1 - 20 / width), availableY = Math.max(0.1, 1 - 56 / height)
-  return points.reduce((distance, [x, py, z]) => {
+  return points.reduce((distance, [wx, py, wz]) => {
+    // Into the home view's frame: x across the screen, z toward the camera.
+    const x = wx * Math.cos(yaw) - wz * Math.sin(yaw), z = wx * Math.sin(yaw) + wz * Math.cos(yaw)
     const y = py - 0.65
     const cameraY = y * Math.cos(e) - z * Math.sin(e), towardCamera = y * Math.sin(e) + z * Math.cos(e)
     return Math.max(distance, towardCamera + Math.abs(x) / (tangentX * availableX), towardCamera + Math.abs(cameraY) / (tangentY * availableY))
