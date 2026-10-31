@@ -558,6 +558,8 @@ export async function buildOffice(scene) {
   const lights = light(scene)
   return {
     stations, seats: [], lights, workInProgress: false,
+    // The home view frames the whole diorama, plinth corners included.
+    framePoints: [[-12.25, 0, -8.25], [12.25, 0, -8.25], [-12.25, 0, 8.25], [12.25, 0, 8.25], [-12, 3, -8], [12, 3, -8], [12, 3, 8]],
     food: Object.fromEntries(deliverableIDs.map((id, i) => [id, deliverables[i]])),
     props: {
       ...Object.fromEntries(kitchenProps.map((id, i) => [id, borrowed[i]])),

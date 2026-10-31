@@ -10,10 +10,10 @@ const scale = 1.4, reach = 0.43 * scale
 export const podSize = [4.5, 1.6]
 const pod = ([x, z]) => rect(x - podSize[0] / 2, z - podSize[1] / 2, podSize[0], podSize[1])
 
-/** Desk pods: three where agents write code, two (with monitors) where they run commands. */
+/** Desk pods: two where agents write code, one (with monitors) where they run commands. */
 export const pods = {
-  cooking: [[-7.4, -3.3], [-1.6, -3.3], [-4.5, 1.7]].map(pod),
-  stove: [[1.4, 1.7], [-1.4, 6.0]].map(pod),
+  cooking: [[-7.4, -3.3], [-1.6, -3.3]].map(pod),
+  stove: [[-3.0, 2.4]].map(pod),
 }
 
 export const floor = rect(-12, -8, 24, 16)
@@ -23,8 +23,8 @@ export const areas = [
   { id: 'elevator', label: 'Elevator: new teammates arrive', short: 'Elevator', footprint: rect(10.65, -0.6, 1.1, 2.4), wall: 'right', spots: 1 },
   { id: 'order', label: 'Ticket board: read the request', short: 'Tickets', footprint: rect(-11.2, back, 3.2, 0.5), wall: 'back', spots: 2 },
   { id: 'prep', label: 'Library: planning and research', short: 'Library', footprint: rect(2.3, back, 4.5, 0.55), wall: 'back', spots: 3 },
-  { id: 'cooking', label: 'Desks: editing code', short: 'Desks', footprint: pods.cooking[0], pods: pods.cooking, wall: 'island', spots: 18 },
-  { id: 'stove', label: 'Terminals: running commands', short: 'Terminals', footprint: pods.stove[0], pods: pods.stove, wall: 'island', spots: 12 },
+  { id: 'cooking', label: 'Desks: editing code', short: 'Desks', footprint: pods.cooking[0], pods: pods.cooking, wall: 'island', spots: 12 },
+  { id: 'stove', label: 'Terminals: running commands', short: 'Terminals', footprint: pods.stove[0], pods: pods.stove, wall: 'island', spots: 6 },
   { id: 'tasting', label: 'QA bench: tests and checks', short: 'QA', footprint: rect(-6.8, back, 5.4, 0.75), wall: 'back', spots: 3 },
   { id: 'bell', label: "Manager's bell: needs you", short: 'Needs you', footprint: rect(-9.0, 5.0, 1.6, 0.7), wall: 'freestanding', spots: 6 },
   { id: 'serving', label: 'Demo table: ready for review', short: 'Demo', footprint: rect(4.6, 3.9, 5.2, 1.1), wall: 'island', spots: 6 },
