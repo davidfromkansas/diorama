@@ -18,12 +18,14 @@ Needs Node.js 18 or later on your PATH.
 
 Run `/kitchen` in any Claude Code session. Your browser opens on that session's kitchen and the command prints its address. Run it in another session to open that session's kitchen in a new tab.
 
+Prefer an office? Run `/office` instead: the same agents work in an open-plan office (desk pods with laptops, a library lounge, a demo table and an elevator). The 🏢 / 🍳 button in the corner switches between the two at any time, and the page remembers your pick.
+
 - **Click a chef** (or its tag) to follow it and open its details: task, plan, files changed this turn and recent steps.
 - **Hold or drag a chef** to pick it up and set it down elsewhere.
 - **Scroll** to zoom; **arrow keys** and **Q/W** move and turn; **R** resets the view; **Esc** clears the selection; **?** lists the keys.
 - **Sound** turns on after your first click; the speaker button mutes it.
 
-To try it without a session, open the page with `?demo` after running `/kitchen` once (e.g. `http://127.0.0.1:47811/?demo`).
+To try it without a session, open the page with `?demo` after running `/kitchen` once (e.g. `http://127.0.0.1:47811/?demo`, or `http://127.0.0.1:47811/?demo&scene=office` for the office).
 
 ## How it works
 
@@ -33,4 +35,4 @@ To try it without a session, open the page with `?demo` after running `/kitchen`
 
 ## Developing
 
-The scene's models, textures and sounds come from the Mac app. After changing one there, run `scripts/sync-assets.sh` (needs `ffmpeg`) to copy them in. three.js is vendored in `web/js/vendor` under its MIT license (`THREE_LICENSE`).
+The kitchen's models, textures and sounds come from the Mac app, as do the office's props and sounds; the office's room and furniture are built in code (`web/js/scene/office.js`, floor plan in `office-plan.js`). After changing one there, run `scripts/sync-assets.sh` (needs `ffmpeg`) to copy them in. three.js is vendored in `web/js/vendor` under its MIT license (`THREE_LICENSE`).

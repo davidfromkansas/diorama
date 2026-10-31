@@ -5,6 +5,8 @@
 
 import * as THREE from 'three'
 import { load, roots, model, named, loungeChair, srgb } from './assets.js'
+import { isOffice } from './theme.js'
+import { buildOffice } from './office.js'
 import { ChefMetrics, KitchenLayout, BreakRoomLayout, SceneLayout, areas, area, rect, midX, midY, maxX, maxY, minX, minY } from './layout.js'
 
 const floorTop = ChefMetrics.floorTop
@@ -402,6 +404,7 @@ function light(scene) {
 
 /** Everything that isn't a person: the room, the stations, the restaurant, the light. */
 export async function buildKitchen(scene, clock) {
+  if (isOffice) return buildOffice(scene)
   scene.background = srgb(0.55, 0.78, 0.86)
   const floor = new THREE.Mesh(new THREE.BoxGeometry(KitchenLayout.floor.w, 0.2, KitchenLayout.floor.h),
     new THREE.MeshStandardMaterial({ color: srgb(0.71, 0.71, 0.71), roughness: 0.9 }))

@@ -147,7 +147,8 @@ export class ChefAvatar {
     const wanted = {}
     if (this.pantryItem) wanted.pantry = this.pantryItem
     if (this.prepItem) wanted.prep = this.prepItem
-    wanted.order = { kind: 'idea', name: 'Order' }; wanted.cooking = { kind: 'board', name: 'Chopped board' }; wanted.stove = { kind: 'pot', name: 'Stove pot' }
+    wanted.order = { kind: 'idea', name: 'Order' }
+    if (this.kit.workInProgress !== false) { wanted.cooking = { kind: 'board', name: 'Chopped board' }; wanted.stove = { kind: 'pot', name: 'Stove pot' } }
     const delivering = director.held.has('plate') || !!director.intent?.pickup
     this.pantryCarry.sync(wanted, director.station?.area ?? null, director.reducedMotion, delta, this.sockets['socket_carry'],
       fit(this.manifest, 'prop_plate', 'carry_idle'), this.visual, this.manifest.stations.counter_top, delivering)

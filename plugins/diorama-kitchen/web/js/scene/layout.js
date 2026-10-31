@@ -3,6 +3,8 @@
 // are {x, y, w, h} with y along z, like the app's CGRects.
 
 import { KitchenActivity } from '../core/activity.js'
+import { isOffice } from './theme.js'
+import * as Office from './office-plan.js'
 
 export const rect = (x, y, w, h) => ({ x, y, w, h })
 export const minX = (r) => r.x, maxX = (r) => r.x + r.w, minY = (r) => r.y, maxY = (r) => r.y + r.h
@@ -44,7 +46,7 @@ export const KitchenLayout = {
 
 // MARK: Break room
 
-export const BreakRoomLayout = (() => {
+const KitchenBreakRoom = (() => {
   const farWall = 3.275, leftWall = -11.72
   const coffeeBar = { center: [leftWall + 0.02 + 0.72 / 2, 5.6], facing: Math.PI / 2 }
   const machine = (asset, kind, center, facing, size, scale) => {
@@ -94,7 +96,10 @@ export const BreakRoomLayout = (() => {
   return { farWall, leftWall, machines, sideTable, chairs, circles, spots, obstacles: [...machines.map((m) => m.rect), sideTable] }
 })()
 
-export const areas = [
+/** The break room (the office's lounge): its machines, chairs and circles, and the spots resting chefs take. */
+export const BreakRoomLayout = isOffice ? Office.lounge : KitchenBreakRoom
+
+const kitchenAreas = [
   { id: 'elevator', label: 'Elevator: new agents arrive', short: 'Elevator', footprint: rect(-11.6, -7.8, 2.4, 2.0), wall: 'freestanding', spots: 1 },
   { id: 'order', label: 'Order rail: read the request', short: 'Orders', footprint: rect(-8.4, -7.8, 4.8, 1.2), wall: 'back', spots: 3 },
   { id: 'prep', label: 'Prep: planning and research', short: 'Prep', footprint: rect(-1.2, -7.8, 9.2, 1.2), wall: 'back', spots: 6 },
@@ -106,7 +111,9 @@ export const areas = [
   { id: 'break', label: 'Break room: finished agents', short: 'Break room', footprint: BreakRoomLayout.sideTable, wall: 'island', spots: 10 },
   { id: 'pantry', label: 'Pantry: skills, plugins and MCP', short: 'Pantry', footprint: rect(-11.8, -3.6, 1.2, 6.7), wall: 'left', spots: 3 },
 ]
+export const areas = isOffice ? Office.areas : kitchenAreas
 export const area = (id) => areas.find((a) => a.id === id)
+const floor = isOffice ? Office.floor : KitchenLayout.floor
 
 // MARK: Navigation
 
@@ -188,8 +195,9 @@ export class FloorNavigation {
 }
 
 const navigation = (() => {
-  const clearance = 0.35 * ChefMetrics.chefScale, f = KitchenLayout.floor
-  const fixtures = [...KitchenLayout.connectors, ...KitchenLayout.breakRoomWalls, ...KitchenLayout.elevatorWalls, ...BreakRoomLayout.obstacles]
+  const clearance = 0.35 * ChefMetrics.chefScale, f = floor
+  const fixtures = isOffice ? Office.fixtures
+    : [...KitchenLayout.connectors, ...KitchenLayout.breakRoomWalls, ...KitchenLayout.elevatorWalls, ...BreakRoomLayout.obstacles]
   const obstacles = [...areas.filter((a) => a.id !== 'elevator').map((a) => a.footprint), ...fixtures].map((r) => ({
     min: [r.x - clearance, r.y - clearance], max: [maxX(r) + clearance, maxY(r) + clearance],
   }))
@@ -204,11 +212,11 @@ const gongStrike = (() => {
   const impact = [gongCenter[0] + 0.1, gongCenter[1] + 0.1], s = ChefMetrics.chefScale
   return { id: 'gong', area: 'gong', stand: [impact[0] - forward[0] * 0.89 * s - right[0] * 0.12 * s, impact[1] - forward[1] * 0.89 * s - right[1] * 0.12 * s], facing }
 })()
-const elevatorLanding = (() => {
+const elevatorLanding = isOffice ? Office.landing : (() => {
   const door = area('elevator').footprint
   return { id: 'elevator landing', area: 'elevator', stand: [midX(door), maxY(door) + 1.2], facing: 0 }
 })()
-const loungeArea = (() => {
+const loungeArea = isOffice ? Office.loungeArea : (() => {
   const walls = KitchenLayout.breakRoomWalls.reduce(union), f = KitchenLayout.floor
   return rect(f.x, walls.y, maxX(walls) - f.x, maxY(f) - walls.y)
 })()
@@ -230,7 +238,12 @@ const chefSlots = (() => {
   for (const a of areas) {
     const f = a.footprint, x0 = minX(f), x1 = maxX(f), z0 = minY(f), z1 = maxY(f)
     let slots
-    if (a.id === 'elevator') slots = [{ area: a.id, stand: [midX(f), midY(f)], facing: 0 }]
+    if (a.id === 'elevator') slots = [{ area: a.id, stand: [midX(f), midY(f)], facing: a.wall === 'right' ? -Math.PI / 2 : 0 }]
+    else if (a.pods) {
+      // Desk pods: seats down both long sides of each pod, the first pod filling first.
+      slots = a.pods.flatMap((p) => [...row(a.id, [minX(p), minY(p) - reach], [maxX(p), minY(p) - reach], 0),
+        ...row(a.id, [minX(p), maxY(p) + reach], [maxX(p), maxY(p) + reach], Math.PI)])
+    }
     else if (a.id === 'bell') {
       slots = [0, -38, 38, -76, 76, -100].map((degrees) => {
         const angle = degrees * Math.PI / 180
@@ -238,7 +251,7 @@ const chefSlots = (() => {
         return { area: a.id, stand, facing: Math.atan2(gongCenter[0] - stand[0], gongCenter[1] - stand[1]) }
       })
     } else if (a.id === 'break') slots = BreakRoomLayout.spots.map((spot) => spot.station)
-    else if (a.id === 'pantry') slots = row(a.id, [x1 + reach, z0], [x1 + reach, z1], -Math.PI / 2, (z1 - z0) / a.spots)
+    else if (a.id === 'pantry' && a.wall === 'left') slots = row(a.id, [x1 + reach, z0], [x1 + reach, z1], -Math.PI / 2, (z1 - z0) / a.spots)
     else if (a.wall === 'back') slots = row(a.id, [x0, z1 + reach], [x1, z1 + reach], Math.PI)
     else if (a.wall === 'left') slots = row(a.id, [x1 + reach, z0], [x1 + reach, z1], -Math.PI / 2)
     else if (a.wall === 'right') slots = row(a.id, [x0 - reach, z0], [x0 - reach, z1], Math.PI / 2)
@@ -269,6 +282,13 @@ function managerSpot(stand, others) {
 
 /** Agent state → station: where its chef works, the clip it loops and the prop in its hand. */
 export function route(agent) {
+  const work = kitchenRoute(agent)
+  // Office teammates type and test with empty hands: no knife, no tasting spoon.
+  if (isOffice && (work.hand === 'knife' || work.hand === 'spoon')) return { ...work, hand: null }
+  return work
+}
+
+function kitchenRoute(agent) {
   const fresh = agent.freshness === 'live' || agent.freshness === 'recentlyObserved'
   switch (agent.status) {
     case 'ready': return { area: 'order', loop: 'idle_available' }
@@ -314,15 +334,15 @@ function intent(agent, slot, pickup, restored) {
   return {
     key, station: work.area == null ? null : slot, loop: work.loop, oneShot: shot, hand: work.hand ?? null,
     pickup: work.deliversPlate && !restored ? pickup : null, urgent: !!work.urgent, prelude: restored ? null : work.prelude ?? null,
-    strike: work.area === 'bell' && shot && !restored ? gongStrike : null,
+    strike: work.area === 'bell' && shot && !restored && !isOffice ? gongStrike : null,
   }
 }
 
 export const SceneLayout = {
-  floor: KitchenLayout.floor, areas, connectors: KitchenLayout.connectors, partitionWalls: KitchenLayout.breakRoomWalls,
+  floor, areas, connectors: isOffice ? [] : KitchenLayout.connectors, partitionWalls: isOffice ? [] : KitchenLayout.breakRoomWalls,
   navigation, chefSlots, gongCenter, gongStrike, elevatorLanding, loungeArea, managerSpot,
-  managerDoor: { id: 'dining door', area: 'door', stand: [1.9, maxY(KitchenLayout.floor) - 0.6], facing: Math.PI },
-  restSign: rect(-10.6, 4.5, 6.8, 3.3),
+  managerDoor: isOffice ? Office.managerDoor : { id: 'dining door', area: 'door', stand: [1.9, maxY(KitchenLayout.floor) - 0.6], facing: Math.PI },
+  restSign: isOffice ? Office.restSign : rect(-10.6, 4.5, 6.8, 3.3),
   work: route, intent,
   exitIntent: (agent) => ({ key: 'arrival-exit', station: elevatorLanding, loop: 'idle_available',
     oneShot: { id: 'arrive_wave:' + agent, clip: 'arrive_wave', restored: false } }),

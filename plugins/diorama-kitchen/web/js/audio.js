@@ -1,10 +1,15 @@
 // Kitchen foley (the app's KitchenSound and KitchenAudio): what each chef clip sounds like, pinned
 // to points in the clip, played on a small pool of voices panned to where the chef stands.
 
+import { isOffice } from './scene/theme.js'
+
 const sounds = {
   step: [5, 0.18], chop: [3, 0.35], clink: [3, 0.3], tap: [3, 0.35], page: [3, 0.6], pot: [3, 0.18], grab: [2, 1], plate: [3, 0.6],
   cloche: [2, 0.45], clatter: [2, 0.4], gong: [2, 0.75], error: [1, 0.3], cheer: [1, 0.3], ding: [1, 0.35], chair: [3, 0.6],
 }
+// The office plays its own takes on some of these (typing, a terminal blip, a desk bell…), the kitchen's otherwise.
+const officeSounds = new Set(['chop', 'ding', 'gong', 'plate', 'pot', 'tap'])
+const folder = (name) => isOffice && officeSounds.has(name) ? 'OfficeSounds' : 'KitchenSounds'
 const steps = [[0.05, 'step'], [0.55, 'step']]
 const cues = {
   walk: steps, carry_walk: steps, run: steps,
@@ -54,7 +59,7 @@ class KitchenAudio {
     if (!this.buffers.has(name)) {
       const [count] = sounds[name]
       this.buffers.set(name, Promise.all(Array.from({ length: count }, (_, i) =>
-        fetch(`/assets/KitchenSounds/${name}-${i}.mp3`).then((r) => r.arrayBuffer()).then((data) => this.context.decodeAudioData(data)).catch(() => null)))
+        fetch(`/assets/${folder(name)}/${name}-${i}.mp3`).then((r) => r.arrayBuffer()).then((data) => this.context.decodeAudioData(data)).catch(() => null)))
         .then((list) => list.filter(Boolean)))
     }
     return this.buffers.get(name)
