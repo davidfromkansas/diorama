@@ -59,7 +59,7 @@ public extension Provider {
         switch self {
         case .codex: nil
         case .claude: "Uses your Claude subscription. No automatic switch to API billing."
-        case .devin: "Uses your Devin account through the Devin CLI."
+        case .devin: "Uses your existing Devin subscription through the Devin CLI, working in folders on this Mac."
         }
     }
 }

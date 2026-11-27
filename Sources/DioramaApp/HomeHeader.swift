@@ -40,8 +40,7 @@ enum HomeMark {
                let image = NSImage(contentsOf: url) {
                 Image(nsImage: { image.isTemplate = true; return image }()).resizable().scaledToFit().foregroundStyle(tint)
             } else {
-                // No Devin.svg ships yet: a plain "D" stands in until the official mark is added.
-                Image(systemName: self == .devin ? "d.circle.fill" : "circle.fill").resizable().scaledToFit().foregroundStyle(tint)
+                Image(systemName: "circle.fill").resizable().foregroundStyle(tint)
             }
         }.frame(width: size, height: size).accessibilityHidden(true)
     }
@@ -315,7 +314,7 @@ struct HomeConnectionsPanel: View {
         let name = provider.rawValue
         let window = library.portfolio.home.weekly[provider]
         let detail: String = switch state {
-        case .connected where provider == .devin: "Agents run through the Devin CLI on this Mac"
+        case .connected where provider == .devin: "Agents run through the Devin CLI or Devin’s API"
         case .connected: library.portfolio.home.planName(provider) + (window?.usedPercent.map { " · \(Int($0.rounded()))% used this week" } ?? "")
         case .missing: "\(name) isn't installed on this Mac"
         case .checking: "Checking the connection"

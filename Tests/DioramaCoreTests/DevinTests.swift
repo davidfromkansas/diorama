@@ -119,3 +119,101 @@ struct DevinTransportTests {
         await transport.shutdown()
     }
 }
+
+/// A stand-in for Devin's REST API: one session that answers once and then waits for the person.
+actor FakeDevinAPI {
+    var requests: [(method: String, path: String, body: WireValue)] = []
+    var polls = 0
+    func handle(_ request: URLRequest) -> (Data, URLResponse) {
+        let path = request.url!.path, method = request.httpMethod ?? "GET"
+        let body = request.httpBody.flatMap { try? JSONDecoder().decode(WireValue.self, from: $0) } ?? .null
+        requests.append((method, path, body))
+        var reply: WireValue = .object([:]), status = 200
+        if request.value(forHTTPHeaderField: "Authorization") != "Bearer cog_good" { status = 401; reply = .object(["detail": .string("bad key")]) }
+        else if method == "POST", path.hasSuffix("/organizations/org-1/sessions") {
+            reply = .object(["session_id": .string("abc"), "url": .string("https://app.devin.ai/sessions/abc"), "status": .string("new")])
+        } else if path.hasSuffix("/sessions/devin-abc/messages"), method == "GET" {
+            polls += 1
+            reply = .object(["items": .array(polls == 1 ? [
+                .object(["event_id": .string("e1"), "source": .string("user"), "message": .string("Fix it")]),
+                .object(["event_id": .string("e2"), "source": .string("devin"), "message": .string("Opened a pull request")]),
+            ] : []), "end_cursor": .string("c\(polls)"), "has_next_page": .bool(false)])
+        } else if path.hasSuffix("/sessions/devin-abc") {
+            reply = .object(["status": .string("running"), "status_detail": .string("waiting_for_user")])
+        } else if path.hasSuffix("/sessions") { reply = .object(["items": .array([])]) }
+        let data = try! JSONEncoder().encode(reply)
+        return (data, HTTPURLResponse(url: request.url!, statusCode: status, httpVersion: nil, headerFields: nil)!)
+    }
+}
+
+private actor NoCodex: ExecutionTransport {
+    nonisolated let events = AsyncStream<WireValue> { $0.finish() }
+    func connect() async throws { throw AppServerFailure("Codex not installed") }
+    func request(_ method: String, _ params: WireValue) async throws -> WireValue { throw AppServerFailure("Codex not installed") }
+    func respond(id: WireValue, result: WireValue) async throws {}
+    func reject(id: WireValue, message: String) async throws {}
+    func shutdown() async {}
+}
+
+struct DevinCloudTests {
+    @Test func githubRemotesNameTheRepository() {
+        #expect(DevinCloudTransport.githubName("https://github.com/davidfromkansas/diorama.git") == "davidfromkansas/diorama")
+        #expect(DevinCloudTransport.githubName("git@github.com:owner/repo.git\n") == "owner/repo")
+        #expect(DevinCloudTransport.githubName("ssh://git@github.com/owner/repo") == "owner/repo")
+        #expect(DevinCloudTransport.githubName("https://gitlab.com/owner/repo") == nil)
+    }
+    @Test func sessionStatesEndTheTurn() {
+        #expect(DevinCloudTransport.outcome(status: "running", detail: "working") == nil)
+        #expect(DevinCloudTransport.outcome(status: "running", detail: "waiting_for_user")?.status == "completed")
+        #expect(DevinCloudTransport.outcome(status: "running", detail: "out_of_credits")?.status == "failed")
+        #expect(DevinCloudTransport.outcome(status: "exit", detail: nil)?.status == "completed")
+        #expect(DevinCloudTransport.outcome(status: "suspended", detail: nil)?.notice != nil)
+    }
+    @MainActor @Test func cloudPermissionsFollowTheOrganization() {
+        let controller = ExecutionController(transport: NoCodex())
+        #expect(controller.permissionUnavailable(.fullAccess, model: DevinCloudAPI.modelID) != nil)
+        #expect(controller.permissionUnavailable(.fullAccess, model: "devin/opus") == nil)
+    }
+    @Test func badKeyIsReported() async {
+        let fake = FakeDevinAPI()
+        let api = DevinCloudAPI(credentials: .init(apiKey: "cog_wrong", organization: "org-1"), send: { await fake.handle($0) })
+        await #expect(throws: ExecutionRPCRejection.self) { try await api.verify() }
+    }
+    @Test func apiKeyAloneConnectsDevinAndRunsACloudTurn() async throws {
+        let fake = FakeDevinAPI()
+        let api = DevinCloudAPI(credentials: .init(apiKey: " cog_good\n", organization: "org-1"), send: { await fake.handle($0) })
+        let router = AgentExecutionTransport(codex: NoCodex(), claudeProbe: { [] }, devinProbe: { throw AppServerFailure("Devin CLI not installed") },
+                                             devinCloudProbe: { try await api.verify(); return api })
+        try await router.connect()
+        let info = try await router.request("diorama/connections", .null)
+        #expect(info["devin"].bool && info["devinAPI"].bool && !info["devinCLI"].bool && info["devinError"] == .null)
+        let models = try await router.request("model/list", .null)["data"].array.compactMap { $0["model"].string }
+        #expect(models == [DevinCloudAPI.modelID])
+        // The CLI isn't connected, so a CLI model still says so.
+        await #expect(throws: ExecutionRPCRejection.self) { try await router.request("thread/start", .object(["model": .string("devin/default")])) }
+
+        let started = try await router.request("thread/start", .object(["model": .string(DevinCloudAPI.modelID), "cwd": .string("/tmp"), "developerInstructions": .string("Notes")]))
+        let thread = try #require(started["thread"]["id"].string)
+        #expect(thread.hasPrefix(DevinCloudAPI.threadPrefix) && started["provider"].string == "Devin")
+        defer { try? FileManager.default.removeItem(at: DevinCloudTransport.file(thread)) }
+
+        let collector = Task { () -> [WireValue] in
+            var events: [WireValue] = []
+            for await event in router.events {
+                events.append(event)
+                if event["method"].string == "turn/completed" { break }
+            }
+            return events
+        }
+        _ = try await router.request("turn/start", .object(["threadId": .string(thread), "input": .array([.object(["type": .string("text"), "text": .string("Fix it")])])]))
+        let seen = await collector.value
+        let texts = seen.filter { $0["method"].string == "item/completed" && $0["params"]["item"]["type"].string == "agentMessage" }.compactMap { $0["params"]["item"]["text"].string }
+        #expect(texts.first?.contains("https://app.devin.ai/sessions/abc") == true)
+        #expect(texts.contains("Opened a pull request") && !texts.contains("Fix it"))
+        #expect(seen.last?["params"]["turn"]["status"].string == "completed")
+        let created = await fake.requests.first { $0.method == "POST" }
+        #expect(created?.path == "/v3/organizations/org-1/sessions")
+        #expect(created?.body["prompt"].string?.contains("<diorama_context>\nNotes") == true && created?.body["prompt"].string?.hasSuffix("Fix it") == true)
+        await router.shutdown()
+    }
+}

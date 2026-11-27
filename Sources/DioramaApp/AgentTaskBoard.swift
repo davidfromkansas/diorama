@@ -355,14 +355,14 @@ struct AgentBoardCard: View {
 }
 
 /// A small round mark for who runs the task: the Claude mark on Claude's orange, the OpenAI
-/// mark on black for Codex, a "D" on Devin's teal.
+/// mark on black for Codex, the Devin (Cognition) mark on Devin's blue.
 struct ProviderAvatar: View {
     let provider: String
     var body: some View {
         let name = provider.lowercased()
         let claude = name.contains("claude"), devin = name.contains("devin")
         Group {
-            if !devin, let mark = claude ? ProviderMark.claude : ProviderMark.openAI {
+            if let mark = claude ? ProviderMark.claude : devin ? ProviderMark.devin : ProviderMark.openAI {
                 Image(nsImage: mark).resizable().scaledToFit().padding(4)
             } else {
                 Text(claude ? "C" : devin ? "D" : "O").font(.system(size: 10, weight: .bold)).foregroundStyle(.white)

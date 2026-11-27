@@ -42,6 +42,7 @@ struct AgentSettingsView: View {
                         account("OpenAI", key: "codex")
                         account("Claude", key: "claude")
                         account("Devin", key: "devin")
+                        DevinAPISettingsView(info: info, changed: refresh)
                         if anyConnected {
                             Picker("Default model", selection: $defaultModel) {
                                 if info["codex"].bool { Text("OpenAI · Default").tag("") }
@@ -94,10 +95,12 @@ struct AgentSettingsView: View {
     }
     private func account(_ title: String, key: String) -> some View {
         let provider = Provider.allCases.first { $0.key == key } ?? .codex
-        let connected = info[key].bool
+        // Devin's card is its CLI (subscription); the API key has its own section below it.
+        let statusKey = provider == .devin ? "devinCLI" : key
+        let connected = info[statusKey].bool
         let missing = AgentExecutable.resolve(key) == nil
-        let detail = info[key + "Error"].string
-        let state = AgentConnectionState.resolve(installed: !missing, connected: connected, checking: info == .null || info[key + "Checking"].bool, error: detail)
+        let detail = info[statusKey + "Error"].string
+        let state = AgentConnectionState.resolve(installed: !missing, connected: connected, checking: info == .null || info[statusKey + "Checking"].bool, error: detail)
         let status: String = switch state {
         case .connected: "Connected"
         case .checking: "Checking…"
@@ -108,7 +111,7 @@ struct AgentSettingsView: View {
 
         return VStack(alignment: .leading, spacing: 10) {
             HStack {
-                Text(title).font(.headline)
+                Text(provider == .devin ? "Devin CLI" : title).font(.headline)
                 if anyConnected && !connected { Text("Optional").font(.caption).foregroundStyle(.secondary) }
                 Spacer()
                 if state == .checking { ProgressView().controlSize(.small) }

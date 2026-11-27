@@ -59,6 +59,7 @@ extension ExecutedTask {
 
 extension ExecutionController {
     public func permissionUnavailable(_ choice: ApprovalReviewChoice, model: String) -> String? {
+        if model == DevinCloudAPI.modelID { return choice == .inherit ? nil : "Devin cloud sessions use your organization’s Devin settings" }
         if Provider.forModel(model) == .devin { return nil }
         if model.hasPrefix("claude/") {
             return choice == .autoReview && models.first(where: { $0.id == model })?.supportsAutoMode == false ? "Automatic review is unavailable for this model" : nil

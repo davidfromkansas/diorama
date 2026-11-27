@@ -267,7 +267,8 @@ public final class ExecutionController {
         var isDirectory: ObjCBool = false
         guard folder.hasPrefix("/"), FileManager.default.fileExists(atPath: folder, isDirectory: &isDirectory), isDirectory.boolValue else { throw AppServerFailure("Choose an existing working folder") }
         if !model.isEmpty, !models.contains(where: { $0.id == model }) { throw AppServerFailure("Choose a model from the provider catalog") }
-        let initialPermission: ApprovalReviewChoice? = permission == .inherit ? nil : permission
+        // Devin cloud sessions follow the organization's own Devin settings.
+        let initialPermission: ApprovalReviewChoice? = permission == .inherit || model == DevinCloudAPI.modelID ? nil : permission
         if model.hasPrefix("claude/"), initialPermission == .autoReview, models.first(where: { $0.id == model })?.supportsAutoMode == false {
             throw ExecutionRPCRejection("Automatic review is unavailable for this model. Choose Accept edits or Ask for approval.")
         }

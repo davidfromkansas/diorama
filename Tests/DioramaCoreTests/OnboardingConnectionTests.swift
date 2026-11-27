@@ -28,7 +28,7 @@ struct OnboardingConnectionTests {
         #expect(AgentConnectionState.resolve(installed: true, connected: true, checking: true, error: nil) == .connected)
     }
     @Test func failedOpenAICatalogPreservesClaude() async throws {
-        let router = AgentExecutionTransport(codex: OnboardingCodex(failure: true), claudeProbe: { [.object(["model": .string("claude/test")])] }, devinProbe: noDevin)
+        let router = AgentExecutionTransport(codex: OnboardingCodex(failure: true), claudeProbe: { [.object(["model": .string("claude/test")])] }, devinProbe: noDevin, devinCloudProbe: { nil })
         try await router.connect()
         let info = try await router.request("diorama/connections", .null)
         #expect(info["claude"].bool && !info["codex"].bool)
@@ -36,14 +36,14 @@ struct OnboardingConnectionTests {
         #expect(models["data"].array.first?["model"].string == "claude/test")
     }
     @Test func failedClaudePreservesOpenAI() async throws {
-        let router = AgentExecutionTransport(codex: OnboardingCodex(failure: false), claudeProbe: { throw AppServerFailure("Claude unavailable") }, devinProbe: noDevin)
+        let router = AgentExecutionTransport(codex: OnboardingCodex(failure: false), claudeProbe: { throw AppServerFailure("Claude unavailable") }, devinProbe: noDevin, devinCloudProbe: { nil })
         try await router.connect()
         let info = try await router.request("diorama/connections", .null)
         #expect(info["codex"].bool && !info["claude"].bool)
         #expect(try await router.request("model/list", .null)["data"].array.count == 1)
     }
     @Test func slowProviderDoesNotHideReadyProvider() async throws {
-        let router = AgentExecutionTransport(codex: OnboardingCodex(failure: false, delay: true), claudeProbe: { [.object(["model": .string("claude/test")])] }, devinProbe: noDevin)
+        let router = AgentExecutionTransport(codex: OnboardingCodex(failure: false, delay: true), claudeProbe: { [.object(["model": .string("claude/test")])] }, devinProbe: noDevin, devinCloudProbe: { nil })
         let task = Task { try await router.connect() }
         for _ in 0..<15 {
             if try await router.request("diorama/connections", .null)["claude"].bool { break }

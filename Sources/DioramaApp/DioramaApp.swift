@@ -1340,7 +1340,7 @@ struct ConnectionsView: View {
                     } else if selection == .devin {
                         VStack(alignment: .leading, spacing: 8) {
                             Text("Agent execution").font(.headline)
-                            Text("Devin runs through the Devin CLI on this Mac (`devin acp`), signed in with your own Devin account. Sign in under Settings → Models & accounts.")
+                            Text("Devin connects two ways. The Devin CLI (`devin acp`) works in folders on this Mac with your own Devin subscription. A Devin API key runs Devin in its own cloud machine, billed as API usage. Set up either under Settings → Models & accounts.")
                                 .font(.callout).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
                             Text("Devin keeps its conversation history in its own database, so Diorama shows the Devin conversations you start here. Activity reporting from Devin running elsewhere isn't available yet.")
                                 .font(.callout).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
