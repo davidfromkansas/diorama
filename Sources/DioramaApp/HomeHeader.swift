@@ -24,11 +24,12 @@ enum HomeStyle {
 
 /// The company marks Diorama ships, tinted for a light page.
 enum HomeMark {
-    case claude, openAI, github
-    private var file: String { switch self { case .claude: "Claude"; case .openAI: "OpenAI"; case .github: "GitHub" } }
+    case claude, openAI, github, devin
+    private var file: String { switch self { case .claude: "Claude"; case .openAI: "OpenAI"; case .github: "GitHub"; case .devin: "Devin" } }
     var tint: Color {
         switch self {
         case .claude: Color(red: 0.85, green: 0.47, blue: 0.34)
+        case .devin: Provider.devin.tint
         case .openAI: .black
         case .github: Color(red: 0.14, green: 0.16, blue: 0.18)
         }
@@ -39,11 +40,14 @@ enum HomeMark {
                let image = NSImage(contentsOf: url) {
                 Image(nsImage: { image.isTemplate = true; return image }()).resizable().scaledToFit().foregroundStyle(tint)
             } else {
-                Image(systemName: "circle.fill").resizable().foregroundStyle(tint)
+                // No Devin.svg ships yet: a plain "D" stands in until the official mark is added.
+                Image(systemName: self == .devin ? "d.circle.fill" : "circle.fill").resizable().scaledToFit().foregroundStyle(tint)
             }
         }.frame(width: size, height: size).accessibilityHidden(true)
     }
-    static func provider(_ provider: Provider) -> Self { provider == .claude ? .claude : .openAI }
+    static func provider(_ provider: Provider) -> Self {
+        switch provider { case .claude: .claude; case .codex: .openAI; case .devin: .devin }
+    }
 }
 
 /// The sections like the Xbox dashboard's: the current one large and pinned just above the cards,
@@ -170,7 +174,7 @@ struct HomeOrb<Glyph: View>: View {
     }
 }
 
-/// Claude Code or Codex: what's left of this week's limit as a ring, signed out as an alert.
+/// Claude Code, Codex or Devin: what's left of this week's limit as a ring, signed out as an alert.
 struct HomeProviderOrb: View {
     let provider: Provider
     let window: LimitWindow?
@@ -179,20 +183,22 @@ struct HomeProviderOrb: View {
     /// Opens the connections panel.
     let open: () -> Void
     let signIn: () -> Void
-    private var name: String { provider == .claude ? "Claude Code" : "Codex" }
+    private var name: String { provider.rawValue }
     private var signedOut: Bool { state == .signedOut || state == .missing || state == .unavailable }
     var body: some View {
         TimelineView(.periodic(from: .now, by: 60)) { context in
             let current = window.flatMap { $0.expired(now: context.date) ? nil : $0 }
             let left = current?.usedPercent.map { max(0, 100 - $0) }
             let reached = current?.status == .exhausted
-            HomeOrb(title: name, detail: signedOut ? statusText : Self.detail(current, now: context.date),
+            // Devin doesn't report a weekly limit, so its orb just says it's ready.
+            let limited = provider != .devin
+            HomeOrb(title: name, detail: signedOut ? statusText : limited ? Self.detail(current, now: context.date) : state == .checking ? "Checking…" : "Connected",
                     detailTint: signedOut || reached ? HomeStyle.orangeInk : HomeStyle.muted,
-                    showsMeter: !signedOut, meter: left.map { $0 / 100 }, meterTint: provider == .claude ? HomeMark.claude.tint : HomeStyle.secondary,
+                    showsMeter: !signedOut && limited, meter: left.map { $0 / 100 }, meterTint: provider == .codex ? HomeStyle.secondary : HomeMark.provider(provider).tint,
                     alert: signedOut && state != .missing, action: signedOut && state != .missing ? signIn : open) {
                 HomeMark.provider(provider).image(size: 20)
             }
-            .accessibilityLabel(signedOut ? "\(name), \(statusText)" : Self.accessibility(name: name, window: current, now: context.date))
+            .accessibilityLabel(signedOut ? "\(name), \(statusText)" : !limited ? "\(name), connected" : Self.accessibility(name: name, window: current, now: context.date))
             .accessibilityHint(signedOut && state != .missing ? "Signs in" : "Shows connections")
         }
     }
@@ -275,7 +281,7 @@ struct HomeConnectionsPanel: View {
                 Spacer()
                 Text("Used by every project on this Mac").font(.system(size: 12)).foregroundStyle(HomeStyle.muted)
             }.padding(.horizontal, 18).padding(.top, 16).padding(.bottom, 12)
-            ForEach([Provider.claude, .codex], id: \.self) { provider in providerRow(provider) }
+            ForEach(Provider.connectable, id: \.self) { provider in providerRow(provider) }
             row(mark: .github, name: "GitHub", status: githubStatus, connected: github.login != nil,
                 detail: github.login == nil ? "Import repositories, publish and open pull requests" : "Repositories, pull requests and checks") {
                 Button(github.login == nil ? "Connect" : "Manage", action: openGitHub).buttonStyle(HomePanelButton(prominent: github.login == nil))
@@ -306,16 +312,17 @@ struct HomeConnectionsPanel: View {
     }
     @ViewBuilder private func providerRow(_ provider: Provider) -> some View {
         let state = connections.state(provider)
-        let name = provider == .claude ? "Claude Code" : "Codex"
+        let name = provider.rawValue
         let window = library.portfolio.home.weekly[provider]
         let detail: String = switch state {
+        case .connected where provider == .devin: "Agents run through the Devin CLI on this Mac"
         case .connected: library.portfolio.home.planName(provider) + (window?.usedPercent.map { " · \(Int($0.rounded()))% used this week" } ?? "")
         case .missing: "\(name) isn't installed on this Mac"
         case .checking: "Checking the connection"
         default: "Agents on \(name) can't start until you sign in"
         }
         row(mark: HomeMark.provider(provider), name: name, status: Self.status(state), connected: state == .connected, detail: detail,
-            footer: AnyView(defaultPermissions(provider))) {
+            footer: ProviderDefaultsStore.choices(provider).isEmpty ? nil : AnyView(defaultPermissions(provider))) {
             if state == .connected || state == .missing {
                 Button("Manage…", action: openSettings).buttonStyle(HomePanelButton(prominent: false))
             } else if state != .checking {
@@ -349,7 +356,7 @@ struct HomeConnectionsPanel: View {
                 Text(defaults.label(provider)).foregroundStyle(HomeStyle.ink)
             }
             .menuStyle(.borderlessButton).fixedSize().pointingHand()
-            .help("Also used by the \(provider == .claude ? "Claude" : "Codex") app and terminal")
+            .help("Also used by the \(provider.shortName) app and terminal")
         }
         .font(.system(size: 12))
         .onAppear { defaults.reload() }

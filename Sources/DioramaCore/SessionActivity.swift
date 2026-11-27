@@ -91,7 +91,7 @@ public enum SessionActivityReducer {
         func record(_ kind: String, _ id: String, _ title: String, status: String = "unknown", detail: String = "", parent: String? = nil, data: WireValue = .null, time: Date? = nil) -> SessionActivityRecord {
             .init(id: provider.rawValue + ":" + sessionID + ":" + kind + ":" + (provider == .codex && kind == "tool" ? (turn ?? "unknown") + ":" : "") + (kind == "step" || kind == "checklist" ? (parent ?? owner).map { String($0.utf8.count) + ":" + $0 + ":" } ?? "" : "") + id, provider: provider.rawValue, sessionID: sessionID,
                   turnID: turn, nativeID: id, parentID: parent ?? owner, kind: kind, title: String(title.prefix(500)), status: status,
-                  detail: String(detail.prefix(kind == "proposal" ? 65536 : 4000)), source: provider == .claude ? "Claude structured event" : "Codex App Server",
+                  detail: String(detail.prefix(kind == "proposal" ? 65536 : 4000)), source: provider == .claude ? "Claude structured event" : provider == .devin ? "Devin CLI" : "Codex App Server",
                   recordedAt: time ?? ActivityParser.date(p["timestamp"].string), observedAt: now, data: bounded(data))
         }
         if method == "diorama/claudeActivity" {

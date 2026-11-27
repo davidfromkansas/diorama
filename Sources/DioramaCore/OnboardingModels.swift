@@ -2,14 +2,14 @@ import Foundation
 
 public enum OnboardingModels {
     public static func isAvailable(_ selection: String, models: [ExecutionModel], connections: WireValue) -> Bool {
-        if selection.isEmpty { return connections["codex"].bool && models.contains { !$0.id.hasPrefix("claude/") } }
-        let provider = selection.hasPrefix("claude/") ? "claude" : "codex"
-        return connections[provider].bool && models.contains { $0.id == selection }
+        if selection.isEmpty { return connections["codex"].bool && models.contains { Provider.forModel($0.id) == .codex } }
+        return connections[Provider.forModel(selection).key].bool && models.contains { $0.id == selection }
     }
     public static func initialSelection(models: [ExecutionModel], connections: WireValue) -> String? {
         if isAvailable("", models: models, connections: connections) { return "" }
-        if connections["claude"].bool {
-            return models.first { $0.id == "claude/default" }?.id ?? models.first { $0.id.hasPrefix("claude/") }?.id
+        for provider in [Provider.claude, .devin] where connections[provider.key].bool {
+            let prefix = provider.modelPrefix ?? ""
+            if let model = models.first(where: { $0.id == prefix + "default" })?.id ?? models.first(where: { $0.id.hasPrefix(prefix) })?.id { return model }
         }
         return nil
     }

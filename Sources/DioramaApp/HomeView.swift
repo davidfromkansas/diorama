@@ -2,7 +2,7 @@ import SwiftUI
 import DioramaCore
 
 /// Home: Needs you, Active and Recent projects as an Xbox-style section menu over a row of
-/// project cards, with Claude Code, Codex and GitHub at the top right.
+/// project cards, with Claude Code, Codex, Devin and GitHub at the top right.
 struct HomeView: View {
     @Bindable var library: LibraryModel
     var visible = true
@@ -211,7 +211,7 @@ private struct HomeSections: View {
             }
             Button("Cancel", role: .cancel) { removing = nil }
         } message: {
-            Text("Its folder and files stay on your Mac, and its conversations stay in Codex and Claude.")
+            Text("Its folder and files stay on your Mac, and its conversations stay in Codex, Claude and Devin.")
         }
     }
 
@@ -270,11 +270,11 @@ private struct HomeSections: View {
 
     // MARK: Pieces
 
-    /// Claude Code, Codex, GitHub and Add project, each its own round button. Claude Code and Codex open the connections panel.
+    /// Claude Code, Codex, Devin, GitHub and Add project, each its own round button. The agents open the connections panel.
     private var accounts: some View {
         HStack(alignment: .top, spacing: 14) {
             HStack(alignment: .top, spacing: 14) {
-                ForEach([Provider.claude, .codex], id: \.self) { provider in
+                ForEach(Provider.connectable, id: \.self) { provider in
                     HomeProviderOrb(provider: provider, window: library.portfolio.home.weekly[provider],
                                     state: AgentConnections.shared.state(provider), signingIn: AgentConnections.shared.pendingLogin == provider,
                                     open: { settingsOpen = true }) {

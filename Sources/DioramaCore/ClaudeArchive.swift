@@ -17,7 +17,8 @@ public struct ClaudeArchive {
     public var archivedIDs: Set<String> { Set(defaults.stringArray(forKey: Self.defaultsKey) ?? []) }
 
     public func setArchived(_ session: Session, archived: Bool) throws {
-        guard session.provider == .claude else { throw AppServerFailure("Only Claude conversations are archived here") }
+        // Devin conversations have no desktop file: only Diorama's own record hides them.
+        guard session.provider != .codex else { throw AppServerFailure("Only Claude and Devin conversations are archived here") }
         if let desktopID = session.desktopSessionID { try setDesktopArchived(desktopID, archived: archived) }
         var ids = archivedIDs
         if archived { ids.insert(session.id) } else { ids.remove(session.id) }

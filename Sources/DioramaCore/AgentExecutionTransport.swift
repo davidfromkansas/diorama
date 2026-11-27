@@ -7,11 +7,17 @@ public actor AgentExecutionTransport: ExecutionTransport {
     private let codex: any ExecutionTransport
     private let claudeProbe: (@Sendable () async throws -> [WireValue])?
     private var claude: [String: ClaudeExecutionTransport] = [:]
+    private var devin: [String: DevinExecutionTransport] = [:]
+    private let devinProbe: (@Sendable () async throws -> [WireValue])?
+    private var devinCatalog: [WireValue] = []
+    private var devinError: String?
+    private var checkingDevin = false
     /// The appended system prompt each Claude conversation was started or resumed with, so a
     /// process spawned again for it (resume, queued work) keeps the same instructions.
     private var contexts: [String: String] = [:]
     private var readers: [Task<Void, Never>] = []
-    private var requestOwners: [String: String] = [:]
+    /// Which provider session asked each forwarded request, and its own id for it.
+    private var requestOwners: [String: (provider: Provider, owner: String)] = [:]
     private var codexConnected = false
     private var codexError: String?
     private var codexCatalog: [WireValue] = []
@@ -19,8 +25,8 @@ public actor AgentExecutionTransport: ExecutionTransport {
     private var checkingClaude = false
     private var catalog: [WireValue] = []
     private var claudeError: String?
-    public init(codex: any ExecutionTransport = CodexExecutionTransport(), claudeProbe: (@Sendable () async throws -> [WireValue])? = nil) {
-        self.claudeProbe = claudeProbe
+    public init(codex: any ExecutionTransport = CodexExecutionTransport(), claudeProbe: (@Sendable () async throws -> [WireValue])? = nil, devinProbe: (@Sendable () async throws -> [WireValue])? = nil) {
+        self.claudeProbe = claudeProbe; self.devinProbe = devinProbe
         self.codex = codex; (events, sink) = AsyncStream.makeStream(of: WireValue.self)
     }
     deinit { for reader in readers { reader.cancel() }; sink.finish() }
@@ -32,7 +38,16 @@ public actor AgentExecutionTransport: ExecutionTransport {
         }
         async let c: Void = refreshCodex()
         async let a: Void = refreshClaude()
-        _ = await (c, a)
+        async let d: Void = refreshDevin()
+        _ = await (c, a, d)
+    }
+    private func refreshDevin() async {
+        checkingDevin = true; defer { checkingDevin = false }
+        do {
+            if let devinProbe { devinCatalog = try await devinProbe() } else { devinCatalog = try await DevinCatalog.probe() }
+            devinError = nil
+        }
+        catch { devinCatalog = []; devinError = error.localizedDescription }
     }
     private func refreshCodex() async {
         checkingCodex = true; defer { checkingCodex = false }
@@ -64,16 +79,19 @@ public actor AgentExecutionTransport: ExecutionTransport {
         } catch { catalog = []; claudeError = error.localizedDescription }
         await probe.shutdown()
     }
-    private func forward(_ value: WireValue, owner: String?) {
+    private func forward(_ value: WireValue, owner: String?, provider: Provider = .claude) {
         var e = value.object
-        if let owner, value["method"].string == "diorama/sessionDisconnected" { claude.removeValue(forKey: owner) }
+        let tag = provider.key + ":"
+        if let owner, value["method"].string == "diorama/sessionDisconnected" {
+            if provider == .devin { devin.removeValue(forKey: owner) } else { claude.removeValue(forKey: owner) }
+        }
         if let owner, value["id"] != .null {
-            let external = WireValue.string("claude:" + owner + ":" + (value["id"].string ?? ""))
-            requestOwners[external.key] = owner; e["id"] = external
+            let external = WireValue.string(tag + owner + ":" + (value["id"].string ?? ""))
+            requestOwners[external.key] = (provider, owner); e["id"] = external
         }
         if let owner, value["method"].string == "serverRequest/resolved" {
             var p = value["params"].object
-            p["requestId"] = .string("claude:" + owner + ":" + (p["requestId"]?.string ?? "")); e["params"] = .object(p)
+            p["requestId"] = .string(tag + owner + ":" + (p["requestId"]?.string ?? "")); e["params"] = .object(p)
         }
         if owner == nil, value["method"].string == "diorama/disconnected" {
             codexConnected = false
@@ -85,10 +103,11 @@ public actor AgentExecutionTransport: ExecutionTransport {
     public func request(_ method: String, _ params: WireValue) async throws -> WireValue {
         var p = params.object
         if method == "diorama/connections" {
-            return .object(["codex": .bool(codexConnected), "claude": .bool(!catalog.isEmpty), "claudeError": claudeError.map(WireValue.string) ?? .null, "codexError": codexError.map(WireValue.string) ?? .null, "codexChecking": .bool(checkingCodex), "claudeChecking": .bool(checkingClaude)])
+            return .object(["codex": .bool(codexConnected), "claude": .bool(!catalog.isEmpty), "claudeError": claudeError.map(WireValue.string) ?? .null, "codexError": codexError.map(WireValue.string) ?? .null, "codexChecking": .bool(checkingCodex), "claudeChecking": .bool(checkingClaude),
+                            "devin": .bool(!devinCatalog.isEmpty), "devinError": devinError.map(WireValue.string) ?? .null, "devinChecking": .bool(checkingDevin)])
         }
         if method == "model/list" {
-            return .object(["data": .array((codexConnected ? codexCatalog : []) + catalog)])
+            return .object(["data": .array((codexConnected ? codexCatalog : []) + catalog + devinCatalog)])
         }
         if method == "collaborationMode/list", !codexConnected { return .object(["data": .array([.object(["mode": .string("default")]), .object(["mode": .string("plan")])])]) }
         let id = params["threadId"].string ?? ""
@@ -107,6 +126,7 @@ public actor AgentExecutionTransport: ExecutionTransport {
             var reply = try await transport.request(method, params).object; reply["model"] = params["model"]; reply["provider"] = .string(Provider.claude.rawValue)
             return .object(reply)
         }
+        if let reply = try await routeDevin(method, params) { return reply }
         if method == "thread/read", params["dioramaProvider"].string == Provider.claude.rawValue {
             return .object(["thread": .object(["id": .string(id), "cwd": params["cwd"], "turns": .array([])])])
         }
@@ -131,21 +151,69 @@ public actor AgentExecutionTransport: ExecutionTransport {
         guard codexConnected else { throw ExecutionRPCRejection("Connect OpenAI in Settings before using this model.") }
         return try await codex.request(method, .object(p))
     }
+    /// Devin conversations: started from a `devin/` model, or continued by their provider.
+    private func routeDevin(_ method: String, _ params: WireValue) async throws -> WireValue? {
+        let id = params["threadId"].string ?? ""
+        let named = params["dioramaProvider"].string == Provider.devin.rawValue
+        if method == "thread/start", params["model"].string?.hasPrefix("devin/") == true {
+            guard !devinCatalog.isEmpty else { throw ExecutionRPCRejection(devinError ?? "Connect Devin in Settings") }
+            let transport = DevinExecutionTransport(folder: params["cwd"].string ?? "", context: params["developerInstructions"].string,
+                                                    model: params["model"].string, permissionMode: params["permissionMode"].string)
+            try await transport.connect()
+            let newID = await transport.id
+            contexts[newID] = params["developerInstructions"].string
+            attach(transport, id: newID)
+            var reply = try await transport.request(method, params).object; reply["provider"] = .string(Provider.devin.rawValue)
+            return .object(reply)
+        }
+        if (method == "thread/resume" || method.hasPrefix("thread/queue/")) && named, devin[id] == nil {
+            guard let folder = params["cwd"].string, !folder.isEmpty else { throw AppServerFailure("Original Devin working folder unavailable") }
+            if let instructions = params["developerInstructions"].string { contexts[id] = instructions }
+            let transport = DevinExecutionTransport(folder: folder, sessionID: id, context: contexts[id] ?? AgentInstructions.compose(nil))
+            try await transport.connect(); attach(transport, id: id)
+        }
+        if let transport = devin[id] { return try await transport.request(method, params) }
+        if named {
+            switch method {
+            case "thread/read": return .object(["thread": .object(["id": .string(id), "cwd": params["cwd"], "turns": .array([])])])
+            case "thread/goal/get": return .object(["goal": .null])
+            case "diorama/capabilities": return .object([:])
+            default: throw ExecutionRPCRejection("Reconnect this Devin conversation before " + method)
+            }
+        }
+        return nil
+    }
     private func attach(_ transport: ClaudeExecutionTransport, id: String) {
         claude[id] = transport
         readers.append(Task { [weak self] in for await e in transport.events { await self?.forward(e, owner: id) } })
     }
+    private func attach(_ transport: DevinExecutionTransport, id: String) {
+        devin[id] = transport
+        readers.append(Task { [weak self] in for await e in transport.events { await self?.forward(e, owner: id, provider: .devin) } })
+    }
+    /// The forwarded request's owner and that session's own id for it, if a Claude or Devin session asked.
+    private func owner(of id: WireValue) -> (provider: Provider, owner: String, local: WireValue)? {
+        guard let entry = requestOwners[id.key], let key = id.string else { return nil }
+        return (entry.provider, entry.owner, .string(String(key.dropFirst((entry.provider.key + ":" + entry.owner + ":").count))))
+    }
     public func respond(id: WireValue, result: WireValue) async throws {
-        if let owner = requestOwners[id.key], let transport = claude[owner], let key = id.string {
-            try await transport.respond(id: .string(String(key.dropFirst(("claude:" + owner + ":").count))), result: result)
+        if let found = owner(of: id) {
+            if found.provider == .devin, let transport = devin[found.owner] { try await transport.respond(id: found.local, result: result) }
+            else if let transport = claude[found.owner] { try await transport.respond(id: found.local, result: result) }
+            else { throw ExecutionRPCRejection("This request is no longer pending") }
             requestOwners.removeValue(forKey: id.key)
         } else { try await codex.respond(id: id, result: result) }
     }
     public func reject(id: WireValue, message: String) async throws {
-        if let owner = requestOwners[id.key], let transport = claude[owner], let key = id.string {
-            try await transport.reject(id: .string(String(key.dropFirst(("claude:" + owner + ":").count))), message: message)
+        if let found = owner(of: id) {
+            if found.provider == .devin, let transport = devin[found.owner] { try await transport.reject(id: found.local, message: message) }
+            else if let transport = claude[found.owner] { try await transport.reject(id: found.local, message: message) }
             requestOwners.removeValue(forKey: id.key)
         } else { try await codex.reject(id: id, message: message) }
     }
-    public func shutdown() async { for t in claude.values { await t.shutdown() }; await codex.shutdown() }
+    public func shutdown() async {
+        for t in claude.values { await t.shutdown() }
+        for t in devin.values { await t.shutdown() }
+        await codex.shutdown()
+    }
 }

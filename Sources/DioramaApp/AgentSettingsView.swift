@@ -26,7 +26,7 @@ struct AgentSettingsView: View {
         _defaultModel = AppStorage(wrappedValue: "", "defaultAgentModel", store: defaults)
     }
     private var selectionAvailable: Bool { OnboardingModels.isAvailable(defaultModel, models: controller.models, connections: info) }
-    private var anyConnected: Bool { info["codex"].bool || info["claude"].bool }
+    private var anyConnected: Bool { Provider.allCases.contains { info[$0.key].bool } }
     var body: some View {
         VStack(alignment: .leading, spacing: 20) {
             if githubStep {
@@ -35,16 +35,17 @@ struct AgentSettingsView: View {
             } else {
                 Text(onboarding ? "Connect an account to get started." : "Models & accounts")
                     .font(.title2.bold()).fixedSize(horizontal: false, vertical: true)
-                Text("Connect OpenAI or Claude. You can add the other later.")
+                Text("Connect OpenAI, Claude or Devin. You can add the others later.")
                     .foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
                 ScrollView {
                     VStack(alignment: .leading, spacing: 16) {
                         account("OpenAI", key: "codex")
                         account("Claude", key: "claude")
+                        account("Devin", key: "devin")
                         if anyConnected {
                             Picker("Default model", selection: $defaultModel) {
                                 if info["codex"].bool { Text("OpenAI · Default").tag("") }
-                                ForEach(controller.models.filter { info[$0.id.hasPrefix("claude/") ? "claude" : "codex"].bool }) { model in
+                                ForEach(controller.models.filter { info[Provider.forModel($0.id).key].bool }) { model in
                                     Text(model.name).tag(model.id)
                                 }
                             }.pointingHand()
@@ -92,6 +93,7 @@ struct AgentSettingsView: View {
         .sheet(isPresented: $reviewSetup) { AgentSettingsView(controller: controller, onboarding: true, cancel: { reviewSetup = false }, finish: { reviewSetup = false }) }
     }
     private func account(_ title: String, key: String) -> some View {
+        let provider = Provider.allCases.first { $0.key == key } ?? .codex
         let connected = info[key].bool
         let missing = AgentExecutable.resolve(key) == nil
         let detail = info[key + "Error"].string
@@ -99,7 +101,7 @@ struct AgentSettingsView: View {
         let status: String = switch state {
         case .connected: "Connected"
         case .checking: "Checking…"
-        case .missing: key == "claude" ? "Claude Code not found" : "Codex not found"
+        case .missing: (provider == .devin ? "Devin CLI" : provider.rawValue) + " not found"
         case .signedOut: "Sign in needed"
         case .unavailable: "Couldn’t verify connection"
         }
@@ -113,12 +115,12 @@ struct AgentSettingsView: View {
                 Label(status, systemImage: connected ? "checkmark.circle.fill" : "circle")
                     .font(.callout).foregroundStyle(connected ? Color.green : Color.secondary)
             }
-            if key == "claude" { Text("Uses your Claude subscription. No automatic switch to API billing.").font(.caption).foregroundStyle(.secondary) }
+            if let note = provider.accountNote { Text(note).font(.caption).foregroundStyle(.secondary) }
             if !connected, let detail, !missing { Text(detail).font(.caption).foregroundStyle(.secondary).textSelection(.enabled) }
             HStack {
                 if !connected {
                     if missing {
-                        Link("Installation instructions", destination: URL(string: key == "claude" ? "https://code.claude.com/docs/en/setup" : "https://developers.openai.com/codex/cli")!).pointingHand()
+                        Link("Installation instructions", destination: provider.installURL).pointingHand()
                         Button("Locate existing installation…") { locate(key) }.pointingHand().disabled(controller.hasActiveWork || locating != nil)
                     } else {
                         Button("Login with " + title) { login(key) }.pointingHand().disabled(pendingLogin == key || state == .checking)
@@ -163,7 +165,8 @@ struct AgentSettingsView: View {
     }
     private func locate(_ key: String) {
         let panel = NSOpenPanel(); panel.canChooseDirectories = false; panel.allowsMultipleSelection = false
-        panel.message = "Choose the official \(key == "claude" ? "Claude Code" : "Codex") executable."
+        let name = (Provider.allCases.first { $0.key == key } ?? .codex).rawValue
+        panel.message = "Choose the official \(name) executable."
         guard panel.runModal() == .OK, let url = panel.url else { return }
         locating = key
         Task {
@@ -179,7 +182,8 @@ struct AgentSettingsView: View {
     private func login(_ key: String) {
         if let loginAction { loginAction(key == "claude"); return }
         guard let binary = AgentExecutable.resolve(key) else { refresh(); return }
-        let shell = "'" + binary.path.replacingOccurrences(of: "'", with: "'\\''") + "'" + (key == "claude" ? " auth login --claudeai" : " login")
+        let provider = Provider.allCases.first { $0.key == key } ?? .codex
+        let shell = "'" + binary.path.replacingOccurrences(of: "'", with: "'\\''") + "' " + provider.loginArguments.joined(separator: " ")
         let literal = shell.replacingOccurrences(of: "\\", with: "\\\\").replacingOccurrences(of: "\"", with: "\\\"")
         var problem: NSDictionary?
         NSAppleScript(source: "tell application \"Terminal\"\nactivate\ndo script \"\(literal)\"\nend tell")?.executeAndReturnError(&problem)

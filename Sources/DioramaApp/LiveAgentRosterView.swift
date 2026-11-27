@@ -125,6 +125,7 @@ private struct LiveAgentRosterCellContent: View {
         switch agent.provider {
         case Provider.claude.rawValue: provider = "Anthropic"
         case Provider.codex.rawValue: provider = "OpenAI"
+        case Provider.devin.rawValue: provider = "Devin"
         default: provider = agent.provider.isEmpty ? "Provider unavailable" : agent.provider
         }
         return provider + "/" + (agent.reportedModel ?? "Model unavailable")

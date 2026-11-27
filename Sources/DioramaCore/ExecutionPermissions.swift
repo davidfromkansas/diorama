@@ -19,11 +19,37 @@ extension ApprovalReviewChoice {
         default: nil
         }
     }
+    /// The Devin CLI's `--permission-mode` for this choice.
+    public var devinMode: String? {
+        switch self {
+        case .inherit: nil
+        case .user: "normal"
+        case .autoReview: "smart"
+        case .acceptEdits: "accept-edits"
+        case .fullAccess: "dangerous"
+        }
+    }
+    public static func devin(_ mode: String?) -> Self? {
+        switch mode {
+        case "normal", "auto": .user
+        case "smart": .autoReview
+        case "accept-edits": .acceptEdits
+        case "dangerous", "yolo", "bypass": .fullAccess
+        default: nil
+        }
+    }
+    /// The mode name Claude Code or Devin uses for this choice; nil for Codex, which takes policies.
+    public func mode(for provider: Provider) -> String? {
+        switch provider { case .claude: claudeMode; case .devin: devinMode; case .codex: nil }
+    }
+    public static func reported(mode: String?, provider: Provider) -> Self? {
+        switch provider { case .claude: claude(mode); case .devin: devin(mode); case .codex: nil }
+    }
 }
 
 extension ExecutedTask {
     public var reportedPermissionChoice: ApprovalReviewChoice? {
-        if provider == .claude { return .claude(approvalPolicy.string) }
+        if provider != .codex { return .reported(mode: approvalPolicy.string, provider: provider) }
         if sandbox["type"].string == "workspaceWrite", approvalPolicy.string == "on-request" {
             return approvalReviewer == "auto_review" ? .autoReview : approvalReviewer == "user" ? .user : nil
         }
@@ -33,6 +59,7 @@ extension ExecutedTask {
 
 extension ExecutionController {
     public func permissionUnavailable(_ choice: ApprovalReviewChoice, model: String) -> String? {
+        if Provider.forModel(model) == .devin { return nil }
         if model.hasPrefix("claude/") {
             return choice == .autoReview && models.first(where: { $0.id == model })?.supportsAutoMode == false ? "Automatic review is unavailable for this model" : nil
         }
@@ -68,24 +95,25 @@ extension ExecutionController {
             }
             return // Keep whatever the provider is running, its own default or known custom settings.
         }
-        guard desired != .inherit, task.provider == .claude || desired != .acceptEdits else {
+        guard desired != .inherit, task.provider != .codex || desired != .acceptEdits else {
             throw ExecutionRPCRejection("This permission option is not supported by the selected provider.")
         }
-        if task.provider == .claude {
-            let target = mode == "plan" ? "plan" : desired.claudeMode!
+        if task.provider != .codex, let execution = desired.mode(for: task.provider) {
+            let name = task.provider.shortName
+            let target = mode == "plan" && task.provider == .claude ? "plan" : execution
             do {
                 let reply = try await transport.request("diorama/permissions/set", .object([
                     "threadId": .string(id), "model": .string(selected), "permissionMode": .string(target),
-                    "executionPermissionMode": .string(desired.claudeMode!)
+                    "executionPermissionMode": .string(execution)
                 ]))
                 guard let effective = reply["permissionMode"].string, effective == target else {
-                    throw ExecutionRPCRejection("Claude did not confirm the requested permissions. No message was sent.")
+                    throw ExecutionRPCRejection("\(name) did not confirm the requested permissions. No message was sent.")
                 }
                 task = tasks[id] ?? task
                 task.approvalPolicy = .string(effective); task.sandbox = .null
                 task.model = reply["model"].string ?? selected
             } catch {
-                tasks[id]?.permissionNotice = "Claude permission change failed: \(error.localizedDescription). No message was sent."
+                tasks[id]?.permissionNotice = "\(name) permission change failed: \(error.localizedDescription). No message was sent."
                 throw ExecutionRPCRejection(tasks[id]!.permissionNotice!)
             }
         } else if choice != .inherit || task.reportedPermissionChoice == nil {

@@ -136,7 +136,7 @@ struct WorkspaceProjectGroup: View {
                             Image(systemName: library.pinned.contains(row.session.id) ? "pin.fill" : "arrow.triangle.branch").font(.system(size: 11)).foregroundStyle(library.needsAttention(row.session) ? .orange : library.isWorking(row.session) ? .mint : DioramaStyle.accent)
                             Text(row.session.displayTitle).help(TaskTitle.full(row.session.title)).accessibilityLabel(TaskTitle.full(row.session.title)).lineLimit(1)
                             Spacer(minLength: 0)
-                            Text(row.session.observationOnly ? "Desktop" : row.session.provider == .codex ? "C" : "A").font(.system(size: 9, weight: .medium)).foregroundStyle(.secondary)
+                            Text(row.session.observationOnly ? "Desktop" : row.session.provider == .codex ? "C" : row.session.provider == .devin ? "D" : "A").font(.system(size: 9, weight: .medium)).foregroundStyle(.secondary)
                             if row.session.archived { Image(systemName: "archivebox").font(.system(size: 10)) }
                         }.padding(.leading, 18 + CGFloat(min(row.depth, 4)) * 10).padding(.trailing, 8).frame(height: 32)
                             .background(project.id == library.projects.selectedID && project.selectedSession == row.session.id ? DioramaStyle.selection : .clear, in: RoundedRectangle(cornerRadius: 5)).contentShape(Rectangle())

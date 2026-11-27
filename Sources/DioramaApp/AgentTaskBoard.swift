@@ -355,22 +355,23 @@ struct AgentBoardCard: View {
 }
 
 /// A small round mark for who runs the task: the Claude mark on Claude's orange, the OpenAI
-/// mark on black for Codex.
+/// mark on black for Codex, a "D" on Devin's teal.
 struct ProviderAvatar: View {
     let provider: String
     var body: some View {
-        let claude = provider.lowercased().contains("claude")
+        let name = provider.lowercased()
+        let claude = name.contains("claude"), devin = name.contains("devin")
         Group {
-            if let mark = claude ? ProviderMark.claude : ProviderMark.openAI {
+            if !devin, let mark = claude ? ProviderMark.claude : ProviderMark.openAI {
                 Image(nsImage: mark).resizable().scaledToFit().padding(4)
             } else {
-                Text(claude ? "C" : "O").font(.system(size: 10, weight: .bold)).foregroundStyle(.white)
+                Text(claude ? "C" : devin ? "D" : "O").font(.system(size: 10, weight: .bold)).foregroundStyle(.white)
             }
         }
         .frame(width: 20, height: 20)
-        .background(Circle().fill(claude ? Color(red: 0.851, green: 0.467, blue: 0.341) : Color.black))
-        .help(claude ? "Claude" : "Codex (OpenAI)")
-        .accessibilityLabel(claude ? "Claude" : "Codex")
+        .background(Circle().fill(claude ? Color(red: 0.851, green: 0.467, blue: 0.341) : devin ? Provider.devin.tint : Color.black))
+        .help(claude ? "Claude" : devin ? "Devin" : "Codex (OpenAI)")
+        .accessibilityLabel(claude ? "Claude" : devin ? "Devin" : "Codex")
     }
 }
 

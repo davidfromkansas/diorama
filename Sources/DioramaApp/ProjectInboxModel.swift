@@ -121,7 +121,8 @@ private actor InboxLiveHistory {
             last.outcome = p["turn"]["status"].string ?? "unknown"; last.runtimeOutcome = true
             return [last]
         }
-        guard session.provider == .codex, event["method"].string == "turn/completed", let turn = p["turn"]["id"].string else { return [] }
+        // Codex and Devin report turns through the same events; Claude's are read above.
+        guard session.provider != .claude, event["method"].string == "turn/completed", let turn = p["turn"]["id"].string else { return [] }
         return InboxUpdate.make(session: session, turn: turn, entries: entries, outcome: p["turn"]["status"].string ?? "unknown",
                                 date: ActivityParser.date(p["timestamp"].string)).map { value in var reported = value; reported.runtimeOutcome = true; return [reported] } ?? []
     }

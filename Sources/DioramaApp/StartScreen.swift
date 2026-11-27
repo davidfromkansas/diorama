@@ -24,6 +24,7 @@ struct StartScreen: View {
                 HStack(spacing: 16) {
                     StartProviderCard(brand: .codex, state: state("codex"))
                     StartProviderCard(brand: .claude, state: state("claude"))
+                    StartProviderCard(brand: .devin, state: state("devin"))
                 }
                 Text("We use the logins, settings, and skills you already have.")
                     .font(.custom("Arial", size: 16)).foregroundStyle(StartPalette.secondary)
@@ -49,8 +50,8 @@ struct StartScreen: View {
             let updated = await controller.connectionInfo()
             // Until a check has run, nothing reads as connected or checking, which would look signed out.
             let settled = !controller.connecting && (controller.connected || controller.error != nil)
-                && !updated["codexChecking"].bool && !updated["claudeChecking"].bool
-            if updated != .null && (settled || updated["codex"].bool || updated["claude"].bool) { info = updated }
+                && !Provider.allCases.contains { updated[$0.key + "Checking"].bool }
+            if updated != .null && (settled || Provider.allCases.contains { updated[$0.key].bool }) { info = updated }
             do { try await Task.sleep(for: .seconds(settled ? 2 : 0.3)) } catch { return }
         }
     }
@@ -68,12 +69,15 @@ private enum StartPalette {
 /// A small branded card showing one provider's connection.
 private struct StartProviderCard: View {
     enum Brand {
-        case codex, claude
-        var name: String { self == .codex ? "OpenAI Codex" : "Claude Code" }
-        var mark: String { self == .codex ? "OpenAI" : "Claude" }
+        case codex, claude, devin
+        var name: String { switch self { case .codex: "OpenAI Codex"; case .claude: "Claude Code"; case .devin: "Devin" } }
+        var mark: String { switch self { case .codex: "OpenAI"; case .claude: "Claude"; case .devin: "Devin" } }
         var ink: Color { self == .codex ? Color(red: 0x1f/255, green: 0x1d/255, blue: 0x2b/255) : .white }
+        /// Shown when no bundled mark exists (Devin, until its official mark is added).
+        var symbol: String { self == .devin ? "d.circle.fill" : "sparkles" }
         var fill: LinearGradient {
             switch self {
+            case .devin: LinearGradient(colors: [Color(red: 0x14/255, green: 0x9a/255, blue: 0x8f/255), Color(red: 0x0c/255, green: 0x7a/255, blue: 0x73/255)], startPoint: .top, endPoint: .bottom)
             case .codex: LinearGradient(colors: [Color(red: 0xd3/255, green: 0xe5/255, blue: 0xff/255), Color(red: 0xdc/255, green: 0xc4/255, blue: 0xf6/255)], startPoint: .top, endPoint: .bottom)
             case .claude: LinearGradient(colors: [Color(red: 0xd9/255, green: 0x77/255, blue: 0x57/255), Color(red: 0xc6/255, green: 0x6a/255, blue: 0x4c/255)], startPoint: .top, endPoint: .bottom)
             }
@@ -92,7 +96,7 @@ private struct StartProviderCard: View {
         VStack(alignment: .leading, spacing: 0) {
             Group {
                 if let mark = brand.image { Image(nsImage: mark).resizable().scaledToFit() }
-                else { Image(systemName: "sparkles").resizable().scaledToFit() }
+                else { Image(systemName: brand.symbol).resizable().scaledToFit() }
             }.frame(width: 22, height: 22).accessibilityHidden(true)
             Spacer(minLength: 14)
             Text(brand.name).font(.custom("Arial", size: 15).bold()).lineLimit(1)

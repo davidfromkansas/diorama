@@ -3,6 +3,65 @@ import Foundation
 public enum Provider: String, CaseIterable, Sendable {
     case codex = "Codex"
     case claude = "Claude Code"
+    case devin = "Devin"
+}
+
+/// What Diorama needs to know about each coding agent, in one place.
+public extension Provider {
+    /// The key `diorama/connections`, settings and the executable lookup use.
+    var key: String {
+        switch self { case .codex: "codex"; case .claude: "claude"; case .devin: "devin" }
+    }
+    /// Model ids from this provider start with this. Codex models have no prefix.
+    var modelPrefix: String? {
+        switch self { case .codex: nil; case .claude: "claude/"; case .devin: "devin/" }
+    }
+    /// The provider that runs a model id from the combined catalog.
+    static func forModel(_ id: String) -> Provider {
+        if id.hasPrefix("claude/") { return .claude }
+        if id.hasPrefix("devin/") { return .devin }
+        return .codex
+    }
+    /// True when this model id belongs to this provider.
+    func owns(model id: String) -> Bool { Self.forModel(id) == self }
+    /// Home, Settings and onboarding list agents in this order.
+    static let connectable: [Provider] = [.claude, .codex, .devin]
+    /// The short name used in sentences: "Ask Devin", "Your Claude default".
+    var shortName: String {
+        switch self { case .codex: "Codex"; case .claude: "Claude"; case .devin: "Devin" }
+    }
+    /// The model id that means "this provider's own default"; Codex's is empty.
+    var defaultModel: String {
+        switch self { case .codex: ""; case .claude: "claude/default"; case .devin: "devin/default" }
+    }
+    /// Who makes it, for model menus.
+    var company: String {
+        switch self { case .codex: "OpenAI"; case .claude: "Anthropic"; case .devin: "Devin" }
+    }
+    /// The account a person signs in to.
+    var accountName: String {
+        switch self { case .codex: "OpenAI"; case .claude: "Claude"; case .devin: "Devin" }
+    }
+    /// Arguments that open the tool's own sign-in in Terminal.
+    var loginArguments: [String] {
+        switch self { case .codex: ["login"]; case .claude: ["auth", "login", "--claudeai"]; case .devin: ["auth", "login"] }
+    }
+    /// Where to install the command-line tool.
+    var installURL: URL {
+        switch self {
+        case .codex: URL(string: "https://developers.openai.com/codex/cli")!
+        case .claude: URL(string: "https://code.claude.com/docs/en/setup")!
+        case .devin: URL(string: "https://docs.devin.ai/cli/index")!
+        }
+    }
+    /// One line about how the connection is billed, if it needs saying.
+    var accountNote: String? {
+        switch self {
+        case .codex: nil
+        case .claude: "Uses your Claude subscription. No automatic switch to API billing."
+        case .devin: "Uses your Devin account through the Devin CLI."
+        }
+    }
 }
 
 public struct Session: Identifiable, Hashable, Sendable {
@@ -259,6 +318,8 @@ public actor SessionLibrary {
         switch provider {
         case .claude: ClaudeNormalizer.parse(data, scope: scope, start: start, limit: limit, sourcePath: sourcePath)
         case .codex: CodexTranscriptNormalizer.parse(data, scope: scope, start: start, limit: limit, sourcePath: sourcePath)
+        // Devin keeps its history in its own database, not in files Diorama reads.
+        case .devin: Transcript()
         }
     }
 

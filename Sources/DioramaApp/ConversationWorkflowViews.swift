@@ -195,7 +195,7 @@ extension LibraryModel {
         }
         switch session.provider {
         case .codex: try await execution.setArchived(session: session, archived: archived)
-        case .claude:
+        case .claude, .devin:
             if archived, execution.tasks[session.sessionID]?.busy == true { throw AppServerFailure("Stop work before archiving") }
             try ClaudeArchive().setArchived(session, archived: archived)
         }

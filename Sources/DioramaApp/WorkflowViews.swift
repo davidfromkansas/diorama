@@ -56,7 +56,7 @@ struct WorkflowControls: View {
                             Text(row["input"].array.compactMap { $0["text"].string }.joined(separator: " ").isEmpty ? "Queued attachment" : row["input"].array.compactMap { $0["text"].string }.joined(separator: " "))
                                 .lineLimit(1).truncationMode(.tail)
                             Spacer(minLength: 8)
-                            if [Provider.codex, .claude].contains(task.provider) { Button(task.provider == .claude ? "Interrupt & steer" : "Steer") { run { try await controller.steerQueued(id: task.id, submissionID: row["id"].string ?? "") } }.pointingHand()
+                            if Provider.allCases.contains(task.provider) { Button(task.provider == .codex ? "Steer" : "Interrupt & steer") { run { try await controller.steerQueued(id: task.id, submissionID: row["id"].string ?? "") } }.pointingHand()
                                 .disabled(!controller.canSteer(id: task.id) || task.workflow.queueUncertain) }
                             Button { run { try await controller.removeQueued(id: task.id, submissionID: row["id"].string ?? "") } } label: { Image(systemName: "xmark") }.pointingHand().buttonStyle(.plain).help("Remove queued message")
                         }.font(.caption).padding(10).background(.quaternary, in: RoundedRectangle(cornerRadius: 10))

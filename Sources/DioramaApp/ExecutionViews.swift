@@ -9,12 +9,12 @@ struct ExecutionModelPicker: View {
     @Environment(\.openSettings) private var openSettings
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
-            ForEach([false, true], id: \.self) { claude in
-                Text(claude ? "Anthropic" : "OpenAI").font(.caption).foregroundStyle(.secondary)
-                let choices = controller.models.filter { $0.id.hasPrefix("claude/") == claude }
+            ForEach([Provider.codex, .claude, .devin], id: \.self) { owner in
+                Text(owner.company).font(.caption).foregroundStyle(.secondary)
+                let choices = controller.models.filter { Provider.forModel($0.id) == owner }
                 if choices.isEmpty {
                     if controller.connecting { Text("Checking available models…").foregroundStyle(.secondary) }
-                    else { Button(claude ? "Connect or refresh Anthropic…" : "Connect or refresh OpenAI…") { openSettings() }.pointingHand() }
+                    else { Button("Connect or refresh \(owner.company)…") { openSettings() }.pointingHand() }
                 } else {
                     ForEach(choices) { choice in
                         Button { model = choice.id; effort = "" } label: {
@@ -75,7 +75,7 @@ struct NewExecutionTaskView: View {
             if let pasteError { Text(pasteError).font(.caption).foregroundStyle(.orange) }
             ComposerAddMenu(controller: library.execution, folder: folder, threadID: preparedID, attachments: $attachments, capabilities: $capabilities, disabled: busy, showsAttachments: true)
             ComposerModeToggles(mode: $mode, goal: $goalMode, queue: $queueNext, showQueue: false).disabled(busy)
-            ApprovalReviewPicker(selection: $approvalReview, reviewer: preparedID.flatMap { library.execution.tasks[$0]?.approvalReviewer }, policy: preparedID.flatMap { library.execution.tasks[$0]?.approvalPolicy } ?? .null, sandbox: preparedID.flatMap { library.execution.tasks[$0]?.sandbox } ?? .null, claude: model.hasPrefix("claude/"), isNew: preparedID == nil, supportsAutoMode: library.execution.models.first(where: { $0.id == model })?.supportsAutoMode).disabled(busy)
+            ApprovalReviewPicker(selection: $approvalReview, reviewer: preparedID.flatMap { library.execution.tasks[$0]?.approvalReviewer }, policy: preparedID.flatMap { library.execution.tasks[$0]?.approvalPolicy } ?? .null, sandbox: preparedID.flatMap { library.execution.tasks[$0]?.sandbox } ?? .null, claude: Provider.forModel(model) != .codex, agent: Provider.forModel(model), isNew: preparedID == nil, supportsAutoMode: library.execution.models.first(where: { $0.id == model })?.supportsAutoMode).disabled(busy)
             if let id = preparedID, let task = library.execution.tasks[id] {
                 WorkflowControls(controller: library.execution, task: task, mode: $mode, capabilities: $capabilities, queueNext: $queueNext)
                 Text("Ready to send · effective settings").font(.headline)
@@ -177,7 +177,7 @@ struct ExecutionControls: View {
         } else if let task = library.execution.tasks[session.sessionID], task.attached, task.phase != .disconnected {
             VStack(alignment: .leading, spacing: 10) {
                 if let error = error ?? task.error { Text(error).font(.caption).foregroundStyle(.orange).textSelection(.enabled) }
-                if !model.isEmpty, model.hasPrefix("claude/") != (session.provider == .claude) { Text("Your next message continues here with the selected provider. Files and branch stay unchanged.").font(.caption).foregroundStyle(.secondary) }
+                if !model.isEmpty, Provider.forModel(model) != session.provider { Text("Your next message continues here with the selected provider. Files and branch stay unchanged.").font(.caption).foregroundStyle(.secondary) }
                 if let notice = task.reviewNotice { Text(notice).font(.caption).foregroundStyle(.secondary).textSelection(.enabled) }
                 let pending = library.execution.requests.values.filter { $0.threadID == task.id }.sorted { $0.receivedAt < $1.receivedAt }
                 if let request = pending.first {
@@ -213,7 +213,7 @@ struct ExecutionControls: View {
                         }
                 }
             }.padding(16)
-        } else if [Provider.codex, .claude].contains(session.provider),
+        } else if Provider.allCases.contains(session.provider),
                   ExecutionController.resumeUnavailableReason(session) == nil,
                   (!prompt.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || !attachments.isEmpty),
                   !(library.execution.tasks[session.sessionID]?.phase == .disconnected && library.execution.tasks[session.sessionID]?.requiresReconciliation == true),
@@ -229,7 +229,7 @@ struct ExecutionControls: View {
                     AttachmentPicker(attachments: $attachments, disabled: sending)
                 } label: { Text("Your message").disclosurePointingHand() }.font(.caption)
             }.padding(16)
-        } else if [Provider.codex, .claude].contains(session.provider) {
+        } else if Provider.allCases.contains(session.provider) {
             VStack(alignment: .leading, spacing: 8) {
                 if session.provider == .claude, recoveredGoal != .null, recoveredGoal["status"].string != "complete" {
                     HStack(alignment: .top) {
@@ -266,7 +266,7 @@ struct ExecutionControls: View {
                 } else {
                     ArmedSkillsRow(skills: armedBinding, provider: session.provider)
                     ConversationComposer(controller: library.execution, model: modelBinding, effort: effortBinding, prompt: $prompt, attachments: $attachments, approvalReview: $approvalReview,
-                                         effectiveModel: session.provider == .claude ? "claude/default" : "", sending: sending, active: false, queued: queueNext, capabilities: $capabilities, folder: session.project, threadID: session.sessionID, mode: $mode, goalMode: $goalMode, queueMode: $queueNext,
+                                         effectiveModel: session.provider.defaultModel, sending: sending, active: false, queued: queueNext, capabilities: $capabilities, folder: session.project, threadID: session.sessionID, mode: $mode, goalMode: $goalMode, queueMode: $queueNext,
                                          connectionFailure: connectionFailure, reconnect: { connectAttempt += 1 }) { submit() }
                 }
                 if library.execution.resumeErrors[session.sessionID]?.contains("active goal") == true {
@@ -289,7 +289,7 @@ struct ExecutionControls: View {
         }
         .onAppear {
             mode = library.drafts[session.id]?.mode ?? library.execution.tasks[session.sessionID]?.workflow.mode ?? "default"
-            if session.provider == .claude { model = library.execution.tasks[session.sessionID]?.model ?? "claude/default" }
+            if session.provider != .codex { model = library.execution.tasks[session.sessionID]?.model ?? session.provider.defaultModel }
             if let draft = library.drafts[session.id] {
                 prompt = draft.text
                 attachments = draft.attachments.compactMap { try? ConversationAttachment(url: URL(fileURLWithPath: $0)) }
@@ -344,7 +344,7 @@ struct ExecutionControls: View {
         let submittedEffort = effort
         let submittedReview = approvalReview
         let expectedTurn = library.execution.tasks[session.sessionID].flatMap { $0.phase.active ? $0.turnID : nil }
-        let crossProvider = !submittedModel.isEmpty && submittedModel.hasPrefix("claude/") != (session.provider == .claude)
+        let crossProvider = !submittedModel.isEmpty && Provider.forModel(submittedModel) != session.provider
         let optimistic = !submittedQueue && !crossProvider
         let message = OutgoingMessage(sessionID: session.sessionID, text: submittedPrompt, attachmentPaths: submittedAttachments.map { $0.url.path }, baselineIDs: Set(library.displayedTranscript.entries.map(\.id)).union(library.execution.tasks[session.sessionID]?.transcript.entries.map(\.id) ?? []))
         if optimistic {
@@ -541,9 +541,9 @@ struct ConversationComposer: View {
             }
         }.modifier(AttachmentDropTarget(attachments: $attachments, disabled: sending))
         .onChange(of: model) { oldModel, newModel in
-            if (oldModel.isEmpty ? effectiveModel : oldModel).hasPrefix("claude/") != (newModel.isEmpty ? effectiveModel : newModel).hasPrefix("claude/") { approvalReview = .inherit }
-            if model.hasPrefix("claude/") { effort = ""; capabilities.wrappedValue = [] }
-            if approvalReview == .fullAccess || (approvalReview == .acceptEdits && !model.hasPrefix("claude/")) || (approvalReview == .autoReview && controller.models.first(where: { $0.id == model })?.supportsAutoMode == false) {
+            if Provider.forModel(oldModel.isEmpty ? effectiveModel : oldModel) != Provider.forModel(newModel.isEmpty ? effectiveModel : newModel) { approvalReview = .inherit }
+            if Provider.forModel(model) != .codex { effort = ""; capabilities.wrappedValue = [] }
+            if approvalReview == .fullAccess || (approvalReview == .acceptEdits && Provider.forModel(model) == .codex) || (approvalReview == .autoReview && controller.models.first(where: { $0.id == model })?.supportsAutoMode == false) {
                 approvalReview = .inherit
                 pasteError = "Permission options changed with the model. Review the selected mode before sending."
             }
@@ -592,7 +592,8 @@ struct ConversationComposer: View {
     }
 
     private var messagesComposer: some View {
-        let claude = (model.isEmpty ? effectiveModel : model).hasPrefix("claude/")
+        // Skills and connectors are Codex's; Claude and Devin use their own.
+        let claude = Provider.forModel(model.isEmpty ? effectiveModel : model) != .codex
         // Permissions never block Send; a change that didn't apply shows here as a note.
         let attention = connectionFailure == nil && composerPermissionNotice != nil
         let modesOn = mode.wrappedValue == "plan" || goalMode.wrappedValue || queueMode.wrappedValue
@@ -736,7 +737,8 @@ struct ConversationComposer: View {
             .accessibilityLabel(title + " is on")
     }
 
-    private var switchingPermissionProvider: Bool { !model.isEmpty && model.hasPrefix("claude/") != effectiveModel.hasPrefix("claude/") }
+    private var switchingPermissionProvider: Bool { !model.isEmpty && Provider.forModel(model) != Provider.forModel(effectiveModel) }
+    private var currentProvider: Provider { Provider.forModel(model.isEmpty ? effectiveModel : model) }
     private var composerPermissionNotice: String? {
         guard !switchingPermissionProvider, let threadID, let task = controller.tasks[threadID] else { return nil }
         if let notice = task.permissionNotice, notice != "Provider permissions differ from your saved choice. Select a mode before sending." { return notice }
@@ -745,7 +747,7 @@ struct ConversationComposer: View {
     private var leadingControls: some View {
         let layout = (avatarMessages || creationPresentation) ? AnyLayout(VStackLayout(alignment: .leading, spacing: 12)) : AnyLayout(HStackLayout(spacing: 12))
         return layout {
-                    ComposerAddMenu(controller: controller, folder: folder, threadID: threadID, attachments: $attachments, capabilities: capabilities, disabled: sending, claude: (model.isEmpty ? effectiveModel : model).hasPrefix("claude/"))
+                    ComposerAddMenu(controller: controller, folder: folder, threadID: threadID, attachments: $attachments, capabilities: capabilities, disabled: sending, claude: currentProvider != .codex)
                     permissionControl
                     ComposerModeToggles(mode: mode, goal: goalMode, queue: queueMode, showQueue: !creationPresentation, modeDisabled: sending || active, queueDisabled: sending || !queueAvailable)
         }
@@ -753,7 +755,7 @@ struct ConversationComposer: View {
     private var permissionControl: some View { permissionPicker().disabled(permissionsDisabled) }
     private var permissionsDisabled: Bool { sending || active || controller.requests.values.contains { $0.threadID == threadID && $0.isBlocking } }
     private func permissionPicker(menuRow: (() -> Void)? = nil, inlineDone: (() -> Void)? = nil) -> ApprovalReviewPicker {
-        ApprovalReviewPicker(selection: $approvalReview, reviewer: switchingPermissionProvider ? nil : reviewer, policy: switchingPermissionProvider ? .null : policy, sandbox: switchingPermissionProvider ? .null : sandbox, iconOnly: true, claude: (model.isEmpty ? effectiveModel : model).hasPrefix("claude/"), isNew: threadID == nil || switchingPermissionProvider,
+        ApprovalReviewPicker(selection: $approvalReview, reviewer: switchingPermissionProvider ? nil : reviewer, policy: switchingPermissionProvider ? .null : policy, sandbox: switchingPermissionProvider ? .null : sandbox, iconOnly: true, claude: currentProvider != .codex, agent: currentProvider, isNew: threadID == nil || switchingPermissionProvider,
                         supportsAutoMode: controller.models.first(where: { $0.id == (model.isEmpty ? effectiveModel : model) })?.supportsAutoMode,
                         unavailable: Dictionary(uniqueKeysWithValues: ApprovalReviewChoice.allCases.compactMap { choice in controller.permissionUnavailable(choice, model: model.isEmpty ? effectiveModel : model).map { (choice, $0) } }),
                         stale: threadID.flatMap { controller.tasks[$0] }.map { !$0.attached } ?? false,
@@ -786,7 +788,7 @@ struct ConversationComposer: View {
                 .popover(isPresented: $showingCreationDetails) {
                     VStack(alignment: .leading, spacing: 14) {
                         permissionControl
-                        if !(model.isEmpty ? effectiveModel : model).hasPrefix("claude/") {
+                        if currentProvider == .codex {
                             Button { showingCreationIntegrations = true } label: {
                                 Label("Skills & connectors…", systemImage: "square.stack.3d.up")
                             }.pointingHand().buttonStyle(HoverButtonStyle(inset: 0)).disabled(sending)
@@ -806,7 +808,7 @@ struct ConversationComposer: View {
                     if !avatarMessages {
                         ComposerModelMenu(controller: controller, model: $model, effort: $effort, effectiveModel: effectiveModel, effectiveEffort: effectiveEffort).disabled(sending || active)
                     }
-                    if active && !queued && (model.isEmpty ? effectiveModel : model).hasPrefix("claude/") && !prompt.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+                    if active && !queued && currentProvider != .codex && !prompt.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
                         Button("Interrupt & steer", action: send).pointingHand().font(.caption).disabled(sending || !canSteer)
                     }
                     if active && queued {

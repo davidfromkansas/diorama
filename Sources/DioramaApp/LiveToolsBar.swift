@@ -484,7 +484,7 @@ struct AllResourcesPalette: View {
         LazyVGrid(columns: Array(repeating: GridItem(.flexible(), spacing: 2), count: 4), alignment: .leading, spacing: 4) { content() }
     }
     private func providers(_ entry: Entry) -> String {
-        entry.providers.map { $0 == .claude ? "Claude" : "Codex" }.sorted().joined(separator: " · ")
+        entry.providers.map { $0.shortName }.sorted().joined(separator: " · ")
     }
     /// One word under a tile: what it needs, if anything.
     private func statusWord(_ item: CapabilityLibraryItem) -> (String, Color) {
