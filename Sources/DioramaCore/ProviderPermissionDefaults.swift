@@ -13,17 +13,23 @@ public struct ProviderPermissionDefaults: Sendable {
     }
 
     /// The mode new conversations start in, or nil when it's something Diorama has no preset for.
+    /// Devin keeps its default in its own CLI settings, which Diorama doesn't change.
     public func choice(for provider: Provider) -> ApprovalReviewChoice? {
-        provider == .claude ? claudeChoice() : codexChoice()
+        switch provider { case .claude: claudeChoice(); case .codex: codexChoice(); case .devin: nil }
     }
     /// Whether the person set a default at all, rather than leaving the provider's built-in one.
     public func isSet(for provider: Provider) -> Bool {
         if provider == .claude { return claudeMode() != nil }
+        if provider == .devin { return false }
         let toml = (try? String(contentsOf: codexConfig, encoding: .utf8)) ?? ""
         return ["approval_policy", "sandbox_mode", "approvals_reviewer", "default_permissions"].contains { Self.topLevelValue(toml, $0) != nil }
     }
     public func set(_ choice: ApprovalReviewChoice, for provider: Provider) throws {
-        if provider == .claude { try setClaude(choice) } else { try setCodex(choice) }
+        switch provider {
+        case .claude: try setClaude(choice)
+        case .codex: try setCodex(choice)
+        case .devin: throw ExecutionRPCRejection("Devin's default permission mode is set in the Devin CLI.")
+        }
     }
 
     // MARK: Codex

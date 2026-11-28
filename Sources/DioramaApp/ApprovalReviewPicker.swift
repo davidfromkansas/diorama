@@ -8,6 +8,8 @@ struct ApprovalReviewPicker: View {
     var sandbox: WireValue = .null
     var iconOnly = false
     var claude = false
+    /// Which agent's modes these are when it isn't simply Claude or Codex (Devin).
+    var agent: Provider? = nil
     var isNew = false
     var supportsAutoMode: Bool? = nil
     var unavailable: [ApprovalReviewChoice: String] = [:]
@@ -24,12 +26,12 @@ struct ApprovalReviewPicker: View {
     var inlineDone: (() -> Void)? = nil
     @State private var showing = false
     @State private var defaults = ProviderDefaultsStore.shared
-    private var provider: Provider { claude ? .claude : .codex }
-    private var providerName: String { claude ? "Claude" : "Codex" }
+    private var provider: Provider { agent ?? (claude ? .claude : .codex) }
+    private var providerName: String { provider.shortName }
     @FocusState private var popoverFocused: Bool
     @State private var proposedBoundaryChange: ApprovalReviewChoice?
     private var effective: ApprovalReviewChoice? {
-        if claude { return .claude(policy.string) }
+        if provider != .codex { return .reported(mode: policy.string, provider: provider) }
         if sandbox["type"].string == "workspaceWrite", policy.string == "on-request" {
             return reviewer == "auto_review" ? .autoReview : reviewer == "user" ? .user : nil
         }
@@ -91,8 +93,8 @@ struct ApprovalReviewPicker: View {
     /// Every mode, the current one checked, with the notes and confirmations that go with them.
     private func modes(close: @escaping () -> Void) -> some View {
                 VStack(alignment: .leading, spacing: 8) {
-                    PermissionsMenu(selected: displayed, pending: selection != .inherit, claude: claude, supportsAutoMode: supportsAutoMode, unavailable: unavailable, compact: inlineDone != nil) { choice in
-                        if !claude && !isNew && choice != .inherit && (choice == .fullAccess || sandbox["type"].string == "dangerFullAccess" || effective == nil) {
+                    PermissionsMenu(selected: displayed, pending: selection != .inherit, claude: claude, agent: agent, supportsAutoMode: supportsAutoMode, unavailable: unavailable, compact: inlineDone != nil) { choice in
+                        if provider == .codex && !isNew && choice != .inherit && (choice == .fullAccess || sandbox["type"].string == "dangerFullAccess" || effective == nil) {
                             proposedBoundaryChange = choice
                         } else { selection = choice; close() }
                     }
@@ -106,7 +108,7 @@ struct ApprovalReviewPicker: View {
                         HStack { Button("Cancel") { proposedBoundaryChange = nil }.pointingHand(); Button("Use \(choice.title)") { selection = choice; proposedBoundaryChange = nil; close() }.pointingHand() }
                     }
                     if policy != .null {
-                        Text(claude ? "Claude mode: \(policy.string ?? policy.pretty)" : "Reviewer: \(reviewer ?? "unconfirmed") · Network: \(sandbox["networkAccess"] == .bool(true) ? "enabled" : sandbox["networkAccess"] == .bool(false) ? "restricted" : "provider settings")")
+                        Text(provider != .codex ? "\(providerName) mode: \(policy.string ?? policy.pretty)" : "Reviewer: \(reviewer ?? "unconfirmed") · Network: \(sandbox["networkAccess"] == .bool(true) ? "enabled" : sandbox["networkAccess"] == .bool(false) ? "restricted" : "provider settings")")
                             .font(.caption).foregroundStyle(.secondary).padding(.horizontal)
                     }
                     makeDefault
@@ -115,6 +117,9 @@ struct ApprovalReviewPicker: View {
     /// Your Codex or Claude default: what new chats start in here, in the Codex and Claude apps,
     /// and in the terminal. Offered for the mode shown when it isn't already the default.
     @ViewBuilder private var makeDefault: some View {
+        if !ProviderDefaultsStore.choices(provider).isEmpty { makeDefaultRows }
+    }
+    @ViewBuilder private var makeDefaultRows: some View {
         let current = defaults.choice(provider)
         Divider().padding(.horizontal)
         VStack(alignment: .leading, spacing: 6) {
@@ -138,19 +143,21 @@ struct PermissionsMenu: View {
     let selected: ApprovalReviewChoice?
     let pending: Bool
     var claude = false
+    var agent: Provider? = nil
     var supportsAutoMode: Bool? = nil
     var unavailable: [ApprovalReviewChoice: String] = [:]
+    private var name: String { (agent ?? (claude ? .claude : .codex)).shortName }
     /// Inside the iMessage + menu, which supplies its own title and width.
     var compact = false
     let choose: (ApprovalReviewChoice) -> Void
     var body: some View {
         VStack(alignment: .leading, spacing: 4) {
-            if !compact { Text(claude ? "Claude permissions" : "Codex permissions").font(.headline).padding(12) }
-            row(.autoReview, subtitle: claude ? "Claude reviews eligible actions automatically" : "Codex reviews eligible requests automatically", unavailable: supportsAutoMode == false ? "Automatic review is unavailable for this model" : nil)
+            if !compact { Text("\(name) permissions").font(.headline).padding(12) }
+            row(.autoReview, subtitle: claude ? "\(name) reviews eligible actions automatically" : "Codex reviews eligible requests automatically", unavailable: supportsAutoMode == false ? "Automatic review is unavailable for this model" : nil)
             row(.user, subtitle: "Show requests requiring your approval")
             if claude { row(.acceptEdits, subtitle: "Accept supported file operations; commands may still ask") }
             row(.fullAccess, subtitle: claude ? "Bypass normal checks; provider rules still apply" : "Remove filesystem and network sandbox restrictions")
-            if selected == nil { Text("Using your \(claude ? "Claude" : "Codex") default").font(.caption).foregroundStyle(.secondary).padding(12) }
+            if selected == nil { Text("Using your \(name) default").font(.caption).foregroundStyle(.secondary).padding(12) }
             if pending { HStack { Text("Applies with your next message"); Spacer(); Button("Undo choice") { choose(.inherit) }.pointingHand() }.font(.caption).padding(12) }
         }.padding(compact ? 0 : 8).frame(width: compact ? nil : 440)
     }

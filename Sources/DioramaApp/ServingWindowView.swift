@@ -114,7 +114,7 @@ struct ServingWindowView: View {
         guard let date = agent.value.meaningfulUpdatedAt else { return nil }
         return "finished " + RelativeDateTimeFormatter().localizedString(for: date, relativeTo: Date())
     }
-    private var providerName: String { agent.value.provider == Provider.claude.rawValue ? "Claude" : agent.value.provider == Provider.codex.rawValue ? "Codex" : "the agent" }
+    private var providerName: String { Provider(rawValue: agent.value.provider)?.shortName ?? "the agent" }
 
     // MARK: Changes
     static let fileLimit = 8

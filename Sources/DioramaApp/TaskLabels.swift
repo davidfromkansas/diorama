@@ -38,7 +38,7 @@ import Observation
     func title(_ agent: SpatialAgent) -> String {
         let value = agent.value
         return label(agent: agent.id, for: TaskTitle.full(value.task), latest: value.latestRequest,
-                     provider: value.provider.lowercased().contains("claude") ? .claude : .codex)
+                     provider: Provider(rawValue: value.provider) ?? (value.provider.lowercased().contains("claude") ? .claude : .codex))
     }
 
     /// The label for what a chef is working on now: the task, as updated by the newest message

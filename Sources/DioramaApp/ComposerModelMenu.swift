@@ -105,7 +105,12 @@ struct AvatarModelPicker: View {
         controller.models.first { $0.id == current } ?? (current.isEmpty ? controller.models.first { $0.isDefault } : nil)
     }
     /// The next message would go to the other provider (the conversation continues there).
-    private var switchesProvider: Bool { !model.isEmpty && !effectiveModel.isEmpty && model.hasPrefix("claude/") != effectiveModel.hasPrefix("claude/") }
+    private var switchesProvider: Bool { !model.isEmpty && !effectiveModel.isEmpty && Provider.forModel(model) != Provider.forModel(effectiveModel) }
+    /// The current model's provider first, then the rest in the usual order.
+    private var providers: [Provider] {
+        let first = current.isEmpty ? Provider.claude : Provider.forModel(current)
+        return [first] + Provider.connectable.filter { $0 != first }
+    }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 2) {
@@ -114,10 +119,10 @@ struct AvatarModelPicker: View {
                     .font(.system(size: 13)).foregroundStyle(.secondary).padding(.horizontal, 10).padding(.vertical, 8)
             }
             // The current model's provider first, so its checked row is in view when the menu opens.
-            ForEach(current.isEmpty || current.hasPrefix("claude/") ? [true, false] : [false, true], id: \.self) { claude in
-                let choices = controller.models.filter { $0.id.hasPrefix("claude/") == claude }
+            ForEach(providers, id: \.self) { owner in
+                let choices = controller.models.filter { Provider.forModel($0.id) == owner }
                 if !choices.isEmpty {
-                    provider(claude ? "Anthropic" : "OpenAI", mark: claude ? Color(red: 0.79, green: 0.39, blue: 0.26) : Color(white: 0.13))
+                    provider(owner.company, mark: owner.tint)
                     ForEach(choices) { choice in row(choice) }
                 }
             }

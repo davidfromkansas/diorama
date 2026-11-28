@@ -52,7 +52,7 @@ public extension ExecutedTask {
 public extension ExecutedTask {
     /// The model this task names, or nil when it doesn't name a real one: nothing yet, or
     /// Claude's "default" placeholder. Labels then fall back to the model the session reports.
-    var namedModel: String? { model.isEmpty || model == "claude/default" ? nil : model }
+    var namedModel: String? { model.isEmpty || model == "claude/default" || model == "devin/default" ? nil : model }
 }
 public struct ExecutedTask: Identifiable, Sendable {
     public let id: String
@@ -247,7 +247,7 @@ public final class ExecutionController {
     /// Read the router's cached catalog while independent provider checks complete.
     public func onboardingSnapshot() async -> WireValue {
         let info = await connectionInfo()
-        guard info["codex"].bool || info["claude"].bool else { return info }
+        guard Provider.allCases.contains(where: { info[$0.key].bool }) else { return info }
         if let reply = try? await transport.request("model/list", .object([:])) {
             models = reply["data"].array.compactMap { m in
                 guard let id = m["model"].string else { return nil }
@@ -267,32 +267,34 @@ public final class ExecutionController {
         var isDirectory: ObjCBool = false
         guard folder.hasPrefix("/"), FileManager.default.fileExists(atPath: folder, isDirectory: &isDirectory), isDirectory.boolValue else { throw AppServerFailure("Choose an existing working folder") }
         if !model.isEmpty, !models.contains(where: { $0.id == model }) { throw AppServerFailure("Choose a model from the provider catalog") }
-        let initialPermission: ApprovalReviewChoice? = permission == .inherit ? nil : permission
+        // Devin cloud sessions follow the organization's own Devin settings.
+        let initialPermission: ApprovalReviewChoice? = permission == .inherit || model == DevinCloudAPI.modelID ? nil : permission
         if model.hasPrefix("claude/"), initialPermission == .autoReview, models.first(where: { $0.id == model })?.supportsAutoMode == false {
             throw ExecutionRPCRejection("Automatic review is unavailable for this model. Choose Accept edits or Ask for approval.")
         }
-        if !model.hasPrefix("claude/"), let initialPermission, let reason = permissionUnavailable(initialPermission, model: model) { throw ExecutionRPCRejection(reason) }
+        let provider = Provider.forModel(model)
+        if provider == .codex, let initialPermission, let reason = permissionUnavailable(initialPermission, model: model) { throw ExecutionRPCRejection(reason) }
         creatingCount += 1; defer { creatingCount -= 1 }
         var params: [String: WireValue] = ["cwd": .string(folder), "threadSource": .string("user")]
         // Nothing chosen: no permission parameters, so the provider starts in its own default.
-        if let initialPermission, !model.hasPrefix("claude/") {
+        if let initialPermission, provider == .codex {
             params["sandbox"] = .string(initialPermission == .fullAccess ? "danger-full-access" : "workspace-write"); params["approvalPolicy"] = .string(initialPermission == .fullAccess ? "never" : "on-request"); params["approvalsReviewer"] = .string(initialPermission == .autoReview ? "auto_review" : "user")
             if initialPermission != .fullAccess { params["config"] = .object(["sandbox_workspace_write.network_access": .bool(false)]) }
         }
-        if let initialPermission, model.hasPrefix("claude/"), let mode = initialPermission.claudeMode { params["permissionMode"] = .string(mode) }
+        if let initialPermission, let mode = initialPermission.mode(for: provider) { params["permissionMode"] = .string(mode) }
         if !model.isEmpty { params["model"] = .string(model) }
         if let instructions = AgentInstructions.compose(projectContext) { params["developerInstructions"] = .string(instructions) }
         let reply = try await transport.request("thread/start", .object(params))
         guard let id = reply["thread"]["id"].string else { throw AppServerFailure("Task creation outcome unknown; inspect imported history before trying again") }
         var task = ExecutedTask(id: id, title: String(title.prefix(100)), folder: folder, attached: true)
-        task.provider = model.hasPrefix("claude/") ? .claude : .codex
+        task.provider = provider
         applySettings(reply, to: &task)
         task.permissionPreference = initialPermission
         task.permissionFolder = folder
         task.projectContext = projectContext
         tasks[id] = task; persist()
         if projectContext != nil, URL(fileURLWithPath: task.folder).resolvingSymlinksInPath() != URL(fileURLWithPath: folder).resolvingSymlinksInPath() {
-            throw AppServerFailure("Codex created task \(id) in a different working folder. No message was sent; inspect the prepared conversation.")
+            throw AppServerFailure("\(provider.shortName) created task \(id) in a different working folder. No message was sent; inspect the prepared conversation.")
         }
         return id
     }
@@ -333,7 +335,7 @@ public final class ExecutionController {
         guard !retiredProviderSessions.contains(id), !providerSwitches.contains(id) else { throw AppServerFailure("This provider session is historical or switching") }
         guard connected, !stopping, !workflowBusy.contains(id), var task = tasks[id], task.attached, task.parentID == nil, !task.phase.active, !task.steering, !task.steeringUncertain,
               !requests.values.contains(where: { $0.threadID == id && $0.isBlocking }) else { throw AppServerFailure("This task is not ready for a new turn") }
-        if !model.isEmpty, model.hasPrefix("claude/") != (task.provider == .claude) { throw ExecutionRPCRejection("Changing providers requires a new linked session.") }
+        if !model.isEmpty, Provider.forModel(model) != task.provider { throw ExecutionRPCRejection("Changing providers requires a new linked session.") }
         if !model.isEmpty, !models.contains(where: { $0.id == model }) { throw ExecutionRPCRejection("Model unavailable. No message was sent.") }
         try await preparePermissions(id: id, choice: approvalReview, model: model, mode: mode)
         guard let refreshed = tasks[id] else { throw ExecutionRPCRejection("Conversation removed") }; task = refreshed
@@ -345,7 +347,7 @@ public final class ExecutionController {
         }
         if let mode, !collaborationModes.contains(where: { $0["mode"].string == mode }) { throw AppServerFailure("This collaboration mode is not advertised by the runtime") }
         let selected = model.isEmpty ? task.model : model
-        if !model.isEmpty, (model.hasPrefix("claude/") != (task.provider == .claude)) { throw ExecutionRPCRejection("Changing providers requires a new linked session.") }
+        if !model.isEmpty, Provider.forModel(model) != task.provider { throw ExecutionRPCRejection("Changing providers requires a new linked session.") }
         if !model.isEmpty, !models.contains(where: { $0.id == model }) { throw AppServerFailure("Model unavailable") }
         if !effort.isEmpty, !models.contains(where: { $0.id == selected && $0.efforts.contains(effort) }) { throw AppServerFailure("Reasoning effort unavailable for this model") }
         try await GitHubCheckoutLocks.shared.beginAgentSubmission(task.folder)
@@ -390,7 +392,7 @@ public final class ExecutionController {
     }
     public func canSteer(id: String) -> Bool {
         guard connected, !stopping, let task = tasks[id] else { return false }
-        return [Provider.codex, .claude].contains(task.provider) && task.attached && task.parentID == nil && task.phase == .working && task.turnID != nil && !task.steering && !task.steeringUncertain && !requests.values.contains { $0.threadID == id && $0.isBlocking }
+        return Provider.allCases.contains(task.provider) && task.attached && task.parentID == nil && task.phase == .working && task.turnID != nil && !task.steering && !task.steeringUncertain && !requests.values.contains { $0.threadID == id && $0.isBlocking }
     }
     /// Never converts a stale correction into a new turn or retries uncertain delivery.
     public func steer(id: String, expectedTurnID: String, prompt: String, attachments: [ConversationAttachment] = []) async throws {
@@ -477,7 +479,7 @@ public final class ExecutionController {
                 task.structuredActivity = previous.structuredActivity
                 task.work = previous.work
             }
-            if session.provider == .claude, let previous = tasks[id]?.model, !previous.isEmpty { task.model = previous }
+            if session.provider != .codex, let previous = tasks[id]?.model, !previous.isEmpty { task.model = previous }
             if reply["thread"]["status"]["type"].string == "active" {
                 task.phase = .working; task.requiresReconciliation = true
                 task.turnID = reply["thread"]["turns"].array.last { $0["status"].string == "inProgress" }?["id"].string
@@ -486,15 +488,15 @@ public final class ExecutionController {
             task.workflow.queueUncertain = !task.workflow.steeredQueueIDs.isEmpty
             // A resumed Claude session starts in its default mode, so put back the mode chosen in
             // Diorama. If that fails, Send asks for a mode rather than running in the wrong one.
-            if session.provider == .claude, task.phase == .ready, let saved = task.permissionPreference,
-               let target = saved.claudeMode, task.approvalPolicy.string != target {
+            if session.provider != .codex, task.phase == .ready, let saved = task.permissionPreference,
+               let target = saved.mode(for: session.provider), task.approvalPolicy.string != target {
                 let applied = try? await transport.request("diorama/permissions/set", .object([
                     "threadId": .string(id), "permissionMode": .string(target), "executionPermissionMode": .string(target)
                 ]))
                 if applied?["permissionMode"].string == target { task.approvalPolicy = .string(target); task.sandbox = .null }
                 else {
                     // Send still works, in Claude's own default; the note says which mode you got.
-                    task.permissionNotice = "Couldn’t restore \(saved.title). Using your Claude default."
+                    task.permissionNotice = "Couldn’t restore \(saved.title). Using your \(session.provider.shortName) default."
                 }
             }
             tasks[id] = task; persist()
@@ -944,7 +946,7 @@ public final class ExecutionController {
 public extension ExecutedTask {
     var session: Session {
         Session(id: provider.rawValue + ":" + id, provider: provider, url: nil, sessionID: id,
-                title: title.isEmpty ? "New Codex task" : title, project: folder, modified: Date(), bytes: 0, archived: false,
+                title: title.isEmpty ? "New \(provider.shortName) task" : title, project: folder, modified: Date(), bytes: 0, archived: false,
                 parentID: parentID, classification: parentID == nil ? .conversation : .subagent,
                 classificationEvidence: parentID == nil ? "Created explicitly through Diorama" : "App Server explicit parentThreadId", historySource: "Diorama execution")
     }

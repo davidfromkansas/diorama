@@ -236,11 +236,13 @@ enum AgentSidebar {
     /// published identifier written out ("claude-opus-5-5" → "Claude Opus 5.5"), otherwise the
     /// provider. Internal identifiers with dates or paths are never shown as they are.
     static func modelName(_ model: String?, provider: String, catalog: [ExecutionModel]) -> String {
-        let providerName = provider == Provider.claude.rawValue ? "Claude" : provider == Provider.codex.rawValue ? "Codex" : provider
+        let providerName = Provider(rawValue: provider)?.shortName ?? provider
         guard var id = model?.trimmingCharacters(in: .whitespaces), !id.isEmpty else { return providerName.isEmpty ? "Model unavailable" : providerName }
-        if let listed = catalog.first(where: { $0.id == id || $0.id == "claude/" + id }), !listed.name.isEmpty, listed.name != listed.id,
+        if let listed = catalog.first(where: { $0.id == id || $0.id == "claude/" + id || $0.id == "devin/" + id }), !listed.name.isEmpty, listed.name != listed.id,
            !listed.name.lowercased().hasPrefix("default") { return listed.name }
         if id.hasPrefix("claude/") { id.removeFirst(7) }
+        if id.hasPrefix("devin/") { id.removeFirst(6) }
+        if id == "default" { return providerName }
         // Drop a trailing date stamp ("-20251001").
         var parts = id.split(separator: "-").map(String.init)
         if let last = parts.last, last.count == 8, last.allSatisfy(\.isNumber) { parts.removeLast() }

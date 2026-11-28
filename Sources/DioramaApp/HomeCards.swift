@@ -278,7 +278,7 @@ struct HomeAgentRowView: View {
                     HStack(spacing: 4) {
                         Text(row.state == .toReview ? (row.opened ? "Ready to decide" : "Not opened yet") : row.item.status).foregroundStyle(tint.text)
                         Text("·").foregroundStyle(HomeStyle.muted)
-                        if !row.item.provider.isEmpty { HomeMark.provider(row.item.provider.lowercased().contains("claude") ? .claude : .codex).image(size: 11) }
+                        if !row.item.provider.isEmpty { HomeMark.provider(row.item.provider.lowercased().contains("claude") ? .claude : row.item.provider.lowercased().contains("devin") ? .devin : .codex).image(size: 11) }
                         Text(detail).foregroundStyle(HomeStyle.muted)
                     }.font(.system(size: 12.5)).lineLimit(1)
                     if let progress = row.item.progress {

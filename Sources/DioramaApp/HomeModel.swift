@@ -172,7 +172,7 @@ enum HomeRank {
     }
 }
 
-/// Claude Code and Codex sign-in, checked in one place so Home doesn't poll on its own.
+/// Claude Code, Codex and Devin sign-in, checked in one place so Home doesn't poll on its own.
 @Observable @MainActor final class AgentConnections {
     static let shared = AgentConnections()
     private(set) var states: [Provider: AgentConnectionState] = [:]
@@ -182,9 +182,9 @@ enum HomeRank {
 
     func state(_ provider: Provider) -> AgentConnectionState { states[provider] ?? .checking }
     /// The development demo shows both signed in without asking either tool.
-    func showConnectedForDemo() { states = [.claude: .connected, .codex: .connected] }
+    func showConnectedForDemo() { states = [.claude: .connected, .codex: .connected, .devin: .connected] }
     /// The key `diorama/connections` and the executables use.
-    static func key(_ provider: Provider) -> String { provider == .claude ? "claude" : "codex" }
+    static func key(_ provider: Provider) -> String { provider.key }
 
     /// Reads `diorama/connections`, at most once a minute unless forced. Like the start screen,
     /// it waits for the app server's check to settle: until then nothing reads as connected,
@@ -196,8 +196,8 @@ enum HomeRank {
         while !Task.isCancelled {
             let info = await execution.connectionInfo()
             let settled = !execution.connecting && (execution.connected || execution.error != nil)
-                && !info["codexChecking"].bool && !info["claudeChecking"].bool
-            if info != .null && (settled || info["codex"].bool || info["claude"].bool) {
+                && !Provider.allCases.contains { info[$0.key + "Checking"].bool }
+            if info != .null && (settled || Provider.allCases.contains { info[$0.key].bool }) {
                 apply(info)
                 if settled { checkedAt = Date(); return }
             }
@@ -207,7 +207,7 @@ enum HomeRank {
     }
 
     func apply(_ info: WireValue) {
-        for provider in [Provider.claude, .codex] {
+        for provider in Provider.connectable {
             let key = Self.key(provider)
             states[provider] = AgentConnectionState.resolve(installed: AgentExecutable.resolve(key) != nil, connected: info[key].bool,
                                                             checking: info[key + "Checking"].bool, error: info[key + "Error"].string)
@@ -219,7 +219,7 @@ enum HomeRank {
     func signIn(_ provider: Provider, execution: ExecutionController) {
         let key = Self.key(provider)
         guard let binary = AgentExecutable.resolve(key) else { return }
-        let shell = "'" + binary.path.replacingOccurrences(of: "'", with: "'\\''") + "'" + (provider == .claude ? " auth login --claudeai" : " login")
+        let shell = "'" + binary.path.replacingOccurrences(of: "'", with: "'\\''") + "' " + provider.loginArguments.joined(separator: " ")
         let literal = shell.replacingOccurrences(of: "\\", with: "\\\\").replacingOccurrences(of: "\"", with: "\\\"")
         var problem: NSDictionary?
         NSAppleScript(source: "tell application \"Terminal\"\nactivate\ndo script \"\(literal)\"\nend tell")?.executeAndReturnError(&problem)

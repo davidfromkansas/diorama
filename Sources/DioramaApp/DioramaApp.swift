@@ -1283,8 +1283,10 @@ struct EntryView: View {
 }
 
 enum ConnectionTab: String, CaseIterable {
-    case codex = "Codex", claude = "Claude Code", desktop = "Claude Desktop"
-    var provider: Provider { self == .codex ? .codex : .claude }
+    case codex = "Codex", claude = "Claude Code", desktop = "Claude Desktop", devin = "Devin"
+    var provider: Provider {
+        switch self { case .codex: .codex; case .claude, .desktop: .claude; case .devin: .devin }
+    }
     var icon: String { self == .desktop ? "desktopcomputer" : "terminal" }
 }
 
@@ -1335,6 +1337,15 @@ struct ConnectionsView: View {
                         Divider()
                     } else if selection == .desktop {
                         Label("View-only integration", systemImage: "eye").font(.headline)
+                    } else if selection == .devin {
+                        VStack(alignment: .leading, spacing: 8) {
+                            Text("Agent execution").font(.headline)
+                            Text("Devin connects two ways. The Devin CLI (`devin acp`) works in folders on this Mac with your own Devin subscription. A Devin API key runs Devin in its own cloud machine, billed as API usage. Set up either under Settings → Models & accounts.")
+                                .font(.callout).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
+                            Text("Devin keeps its conversation history in its own database, so Diorama shows the Devin conversations you start here. Activity reporting from Devin running elsewhere isn't available yet.")
+                                .font(.callout).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
+                            Link("Devin CLI documentation", destination: Provider.devin.installURL).pointingHand()
+                        }
                     } else {
                         VStack(alignment: .leading, spacing: 8) {
                             Text("Local activity & history").font(.headline)
@@ -1342,7 +1353,7 @@ struct ConnectionsView: View {
                                 .font(.callout).foregroundStyle(.secondary)
                         }
                     }
-                    HookConnections(model: model, selection: selection)
+                    if selection != .devin { HookConnections(model: model, selection: selection) }
                 }.padding(24).frame(maxWidth: .infinity, alignment: .leading)
             }
             Divider()

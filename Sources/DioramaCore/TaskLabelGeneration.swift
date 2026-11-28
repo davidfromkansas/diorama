@@ -30,8 +30,11 @@ extension ExecutionController {
         case .claude:
             guard models.contains(where: { $0.id.hasPrefix("claude/") }) else { return nil }
             return await TaskLabel.generate(task, latest: latest, timeout: timeout)
+        case .devin:
+            // Devin has no throwaway session, so labels fall back to `TaskLabel.fallback`.
+            return nil
         case .codex:
-            let codex = models.filter { !$0.id.hasPrefix("claude/") }
+            let codex = models.filter { Provider.forModel($0.id) == .codex }
             guard connected, !codex.isEmpty else { return nil }
             // The smallest model on offer does: a label is a few words.
             let model = codex.first { $0.id.contains("mini") } ?? codex.first { $0.isDefault } ?? codex[0]

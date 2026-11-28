@@ -9,6 +9,17 @@ open dist/Diorama.app
 
 Requires macOS 14 or later. This local build targets Apple Silicon and is ad-hoc signed; it is not notarized for public distribution. Building requires Xcode with Swift 6.2 or later (tested with Swift 6.3.1). The native app does not depend on Python or a web server. Codex execution uses the locally configured Codex account.
 
+### Devin
+
+Diorama can also run [Devin](https://docs.devin.ai/cli/index) agents. Install the Devin CLI (`curl -fsSL https://cli.devin.ai/install.sh | bash` or `brew install --cask devin-cli`), then choose **Sign in** next to Devin on Home or in **Settings → Models & accounts** (this runs `devin auth login` in Terminal). Devin then appears on the start screen, on Home, in Connections, and in every model menu, with Devin's own default plus the models `devin models list` reports for your account.
+
+Conversations run through `devin acp` (the Agent Client Protocol) in the chosen working folder, with your own Devin sign-in; Diorama never stores Devin credentials. Messages, tool calls, plans and permission requests show live like Codex and Claude. Permission choices map to Devin's modes: Ask for approval → `normal`, Approve for me → `smart`, Accept edits → `accept-edits`, Full access → `dangerous`. Devin keeps its history in its own database, so Diorama lists the Devin conversations started here; they continue with `session/load` after a relaunch. Goals, skills and connectors are Codex or Claude features and aren't offered for Devin yet.
+
+Devin connects two ways, and you can use either or both:
+
+- **Devin CLI**: your existing Devin subscription, working in folders on this Mac (above).
+- **Devin API**: paste a Devin API key (`cog_…`, from a service user under **Settings → Devin API** in the Devin app) and your organization ID under **Settings → Models & accounts → Devin API**. The key is checked, then kept in your login Keychain and sent only to `api.devin.ai`. Choose **Devin · Cloud (API)** as the model: each conversation becomes a Devin session in Devin's own cloud machine, billed as API usage to that organization. Devin can't see files on this Mac, so Diorama tells it the folder's GitHub repository and current branch, and Devin opens pull requests there. Replies appear as Devin posts them, with a link to follow along in the Devin app; approvals and permission settings stay in Devin. Stopping a cloud turn stops watching, and Devin keeps the session.
+
 ### Claude Code Desktop observation
 
 Local conversations from Claude Desktop’s **Code tab** are discovered through Desktop metadata and matched to local Claude transcripts. Older readable history and selected conversation updates appear automatically; Desktop imports are view-only. Connections includes a separate Desktop reporter setup and hook-delivery status. Chat, Cowork, cloud and SSH sessions are excluded. See [setup, storage details and verification limits](docs/CLAUDE_DESKTOP_OBSERVATION.md).
